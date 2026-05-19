@@ -120,6 +120,13 @@ export const testResultSchema = z.object({
   photoUrl: z.string().trim().default(""),
 });
 
+export const userPreferencesPatchSchema = z.object({
+  taskSubteamIds: z
+    .array(z.enum(["programming", "mechanical", "electrical", "media-marketing", "business", "scouting"]))
+    .optional(),
+  themeMode: z.enum(["light", "dark"]).nullable().optional(),
+});
+
 export const reportSchema = z.object({
   reportType: z.enum(["QA", "MilestoneTest"]),
   projectId: z.string().trim().min(1),
@@ -484,6 +491,7 @@ export const emailSignInRequestSchema = z.object({
 export const emailSignInVerifySchema = z.object({
   email: z.string().trim().email(),
   code: z.string().trim().length(emailCodeLength),
+  deviceId: z.string().trim().min(1).max(128).optional().nullable(),
 });
 
 export const tutorialSessionResetSchema = z.object({

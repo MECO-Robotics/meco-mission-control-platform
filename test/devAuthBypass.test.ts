@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
+import { resetUserPreferencesStoreForTests } from "../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
 function saveEnv(keys: string[]) {
@@ -18,6 +22,7 @@ function restoreEnv(saved: Map<string, string | undefined>) {
 }
 
 test("buildApp exposes a development-only sign-in bypass", async () => {
+  let tempDir: string | null = null;
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
@@ -26,6 +31,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
+    "AUTH_MEMBER_SUBTEAMS_ENV_PATH",
     "API_RATE_LIMIT_MAX_REQUESTS",
     "API_RATE_LIMIT_WINDOW_SECONDS",
     "AUTH_RATE_LIMIT_MAX_REQUESTS",
@@ -35,6 +41,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
   ]);
 
   try {
+    tempDir = mkdtempSync(join(tmpdir(), "meco-env-test-"));
+    const memberSubteamsEnvPath = join(tempDir, ".env.test");
+    writeFileSync(memberSubteamsEnvPath, "DATABASE_URL=postgresql://example\n", "utf8");
     process.env.NODE_ENV = "development";
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
@@ -43,6 +52,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
+    process.env.AUTH_MEMBER_SUBTEAMS_ENV_PATH = memberSubteamsEnvPath;
     process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
     process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
     process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -54,6 +64,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     const app = await buildApp();
 
     try {
+      resetUserPreferencesStoreForTests();
       resetRequestLimits();
 
       const authConfigResponse = await app.inject({
@@ -126,6 +137,80 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
+      const defaultPreferencesResponse = await app.inject({
+        method: "GET",
+        url: "/api/users/me/preferences",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(defaultPreferencesResponse.statusCode, 200);
+      assert.deepEqual(defaultPreferencesResponse.json(), {
+        taskSubteamIds: [],
+        themeMode: null,
+      });
+
+      resetRequestLimits();
+
+      const updatePreferencesResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/users/me/preferences",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          taskSubteamIds: ["scouting"],
+          themeMode: "dark",
+        },
+      });
+
+      assert.equal(updatePreferencesResponse.statusCode, 200);
+      assert.deepEqual(updatePreferencesResponse.json(), {
+        taskSubteamIds: ["scouting"],
+        themeMode: "dark",
+      });
+
+      resetRequestLimits();
+
+      const savedPreferencesResponse = await app.inject({
+        method: "GET",
+        url: "/api/users/me/preferences",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(savedPreferencesResponse.statusCode, 200);
+      assert.deepEqual(savedPreferencesResponse.json(), {
+        taskSubteamIds: ["scouting"],
+        themeMode: "dark",
+      });
+      assert.match(
+        readFileSync(memberSubteamsEnvPath, "utf8"),
+        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev@mecorobotics\.org=scouting$/m,
+      );
+
+      resetRequestLimits();
+
+      const updatedAuthMeResponse = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(updatedAuthMeResponse.statusCode, 200);
+      const updatedAuthMeBody = updatedAuthMeResponse.json() as {
+        user: {
+          taskSubteamIds: string[];
+        } | null;
+      };
+      assert.deepEqual(updatedAuthMeBody.user?.taskSubteamIds, ["scouting"]);
+
+      resetRequestLimits();
+
       const dashboardResponse = await app.inject({
         method: "GET",
         url: "/api/dashboard",
@@ -140,6 +225,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       resetRequestLimits();
     }
   } finally {
+    if (tempDir) {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
     restoreEnv(saved);
   }
 });

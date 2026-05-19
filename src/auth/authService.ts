@@ -6,6 +6,7 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
+import { getUserPreferences } from "../data/userPreferencesStore";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
@@ -39,6 +40,7 @@ const emailTransport =
     : null;
 
 interface SessionClaims extends JwtPayload {
+  deviceId?: string;
   email: string;
   name: string;
   picture?: string | null;
@@ -60,6 +62,11 @@ export interface SessionUser {
   name: string;
   picture: string | null;
   hostedDomain: string;
+  taskSubteamIds: string[];
+}
+
+interface SessionTokenOptions {
+  deviceId?: string | null;
 }
 
 export interface EmailCodeDelivery {
@@ -254,25 +261,35 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
   }
 }
 
+function getTaskSubteamIdsForEmail(email: string) {
+  return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
+}
+
 function buildEmailSessionUser(email: string): SessionUser {
+  const normalizedEmail = normalizeEmailAddress(email);
+
   return {
-    accountId: email,
+    accountId: normalizedEmail,
     authProvider: "email",
-    email,
-    name: email,
+    email: normalizedEmail,
+    name: normalizedEmail,
     picture: null,
     hostedDomain: authConfig.hostedDomain,
+    taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail),
   };
 }
 
 export function buildDevelopmentSessionUser(): SessionUser {
+  const email = `dev@${authConfig.hostedDomain}`;
+
   return {
     accountId: "local-dev",
     authProvider: "email",
-    email: `dev@${authConfig.hostedDomain}`,
+    email,
     name: "Local Dev",
     picture: null,
     hostedDomain: authConfig.hostedDomain,
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
 
@@ -298,6 +315,7 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
     hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
 
@@ -466,11 +484,18 @@ function requestEmailDeliveryFailure(error?: unknown): never {
   );
 }
 
-export function signSessionToken(user: SessionUser) {
+function normalizeDeviceId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : null;
+}
+
+export function signSessionToken(user: SessionUser, options: SessionTokenOptions = {}) {
   const secret = getJwtSecret();
+  const deviceId = normalizeDeviceId(options.deviceId);
 
   return jwt.sign(
     {
+      ...(deviceId ? { deviceId } : null),
       email: user.email,
       name: user.name,
       picture: user.picture,
@@ -481,7 +506,7 @@ export function signSessionToken(user: SessionUser) {
     {
       algorithm: "HS256",
       subject: user.accountId,
-      expiresIn: authConfig.tokenTtl as SignOptions["expiresIn"],
+      expiresIn: (deviceId ? authConfig.deviceTokenTtl : authConfig.tokenTtl) as SignOptions["expiresIn"],
       issuer: SESSION_ISSUER,
       audience: SESSION_AUDIENCE,
     },
@@ -521,6 +546,7 @@ export function verifySessionToken(token: string): SessionUser {
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
     hostedDomain: payload.hd.toLowerCase(),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
 

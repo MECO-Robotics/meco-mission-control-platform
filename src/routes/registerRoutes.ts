@@ -1,5 +1,10 @@
 import { FastifyInstance } from "fastify";
-import { authConfig as runtimeAuthConfig, env, requestLimitConfig } from "../config/env";
+import {
+  authConfig as runtimeAuthConfig,
+  env,
+  requestLimitConfig,
+  setMemberSubteamsForEmail,
+} from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
   AuthError,
@@ -113,6 +118,10 @@ import {
   updateWorkstream,
 } from "../data/store";
 import {
+  getUserPreferences,
+  updateUserPreferences,
+} from "../data/userPreferencesStore";
+import {
   buildDashboard,
   buildMetrics,
   evaluateTaskCompletion,
@@ -193,6 +202,7 @@ import {
   taskDependencySchema,
   testResultSchema,
   tutorialSessionResetSchema,
+  userPreferencesPatchSchema,
   workLogPatchSchema,
   workLogSchema,
   workstreamPatchSchema,
@@ -382,7 +392,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     try {
       const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
-      const token = signSessionToken(user);
+      const token = signSessionToken(user, { deviceId: parsed.data.deviceId });
 
       return {
         token,
@@ -423,6 +433,45 @@ export async function registerRoutes(app: FastifyInstance) {
       enabled: true,
       user: session,
     };
+  });
+
+  app.get("/api/users/me/preferences", async (request, reply) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return;
+    }
+
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+
+    return getUserPreferences(session.email);
+  });
+
+  app.patch<{ Body: unknown }>("/api/users/me/preferences", async (request, reply) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return;
+    }
+
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+
+    const parsed = userPreferencesPatchSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "User preferences payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const preferences = updateUserPreferences(session.email, parsed.data);
+    if (parsed.data.taskSubteamIds && parsed.data.taskSubteamIds.length > 0) {
+      setMemberSubteamsForEmail(session.email, parsed.data.taskSubteamIds);
+    }
+
+    return preferences;
   });
 
   app.get("/api/dashboard", async (request, reply) => {

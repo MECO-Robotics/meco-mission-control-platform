@@ -23,6 +23,8 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
 - `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
+- `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
+- `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs and also updates the env-backed `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` roster.
 
 ## Bootstrap And Dashboards
 

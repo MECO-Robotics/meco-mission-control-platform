@@ -1,3 +1,6 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { z } from "zod";
 
 import {
@@ -24,6 +27,7 @@ const envSchema = z.object({
   GOOGLE_ALLOWED_HOSTED_DOMAIN: z.string().min(1).default("mecorobotics.org"),
   AUTH_JWT_SECRET: z.string().min(32).optional(),
   AUTH_TOKEN_TTL: z.string().min(2).default("12h"),
+  AUTH_DEVICE_TOKEN_TTL: z.string().min(2).default("3650d"),
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
   AUTH_EMAIL_SMTP_NAME: z.string().min(1).optional(),
@@ -54,6 +58,8 @@ const envSchema = z.object({
   AUTH_EMAIL_CODE_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
   AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
   AUTH_EMAIL_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  AUTH_MEMBER_SUBTEAMS_BY_EMAIL: z.string().min(1).optional(),
+  AUTH_MEMBER_SUBTEAMS_ENV_PATH: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   S3_ENDPOINT: z.string().min(1).optional(),
@@ -150,6 +156,86 @@ export const emailSmtpConfig = {
 const hasEmailDeliveryConfig =
   Boolean(emailSmtpConfig.host) && Boolean(emailSmtpConfig.from);
 const corsOrigins = parseCorsOrigins(env.CORS_ORIGIN);
+const taskSubteamIds = new Set([
+  "programming",
+  "mechanical",
+  "electrical",
+  "media-marketing",
+  "business",
+  "scouting",
+]);
+
+function parseMemberSubteamsByEmail(value: string | undefined) {
+  const entries = value?.trim();
+  if (!entries) {
+    return {};
+  }
+
+  return entries.split(";").reduce<Record<string, string[]>>((mapping, entry) => {
+    const [rawEmail, rawSubteams] = entry.split("=", 2);
+    const email = rawEmail?.trim().toLowerCase();
+    const subteams = rawSubteams
+      ?.split(",")
+      .map((subteam) => subteam.trim())
+      .filter((subteam) => taskSubteamIds.has(subteam));
+
+    if (email && subteams && subteams.length > 0) {
+      mapping[email] = subteams;
+    }
+
+    return mapping;
+  }, {});
+}
+
+function serializeMemberSubteamsByEmail(mapping: Record<string, string[]>) {
+  return Object.entries(mapping)
+    .sort(([leftEmail], [rightEmail]) => leftEmail.localeCompare(rightEmail))
+    .map(([email, subteams]) => `${email}=${subteams.join(",")}`)
+    .join(";");
+}
+
+function resolveMemberSubteamsEnvPath() {
+  if (env.AUTH_MEMBER_SUBTEAMS_ENV_PATH) {
+    return env.AUTH_MEMBER_SUBTEAMS_ENV_PATH;
+  }
+
+  if (env.NODE_ENV === "production") {
+    return join(process.cwd(), ".env.production");
+  }
+
+  return join(process.cwd(), ".env");
+}
+
+function updateEnvFileValue(path: string, key: string, value: string) {
+  const line = `${key}=${value}`;
+  if (!existsSync(path)) {
+    writeFileSync(path, `${line}\n`, "utf8");
+    return;
+  }
+
+  const content = readFileSync(path, "utf8");
+  const lines = content.split(/\r?\n/);
+  const keyPattern = new RegExp(`^\\s*${key}=`);
+  const index = lines.findIndex((candidate) => keyPattern.test(candidate));
+
+  if (index >= 0) {
+    lines[index] = line;
+  } else {
+    if (lines.length > 0 && lines[lines.length - 1] !== "") {
+      lines.push("");
+    }
+    lines.push(line);
+  }
+
+  writeFileSync(path, `${lines.join("\n").replace(/\n*$/, "")}\n`, "utf8");
+}
+
+function normalizeMemberSubteams(email: string, subteams: string[]) {
+  return {
+    email: email.trim().toLowerCase(),
+    subteams: subteams.filter((subteam) => taskSubteamIds.has(subteam)),
+  };
+}
 
 export const authConfig = {
   enabled: Boolean(
@@ -160,12 +246,36 @@ export const authConfig = {
   googleClientIds,
   hostedDomain: env.GOOGLE_ALLOWED_HOSTED_DOMAIN.toLowerCase(),
   tokenTtl: env.AUTH_TOKEN_TTL,
+  deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
+  memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   emailEnabled: hasEmailDeliveryConfig,
   emailCodeTtlMinutes: env.AUTH_EMAIL_CODE_TTL_MINUTES,
   emailCodeLength: env.AUTH_EMAIL_CODE_LENGTH,
   emailCodeResendCooldownSeconds: env.AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS,
   emailMaxVerifyAttempts: env.AUTH_EMAIL_MAX_VERIFY_ATTEMPTS,
-} as const;
+};
+
+export function setMemberSubteamsForEmail(email: string, subteams: string[]) {
+  const normalized = normalizeMemberSubteams(email, subteams);
+  if (!normalized.email || normalized.subteams.length === 0) {
+    return authConfig.memberSubteamsByEmail;
+  }
+
+  authConfig.memberSubteamsByEmail = {
+    ...authConfig.memberSubteamsByEmail,
+    [normalized.email]: normalized.subteams,
+  };
+
+  const serialized = serializeMemberSubteamsByEmail(authConfig.memberSubteamsByEmail);
+  process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL = serialized;
+  updateEnvFileValue(
+    resolveMemberSubteamsEnvPath(),
+    "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
+    serialized,
+  );
+
+  return authConfig.memberSubteamsByEmail;
+}
 
 export const corsConfig = {
   origins: corsOrigins,
