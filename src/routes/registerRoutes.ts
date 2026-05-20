@@ -37,6 +37,7 @@ import {
   createWorkLog,
   createWorkstream,
   findDiscipline,
+  getFavoriteViews,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -93,6 +94,7 @@ import {
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
+  setFavoriteView,
   updateManufacturingItem,
   updateArtifact,
   updateMaterial,
@@ -158,6 +160,8 @@ import {
   artifactSchema,
   emailSignInRequestSchema,
   emailSignInVerifySchema,
+  favoriteNavigationViewIdSchema,
+  favoriteViewToggleSchema,
   milestonePatchSchema,
   milestoneSchema,
   manufacturingItemPatchSchema,
@@ -260,6 +264,17 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return false;
+  };
+
+  const getNavigationPreferenceUserKey = (
+    request: Parameters<typeof getSessionFromRequest>[0],
+  ) => {
+    if (!isAuthEnabled()) {
+      return "local-development";
+    }
+
+    const session = getSessionFromRequest(request);
+    return session?.accountId || session?.email || "authenticated-user";
   };
 
   app.get("/health", async () => {
@@ -453,9 +468,42 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const selection = readBootstrapSelection(request.query);
+    const userKey = getNavigationPreferenceUserKey(request);
 
-    return buildBootstrapResponse(snapshot, selection);
+    return {
+      ...buildBootstrapResponse(snapshot, selection),
+      favoriteViews: getFavoriteViews(userKey),
+    };
   });
+
+  app.patch<{ Body: unknown; Params: { viewId: string } }>(
+    "/api/navigation/favorites/:viewId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsedViewId = favoriteNavigationViewIdSchema.safeParse(request.params.viewId);
+      const parsedBody = favoriteViewToggleSchema.safeParse(request.body);
+      if (!parsedViewId.success || !parsedBody.success) {
+        return reply.code(400).send({
+          message: "Favorite view payload is invalid.",
+          issues: {
+            params: parsedViewId.success ? undefined : parsedViewId.error.flatten(),
+            body: parsedBody.success ? undefined : parsedBody.error.flatten(),
+          },
+        });
+      }
+
+      return {
+        favoriteViews: setFavoriteView(
+          getNavigationPreferenceUserKey(request),
+          parsedViewId.data,
+          parsedBody.data.isFavorite,
+        ),
+      };
+    },
+  );
 
   app.post("/api/tutorial/session/start", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

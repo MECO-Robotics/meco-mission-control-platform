@@ -490,6 +490,35 @@ export const tutorialSessionResetSchema = z.object({
   mode: z.enum(["session", "baseline"]).default("session"),
 });
 
+export const favoriteNavigationViewIdSchema = z.enum([
+  "dashboard-calendar",
+  "dashboard-activity",
+  "dashboard-metrics",
+  "readiness-attention",
+  "readiness-milestones",
+  "readiness-subsystems",
+  "readiness-risks",
+  "config-robot-model",
+  "config-cad",
+  "config-part-mappings",
+  "config-directory",
+  "tasks-timeline",
+  "tasks-board",
+  "tasks-manufacturing",
+  "inventory-materials",
+  "inventory-parts",
+  "inventory-purchases",
+  "roster-workload",
+  "roster-attendance",
+  "reports-work-logs",
+  "reports-qa-forms",
+  "reports-milestone-results",
+]);
+
+export const favoriteViewToggleSchema = z.object({
+  isFavorite: z.boolean(),
+});
+
 export const paginatedQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().optional(),
