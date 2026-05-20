@@ -2912,4 +2912,5 @@ export const snapshot: PlatformSnapshot = {
       new Map(snapshotSeed.projects.map((project) => [project.id, project])),
     ),
   ),
+  favoriteViews: [],
 };

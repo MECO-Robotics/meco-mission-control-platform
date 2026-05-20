@@ -5,6 +5,7 @@ import type {
   Artifact,
   DesignIteration,
   Discipline,
+  FavoriteView,
   MilestoneRequirement,
   Milestone,
   MilestoneStatus,
@@ -492,6 +493,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
   return normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
+    favoriteViews: normalizedSnapshot.favoriteViews ?? [],
     actions: normalizedSnapshot.actions ?? [],
   });
 }
@@ -1338,6 +1340,46 @@ function recordAuditAction(args: {
 
 export function getSnapshot() {
   return currentSnapshot;
+}
+
+export function getFavoriteViews(userKey: string) {
+  return (currentSnapshot.favoriteViews ?? [])
+    .filter((favorite) => favorite.userKey === userKey)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export function setFavoriteView(
+  userKey: string,
+  viewId: string,
+  isFavorite: boolean,
+) {
+  const favoriteViews = currentSnapshot.favoriteViews ?? [];
+  const existingFavorite = favoriteViews.find(
+    (favorite) => favorite.userKey === userKey && favorite.viewId === viewId,
+  );
+
+  if (isFavorite && !existingFavorite) {
+    const favorite: FavoriteView = {
+      id: uniqueId(`favorite-${toSlug(userKey)}-${viewId}`, new Set(favoriteViews.map((item) => item.id))),
+      userKey,
+      viewId,
+      createdAt: new Date().toISOString(),
+    };
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      favoriteViews: [...favoriteViews, favorite],
+    };
+  }
+
+  if (!isFavorite && existingFavorite) {
+    currentSnapshot = {
+      ...currentSnapshot,
+      favoriteViews: favoriteViews.filter((favorite) => favorite.id !== existingFavorite.id),
+    };
+  }
+
+  return getFavoriteViews(userKey);
 }
 
 export interface TutorialBaselineState {
