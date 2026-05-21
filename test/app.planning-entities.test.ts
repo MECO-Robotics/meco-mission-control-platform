@@ -280,6 +280,9 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         seasonId: "default-season",
         activeSeasonIds: ["default-season"],
         photoUrl: "https://cdn.example.test/people/route-test-member.png",
+        plannedWeeklyAttendanceHours: 6,
+        plannedAttendanceDays: ["monday", "wednesday"],
+        plannedAttendanceNotes: "Usually available for build nights.",
       },
     });
 
@@ -288,9 +291,15 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       item: {
         id: string;
         photoUrl: string;
+        plannedWeeklyAttendanceHours: number;
+        plannedAttendanceDays: string[];
+        plannedAttendanceNotes: string;
       };
     };
     assert.equal(memberBody.item.photoUrl, "https://cdn.example.test/people/route-test-member.png");
+    assert.equal(memberBody.item.plannedWeeklyAttendanceHours, 6);
+    assert.deepEqual(memberBody.item.plannedAttendanceDays, ["monday", "wednesday"]);
+    assert.equal(memberBody.item.plannedAttendanceNotes, "Usually available for build nights.");
 
     resetLimits();
 
@@ -299,6 +308,9 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       url: `/api/members/${memberBody.item.id}`,
       payload: {
         photoUrl: "https://cdn.example.test/people/route-test-member-v2.png",
+        plannedWeeklyAttendanceHours: 3.5,
+        plannedAttendanceDays: ["saturday"],
+        plannedAttendanceNotes: "Competition week conflict.",
       },
     });
 
@@ -307,6 +319,9 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       memberPatchResponse.json().item.photoUrl,
       "https://cdn.example.test/people/route-test-member-v2.png",
     );
+    assert.equal(memberPatchResponse.json().item.plannedWeeklyAttendanceHours, 3.5);
+    assert.deepEqual(memberPatchResponse.json().item.plannedAttendanceDays, ["saturday"]);
+    assert.equal(memberPatchResponse.json().item.plannedAttendanceNotes, "Competition week conflict.");
 
     resetLimits();
 

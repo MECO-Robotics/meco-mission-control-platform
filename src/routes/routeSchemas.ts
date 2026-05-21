@@ -2,6 +2,16 @@ import { z } from "zod";
 
 import { authConfig as runtimeAuthConfig } from "../config/env";
 
+const plannedAttendanceDaySchema = z.enum([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+
 export const memberSchema = z.object({
   name: z.string().trim().min(2),
   email: z.union([z.literal(""), z.string().trim().email()]).default(""),
@@ -11,6 +21,9 @@ export const memberSchema = z.object({
   disciplineId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
+  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80).default(0),
+  plannedAttendanceDays: z.array(plannedAttendanceDaySchema).default([]),
+  plannedAttendanceNotes: z.string().trim().default(""),
 });
 
 export const seasonSchema = z.object({
@@ -101,6 +114,21 @@ export const milestonePatchSchema = z.object({
   projectIds: z.array(z.string().trim().min(1)).optional(),
   photoUrl: z.string().trim().optional(),
 });
+
+const meetingTypeSchema = z.enum(["general", "build", "review", "outreach", "competition", "other"]);
+
+export const meetingSchema = z.object({
+  title: z.string().trim().min(2),
+  meetingType: meetingTypeSchema.default("general"),
+  seasonId: z.string().trim().min(1).optional(),
+  projectIds: z.array(z.string().trim().min(1)).default([]),
+  startDateTime: z.string().trim().min(1),
+  endDateTime: z.string().trim().min(1).nullable().optional(),
+  location: z.string().trim().default(""),
+  description: z.string().trim().default(""),
+});
+
+export const meetingPatchSchema = meetingSchema.partial();
 
 export const qaReportSchema = z.object({
   taskId: z.string().trim().min(1),

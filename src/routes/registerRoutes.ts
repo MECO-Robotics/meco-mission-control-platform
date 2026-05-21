@@ -20,6 +20,7 @@ import {
   createMaterial,
   createMember,
   createMechanism,
+  createMeeting,
   createReport,
   createReportFinding,
   createQaReport,
@@ -82,6 +83,7 @@ import {
   removeMaterial,
   removeMember,
   removeMechanism,
+  removeMeeting,
   removeManufacturingItem,
   removePartDefinition,
   removePartInstance,
@@ -100,6 +102,7 @@ import {
   updateMaterial,
   updateMember,
   updateMechanism,
+  updateMeeting,
   updateMilestone,
   updatePartDefinition,
   updatePartInstance,
@@ -169,6 +172,8 @@ import {
   materialPatchSchema,
   materialSchema,
   mediaUploadRequestSchema,
+  meetingPatchSchema,
+  meetingSchema,
   memberPatchSchema,
   memberSchema,
   mechanismPatchSchema,
@@ -2764,6 +2769,108 @@ export async function registerRoutes(app: FastifyInstance) {
       workLogs: getSnapshot().workLogs,
     };
   });
+
+  app.post<{ Body: unknown }>("/api/meetings", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = meetingSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Meeting payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const projectIds = Array.from(new Set(parsed.data.projectIds ?? []));
+    const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
+    if (meetingProjectValidation) {
+      return reply.code(400).send({
+        message: meetingProjectValidation,
+      });
+    }
+
+    const meeting = createMeeting({
+      ...parsed.data,
+      projectIds,
+      endDateTime: parsed.data.endDateTime ?? null,
+    });
+
+    return reply.code(201).send({
+      item: meeting,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { meetingId: string } }>(
+    "/api/meetings/:meetingId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = meetingPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Meeting update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentMeeting = getSnapshot().meetings.find(
+        (meeting) => meeting.id === request.params.meetingId,
+      );
+      if (!currentMeeting) {
+        return reply.code(404).send({
+          message: "Meeting not found.",
+        });
+      }
+
+      const projectIds =
+        parsed.data.projectIds === undefined
+          ? currentMeeting.projectIds ?? []
+          : Array.from(new Set(parsed.data.projectIds));
+      const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
+      if (meetingProjectValidation) {
+        return reply.code(400).send({
+          message: meetingProjectValidation,
+        });
+      }
+
+      const meeting = updateMeeting(request.params.meetingId, {
+        ...parsed.data,
+        projectIds,
+        endDateTime:
+          parsed.data.endDateTime === undefined
+            ? currentMeeting.endDateTime ?? null
+            : parsed.data.endDateTime,
+      });
+
+      return {
+        item: meeting,
+      };
+    },
+  );
+
+  app.delete<{ Params: { meetingId: string } }>(
+    "/api/meetings/:meetingId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const meeting = removeMeeting(request.params.meetingId);
+      if (!meeting) {
+        return reply.code(404).send({
+          message: "Meeting not found.",
+        });
+      }
+
+      return {
+        item: meeting,
+      };
+    },
+  );
 
   app.get("/api/roster/insights", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
