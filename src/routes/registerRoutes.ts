@@ -24,6 +24,7 @@ import {
   createReport,
   createReportFinding,
   createQaReport,
+  createQaRequest,
   createPartDefinition,
   createPartInstance,
   createProject,
@@ -63,6 +64,7 @@ import {
   getProjects,
   getPurchaseItems,
   getQaReports,
+  getQaRequests,
   getReports,
   getRisks,
   getSnapshot,
@@ -142,6 +144,7 @@ import {
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
   validateQaReportLinks,
+  validateQaRequestLinks,
   validateRiskLinks,
   validateMilestoneProjectLinks,
   validateSubsystemPeople,
@@ -185,6 +188,7 @@ import {
   projectPatchSchema,
   projectSchema,
   qaReportSchema,
+  qaRequestSchema,
   reportFindingSchema,
   reportSchema,
   riskPatchSchema,
@@ -950,6 +954,50 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return reply.code(201).send({
       item: report,
+    });
+  });
+
+  app.get("/api/qa-requests", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const paginated = paginateItems(getQaRequests(), request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/qa-requests", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = qaRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "QA request payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateQaRequestLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const requestItem = createQaRequest({
+      ...parsed.data,
+      subject: parsed.data.subject.trim(),
+      requestedById: parsed.data.requestedById ?? null,
+    });
+
+    return reply.code(201).send({
+      item: requestItem,
     });
   });
 

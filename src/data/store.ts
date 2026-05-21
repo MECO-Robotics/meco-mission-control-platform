@@ -23,6 +23,7 @@ import type {
   ReportFinding,
   Risk,
   QaReport,
+  QaRequest,
   QaFinding,
   Season,
   Subsystem,
@@ -50,6 +51,7 @@ import type {
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  QaRequestInput,
   ReportFindingInput,
   ReportInput,
   RiskInput,
@@ -76,6 +78,7 @@ export type {
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  QaRequestInput,
   ReportFindingInput,
   ReportInput,
   RiskInput,
@@ -581,6 +584,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     ),
     milestones: normalizedMilestones,
     milestoneRequirements: normalizedMilestoneRequirements,
+    qaRequests: clonedSnapshot.qaRequests ?? [],
     meetings: clonedSnapshot.meetings.map((meeting) =>
       normalizeMeetingSchedule(meeting, fallbackSeasonId),
     ),
@@ -1828,6 +1832,10 @@ export function getTaskBlockers() {
 
 export function getQaReports() {
   return currentSnapshot.qaReports;
+}
+
+export function getQaRequests() {
+  return currentSnapshot.qaRequests ?? [];
 }
 
 export function getTestResults() {
@@ -3387,6 +3395,42 @@ export function createQaReport(input: QaReportInput) {
   return report;
 }
 
+export function createQaRequest(input: QaRequestInput) {
+  const task = input.taskId
+    ? currentSnapshot.tasks.find((candidate) => candidate.id === input.taskId)
+    : null;
+  const requestIds = new Set(getQaRequests().map((request) => request.id));
+  const subject = input.subject.trim();
+  const request: QaRequest = {
+    id: uniqueId(toSlug(`${subject} qa request`) || "qa-request", requestIds),
+    taskId: input.taskId ?? null,
+    subject,
+    mentorId: input.mentorId,
+    requestedById: input.requestedById ?? null,
+    createdAt: new Date().toISOString(),
+    status: "requested",
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    qaRequests: [request, ...getQaRequests()],
+  };
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "qa_request",
+    entityId: request.id,
+    entityLabel: request.subject,
+    projectId: task?.projectId ?? null,
+    subsystemId: task?.subsystemId ?? null,
+    taskId: request.taskId,
+    actorMemberId: request.requestedById,
+    memberIds: [request.requestedById, request.mentorId],
+  });
+
+  return request;
+}
+
 export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
   const testResult: TestResult = {
@@ -4247,6 +4291,9 @@ export function removeTask(taskId: string) {
       })),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
+    qaRequests: getQaRequests().filter(
+      (request) => !request.taskId || request.taskId !== taskId,
+    ),
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
     ),
@@ -4688,6 +4735,12 @@ export function removeMember(memberId: string) {
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
     })),
+    qaRequests: getQaRequests()
+      .filter((request) => request.mentorId !== memberId)
+      .map((request) => ({
+        ...request,
+        requestedById: request.requestedById === memberId ? null : request.requestedById,
+      })),
     qaReviews: currentSnapshot.qaReviews.map((review) => ({
       ...review,
       participantIds: review.participantIds.filter(
