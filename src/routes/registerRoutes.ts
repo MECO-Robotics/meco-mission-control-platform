@@ -252,6 +252,45 @@ export async function registerRoutes(app: FastifyInstance) {
     return Boolean(requireSession(request, reply));
   };
 
+  const resolveMeetingSeasonId = (args: {
+    currentSeasonId?: string | null;
+    projectIds: string[];
+    requestedSeasonId?: string;
+  }) =>
+    args.requestedSeasonId ??
+    args.projectIds
+      .map((projectId) => findProject(projectId)?.seasonId ?? null)
+      .find((seasonId): seasonId is string => Boolean(seasonId)) ??
+    args.currentSeasonId ??
+    null;
+
+  const validateMeetingSeasonProjectConsistency = (
+    seasonId: string | null,
+    projectIds: string[],
+  ) => {
+    if (seasonId && !getSeasons().some((candidate) => candidate.id === seasonId)) {
+      return "The selected season does not exist.";
+    }
+
+    const projectSeasonIds = Array.from(
+      new Set(
+        projectIds
+          .map((projectId) => findProject(projectId)?.seasonId ?? null)
+          .filter((projectSeasonId): projectSeasonId is string => Boolean(projectSeasonId)),
+      ),
+    );
+
+    if (projectSeasonIds.length > 1) {
+      return "Meeting projects must belong to the same season.";
+    }
+
+    if (seasonId && projectSeasonIds.some((projectSeasonId) => projectSeasonId !== seasonId)) {
+      return "Meeting season and related projects must belong to the same season.";
+    }
+
+    return null;
+  };
+
   const isValidTaskDependencyTarget = (
     kind: "task" | "milestone" | "part_instance",
     refId: string,
@@ -2790,9 +2829,23 @@ export async function registerRoutes(app: FastifyInstance) {
         message: meetingProjectValidation,
       });
     }
+    const seasonId = resolveMeetingSeasonId({
+      projectIds,
+      requestedSeasonId: parsed.data.seasonId,
+    });
+    const meetingSeasonValidation = validateMeetingSeasonProjectConsistency(
+      seasonId,
+      projectIds,
+    );
+    if (meetingSeasonValidation) {
+      return reply.code(400).send({
+        message: meetingSeasonValidation,
+      });
+    }
 
     const meeting = createMeeting({
       ...parsed.data,
+      seasonId: seasonId ?? undefined,
       projectIds,
       endDateTime: parsed.data.endDateTime ?? null,
     });
@@ -2826,24 +2879,56 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
+      const rawPatch =
+        request.body && typeof request.body === "object"
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const patchHas = (field: string) =>
+        Object.prototype.hasOwnProperty.call(rawPatch, field);
+      const patchData = { ...parsed.data };
+      if (!patchHas("meetingType")) {
+        delete patchData.meetingType;
+      }
+      if (!patchHas("location")) {
+        delete patchData.location;
+      }
+      if (!patchHas("description")) {
+        delete patchData.description;
+      }
+
       const projectIds =
-        parsed.data.projectIds === undefined
+        !patchHas("projectIds")
           ? currentMeeting.projectIds ?? []
-          : Array.from(new Set(parsed.data.projectIds));
+          : Array.from(new Set(patchData.projectIds ?? []));
       const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
       if (meetingProjectValidation) {
         return reply.code(400).send({
           message: meetingProjectValidation,
         });
       }
+      const seasonId = resolveMeetingSeasonId({
+        currentSeasonId: currentMeeting.seasonId,
+        projectIds,
+        requestedSeasonId: parsed.data.seasonId,
+      });
+      const meetingSeasonValidation = validateMeetingSeasonProjectConsistency(
+        seasonId,
+        projectIds,
+      );
+      if (meetingSeasonValidation) {
+        return reply.code(400).send({
+          message: meetingSeasonValidation,
+        });
+      }
 
       const meeting = updateMeeting(request.params.meetingId, {
-        ...parsed.data,
+        ...patchData,
+        seasonId: seasonId ?? undefined,
         projectIds,
         endDateTime:
-          parsed.data.endDateTime === undefined
+          patchData.endDateTime === undefined
             ? currentMeeting.endDateTime ?? null
-            : parsed.data.endDateTime,
+            : patchData.endDateTime,
       });
 
       return {

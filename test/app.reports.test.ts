@@ -1079,6 +1079,74 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     resetLimits();
 
+    const meetingSeasonResponse = await app.inject({
+      method: "POST",
+      url: "/api/seasons",
+      payload: {
+        name: "Route Test 2027",
+        type: "season",
+        startDate: "2027-01-01",
+        endDate: "2027-12-31",
+      },
+    });
+    assert.equal(meetingSeasonResponse.statusCode, 201);
+    const meetingSeasonBody = meetingSeasonResponse.json() as {
+      item: { id: string };
+    };
+
+    resetLimits();
+
+    const meetingProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        seasonId: meetingSeasonBody.item.id,
+        name: "Route Test 2027 Robot",
+        projectType: "robot",
+        description: "Project used to validate meeting season consistency.",
+        status: "active",
+      },
+    });
+    assert.equal(meetingProjectResponse.statusCode, 201);
+    const meetingProjectBody = meetingProjectResponse.json() as {
+      item: { id: string };
+    };
+
+    resetLimits();
+
+    const mismatchedMeetingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/meetings",
+      payload: {
+        title: "Invalid cross-season meeting",
+        seasonId: "default-season",
+        startDateTime: "2026-05-08T18:00:00-04:00",
+        projectIds: [meetingProjectBody.item.id],
+      },
+    });
+    assert.equal(mismatchedMeetingCreateResponse.statusCode, 400);
+    assert.match(
+      mismatchedMeetingCreateResponse.json().message as string,
+      /same season/i,
+    );
+
+    resetLimits();
+
+    const mismatchedMeetingPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/meetings/${meetingCreateBody.item.id}`,
+      payload: {
+        seasonId: meetingSeasonBody.item.id,
+      },
+    });
+    assert.equal(mismatchedMeetingPatchResponse.statusCode, 400);
+    assert.match(
+      mismatchedMeetingPatchResponse.json().message as string,
+      /same season/i,
+    );
+
+    resetLimits();
+
     const meetingBootstrapResponse = await app.inject({
       method: "GET",
       url: "/api/bootstrap?projectId=project-robot-2026",
