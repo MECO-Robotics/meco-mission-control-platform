@@ -130,12 +130,18 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
       ).length,
       overloadedMemberCount: members.filter((member) => member.availabilityStatus === "overloaded").length,
       unavailableMemberCount: members.filter((member) => member.availabilityStatus === "unavailable").length,
+      plannedWeeklyAttendanceHours: Number(
+        members.reduce((sum, member) => sum + member.plannedWeeklyAttendanceHours, 0).toFixed(1),
+      ),
       attendanceHoursLast14Days: Number(
         members.reduce((sum, member) => sum + member.attendanceHoursLast14Days, 0).toFixed(1),
       ),
       attendanceHoursLast30Days: Number(
         members.reduce((sum, member) => sum + member.attendanceHoursLast30Days, 0).toFixed(1),
       ),
+      noPlannedAttendanceWithTasksCount: members.filter(
+        (member) => member.activeTaskCount > 0 && member.plannedWeeklyAttendanceHours <= 0.25,
+      ).length,
       noRecentAttendanceWithTasksCount: members.filter(
         (member) => member.activeTaskCount > 0 && member.attendanceHoursLast14Days <= 0.25,
       ).length,

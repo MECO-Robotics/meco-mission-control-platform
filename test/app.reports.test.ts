@@ -127,6 +127,74 @@ test("buildRosterInsights includes same-day timestamps and excludes future atten
   );
 });
 
+test("buildRosterInsights bases availability on planned weekly attendance", () => {
+  const response = buildRosterInsights({
+    members: [
+      {
+        id: "ava",
+        name: "Ava",
+        role: "student",
+        disciplineId: "design",
+        plannedWeeklyAttendanceHours: 6,
+        plannedAttendanceDays: ["monday", "wednesday"],
+        plannedAttendanceNotes: "Expected for build nights.",
+      },
+      {
+        id: "ben",
+        name: "Ben",
+        role: "student",
+        disciplineId: "programming",
+        plannedWeeklyAttendanceHours: 0,
+        plannedAttendanceDays: [],
+      },
+    ],
+    projects: [
+      {
+        id: "robot",
+        name: "Robot",
+      },
+    ],
+    tasks: [
+      {
+        id: "cad-layout",
+        projectId: "robot",
+        title: "CAD layout",
+        ownerId: "ava",
+        assigneeIds: [],
+        dueDate: "2099-05-05",
+        priority: "medium",
+        status: "in-progress",
+        estimatedHours: 3,
+        actualHours: 0,
+      },
+      {
+        id: "software-layout",
+        projectId: "robot",
+        title: "Software layout",
+        ownerId: "ben",
+        assigneeIds: [],
+        dueDate: "2099-05-05",
+        priority: "medium",
+        status: "in-progress",
+        estimatedHours: 3,
+        actualHours: 0,
+      },
+    ],
+    attendanceRecords: [],
+  });
+
+  const ava = response.members.find((member) => member.memberId === "ava");
+  const ben = response.members.find((member) => member.memberId === "ben");
+
+  assert.equal(ava?.availabilityStatus, "available");
+  assert.equal(ava?.plannedWeeklyAttendanceHours, 6);
+  assert.deepEqual(ava?.plannedAttendanceDays, ["monday", "wednesday"]);
+  assert.equal(ava?.plannedAttendanceNotes, "Expected for build nights.");
+  assert.equal(ben?.availabilityStatus, "unavailable");
+  assert.equal(response.summary.plannedWeeklyAttendanceHours, 6);
+  assert.equal(response.summary.noPlannedAttendanceWithTasksCount, 1);
+});
+
 test("qa report and milestone report endpoints support create flows with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const qaReportCreateResponse = await app.inject({
@@ -971,6 +1039,153 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     assert.ok(meetingsBody.meetings.length > 0);
     assert.ok(meetingsBody.attendance.length > 0);
     assert.ok(meetingsBody.workLogs.length > 0);
+
+    resetLimits();
+
+    const meetingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/meetings",
+      payload: {
+        title: "Route Test Build Night",
+        meetingType: "build",
+        startDateTime: "2026-05-08T18:00:00-04:00",
+        endDateTime: "2026-05-08T20:30:00-04:00",
+        location: "MECO shop",
+        description: "Planned attendance input coverage.",
+        projectIds: ["project-robot-2026"],
+      },
+    });
+    assert.equal(meetingCreateResponse.statusCode, 201);
+    const meetingCreateBody = meetingCreateResponse.json() as {
+      item: {
+        id: string;
+        title: string;
+        meetingType: string;
+        startDateTime: string;
+        endDateTime: string | null;
+        location: string;
+        description: string;
+        projectIds: string[];
+        date: string;
+      };
+    };
+    assert.equal(meetingCreateBody.item.title, "Route Test Build Night");
+    assert.equal(meetingCreateBody.item.meetingType, "build");
+    assert.equal(meetingCreateBody.item.startDateTime, "2026-05-08T18:00:00-04:00");
+    assert.equal(meetingCreateBody.item.endDateTime, "2026-05-08T20:30:00-04:00");
+    assert.equal(meetingCreateBody.item.location, "MECO shop");
+    assert.deepEqual(meetingCreateBody.item.projectIds, ["project-robot-2026"]);
+    assert.equal(meetingCreateBody.item.date, "2026-05-08");
+
+    resetLimits();
+
+    const meetingSeasonResponse = await app.inject({
+      method: "POST",
+      url: "/api/seasons",
+      payload: {
+        name: "Route Test 2027",
+        type: "season",
+        startDate: "2027-01-01",
+        endDate: "2027-12-31",
+      },
+    });
+    assert.equal(meetingSeasonResponse.statusCode, 201);
+    const meetingSeasonBody = meetingSeasonResponse.json() as {
+      item: { id: string };
+    };
+
+    resetLimits();
+
+    const meetingProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        seasonId: meetingSeasonBody.item.id,
+        name: "Route Test 2027 Robot",
+        projectType: "robot",
+        description: "Project used to validate meeting season consistency.",
+        status: "active",
+      },
+    });
+    assert.equal(meetingProjectResponse.statusCode, 201);
+    const meetingProjectBody = meetingProjectResponse.json() as {
+      item: { id: string };
+    };
+
+    resetLimits();
+
+    const mismatchedMeetingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/meetings",
+      payload: {
+        title: "Invalid cross-season meeting",
+        seasonId: "default-season",
+        startDateTime: "2026-05-08T18:00:00-04:00",
+        projectIds: [meetingProjectBody.item.id],
+      },
+    });
+    assert.equal(mismatchedMeetingCreateResponse.statusCode, 400);
+    assert.match(
+      mismatchedMeetingCreateResponse.json().message as string,
+      /same season/i,
+    );
+
+    resetLimits();
+
+    const mismatchedMeetingPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/meetings/${meetingCreateBody.item.id}`,
+      payload: {
+        seasonId: meetingSeasonBody.item.id,
+      },
+    });
+    assert.equal(mismatchedMeetingPatchResponse.statusCode, 400);
+    assert.match(
+      mismatchedMeetingPatchResponse.json().message as string,
+      /same season/i,
+    );
+
+    resetLimits();
+
+    const meetingBootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?projectId=project-robot-2026",
+    });
+    assert.equal(meetingBootstrapResponse.statusCode, 200);
+    const meetingBootstrapBody = meetingBootstrapResponse.json() as {
+      meetings: Array<{ id: string; startDateTime: string; projectIds: string[] }>;
+    };
+    assert.ok(
+      meetingBootstrapBody.meetings.some(
+        (meeting) =>
+          meeting.id === meetingCreateBody.item.id &&
+          meeting.startDateTime === "2026-05-08T18:00:00-04:00" &&
+          meeting.projectIds.includes("project-robot-2026"),
+      ),
+    );
+
+    resetLimits();
+
+    const meetingPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/meetings/${meetingCreateBody.item.id}`,
+      payload: {
+        location: "Practice field",
+        projectIds: ["project-operations-2026"],
+      },
+    });
+    assert.equal(meetingPatchResponse.statusCode, 200);
+    assert.equal(meetingPatchResponse.json().item.location, "Practice field");
+    assert.deepEqual(meetingPatchResponse.json().item.projectIds, ["project-operations-2026"]);
+
+    resetLimits();
+
+    const meetingDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/meetings/${meetingCreateBody.item.id}`,
+    });
+    assert.equal(meetingDeleteResponse.statusCode, 200);
+    assert.equal(meetingDeleteResponse.json().item.id, meetingCreateBody.item.id);
 
     resetLimits();
 

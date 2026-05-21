@@ -335,6 +335,16 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       ? true
       : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
   });
+  const scopedMeetings = snapshot.meetings.filter((meeting) => {
+    if (selection.seasonId && meeting.seasonId && meeting.seasonId !== selection.seasonId) {
+      return false;
+    }
+
+    const meetingProjectIds = meeting.projectIds ?? [];
+    return meetingProjectIds.length === 0
+      ? true
+      : meetingProjectIds.some((projectId) => activeProjectIds.has(projectId));
+  });
   const scopedMilestoneIds = new Set(scopedMilestones.map((milestone) => milestone.id));
   const scopedMilestonesById = new Map(scopedMilestones.map((milestone) => [milestone.id, milestone] as const));
   const scopedMilestoneRequirements = (snapshot.milestoneRequirements ?? []).filter((requirement) => {
@@ -583,7 +593,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
     workLogs: scopedWorkLogs,
-    meetings: snapshot.meetings,
+    meetings: scopedMeetings,
     attendanceRecords: snapshot.attendanceRecords,
     manufacturingItems: scopedManufacturingItems.map((item) => ({
       ...item,
