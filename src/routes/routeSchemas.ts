@@ -26,6 +26,20 @@ export const memberSchema = z.object({
   plannedAttendanceNotes: z.string().trim().default(""),
 });
 
+export const memberPatchSchema = z.object({
+  name: z.string().trim().min(2).optional(),
+  email: z.union([z.literal(""), z.string().trim().email()]).optional(),
+  photoUrl: z.string().trim().optional(),
+  role: z.enum(["student", "lead", "mentor", "admin", "external"]).optional(),
+  elevated: z.boolean().optional(),
+  disciplineId: z.string().trim().min(1).nullable().optional(),
+  seasonId: z.string().trim().min(1).optional(),
+  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
+  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80).optional(),
+  plannedAttendanceDays: z.array(plannedAttendanceDaySchema).optional(),
+  plannedAttendanceNotes: z.string().trim().optional(),
+});
+
 export const seasonSchema = z.object({
   name: z.string().trim().min(2),
   type: z.enum(["season", "offseason", "initiative"]).default("season"),
@@ -322,7 +336,6 @@ export const riskSchema = z.object({
 
 export const riskPatchSchema = riskSchema.partial();
 
-export const memberPatchSchema = memberSchema.partial();
 export const iterationSchema = z.coerce.number().int().min(1).default(1);
 
 export const workstreamSchema = z.object({

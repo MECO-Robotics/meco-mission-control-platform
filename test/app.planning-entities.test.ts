@@ -325,6 +325,25 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
 
     resetLimits();
 
+    const memberPhotoOnlyPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/members/${memberBody.item.id}`,
+      payload: {
+        photoUrl: "https://cdn.example.test/people/route-test-member-v3.png",
+      },
+    });
+
+    assert.equal(memberPhotoOnlyPatchResponse.statusCode, 200);
+    assert.equal(
+      memberPhotoOnlyPatchResponse.json().item.photoUrl,
+      "https://cdn.example.test/people/route-test-member-v3.png",
+    );
+    assert.equal(memberPhotoOnlyPatchResponse.json().item.plannedWeeklyAttendanceHours, 3.5);
+    assert.deepEqual(memberPhotoOnlyPatchResponse.json().item.plannedAttendanceDays, ["saturday"]);
+    assert.equal(memberPhotoOnlyPatchResponse.json().item.plannedAttendanceNotes, "Competition week conflict.");
+
+    resetLimits();
+
     const cyclicSubsystemResponse = await app.inject({
       method: "PATCH",
       url: "/api/subsystems/manipulator",
