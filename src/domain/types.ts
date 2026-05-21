@@ -491,6 +491,16 @@ export interface QaReport {
   reviewedAt: string;
 }
 
+export interface QaRequest {
+  id: string;
+  taskId: string | null;
+  subject: string;
+  mentorId: string;
+  requestedById: string | null;
+  createdAt: string;
+  status: "requested";
+}
+
 export interface TestResult {
   id: string;
   milestoneId: string;
@@ -685,6 +695,7 @@ export interface PlatformSnapshot {
   taskDependencies: TaskDependency[];
   taskBlockers: TaskBlocker[];
   qaReports: QaReport[];
+  qaRequests?: QaRequest[];
   testResults: TestResult[];
   qaFindings: QaFinding[];
   testFindings: TestFinding[];
