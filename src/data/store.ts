@@ -39,6 +39,21 @@ import {
   getDefaultTaskDisciplineIdForProject,
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
+import {
+  dateOnlyFromDateTime,
+  formatTimeFromDateTime,
+  normalizeMeetingSchedule,
+} from "./store/meetingSchedule";
+import {
+  buildFindings,
+  buildReportFindings,
+  buildReports,
+  reportFindingFromQaFinding,
+  reportFindingFromTestFinding,
+  reportFromQaReport,
+  reportFromTestResult,
+  type FindingListItem,
+} from "./store/reportDerivations";
 import type {
   ArtifactInput,
   MilestoneInput,
@@ -291,63 +306,6 @@ function normalizePlannedAttendanceDays(days: Member["plannedAttendanceDays"] | 
   return uniqueIds(days ?? []).filter((day): day is NonNullable<Member["plannedAttendanceDays"]>[number] =>
     PLANNED_ATTENDANCE_DAYS.has(day as NonNullable<Member["plannedAttendanceDays"]>[number]),
   );
-}
-
-function dateOnlyFromDateTime(value: string) {
-  return value.slice(0, 10);
-}
-
-function formatTimeFromDateTime(value: string) {
-  const match = value.match(/T(\d{2}):(\d{2})/);
-  if (!match) {
-    return "";
-  }
-
-  const rawHour = Number.parseInt(match[1] ?? "0", 10);
-  const minute = match[2] ?? "00";
-  const period = rawHour >= 12 ? "PM" : "AM";
-  const hour = rawHour % 12 || 12;
-  return `${hour}:${minute} ${period}`;
-}
-
-function parseLegacyMeetingTime(value: string) {
-  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
-  if (!match) {
-    return "18:00:00";
-  }
-
-  const rawHour = Number.parseInt(match[1] ?? "6", 10);
-  const minute = match[2] ?? "00";
-  const period = (match[3] ?? "PM").toUpperCase();
-  const hour =
-    period === "PM"
-      ? rawHour === 12
-        ? 12
-        : rawHour + 12
-      : rawHour === 12
-        ? 0
-        : rawHour;
-  return `${hour.toString().padStart(2, "0")}:${minute}:00`;
-}
-
-function normalizeMeetingSchedule(meeting: Meeting, fallbackSeasonId: string): Meeting {
-  const date = meeting.date || dateOnlyFromDateTime(meeting.startDateTime ?? "");
-  const startDateTime =
-    meeting.startDateTime ??
-    `${date}T${parseLegacyMeetingTime(meeting.time || "")}`;
-
-  return {
-    ...meeting,
-    meetingType: meeting.meetingType ?? "general",
-    seasonId: meeting.seasonId ?? fallbackSeasonId,
-    projectIds: uniqueIds(meeting.projectIds ?? []),
-    startDateTime,
-    endDateTime: meeting.endDateTime ?? null,
-    location: meeting.location ?? "",
-    description: meeting.description ?? "",
-    date: dateOnlyFromDateTime(startDateTime),
-    time: meeting.time || formatTimeFromDateTime(startDateTime),
-  };
 }
 
 function normalizePartDefinitionSeasonMembership(
@@ -913,25 +871,7 @@ function normalizeTaskTargets(task: Task): Task {
   };
 }
 
-export interface FindingListItem {
-  id: string;
-  sourceType: "qa" | "test";
-  sourceId: string | null;
-  title: string;
-  detail: string;
-  severity: QaFinding["severity"] | TestFinding["severity"];
-  status: QaFinding["status"] | TestFinding["status"];
-  projectId: string;
-  workstreamId: string | null;
-  subsystemId: string | null;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactId: string | null;
-  taskId: string | null;
-  milestoneId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { FindingListItem } from "./store/reportDerivations";
 
 export type TaskTargetType =
   | "project"
@@ -1858,173 +1798,16 @@ export function getDesignIterations(): DesignIteration[] {
   return currentSnapshot.designIterations;
 }
 
-function reportFromQaReport(report: QaReport): Report | null {
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
-  if (!task) {
-    return null;
-  }
-
-  return {
-    id: report.id,
-    reportType: "QA",
-    projectId: task.projectId,
-    taskId: report.taskId,
-    milestoneId: null,
-    workstreamId: task.workstreamId,
-    createdByMemberId: null,
-    result: report.result,
-    summary: report.notes,
-    notes: report.notes,
-    photoUrl: report.photoUrl,
-    createdAt: report.reviewedAt,
-    participantIds: report.participantIds,
-    mentorApproved: report.mentorApproved,
-    reviewedAt: report.reviewedAt,
-    title: task.title,
-  };
-}
-
-function reportFromTestResult(result: TestResult): Report | null {
-  const milestone = currentSnapshot.milestones.find((candidate) => candidate.id === result.milestoneId);
-  const projectId = milestone?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? null;
-  if (!projectId) {
-    return null;
-  }
-
-  return {
-    id: result.id,
-    reportType: "MilestoneTest",
-    projectId,
-    taskId: null,
-    milestoneId: result.milestoneId,
-    workstreamId: null,
-    createdByMemberId: null,
-    result: result.status,
-    summary: result.title,
-    notes: result.findings.join("\n"),
-    photoUrl: result.photoUrl,
-    createdAt: milestone?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    title: result.title,
-    status: result.status,
-    findings: result.findings,
-  };
-}
-
 export function getReports(): Report[] {
-  return [
-    ...currentSnapshot.qaReports.map(reportFromQaReport),
-    ...currentSnapshot.testResults.map(reportFromTestResult),
-  ].filter((report): report is Report => report !== null);
-}
-
-function reportFindingFromQaFinding(finding: QaFinding): ReportFinding | null {
-  if (!finding.qaReportId) {
-    return null;
-  }
-
-  return {
-    id: finding.id,
-    reportId: finding.qaReportId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactInstanceId: finding.artifactId,
-    issueType: finding.title,
-    severity: finding.severity,
-    notes: finding.detail,
-    spawnedTaskId: finding.taskId,
-    spawnedIterationId: null,
-    spawnedRiskId: null,
-    title: finding.title,
-    detail: finding.detail,
-    status: finding.status === "resolved" ? "resolved" : "open",
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    taskId: finding.taskId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  };
-}
-
-function reportFindingFromTestFinding(finding: TestFinding): ReportFinding | null {
-  if (!finding.testResultId) {
-    return null;
-  }
-
-  return {
-    id: finding.id,
-    reportId: finding.testResultId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactInstanceId: finding.artifactId,
-    issueType: finding.title,
-    severity: finding.severity,
-    notes: finding.detail,
-    spawnedTaskId: finding.taskId,
-    spawnedIterationId: null,
-    spawnedRiskId: null,
-    title: finding.title,
-    detail: finding.detail,
-    status: finding.status === "resolved" ? "resolved" : "open",
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    taskId: finding.taskId,
-    milestoneId: finding.milestoneId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  };
+  return buildReports(currentSnapshot);
 }
 
 export function getReportFindings(): ReportFinding[] {
-  return [
-    ...currentSnapshot.qaFindings.map(reportFindingFromQaFinding),
-    ...currentSnapshot.testFindings.map(reportFindingFromTestFinding),
-  ].filter((finding): finding is ReportFinding => finding !== null);
+  return buildReportFindings(currentSnapshot);
 }
 
 export function getFindings(): FindingListItem[] {
-  const qaItems: FindingListItem[] = currentSnapshot.qaFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "qa",
-    sourceId: finding.qaReportId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    milestoneId: null,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
-
-  const testItems: FindingListItem[] = currentSnapshot.testFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "test",
-    sourceId: finding.testResultId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    milestoneId: finding.milestoneId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
-
-  return [...qaItems, ...testItems];
+  return buildFindings(currentSnapshot);
 }
 
 export function getTaskTargets() {
@@ -3482,7 +3265,7 @@ export function createReport(input: ReportInput) {
       reviewedAt: input.reviewedAt ?? input.createdAt.slice(0, 10),
     });
 
-    return reportFromQaReport(report);
+    return reportFromQaReport(currentSnapshot, report);
   }
 
   if (!input.milestoneId) {
@@ -3497,7 +3280,7 @@ export function createReport(input: ReportInput) {
     photoUrl: input.photoUrl,
   });
 
-  return reportFromTestResult(testResult);
+  return reportFromTestResult(currentSnapshot, testResult);
 }
 
 export function createReportFinding(input: ReportFindingInput) {
