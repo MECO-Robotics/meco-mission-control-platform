@@ -69,6 +69,22 @@ function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyRep
   return false;
 }
 
+function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply: FastifyReply) {
+  if (!isAuthEnabled()) {
+    return true;
+  }
+
+  const session = getSessionFromRequest(request);
+  if (session?.role === "lead" || session?.role === "mentor" || session?.role === "admin") {
+    return true;
+  }
+
+  reply.code(403).send({
+    message: "Onshape OAuth credential updates are restricted to leads, mentors, and admins.",
+  });
+  return false;
+}
+
 function getOAuthConfig() {
   return {
     clientId: onshapeConfig.oauthClientId,
@@ -181,6 +197,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     if (!requireApiSession(request, reply)) {
       return;
     }
+    if (!requireOnshapeOAuthCredentialPermission(request, reply)) {
+      return;
+    }
 
     const config = getOAuthConfig();
     if (!isOnshapeOAuthClientConfigured(config)) {
@@ -240,6 +259,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
 
   app.post("/api/onshape/oauth/refresh", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
+      return;
+    }
+    if (!requireOnshapeOAuthCredentialPermission(request, reply)) {
       return;
     }
 

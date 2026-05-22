@@ -17,6 +17,7 @@ import {
 import {
   buildOnshapeOAuthAuthorizationUrl,
   normalizeOnshapeOAuthTokenResponse,
+  refreshOnshapeOAuthToken,
   shouldRefreshOnshapeOAuthToken,
 } from "../src/onshape/onshapeOAuth";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
@@ -208,6 +209,37 @@ test("normalizes Onshape OAuth2 token responses and refresh timing", () => {
   assert.equal(tokenSet.expiresAt, new Date(3_601_000).toISOString());
   assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_540_000), false);
   assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_550_000), true);
+});
+
+test("refreshes Onshape OAuth2 tokens without a redirect URI", async () => {
+  const tokenSet = await refreshOnshapeOAuthToken({
+    config: {
+      authorizationUrl: "https://oauth.onshape.com/oauth/authorize",
+      tokenUrl: "https://oauth.onshape.com/oauth/token",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      scopes: ["OAuth2Read"],
+    },
+    refreshToken: "existing-refresh-token",
+    transport: async ({ body }) => {
+      assert.equal(body.get("grant_type"), "refresh_token");
+      assert.equal(body.get("refresh_token"), "existing-refresh-token");
+      assert.equal(body.get("client_id"), "client-id");
+      assert.equal(body.get("client_secret"), "client-secret");
+      assert.equal(body.get("redirect_uri"), null);
+      return {
+        statusCode: 200,
+        json: {
+          access_token: "refreshed-access-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+        },
+      };
+    },
+  });
+
+  assert.equal(tokenSet.accessToken, "refreshed-access-token");
+  assert.equal(tokenSet.refreshToken, "existing-refresh-token");
 });
 
 test("serves immutable cached responses without spending calls", async () => {
@@ -428,8 +460,9 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(second.status, "completed");
   const snapshots = store.listSnapshots();
   assert.equal(snapshots.length, 1);
-  assert.equal(snapshots[0]?.importRunId, first.importRunId);
-  assert.notEqual(snapshots[0]?.importRunId, second.importRunId);
+  assert.equal(snapshots[0]?.id, first.snapshotId);
+  assert.equal(snapshots[0]?.id, second.snapshotId);
+  assert.equal(snapshots[0]?.importRunId, second.importRunId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);
