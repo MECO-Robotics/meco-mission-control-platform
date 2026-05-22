@@ -242,6 +242,48 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
+      const clearPreferencesResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/users/me/preferences",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          taskSubteamIds: [],
+          themeMode: "dark",
+        },
+      });
+
+      assert.equal(clearPreferencesResponse.statusCode, 200);
+      assert.deepEqual(clearPreferencesResponse.json(), {
+        taskSubteamIds: [],
+        themeMode: "dark",
+      });
+      assert.doesNotMatch(
+        readFileSync(memberSubteamsEnvPath, "utf8"),
+        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
+      );
+
+      resetRequestLimits();
+
+      const clearedAuthMeResponse = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(clearedAuthMeResponse.statusCode, 200);
+      const clearedAuthMeBody = clearedAuthMeResponse.json() as {
+        user: {
+          taskSubteamIds: string[];
+        } | null;
+      };
+      assert.deepEqual(clearedAuthMeBody.user?.taskSubteamIds, []);
+
+      resetRequestLimits();
+
       const dashboardResponse = await app.inject({
         method: "GET",
         url: "/api/dashboard",
@@ -391,6 +433,33 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       });
 
       assert.equal(studentMeetingCreateResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentMeetingEditResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/meetings/design-review",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          title: "Student edited meeting",
+        },
+      });
+
+      assert.equal(studentMeetingEditResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentMeetingDeleteResponse = await app.inject({
+        method: "DELETE",
+        url: "/api/meetings/design-review",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(studentMeetingDeleteResponse.statusCode, 403);
     } finally {
       await app.close();
       resetRequestLimits();
