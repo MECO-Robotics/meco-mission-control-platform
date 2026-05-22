@@ -7,6 +7,7 @@ on:
       - development
       - main
     paths:
+      - "AGENTS.md"
       - ".editorconfig"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy-vps.yml"
@@ -19,6 +20,9 @@ on:
       - "prisma/**"
       - "prisma.config.ts"
       - "deploy/**"
+      - "docs/**"
+      - "scripts/**"
+      - "skills/**"
       - "src/**"
       - "test/**"
       - "tsconfig.json"
@@ -32,6 +36,7 @@ on:
       - "fix/**"
       - "hotfix/**"
     paths:
+      - "AGENTS.md"
       - ".editorconfig"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy-vps.yml"
@@ -44,6 +49,9 @@ on:
       - "prisma/**"
       - "prisma.config.ts"
       - "deploy/**"
+      - "docs/**"
+      - "scripts/**"
+      - "skills/**"
       - "src/**"
       - "test/**"
       - "tsconfig.json"
