@@ -130,8 +130,14 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
         payload: { documentRefId: refId, syncLevel: "shallow" },
       });
       assert.equal(shallowResponse.statusCode, 201);
-      assert.equal(shallowResponse.json().result.status, "completed");
-      assert.equal(shallowResponse.json().result.callsUsed, 1);
+      const shallowResult = shallowResponse.json().result as {
+        importRunId: string;
+        snapshotId: string;
+        status: string;
+        callsUsed: number;
+      };
+      assert.equal(shallowResult.status, "completed");
+      assert.equal(shallowResult.callsUsed, 1);
 
       resetLimits();
 
@@ -141,8 +147,14 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
         payload: { documentRefId: refId, syncLevel: "bom" },
       });
       assert.equal(bomResponse.statusCode, 201);
-      assert.equal(bomResponse.json().result.partDefinitionCount, 1);
-      assert.equal(bomResponse.json().result.partInstanceCount, 1);
+      const firstBomResult = bomResponse.json().result as {
+        importRunId: string;
+        snapshotId: string;
+        partDefinitionCount: number;
+        partInstanceCount: number;
+      };
+      assert.equal(firstBomResult.partDefinitionCount, 1);
+      assert.equal(firstBomResult.partInstanceCount, 1);
 
       resetLimits();
 
@@ -152,6 +164,34 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
         payload: { documentRefId: refId, syncLevel: "bom" },
       });
       assert.equal(rerunResponse.statusCode, 201);
+      const secondBomResult = rerunResponse.json().result as { importRunId: string; snapshotId: string };
+      assert.equal(secondBomResult.snapshotId, firstBomResult.snapshotId);
+
+      resetLimits();
+
+      const firstRunDetailResponse = await app.inject({
+        method: "GET",
+        url: `/api/onshape/import-runs/${firstBomResult.importRunId}`,
+      });
+      assert.equal(firstRunDetailResponse.statusCode, 200);
+      const firstRunDetail = firstRunDetailResponse.json() as {
+        snapshots: Array<{ id: string; importRunId: string }>;
+      };
+      assert.deepEqual(firstRunDetail.snapshots.map((snapshot) => snapshot.id), [firstBomResult.snapshotId]);
+      assert.equal(firstRunDetail.snapshots[0]?.importRunId, shallowResult.importRunId);
+
+      resetLimits();
+
+      const secondRunDetailResponse = await app.inject({
+        method: "GET",
+        url: `/api/onshape/import-runs/${secondBomResult.importRunId}`,
+      });
+      assert.equal(secondRunDetailResponse.statusCode, 200);
+      const secondRunDetail = secondRunDetailResponse.json() as {
+        snapshots: Array<{ id: string; importRunId: string }>;
+      };
+      assert.deepEqual(secondRunDetail.snapshots.map((snapshot) => snapshot.id), [secondBomResult.snapshotId]);
+      assert.equal(secondRunDetail.snapshots[0]?.importRunId, shallowResult.importRunId);
 
       resetLimits();
 

@@ -32,14 +32,33 @@ function findExistingSnapshot(state: OnshapeRuntimeState, ref: OnshapeDocumentRe
   ) ?? null;
 }
 
+function linkSnapshotToImportRun(state: OnshapeRuntimeState, importRunId: string, snapshotId: string) {
+  const existing = state.snapshotRunLinks.some(
+    (link) => link.importRunId === importRunId && link.snapshotId === snapshotId,
+  );
+  if (!existing) {
+    state.snapshotRunLinks.push({ importRunId, snapshotId, createdAt: nowIso() });
+  }
+}
+
 function partIdentity(part: PartDefinitionInput) {
-  return part.missionControlExternalKey ||
-    `${part.documentId}:${part.elementId ?? ""}:${part.partId ?? ""}:${part.configuration ?? ""}`;
+  if (part.missionControlExternalKey) {
+    return `external:${part.missionControlExternalKey}`;
+  }
+  if (part.partId) {
+    return `onshape:${part.documentId}:${part.elementId ?? ""}:${part.partId}:${part.configuration ?? ""}`;
+  }
+  return `source:${part.documentId}:${part.elementId ?? ""}:${part.sourceId}:${part.configuration ?? ""}`;
 }
 
 function existingPartIdentity(part: CadPartDefinition) {
-  return part.missionControlExternalKey ||
-    `${part.documentId}:${part.elementId ?? ""}:${part.partId ?? ""}:${part.configuration ?? ""}`;
+  if (part.missionControlExternalKey) {
+    return `external:${part.missionControlExternalKey}`;
+  }
+  if (part.partId) {
+    return `onshape:${part.documentId}:${part.elementId ?? ""}:${part.partId}:${part.configuration ?? ""}`;
+  }
+  return `source:${part.documentId}:${part.elementId ?? ""}:${part.sourceId}:${part.configuration ?? ""}`;
 }
 
 export function buildCadGraphStore(state: OnshapeRuntimeState) {
@@ -54,11 +73,9 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
     }) {
       const existing = findExistingSnapshot(state, input.documentRef);
       if (existing) {
-        existing.importRunId = input.importRunId;
+        linkSnapshotToImportRun(state, input.importRunId, existing.id);
         existing.label = input.label;
         existing.notes = input.notes ?? existing.notes;
-        existing.createdBy = input.createdBy ?? existing.createdBy;
-        existing.source = input.source ?? existing.source;
         return clone(existing);
       }
 
@@ -87,6 +104,7 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
         immutable: isImmutableReference(input.documentRef),
       };
       state.snapshots.push(snapshot);
+      linkSnapshotToImportRun(state, input.importRunId, snapshot.id);
       return clone(snapshot);
     },
     findSnapshot(id: string) {
@@ -97,6 +115,18 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
       return clone(
         state.snapshots
           .filter((snapshot) => !documentRefId || snapshot.onshapeDocumentRefId === documentRefId)
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+      );
+    },
+    listSnapshotsForImportRun(importRunId: string) {
+      const snapshotIds = new Set(
+        state.snapshotRunLinks
+          .filter((link) => link.importRunId === importRunId)
+          .map((link) => link.snapshotId),
+      );
+      return clone(
+        state.snapshots
+          .filter((snapshot) => snapshot.importRunId === importRunId || snapshotIds.has(snapshot.id))
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       );
     },
@@ -157,7 +187,8 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
           (candidate) =>
             candidate.snapshotId === snapshotId &&
             (candidate.sourceId === part.sourceId ||
-              candidate.missionControlExternalKey === part.missionControlExternalKey ||
+              (Boolean(part.missionControlExternalKey) &&
+                candidate.missionControlExternalKey === part.missionControlExternalKey) ||
               existingPartIdentity(candidate) === identityKey),
         );
         const nextPart: CadPartDefinition = {

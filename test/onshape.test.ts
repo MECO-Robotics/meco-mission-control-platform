@@ -462,12 +462,83 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(snapshots.length, 1);
   assert.equal(snapshots[0]?.id, first.snapshotId);
   assert.equal(snapshots[0]?.id, second.snapshotId);
-  assert.equal(snapshots[0]?.importRunId, second.importRunId);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.deepEqual(store.listSnapshotsForImportRun(first.importRunId).map((snapshot) => snapshot.id), [first.snapshotId]);
+  assert.deepEqual(store.listSnapshotsForImportRun(second.importRunId).map((snapshot) => snapshot.id), [second.snapshotId]);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);
   assert.ok(store.listWarnings().some((warning) => warning.code === "assembly_mapping_missing"));
   assert.ok(store.listWarnings().some((warning) => warning.code === "part_material_missing"));
+});
+
+test("keeps source-id-only part definitions distinct within a snapshot", async () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+  const client = createFakeClient({
+    bom: {
+      assemblyNodes: [
+        {
+          sourceId: "asm-root",
+          documentId: "0123456789abcdef01234567",
+          elementId: "111111111111111111111111",
+          instanceId: "root",
+          instancePath: "/root",
+          name: "2026 Robot",
+          inferredType: "master_assembly",
+        },
+      ],
+      partDefinitions: [
+        {
+          sourceId: "source-only-left",
+          documentId: "0123456789abcdef01234567",
+          elementId: "111111111111111111111111",
+          name: "Spacer left",
+          configuration: "default",
+        },
+        {
+          sourceId: "source-only-right",
+          documentId: "0123456789abcdef01234567",
+          elementId: "111111111111111111111111",
+          name: "Spacer right",
+          configuration: "default",
+        },
+      ],
+      partInstances: [
+        {
+          sourceId: "inst-left",
+          partDefinitionSourceId: "source-only-left",
+          parentAssemblySourceId: "asm-root",
+          documentId: "0123456789abcdef01234567",
+          elementId: "111111111111111111111111",
+          instancePath: "/root/left",
+          quantity: 1,
+          configuration: "default",
+        },
+        {
+          sourceId: "inst-right",
+          partDefinitionSourceId: "source-only-right",
+          parentAssemblySourceId: "asm-root",
+          documentId: "0123456789abcdef01234567",
+          elementId: "111111111111111111111111",
+          instancePath: "/root/right",
+          quantity: 1,
+          configuration: "default",
+        },
+      ],
+      raw: { bom: "source-id-only" },
+    },
+  });
+
+  const result = await runCadImport({ store, documentRefId: ref.id, syncLevel: "bom", requestedBy: "test-user", client });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.partDefinitionCount, 2);
+  assert.equal(result.partInstanceCount, 2);
+  assert.equal(store.listPartDefinitions(result.snapshotId).length, 2);
+  const instances = store.listPartInstances(result.snapshotId);
+  assert.equal(instances.length, 2);
+  assert.notEqual(instances[0]?.cadPartDefinitionId, instances[1]?.cadPartDefinitionId);
 });
 
 test("does not replace the latest snapshot when BOM import fails", async () => {

@@ -226,9 +226,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
         item,
         requestLogs: store.listRequestLogs(item.id),
         warnings: store.listWarnings({ importRunId: item.id }),
-        snapshots: store.listSnapshots(item.onshapeDocumentRefId).filter(
-          (snapshot) => snapshot.importRunId === item.id,
-        ),
+        snapshots: store.listSnapshotsForImportRun(item.id),
       };
     },
   );
