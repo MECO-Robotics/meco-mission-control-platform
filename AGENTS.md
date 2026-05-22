@@ -114,7 +114,8 @@ On Windows, assume PowerShell 5.1 semantics unless proven otherwise.
 ### Validation Before Completion
 
 * Never claim completion without running relevant checks in touched repo(s).
-* Use repo-appropriate checks such as `npm.cmd run typecheck`, `npm.cmd run build`, and tests when relevant.
+* Use repo-appropriate checks such as `npm.cmd run typecheck` / `npm.cmd run build` on Windows or `npm run typecheck` / `npm run build` in POSIX shells, plus tests when relevant.
+* For whitespace validation, check both unstaged and staged content when applicable: `git diff --check` and `git diff --cached --check`.
 * Distinguish unrelated pre-existing warnings/errors from regressions caused by the change.
 * If required GitHub checks stay pending or missing after a push, do not wait indefinitely. Inspect `gh pr view <number> --json mergeStateStatus,reviewDecision,statusCheckRollup`, check required branch-protection contexts, and confirm workflow `paths` filters include the touched files.
 * If a required workflow did not trigger, update the workflow trigger paths or run a deliberate no-op workflow-touch commit so the required checks can start; then re-poll checks with a bounded wait.
