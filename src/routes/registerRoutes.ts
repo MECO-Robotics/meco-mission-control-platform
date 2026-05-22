@@ -20,9 +20,11 @@ import {
   createMaterial,
   createMember,
   createMechanism,
+  createMeeting,
   createReport,
   createReportFinding,
   createQaReport,
+  createQaRequest,
   createPartDefinition,
   createPartInstance,
   createProject,
@@ -37,6 +39,7 @@ import {
   createWorkLog,
   createWorkstream,
   findDiscipline,
+  getFavoriteViews,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -61,6 +64,7 @@ import {
   getProjects,
   getPurchaseItems,
   getQaReports,
+  getQaRequests,
   getReports,
   getRisks,
   getSnapshot,
@@ -81,6 +85,7 @@ import {
   removeMaterial,
   removeMember,
   removeMechanism,
+  removeMeeting,
   removeManufacturingItem,
   removePartDefinition,
   removePartInstance,
@@ -93,11 +98,13 @@ import {
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
+  setFavoriteView,
   updateManufacturingItem,
   updateArtifact,
   updateMaterial,
   updateMember,
   updateMechanism,
+  updateMeeting,
   updateMilestone,
   updatePartDefinition,
   updatePartInstance,
@@ -137,6 +144,7 @@ import {
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
   validateQaReportLinks,
+  validateQaRequestLinks,
   validateRiskLinks,
   validateMilestoneProjectLinks,
   validateSubsystemPeople,
@@ -158,6 +166,8 @@ import {
   artifactSchema,
   emailSignInRequestSchema,
   emailSignInVerifySchema,
+  favoriteNavigationViewIdSchema,
+  favoriteViewToggleSchema,
   milestonePatchSchema,
   milestoneSchema,
   manufacturingItemPatchSchema,
@@ -165,6 +175,8 @@ import {
   materialPatchSchema,
   materialSchema,
   mediaUploadRequestSchema,
+  meetingPatchSchema,
+  meetingSchema,
   memberPatchSchema,
   memberSchema,
   mechanismPatchSchema,
@@ -176,6 +188,7 @@ import {
   projectPatchSchema,
   projectSchema,
   qaReportSchema,
+  qaRequestSchema,
   reportFindingSchema,
   reportSchema,
   riskPatchSchema,
@@ -243,6 +256,45 @@ export async function registerRoutes(app: FastifyInstance) {
     return Boolean(requireSession(request, reply));
   };
 
+  const resolveMeetingSeasonId = (args: {
+    currentSeasonId?: string | null;
+    projectIds: string[];
+    requestedSeasonId?: string;
+  }) =>
+    args.requestedSeasonId ??
+    args.projectIds
+      .map((projectId) => findProject(projectId)?.seasonId ?? null)
+      .find((seasonId): seasonId is string => Boolean(seasonId)) ??
+    args.currentSeasonId ??
+    null;
+
+  const validateMeetingSeasonProjectConsistency = (
+    seasonId: string | null,
+    projectIds: string[],
+  ) => {
+    if (seasonId && !getSeasons().some((candidate) => candidate.id === seasonId)) {
+      return "The selected season does not exist.";
+    }
+
+    const projectSeasonIds = Array.from(
+      new Set(
+        projectIds
+          .map((projectId) => findProject(projectId)?.seasonId ?? null)
+          .filter((projectSeasonId): projectSeasonId is string => Boolean(projectSeasonId)),
+      ),
+    );
+
+    if (projectSeasonIds.length > 1) {
+      return "Meeting projects must belong to the same season.";
+    }
+
+    if (seasonId && projectSeasonIds.some((projectSeasonId) => projectSeasonId !== seasonId)) {
+      return "Meeting season and related projects must belong to the same season.";
+    }
+
+    return null;
+  };
+
   const isValidTaskDependencyTarget = (
     kind: "task" | "milestone" | "part_instance",
     refId: string,
@@ -260,6 +312,17 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return false;
+  };
+
+  const getNavigationPreferenceUserKey = (
+    request: Parameters<typeof getSessionFromRequest>[0],
+  ) => {
+    if (!isAuthEnabled()) {
+      return "local-development";
+    }
+
+    const session = getSessionFromRequest(request);
+    return session?.accountId || session?.email || "authenticated-user";
   };
 
   app.get("/health", async () => {
@@ -453,9 +516,42 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const selection = readBootstrapSelection(request.query);
+    const userKey = getNavigationPreferenceUserKey(request);
 
-    return buildBootstrapResponse(snapshot, selection);
+    return {
+      ...buildBootstrapResponse(snapshot, selection),
+      favoriteViews: getFavoriteViews(userKey),
+    };
   });
+
+  app.patch<{ Body: unknown; Params: { viewId: string } }>(
+    "/api/navigation/favorites/:viewId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsedViewId = favoriteNavigationViewIdSchema.safeParse(request.params.viewId);
+      const parsedBody = favoriteViewToggleSchema.safeParse(request.body);
+      if (!parsedViewId.success || !parsedBody.success) {
+        return reply.code(400).send({
+          message: "Favorite view payload is invalid.",
+          issues: {
+            params: parsedViewId.success ? undefined : parsedViewId.error.flatten(),
+            body: parsedBody.success ? undefined : parsedBody.error.flatten(),
+          },
+        });
+      }
+
+      return {
+        favoriteViews: setFavoriteView(
+          getNavigationPreferenceUserKey(request),
+          parsedViewId.data,
+          parsedBody.data.isFavorite,
+        ),
+      };
+    },
+  );
 
   app.post("/api/tutorial/session/start", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -858,6 +954,50 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return reply.code(201).send({
       item: report,
+    });
+  });
+
+  app.get("/api/qa-requests", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const paginated = paginateItems(getQaRequests(), request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/qa-requests", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = qaRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "QA request payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateQaRequestLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const requestItem = createQaRequest({
+      ...parsed.data,
+      subject: parsed.data.subject.trim(),
+      requestedById: parsed.data.requestedById ?? null,
+    });
+
+    return reply.code(201).send({
+      item: requestItem,
     });
   });
 
@@ -2716,6 +2856,154 @@ export async function registerRoutes(app: FastifyInstance) {
       workLogs: getSnapshot().workLogs,
     };
   });
+
+  app.post<{ Body: unknown }>("/api/meetings", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = meetingSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Meeting payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const projectIds = Array.from(new Set(parsed.data.projectIds ?? []));
+    const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
+    if (meetingProjectValidation) {
+      return reply.code(400).send({
+        message: meetingProjectValidation,
+      });
+    }
+    const seasonId = resolveMeetingSeasonId({
+      projectIds,
+      requestedSeasonId: parsed.data.seasonId,
+    });
+    const meetingSeasonValidation = validateMeetingSeasonProjectConsistency(
+      seasonId,
+      projectIds,
+    );
+    if (meetingSeasonValidation) {
+      return reply.code(400).send({
+        message: meetingSeasonValidation,
+      });
+    }
+
+    const meeting = createMeeting({
+      ...parsed.data,
+      seasonId: seasonId ?? undefined,
+      projectIds,
+      endDateTime: parsed.data.endDateTime ?? null,
+    });
+
+    return reply.code(201).send({
+      item: meeting,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { meetingId: string } }>(
+    "/api/meetings/:meetingId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = meetingPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Meeting update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentMeeting = getSnapshot().meetings.find(
+        (meeting) => meeting.id === request.params.meetingId,
+      );
+      if (!currentMeeting) {
+        return reply.code(404).send({
+          message: "Meeting not found.",
+        });
+      }
+
+      const rawPatch =
+        request.body && typeof request.body === "object"
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const patchHas = (field: string) =>
+        Object.prototype.hasOwnProperty.call(rawPatch, field);
+      const patchData = { ...parsed.data };
+      if (!patchHas("meetingType")) {
+        delete patchData.meetingType;
+      }
+      if (!patchHas("location")) {
+        delete patchData.location;
+      }
+      if (!patchHas("description")) {
+        delete patchData.description;
+      }
+
+      const projectIds =
+        !patchHas("projectIds")
+          ? currentMeeting.projectIds ?? []
+          : Array.from(new Set(patchData.projectIds ?? []));
+      const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
+      if (meetingProjectValidation) {
+        return reply.code(400).send({
+          message: meetingProjectValidation,
+        });
+      }
+      const seasonId = resolveMeetingSeasonId({
+        currentSeasonId: currentMeeting.seasonId,
+        projectIds,
+        requestedSeasonId: parsed.data.seasonId,
+      });
+      const meetingSeasonValidation = validateMeetingSeasonProjectConsistency(
+        seasonId,
+        projectIds,
+      );
+      if (meetingSeasonValidation) {
+        return reply.code(400).send({
+          message: meetingSeasonValidation,
+        });
+      }
+
+      const meeting = updateMeeting(request.params.meetingId, {
+        ...patchData,
+        seasonId: seasonId ?? undefined,
+        projectIds,
+        endDateTime:
+          patchData.endDateTime === undefined
+            ? currentMeeting.endDateTime ?? null
+            : patchData.endDateTime,
+      });
+
+      return {
+        item: meeting,
+      };
+    },
+  );
+
+  app.delete<{ Params: { meetingId: string } }>(
+    "/api/meetings/:meetingId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const meeting = removeMeeting(request.params.meetingId);
+      if (!meeting) {
+        return reply.code(404).send({
+          message: "Meeting not found.",
+        });
+      }
+
+      return {
+        item: meeting,
+      };
+    },
+  );
 
   app.get("/api/roster/insights", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

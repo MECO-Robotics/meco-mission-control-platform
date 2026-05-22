@@ -6,6 +6,7 @@ import type {
   PlatformSnapshot,
   QaFinding,
   QaReport,
+  QaRequest,
   TestFinding,
   TestResult,
   Task,
@@ -335,6 +336,16 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       ? true
       : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
   });
+  const scopedMeetings = snapshot.meetings.filter((meeting) => {
+    if (selection.seasonId && meeting.seasonId && meeting.seasonId !== selection.seasonId) {
+      return false;
+    }
+
+    const meetingProjectIds = meeting.projectIds ?? [];
+    return meetingProjectIds.length === 0
+      ? true
+      : meetingProjectIds.some((projectId) => activeProjectIds.has(projectId));
+  });
   const scopedMilestoneIds = new Set(scopedMilestones.map((milestone) => milestone.id));
   const scopedMilestonesById = new Map(scopedMilestones.map((milestone) => [milestone.id, milestone] as const));
   const scopedMilestoneRequirements = (snapshot.milestoneRequirements ?? []).filter((requirement) => {
@@ -387,6 +398,17 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   const scopedQaReports = snapshot.qaReports.filter((report) => {
     const task = scopedTasksById.get(report.taskId);
     return Boolean(task);
+  });
+  const isProjectScoped = selection.projectId !== null;
+  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+    const isTaskInScope = request.taskId
+      ? scopedTaskIds.has(request.taskId)
+      : !isProjectScoped;
+    const isPersonInScope =
+      selection.personId === null ||
+      request.mentorId === selection.personId ||
+      request.requestedById === selection.personId;
+    return isTaskInScope && isPersonInScope;
   });
   const scopedTestResults = snapshot.testResults.filter((result) => {
     const milestone = scopedMilestonesById.get(result.milestoneId);
@@ -571,6 +593,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     reports: scopedReports,
     reportFindings: scopedReportFindings,
     qaReports: scopedQaReports,
+    qaRequests: scopedQaRequests,
     testResults: scopedTestResults,
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({
@@ -583,7 +606,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
     workLogs: scopedWorkLogs,
-    meetings: snapshot.meetings,
+    meetings: scopedMeetings,
     attendanceRecords: snapshot.attendanceRecords,
     manufacturingItems: scopedManufacturingItems.map((item) => ({
       ...item,

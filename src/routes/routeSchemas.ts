@@ -2,6 +2,16 @@ import { z } from "zod";
 
 import { authConfig as runtimeAuthConfig } from "../config/env";
 
+const plannedAttendanceDaySchema = z.enum([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+
 export const memberSchema = z.object({
   name: z.string().trim().min(2),
   email: z.union([z.literal(""), z.string().trim().email()]).default(""),
@@ -11,6 +21,23 @@ export const memberSchema = z.object({
   disciplineId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
+  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80).default(0),
+  plannedAttendanceDays: z.array(plannedAttendanceDaySchema).default([]),
+  plannedAttendanceNotes: z.string().trim().default(""),
+});
+
+export const memberPatchSchema = z.object({
+  name: z.string().trim().min(2).optional(),
+  email: z.union([z.literal(""), z.string().trim().email()]).optional(),
+  photoUrl: z.string().trim().optional(),
+  role: z.enum(["student", "lead", "mentor", "admin", "external"]).optional(),
+  elevated: z.boolean().optional(),
+  disciplineId: z.string().trim().min(1).nullable().optional(),
+  seasonId: z.string().trim().min(1).optional(),
+  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
+  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80).optional(),
+  plannedAttendanceDays: z.array(plannedAttendanceDaySchema).optional(),
+  plannedAttendanceNotes: z.string().trim().optional(),
 });
 
 export const seasonSchema = z.object({
@@ -102,6 +129,21 @@ export const milestonePatchSchema = z.object({
   photoUrl: z.string().trim().optional(),
 });
 
+const meetingTypeSchema = z.enum(["general", "build", "review", "outreach", "competition", "other"]);
+
+export const meetingSchema = z.object({
+  title: z.string().trim().min(2),
+  meetingType: meetingTypeSchema.default("general"),
+  seasonId: z.string().trim().min(1).optional(),
+  projectIds: z.array(z.string().trim().min(1)).default([]),
+  startDateTime: z.string().trim().min(1),
+  endDateTime: z.string().trim().min(1).nullable().optional(),
+  location: z.string().trim().default(""),
+  description: z.string().trim().default(""),
+});
+
+export const meetingPatchSchema = meetingSchema.partial();
+
 export const qaReportSchema = z.object({
   taskId: z.string().trim().min(1),
   participantIds: z.array(z.string().trim().min(1)).min(1),
@@ -110,6 +152,13 @@ export const qaReportSchema = z.object({
   notes: z.string().trim().default(""),
   photoUrl: z.string().trim().default(""),
   reviewedAt: z.string().date(),
+});
+
+export const qaRequestSchema = z.object({
+  taskId: z.string().trim().min(1).nullable().optional(),
+  subject: z.string().trim().min(2),
+  mentorId: z.string().trim().min(1),
+  requestedById: z.string().trim().min(1).nullable().optional(),
 });
 
 export const testResultSchema = z.object({
@@ -294,7 +343,6 @@ export const riskSchema = z.object({
 
 export const riskPatchSchema = riskSchema.partial();
 
-export const memberPatchSchema = memberSchema.partial();
 export const iterationSchema = z.coerce.number().int().min(1).default(1);
 
 export const workstreamSchema = z.object({
@@ -488,6 +536,35 @@ export const emailSignInVerifySchema = z.object({
 
 export const tutorialSessionResetSchema = z.object({
   mode: z.enum(["session", "baseline"]).default("session"),
+});
+
+export const favoriteNavigationViewIdSchema = z.enum([
+  "dashboard-calendar",
+  "dashboard-activity",
+  "dashboard-metrics",
+  "readiness-attention",
+  "readiness-milestones",
+  "readiness-subsystems",
+  "readiness-risks",
+  "config-robot-model",
+  "config-cad",
+  "config-part-mappings",
+  "config-directory",
+  "tasks-timeline",
+  "tasks-board",
+  "tasks-manufacturing",
+  "inventory-materials",
+  "inventory-parts",
+  "inventory-purchases",
+  "roster-workload",
+  "roster-attendance",
+  "reports-work-logs",
+  "reports-qa-forms",
+  "reports-milestone-results",
+]);
+
+export const favoriteViewToggleSchema = z.object({
+  isFavorite: z.boolean(),
 });
 
 export const paginatedQuerySchema = z.object({

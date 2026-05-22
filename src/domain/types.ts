@@ -93,6 +93,15 @@ export type IterationStatus = "planned" | "in-progress" | "complete";
 export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
 export type TaskDependencyKind = "task" | "milestone" | "part_instance";
 export type TaskDependencyType = "hard" | "soft";
+export type PlannedAttendanceDay =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+export type MeetingType = "general" | "build" | "review" | "outreach" | "competition" | "other";
 export type TaskBlockerType =
   | "task"
   | "milestone"
@@ -132,6 +141,9 @@ export interface Member {
   disciplineId?: string | null;
   seasonId: string;
   activeSeasonIds?: string[];
+  plannedWeeklyAttendanceHours?: number;
+  plannedAttendanceDays?: PlannedAttendanceDay[];
+  plannedAttendanceNotes?: string;
 }
 
 export interface Subsystem {
@@ -275,6 +287,13 @@ export interface WorkLog {
 export interface Meeting {
   id: string;
   title: string;
+  meetingType?: MeetingType;
+  seasonId?: string;
+  projectIds?: string[];
+  startDateTime?: string;
+  endDateTime?: string | null;
+  location?: string;
+  description?: string;
   date: string;
   time: string;
   rsvpsYes: number;
@@ -472,6 +491,16 @@ export interface QaReport {
   reviewedAt: string;
 }
 
+export interface QaRequest {
+  id: string;
+  taskId: string | null;
+  subject: string;
+  mentorId: string;
+  requestedById: string | null;
+  createdAt: string;
+  status: "requested";
+}
+
 export interface TestResult {
   id: string;
   milestoneId: string;
@@ -563,6 +592,13 @@ export interface Escalation {
   title: string;
   detail: string;
   severity: "high" | "medium";
+}
+
+export interface FavoriteView {
+  id: string;
+  userKey: string;
+  viewId: string;
+  createdAt: string;
 }
 
 export type SlackChannelKey =
@@ -659,6 +695,7 @@ export interface PlatformSnapshot {
   taskDependencies: TaskDependency[];
   taskBlockers: TaskBlocker[];
   qaReports: QaReport[];
+  qaRequests?: QaRequest[];
   testResults: TestResult[];
   qaFindings: QaFinding[];
   testFindings: TestFinding[];
@@ -671,5 +708,6 @@ export interface PlatformSnapshot {
   purchaseItems: PurchaseItem[];
   qaReviews: QaReview[];
   escalations: Escalation[];
+  favoriteViews?: FavoriteView[];
   actions?: AuditAction[];
 }

@@ -5,12 +5,14 @@ import type {
   Artifact,
   DesignIteration,
   Discipline,
+  FavoriteView,
   MilestoneRequirement,
   Milestone,
   MilestoneStatus,
   ManufacturingItem,
   Material,
   Mechanism,
+  Meeting,
   Member,
   PartDefinition,
   PartInstance,
@@ -21,6 +23,7 @@ import type {
   ReportFinding,
   Risk,
   QaReport,
+  QaRequest,
   QaFinding,
   Season,
   Subsystem,
@@ -42,11 +45,13 @@ import type {
   ManufacturingItemInput,
   MaterialInput,
   MechanismInput,
+  MeetingInput,
   MemberInput,
   PartDefinitionInput,
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  QaRequestInput,
   ReportFindingInput,
   ReportInput,
   RiskInput,
@@ -67,11 +72,13 @@ export type {
   ManufacturingItemInput,
   MaterialInput,
   MechanismInput,
+  MeetingInput,
   MemberInput,
   PartDefinitionInput,
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  QaRequestInput,
   ReportFindingInput,
   ReportInput,
   RiskInput,
@@ -251,6 +258,95 @@ function normalizeMemberSeasonMembership(
     ...member,
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
+    plannedWeeklyAttendanceHours: normalizePlannedWeeklyAttendanceHours(
+      member.plannedWeeklyAttendanceHours,
+    ),
+    plannedAttendanceDays: normalizePlannedAttendanceDays(member.plannedAttendanceDays),
+    plannedAttendanceNotes:
+      typeof member.plannedAttendanceNotes === "string"
+        ? member.plannedAttendanceNotes.trim()
+        : "",
+  };
+}
+
+const PLANNED_ATTENDANCE_DAYS = new Set([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const);
+
+function normalizePlannedWeeklyAttendanceHours(value: number | undefined) {
+  if (!Number.isFinite(value) || value === undefined || value <= 0) {
+    return 0;
+  }
+
+  return Number(value.toFixed(2));
+}
+
+function normalizePlannedAttendanceDays(days: Member["plannedAttendanceDays"] | undefined) {
+  return uniqueIds(days ?? []).filter((day): day is NonNullable<Member["plannedAttendanceDays"]>[number] =>
+    PLANNED_ATTENDANCE_DAYS.has(day as NonNullable<Member["plannedAttendanceDays"]>[number]),
+  );
+}
+
+function dateOnlyFromDateTime(value: string) {
+  return value.slice(0, 10);
+}
+
+function formatTimeFromDateTime(value: string) {
+  const match = value.match(/T(\d{2}):(\d{2})/);
+  if (!match) {
+    return "";
+  }
+
+  const rawHour = Number.parseInt(match[1] ?? "0", 10);
+  const minute = match[2] ?? "00";
+  const period = rawHour >= 12 ? "PM" : "AM";
+  const hour = rawHour % 12 || 12;
+  return `${hour}:${minute} ${period}`;
+}
+
+function parseLegacyMeetingTime(value: string) {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (!match) {
+    return "18:00:00";
+  }
+
+  const rawHour = Number.parseInt(match[1] ?? "6", 10);
+  const minute = match[2] ?? "00";
+  const period = (match[3] ?? "PM").toUpperCase();
+  const hour =
+    period === "PM"
+      ? rawHour === 12
+        ? 12
+        : rawHour + 12
+      : rawHour === 12
+        ? 0
+        : rawHour;
+  return `${hour.toString().padStart(2, "0")}:${minute}:00`;
+}
+
+function normalizeMeetingSchedule(meeting: Meeting, fallbackSeasonId: string): Meeting {
+  const date = meeting.date || dateOnlyFromDateTime(meeting.startDateTime ?? "");
+  const startDateTime =
+    meeting.startDateTime ??
+    `${date}T${parseLegacyMeetingTime(meeting.time || "")}`;
+
+  return {
+    ...meeting,
+    meetingType: meeting.meetingType ?? "general",
+    seasonId: meeting.seasonId ?? fallbackSeasonId,
+    projectIds: uniqueIds(meeting.projectIds ?? []),
+    startDateTime,
+    endDateTime: meeting.endDateTime ?? null,
+    location: meeting.location ?? "",
+    description: meeting.description ?? "",
+    date: dateOnlyFromDateTime(startDateTime),
+    time: meeting.time || formatTimeFromDateTime(startDateTime),
   };
 }
 
@@ -488,10 +584,15 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     ),
     milestones: normalizedMilestones,
     milestoneRequirements: normalizedMilestoneRequirements,
+    qaRequests: clonedSnapshot.qaRequests ?? [],
+    meetings: clonedSnapshot.meetings.map((meeting) =>
+      normalizeMeetingSchedule(meeting, fallbackSeasonId),
+    ),
   });
 
   return normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
+    favoriteViews: normalizedSnapshot.favoriteViews ?? [],
     actions: normalizedSnapshot.actions ?? [],
   });
 }
@@ -1340,6 +1441,46 @@ export function getSnapshot() {
   return currentSnapshot;
 }
 
+export function getFavoriteViews(userKey: string) {
+  return (currentSnapshot.favoriteViews ?? [])
+    .filter((favorite) => favorite.userKey === userKey)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export function setFavoriteView(
+  userKey: string,
+  viewId: string,
+  isFavorite: boolean,
+) {
+  const favoriteViews = currentSnapshot.favoriteViews ?? [];
+  const existingFavorite = favoriteViews.find(
+    (favorite) => favorite.userKey === userKey && favorite.viewId === viewId,
+  );
+
+  if (isFavorite && !existingFavorite) {
+    const favorite: FavoriteView = {
+      id: uniqueId(`favorite-${toSlug(userKey)}-${viewId}`, new Set(favoriteViews.map((item) => item.id))),
+      userKey,
+      viewId,
+      createdAt: new Date().toISOString(),
+    };
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      favoriteViews: [...favoriteViews, favorite],
+    };
+  }
+
+  if (!isFavorite && existingFavorite) {
+    currentSnapshot = {
+      ...currentSnapshot,
+      favoriteViews: favoriteViews.filter((favorite) => favorite.id !== existingFavorite.id),
+    };
+  }
+
+  return getFavoriteViews(userKey);
+}
+
 export interface TutorialBaselineState {
   seasonId: string | null;
   seasonName: string | null;
@@ -1691,6 +1832,10 @@ export function getTaskBlockers() {
 
 export function getQaReports() {
   return currentSnapshot.qaReports;
+}
+
+export function getQaRequests() {
+  return currentSnapshot.qaRequests ?? [];
 }
 
 export function getTestResults() {
@@ -3250,6 +3395,42 @@ export function createQaReport(input: QaReportInput) {
   return report;
 }
 
+export function createQaRequest(input: QaRequestInput) {
+  const task = input.taskId
+    ? currentSnapshot.tasks.find((candidate) => candidate.id === input.taskId)
+    : null;
+  const requestIds = new Set(getQaRequests().map((request) => request.id));
+  const subject = input.subject.trim();
+  const request: QaRequest = {
+    id: uniqueId(toSlug(`${subject} qa request`) || "qa-request", requestIds),
+    taskId: input.taskId ?? null,
+    subject,
+    mentorId: input.mentorId,
+    requestedById: input.requestedById ?? null,
+    createdAt: new Date().toISOString(),
+    status: "requested",
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    qaRequests: [request, ...getQaRequests()],
+  };
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "qa_request",
+    entityId: request.id,
+    entityLabel: request.subject,
+    projectId: task?.projectId ?? null,
+    subsystemId: task?.subsystemId ?? null,
+    taskId: request.taskId,
+    actorMemberId: request.requestedById,
+    memberIds: [request.requestedById, request.mentorId],
+  });
+
+  return request;
+}
+
 export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
   const testResult: TestResult = {
@@ -3794,6 +3975,129 @@ export function removeMilestone(milestoneId: string) {
   return milestone;
 }
 
+export function createMeeting(input: MeetingInput) {
+  const meetingIds = new Set(currentSnapshot.meetings.map((meeting) => meeting.id));
+  const projectIds = uniqueIds(input.projectIds ?? []);
+  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const seasonId =
+    input.seasonId ??
+    projectIds
+      .map((projectId) => findProject(projectId)?.seasonId ?? null)
+      .find((candidate): candidate is string => Boolean(candidate)) ??
+    fallbackSeasonId;
+  const meeting = normalizeMeetingSchedule(
+    {
+      id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "meeting", meetingIds),
+      title: input.title,
+      meetingType: input.meetingType ?? "general",
+      seasonId,
+      projectIds,
+      startDateTime: input.startDateTime,
+      endDateTime: input.endDateTime ?? null,
+      location: input.location ?? "",
+      description: input.description ?? "",
+      date: dateOnlyFromDateTime(input.startDateTime),
+      time: formatTimeFromDateTime(input.startDateTime),
+      rsvpsYes: 0,
+      rsvpsMaybe: 0,
+      openSignIns: 0,
+    },
+    fallbackSeasonId,
+  );
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    meetings: [...currentSnapshot.meetings, meeting],
+  };
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "meeting",
+    entityId: meeting.id,
+    entityLabel: meeting.title,
+    projectIds: meeting.projectIds,
+  });
+
+  return meeting;
+}
+
+export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
+  const currentMeeting = currentSnapshot.meetings.find((meeting) => meeting.id === meetingId);
+  if (!currentMeeting) {
+    return null;
+  }
+
+  const projectIds = input.projectIds === undefined ? currentMeeting.projectIds ?? [] : uniqueIds(input.projectIds);
+  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const seasonId =
+    input.seasonId ??
+    projectIds
+      .map((projectId) => findProject(projectId)?.seasonId ?? null)
+      .find((candidate): candidate is string => Boolean(candidate)) ??
+    currentMeeting.seasonId ??
+    fallbackSeasonId;
+  const startDateTime = input.startDateTime ?? currentMeeting.startDateTime ?? `${currentMeeting.date}T18:00:00`;
+  const updatedMeeting = normalizeMeetingSchedule(
+    {
+      ...currentMeeting,
+      ...input,
+      seasonId,
+      projectIds,
+      startDateTime,
+      endDateTime:
+        input.endDateTime === undefined
+          ? currentMeeting.endDateTime ?? null
+          : input.endDateTime,
+      location: input.location === undefined ? currentMeeting.location ?? "" : input.location,
+      description:
+        input.description === undefined ? currentMeeting.description ?? "" : input.description,
+      date: dateOnlyFromDateTime(startDateTime),
+      time: formatTimeFromDateTime(startDateTime) || currentMeeting.time,
+    },
+    fallbackSeasonId,
+  );
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    meetings: currentSnapshot.meetings.map((meeting) =>
+      meeting.id === meetingId ? updatedMeeting : meeting,
+    ),
+  };
+
+  recordAuditAction({
+    operation: "update",
+    entityType: "meeting",
+    entityId: updatedMeeting.id,
+    entityLabel: updatedMeeting.title,
+    projectIds: updatedMeeting.projectIds,
+    changedFields: collectChangedFields(currentMeeting, updatedMeeting),
+  });
+
+  return updatedMeeting;
+}
+
+export function removeMeeting(meetingId: string) {
+  const meeting = currentSnapshot.meetings.find((candidate) => candidate.id === meetingId);
+  if (!meeting) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    meetings: currentSnapshot.meetings.filter((candidate) => candidate.id !== meetingId),
+  };
+
+  recordAuditAction({
+    operation: "delete",
+    entityType: "meeting",
+    entityId: meeting.id,
+    entityLabel: meeting.title,
+    projectIds: meeting.projectIds ?? [],
+  });
+
+  return meeting;
+}
+
 export function createWorkLog(input: WorkLogInput) {
   const workLog: WorkLog = {
     id: nextWorkLogId(),
@@ -3987,6 +4291,9 @@ export function removeTask(taskId: string) {
       })),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
+    qaRequests: getQaRequests().filter(
+      (request) => !request.taskId || request.taskId !== taskId,
+    ),
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
     ),
@@ -4292,6 +4599,11 @@ export function createMember(input: MemberInput) {
     ...(disciplineId !== undefined ? { disciplineId } : null),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
+    plannedWeeklyAttendanceHours: normalizePlannedWeeklyAttendanceHours(
+      input.plannedWeeklyAttendanceHours,
+    ),
+    plannedAttendanceDays: normalizePlannedAttendanceDays(input.plannedAttendanceDays),
+    plannedAttendanceNotes: (input.plannedAttendanceNotes ?? "").trim(),
   };
 
   currentSnapshot = {
@@ -4331,6 +4643,18 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
         ...(input.activeSeasonIds ?? member.activeSeasonIds ?? [member.seasonId]),
         nextSeasonId,
       ]);
+      const nextPlannedWeeklyAttendanceHours =
+        input.plannedWeeklyAttendanceHours === undefined
+          ? normalizePlannedWeeklyAttendanceHours(member.plannedWeeklyAttendanceHours)
+          : normalizePlannedWeeklyAttendanceHours(input.plannedWeeklyAttendanceHours);
+      const nextPlannedAttendanceDays =
+        input.plannedAttendanceDays === undefined
+          ? normalizePlannedAttendanceDays(member.plannedAttendanceDays)
+          : normalizePlannedAttendanceDays(input.plannedAttendanceDays);
+      const nextPlannedAttendanceNotes =
+        input.plannedAttendanceNotes === undefined
+          ? member.plannedAttendanceNotes ?? ""
+          : input.plannedAttendanceNotes.trim();
       updatedMember = {
         ...member,
         ...input,
@@ -4341,6 +4665,9 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
         activeSeasonIds:
           nextActiveSeasonIds.length > 0 ? nextActiveSeasonIds : [nextSeasonId],
         elevated: isElevatedMemberRole(nextRole),
+        plannedWeeklyAttendanceHours: nextPlannedWeeklyAttendanceHours,
+        plannedAttendanceDays: nextPlannedAttendanceDays,
+        plannedAttendanceNotes: nextPlannedAttendanceNotes,
       };
 
       return updatedMember;
@@ -4408,6 +4735,12 @@ export function removeMember(memberId: string) {
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
     })),
+    qaRequests: getQaRequests()
+      .filter((request) => request.mentorId !== memberId)
+      .map((request) => ({
+        ...request,
+        requestedById: request.requestedById === memberId ? null : request.requestedById,
+      })),
     qaReviews: currentSnapshot.qaReviews.map((review) => ({
       ...review,
       participantIds: review.participantIds.filter(
