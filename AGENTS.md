@@ -8,6 +8,123 @@
 
 ---
 
+### Core Behavior
+
+* Default to action, not planning, unless the user explicitly asks for a plan.
+* Use the user's newest wording as source of truth if scope changes mid-task.
+* Make the smallest change that satisfies the request; avoid opportunistic refactors.
+* If a bug is likely contract-related, inspect both frontend and backend before patching.
+
+### Multi-Agent Workflow Rules
+
+* Use multi-agent workflows for broad, parallelizable, or cross-repo work to tighten each agent's context and improve throughput.
+* Split work by repo, feature area, ownership boundary, or independent validation track.
+* Keep write scopes disjoint across agents. Use the main agent to integrate results, resolve conflicts, and run final verification.
+* Do not spawn agents for tiny single-file changes, urgent blocking work, or tasks where the immediate next step depends on one result.
+
+### Worktree-Only Workflow
+
+* Never implement, edit files, stage, commit, or run long-lived dev servers from the base repo checkout unless the user explicitly says to work there.
+* Use base repo checkouts only for read-only inspection, fetches, and creating worktrees.
+* Before touching files, create or enter a dedicated temporary worktree rooted on `origin/development`.
+* Keep worktree paths outside repo roots, such as workspace `_feature-branches/` or a Codex-managed worktree path.
+* Use branch names matching `feature/*`, `fix/*`, or `hotfix/*`; keep each worktree scoped to one task.
+* If a repo lacks `development`, create `development` from `origin/main` first, push it, then do feature work from a separate worktree branch based on `origin/development`.
+* Do not apply fixes directly to a `development -> main` promotion branch. Fix findings through a worktree branch PR into `development`, then let the promotion PR update from `development`.
+
+### Environment Preflight
+
+Run once per task:
+
+```powershell
+where.exe node
+node -v
+where.exe npm
+where.exe rg
+rg --version
+git rev-parse --show-toplevel
+```
+
+If `git rev-parse --show-toplevel` fails, note "not a git repo" and continue.
+
+Assume PowerShell 5.1 semantics unless proven otherwise.
+
+### Session Hygiene And Anti-Slowdown Rules
+
+* After any `winget` install/update, refresh PATH in-session before using the new tool:
+
+  ```powershell
+  $env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')
+  ```
+
+* Avoid repeated retries on the same failing command pattern; do one practical fallback immediately and continue.
+* Prefer targeted searches and targeted builds/tests over root-wide scans when possible.
+* Exclude heavy folders in broad scans: `node_modules`, `dist`, `build`, `.git`, `.next`, `coverage`.
+
+### Windows Command Rules
+
+* Do not use `&&` in commands; use separate commands or `;`.
+* Prefer `npm.cmd` over `npm` for reliability.
+* If a command fails due to permissions/policy, try one practical fallback immediately and continue.
+
+### rg Reliability Rules
+
+* Treat this as a known failure mode: if `rg` resolves to a Codex WindowsApps path such as `C:\Program Files\WindowsApps\OpenAI.Codex_...\app\resources\rg.exe`, it may fail with `Access is denied`.
+* If `where.exe rg` shows that WindowsApps Codex path first, or `rg --version` returns `Access is denied`, do this once:
+
+  ```powershell
+  $env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')
+  where.exe rg
+  rg --version
+  ```
+
+* If still not fixed, use WinGet ripgrep directly for this session:
+
+  ```powershell
+  $rg = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\rg.exe"
+  if (Test-Path $rg) { & $rg --version }
+  ```
+
+* If `rg` remains unavailable, immediately switch to PowerShell search fallback and stop retrying `rg`.
+
+### Search And File Discovery Rules
+
+* Prefer `rg` only if it works in the current shell.
+* If `rg` returns `Access is denied`, immediately switch to PowerShell fallback and stop retrying `rg`.
+* Fallback pattern: `Get-ChildItem` + `Select-String`.
+* Scope searches to likely source roots first (`src`, `app`, `features`, backend `src`).
+* If root-wide search is slow or times out, narrow to target folders before trying again.
+
+### MECO Cross-Repo Rule
+
+* In MECO Project Management, for auth, payload, schema, or API work, inspect both `meco-mission-control-web` and `meco-mission-control-platform` in the same pass.
+* Treat backend route/schema validation as contract truth, then align web types/UI.
+
+### Validation Before Completion
+
+* Never claim completion without running relevant checks in touched repo(s).
+* Use repo-appropriate checks such as `npm.cmd run typecheck`, `npm.cmd run build`, and tests when relevant.
+* Distinguish unrelated pre-existing warnings/errors from regressions caused by the change.
+
+### Run-Locally Expectation
+
+* If asked to run locally, actually start it and report the exact URL and process status.
+
+### Git Workflow Rules
+
+* If the user asks to commit, push, or open a PR, execute end-to-end.
+* In dirty trees, stage only in-scope files; no blind `git add -A`.
+* Use logical commits when changes are separable.
+* Check auth state early with `gh auth status`; if unavailable, use git/native fallback paths.
+
+### Communication
+
+* Provide concise progress updates while working.
+* Include what changed, why, and exact verification commands run.
+* If blocked after one solid fallback attempt, ask one focused question with options.
+
+---
+
 ### Development Workflow
 
 * Branch model:
@@ -17,9 +134,14 @@
   * `fix/*`: short-lived bugfix branches
   * `hotfix/*`: emergency production fixes
 * PR flow:
+  * Normal work moves `feature/*` or `fix/*` in a temporary worktree by PR into `development`, then `development` by PR into `main`.
   * Merge `feature/*` and `fix/*` into `development` by PR only.
   * Merge `hotfix/*` into `development` or `main` by PR only.
   * Merge into `main` only from `development` or `hotfix/*` by PR only.
+* PRs into `development` must come from branches named only:
+  * `feature/*`
+  * `fix/*`
+  * `hotfix/*`
 * Protected branch requirements:
   * `development`: required checks `ci-validate` and `snapshot-validate`, at least 1 approval.
   * `main`: required checks `ci-validate`, `snapshot-validate`, and `cross-repo-production-gate`, at least 2 approvals.
