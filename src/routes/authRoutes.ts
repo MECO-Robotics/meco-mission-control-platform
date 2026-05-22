@@ -35,6 +35,25 @@ interface AuthRoutesOptions {
   allowAuthRouteRequest: RequestGuard;
 }
 
+function resolvePreferencesIdentity(request: FastifyRequest, reply: FastifyReply) {
+  if (!isAuthEnabled()) {
+    return {
+      userKey: "local-development",
+      email: null,
+    };
+  }
+
+  const session = requireSession(request, reply);
+  if (!session) {
+    return null;
+  }
+
+  return {
+    userKey: session.email,
+    email: session.email,
+  };
+}
+
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOptions) {
   const { allowApiRouteRequest, allowAuthEmailRouteRequest, allowAuthRouteRequest } = options;
 
@@ -187,12 +206,12 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       return;
     }
 
-    const session = requireSession(request, reply);
-    if (!session) {
+    const identity = resolvePreferencesIdentity(request, reply);
+    if (!identity) {
       return;
     }
 
-    return getUserPreferences(session.email);
+    return getUserPreferences(identity.userKey);
   });
 
   app.patch<{ Body: unknown }>("/api/users/me/preferences", async (request, reply) => {
@@ -200,8 +219,8 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       return;
     }
 
-    const session = requireSession(request, reply);
-    if (!session) {
+    const identity = resolvePreferencesIdentity(request, reply);
+    if (!identity) {
       return;
     }
 
@@ -213,9 +232,9 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       });
     }
 
-    const preferences = updateUserPreferences(session.email, parsed.data);
-    if (parsed.data.taskSubteamIds) {
-      setMemberSubteamsForEmail(session.email, preferences.taskSubteamIds);
+    const preferences = updateUserPreferences(identity.userKey, parsed.data);
+    if (identity.email && parsed.data.taskSubteamIds) {
+      setMemberSubteamsForEmail(identity.email, preferences.taskSubteamIds);
     }
 
     return preferences;
