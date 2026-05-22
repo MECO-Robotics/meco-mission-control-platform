@@ -3025,6 +3025,10 @@ export async function registerRoutes(app: FastifyInstance) {
         return;
       }
 
+      if (!requireMentorPermission(request, reply, "Only mentors can update meetings.")) {
+        return;
+      }
+
       const parsed = meetingPatchSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({
@@ -3104,6 +3108,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/meetings/:meetingId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete meetings.")) {
         return;
       }
 

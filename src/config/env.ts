@@ -259,14 +259,19 @@ export const authConfig = {
 
 export function setMemberSubteamsForEmail(email: string, subteams: string[]) {
   const normalized = normalizeMemberSubteams(email, subteams);
-  if (!normalized.email || normalized.subteams.length === 0) {
+  if (!normalized.email) {
     return authConfig.memberSubteamsByEmail;
   }
 
-  authConfig.memberSubteamsByEmail = {
-    ...authConfig.memberSubteamsByEmail,
-    [normalized.email]: normalized.subteams,
-  };
+  if (normalized.subteams.length === 0) {
+    const { [normalized.email]: _removed, ...remaining } = authConfig.memberSubteamsByEmail;
+    authConfig.memberSubteamsByEmail = remaining;
+  } else {
+    authConfig.memberSubteamsByEmail = {
+      ...authConfig.memberSubteamsByEmail,
+      [normalized.email]: normalized.subteams,
+    };
+  }
 
   const serialized = serializeMemberSubteamsByEmail(authConfig.memberSubteamsByEmail);
   process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL = serialized;
