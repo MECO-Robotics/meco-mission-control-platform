@@ -110,3 +110,89 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.deepEqual(homeBody.summaries, []);
   });
 });
+
+test("navigation favorites are saved and included with bootstrap", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const initialBootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(initialBootstrapResponse.statusCode, 200);
+    assert.deepEqual(
+      (initialBootstrapResponse.json() as { favoriteViews?: unknown[] }).favoriteViews,
+      [],
+    );
+
+    resetLimits();
+
+    const addFavoriteResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/navigation/favorites/tasks-timeline",
+      payload: {
+        isFavorite: true,
+      },
+    });
+
+    assert.equal(addFavoriteResponse.statusCode, 200);
+    const addFavoriteBody = addFavoriteResponse.json() as {
+      favoriteViews: Array<{ viewId: string }>;
+    };
+    assert.deepEqual(
+      addFavoriteBody.favoriteViews.map((favorite) => favorite.viewId),
+      ["tasks-timeline"],
+    );
+
+    resetLimits();
+
+    const savedBootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(savedBootstrapResponse.statusCode, 200);
+    const savedBootstrapBody = savedBootstrapResponse.json() as {
+      favoriteViews: Array<{ viewId: string }>;
+    };
+    assert.deepEqual(
+      savedBootstrapBody.favoriteViews.map((favorite) => favorite.viewId),
+      ["tasks-timeline"],
+    );
+
+    resetLimits();
+
+    const removeFavoriteResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/navigation/favorites/tasks-timeline",
+      payload: {
+        isFavorite: false,
+      },
+    });
+
+    assert.equal(removeFavoriteResponse.statusCode, 200);
+    assert.deepEqual(
+      (removeFavoriteResponse.json() as { favoriteViews: unknown[] }).favoriteViews,
+      [],
+    );
+  });
+});
+
+test("navigation favorites accept the STEP import navigation view", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    const addFavoriteResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/navigation/favorites/config-cad",
+      payload: {
+        isFavorite: true,
+      },
+    });
+
+    assert.equal(addFavoriteResponse.statusCode, 200);
+    assert.deepEqual(
+      (addFavoriteResponse.json() as { favoriteViews: Array<{ viewId: string }> }).favoriteViews.map(
+        (favorite) => favorite.viewId,
+      ),
+      ["config-cad"],
+    );
+  });
+});

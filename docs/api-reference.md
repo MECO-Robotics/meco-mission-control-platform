@@ -19,7 +19,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 - `GET /api/auth/config`: public auth configuration for the frontend.
 - `POST /api/auth/google`: exchanges a Google Identity Services credential for a Mission Control session token.
-- `POST /api/auth/dev-bypass`: development-only local sign-in helper; production does not register this route.
+- `POST /api/auth/dev-bypass`: development-only local sign-in helper. Accepts optional `{ "role": "student" | "mentor" }`; production does not register this route.
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
 - `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
@@ -59,9 +59,9 @@ This reference describes the current Fastify route surface for the Mission Contr
 ## Tasks And Blockers
 
 - `GET /api/tasks`: list tasks, with filters and pagination handled by route helpers.
-- `POST /api/tasks`: create a task.
-- `PATCH /api/tasks/:taskId`: update a task.
-- `DELETE /api/tasks/:taskId`: delete a task.
+- `POST /api/tasks`: create a task. Requires mentor, lead, or admin when auth is enabled.
+- `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled.
+- `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
 - `GET /api/task-dependencies`: list dependencies.
 - `POST /api/task-dependencies`: create a dependency.
@@ -78,6 +78,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `PATCH /api/work-logs/:workLogId`: update a work log.
 - `DELETE /api/work-logs/:workLogId`: delete a work log.
 - `GET /api/meetings`: list meeting-focused workflow data.
+- `POST /api/meetings`: create a meeting. Requires mentor, lead, or admin when auth is enabled.
 
 ## Reports, QA, And Risks
 
@@ -86,7 +87,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `GET /api/report-findings`: list report findings.
 - `POST /api/report-findings`: create a report finding.
 - `GET /api/qa-reports`: list QA reports.
-- `POST /api/qa-reports`: create a QA report.
+- `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor, lead, or admin when auth is enabled.
 - `GET /api/qa-requests`: list QA requests.
 - `POST /api/qa-requests`: create a QA request.
 - `GET /api/test-results`: list test results.
@@ -119,9 +120,9 @@ This reference describes the current Fastify route surface for the Mission Contr
 ## Team And Robot Structure
 
 - `GET /api/members`: list members.
-- `POST /api/members`: create a member.
-- `PATCH /api/members/:memberId`: update a member.
-- `DELETE /api/members/:memberId`: delete a member.
+- `POST /api/members`: create or invite a member. Requires mentor, lead, or admin when auth is enabled.
+- `PATCH /api/members/:memberId`: update a member. Requires mentor, lead, or admin when auth is enabled.
+- `DELETE /api/members/:memberId`: delete a member. Requires mentor, lead, or admin when auth is enabled.
 - `POST /api/subsystems`: create a subsystem.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.
 - `DELETE /api/subsystems/:subsystemId`: delete a subsystem.

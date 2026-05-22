@@ -39,7 +39,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Production startup requires enabled auth and explicit `CORS_ORIGIN` values.
 - Google sign-in verifies Google Identity Services ID tokens against `GOOGLE_CLIENT_ID` and `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - Email sign-in can use explicit SMTP settings or Resend SMTP via `RESEND_API_KEY`.
-- Non-production builds register `POST /api/auth/dev-bypass` when auth is configured.
+- Non-production builds register `POST /api/auth/dev-bypass` when auth is configured, with student and mentor role modes for local permission testing.
 - API, auth, and email-auth requests use separate per-IP rate limit budgets.
 - API responses get no-store cache headers, content sniffing protection, frame denial, referrer policy, permissions policy, and production HSTS.
 

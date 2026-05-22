@@ -42,8 +42,6 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 - `POST /api/auth/email/start`
 - `POST /api/auth/email/verify`
 - `GET /api/auth/me`
-- `GET /api/users/me/preferences`
-- `PATCH /api/users/me/preferences`
 - `GET /api/dashboard`
 - `GET /api/home`
 - `POST /api/media/presign-upload`
@@ -92,6 +90,7 @@ AUTH_JWT_SECRET=replace-with-a-long-random-secret
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 # AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 # Local SMTP sink for email-code testing.
 AUTH_EMAIL_SMTP_HOST=127.0.0.1
@@ -133,7 +132,9 @@ you can copy the sign-in code during local testing.
 
 When the server runs with auth configured outside production, it also exposes a
 development-only `/api/auth/dev-bypass` endpoint that the web app can use for a
-local access button. Production builds do not register that route.
+local access button. Send `{ "role": "student" }` or `{ "role": "mentor" }` to
+test both permission modes without an email. Production builds do not register
+that route.
 
 ## Production files
 
@@ -186,6 +187,7 @@ GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 AUTH_JWT_SECRET=replace-with-a-long-random-secret
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 # AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
@@ -220,6 +222,7 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - The server issues its own signed app session token with `AUTH_JWT_SECRET`.
 - Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
+- Put mentor emails in `AUTH_MENTOR_EMAILS` as a comma-separated list. Hosted-domain emails not present in the roster or mentor list are treated as students for task management and QA approval.
 - Put email-to-subteam assignments in server env with `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` using `email=subteam;email=subteam,subteam`. Valid subteam IDs are `programming`, `mechanical`, `electrical`, `media-marketing`, `business`, and `scouting`.
 - When mobile saves `taskSubteamIds` through `PATCH /api/users/me/preferences`, the server also updates the live `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` map and writes that line back to the env file. Set `AUTH_MEMBER_SUBTEAMS_ENV_PATH` only if the env file is not `.env` locally or `.env.production` in production.
 - The server does not need a Google client secret for this flow.

@@ -1904,6 +1904,7 @@ const snapshotSeed: Omit<
       reviewedAt: "2026-05-02",
     },
   ],
+  qaRequests: [],
   testResults: [
     {
       id: "test-drive-practice-apr-25",
@@ -2912,4 +2913,5 @@ export const snapshot: PlatformSnapshot = {
       new Map(snapshotSeed.projects.map((project) => [project.id, project])),
     ),
   ),
+  favoriteViews: [],
 };

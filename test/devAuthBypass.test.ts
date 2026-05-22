@@ -31,6 +31,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
+    "AUTH_MENTOR_EMAILS",
     "AUTH_MEMBER_SUBTEAMS_ENV_PATH",
     "API_RATE_LIMIT_MAX_REQUESTS",
     "API_RATE_LIMIT_WINDOW_SECONDS",
@@ -52,6 +53,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
+    delete process.env.AUTH_MENTOR_EMAILS;
     process.env.AUTH_MEMBER_SUBTEAMS_ENV_PATH = memberSubteamsEnvPath;
     process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
     process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
@@ -98,16 +100,44 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           hostedDomain: string;
           name: string;
           picture: string | null;
+          role: string;
         };
       };
 
-      assert.equal(bypassBody.user.accountId, "local-dev");
+      assert.equal(bypassBody.user.accountId, "local-dev-student");
       assert.equal(bypassBody.user.authProvider, "email");
-      assert.equal(bypassBody.user.email, "dev@mecorobotics.org");
-      assert.equal(bypassBody.user.name, "Local Dev");
+      assert.equal(bypassBody.user.email, "dev.student@mecorobotics.org");
+      assert.equal(bypassBody.user.name, "Local Dev Student");
       assert.equal(bypassBody.user.hostedDomain, "mecorobotics.org");
       assert.equal(bypassBody.user.picture, null);
+      assert.equal(bypassBody.user.role, "student");
       assert.ok(bypassBody.token.length > 0);
+
+      resetRequestLimits();
+
+      const mentorBypassResponse = await app.inject({
+        method: "POST",
+        url: "/api/auth/dev-bypass",
+        payload: {
+          role: "mentor",
+        },
+      });
+
+      assert.equal(mentorBypassResponse.statusCode, 200);
+      const mentorBypassBody = mentorBypassResponse.json() as {
+        token: string;
+        user: {
+          accountId: string;
+          email: string;
+          name: string;
+          role: string;
+        };
+      };
+      assert.equal(mentorBypassBody.user.accountId, "local-dev-mentor");
+      assert.equal(mentorBypassBody.user.email, "dev.mentor@mecorobotics.org");
+      assert.equal(mentorBypassBody.user.name, "Local Dev Mentor");
+      assert.equal(mentorBypassBody.user.role, "mentor");
+      assert.ok(mentorBypassBody.token.length > 0);
 
       resetRequestLimits();
 
@@ -129,6 +159,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           hostedDomain: string;
           name: string;
           picture: string | null;
+          role: string;
         } | null;
       };
 
@@ -188,7 +219,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       });
       assert.match(
         readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev@mecorobotics\.org=scouting$/m,
+        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
       );
 
       resetRequestLimits();
@@ -220,6 +251,146 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       });
 
       assert.equal(dashboardResponse.statusCode, 200);
+
+      resetRequestLimits();
+
+      const studentTaskCreateResponse = await app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          title: "Student-created task",
+          summary: "Students should not be allowed to create tasks.",
+          subsystemId: "drive",
+          disciplineId: "design",
+          mechanismId: null,
+          partInstanceId: null,
+          targetMilestoneId: null,
+          ownerId: "ava",
+          mentorId: "riley",
+          dueDate: "2026-05-06",
+          priority: "medium",
+          status: "not-started",
+          dependencyIds: [],
+          blockers: [],
+          linkedManufacturingIds: [],
+          linkedPurchaseIds: [],
+          estimatedHours: 0,
+          actualHours: 0,
+        },
+      });
+
+      assert.equal(studentTaskCreateResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentTaskEditResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/tasks/swerve-sensor-bundle",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          title: "Student-edited task",
+        },
+      });
+
+      assert.equal(studentTaskEditResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentTaskDeleteResponse = await app.inject({
+        method: "DELETE",
+        url: "/api/tasks/swerve-sensor-bundle",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(studentTaskDeleteResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentQaApprovalResponse = await app.inject({
+        method: "POST",
+        url: "/api/qa-reports",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          taskId: "swerve-sensor-bundle",
+          participantIds: ["ava"],
+          result: "pass",
+          mentorApproved: true,
+          notes: "Students should not be allowed to approve QA.",
+          reviewedAt: "2026-05-06",
+        },
+      });
+
+      assert.equal(studentQaApprovalResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentMemberCreateResponse = await app.inject({
+        method: "POST",
+        url: "/api/members",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          email: "new.student@mecorobotics.org",
+          name: "New Student",
+          role: "student",
+        },
+      });
+
+      assert.equal(studentMemberCreateResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentMemberEditResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/members/ava",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          name: "Student Edited Ava",
+        },
+      });
+
+      assert.equal(studentMemberEditResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentMemberDeleteResponse = await app.inject({
+        method: "DELETE",
+        url: "/api/members/ava",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(studentMemberDeleteResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const studentMeetingCreateResponse = await app.inject({
+        method: "POST",
+        url: "/api/meetings",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          title: "Student meeting",
+          date: "2026-05-07",
+          time: "18:00",
+        },
+      });
+
+      assert.equal(studentMeetingCreateResponse.statusCode, 403);
     } finally {
       await app.close();
       resetRequestLimits();

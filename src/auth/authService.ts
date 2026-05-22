@@ -7,6 +7,7 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
 import { getUserPreferences } from "../data/userPreferencesStore";
+import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
@@ -40,12 +41,12 @@ const emailTransport =
     : null;
 
 interface SessionClaims extends JwtPayload {
-  deviceId?: string;
   email: string;
   name: string;
   picture?: string | null;
   hd: string;
   provider?: "google" | "email";
+  role?: MemberRole;
 }
 
 interface PendingEmailCodeRecord {
@@ -62,6 +63,7 @@ export interface SessionUser {
   name: string;
   picture: string | null;
   hostedDomain: string;
+  role: MemberRole;
   taskSubteamIds: string[];
 }
 
@@ -265,6 +267,19 @@ function getTaskSubteamIdsForEmail(email: string) {
   return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
 }
 
+function getRoleForEmail(email: string): MemberRole {
+  const normalizedEmail = normalizeEmailAddress(email);
+  const rosterRole = getMembers().find(
+    (member) => normalizeEmailAddress(member.email) === normalizedEmail,
+  )?.role;
+
+  if (rosterRole && rosterRole !== "external") {
+    return rosterRole;
+  }
+
+  return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
+}
+
 function buildEmailSessionUser(email: string): SessionUser {
   const normalizedEmail = normalizeEmailAddress(email);
 
@@ -275,20 +290,27 @@ function buildEmailSessionUser(email: string): SessionUser {
     name: normalizedEmail,
     picture: null,
     hostedDomain: authConfig.hostedDomain,
+    role: getRoleForEmail(normalizedEmail),
     taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail),
   };
 }
 
-export function buildDevelopmentSessionUser(): SessionUser {
-  const email = `dev@${authConfig.hostedDomain}`;
+function isDevelopmentSessionRole(role: MemberRole | undefined): role is "student" | "mentor" {
+  return role === "student" || role === "mentor";
+}
+
+export function buildDevelopmentSessionUser(role: "student" | "mentor" = "student"): SessionUser {
+  const emailPrefix = role === "mentor" ? "dev.mentor" : "dev.student";
+  const email = `${emailPrefix}@${authConfig.hostedDomain}`;
 
   return {
-    accountId: "local-dev",
+    accountId: `local-dev-${role}`,
     authProvider: "email",
     email,
-    name: "Local Dev",
+    name: role === "mentor" ? "Local Dev Mentor" : "Local Dev Student",
     picture: null,
     hostedDomain: authConfig.hostedDomain,
+    role,
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
@@ -315,6 +337,7 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
     hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
+    role: getRoleForEmail(email),
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
@@ -501,6 +524,7 @@ export function signSessionToken(user: SessionUser, options: SessionTokenOptions
       picture: user.picture,
       hd: user.hostedDomain,
       provider: user.authProvider,
+      role: user.role,
     },
     secret,
     {
@@ -539,6 +563,13 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
+  const developmentRole =
+    env.NODE_ENV !== "production" &&
+    payload.sub.startsWith("local-dev-") &&
+    isDevelopmentSessionRole(payload.role)
+      ? payload.role
+      : null;
+
   return {
     accountId: payload.sub,
     authProvider: payload.provider ?? "google",
@@ -546,6 +577,7 @@ export function verifySessionToken(token: string): SessionUser {
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
     hostedDomain: payload.hd.toLowerCase(),
+    role: developmentRole ?? getRoleForEmail(email),
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }

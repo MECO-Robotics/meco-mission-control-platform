@@ -4,6 +4,10 @@ coverage/
 .turbo/
 .prisma/
 data/
+.tmp-skills-sync/
+
+# Imported shared skills
+/skills/
 
 *.tsbuildinfo
 *.log

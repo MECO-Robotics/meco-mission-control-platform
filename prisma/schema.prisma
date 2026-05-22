@@ -232,6 +232,9 @@ model Member {
   id                        String              @id @default(cuid())
   name                      String
   role                      MemberRole
+  plannedWeeklyAttendanceHours Float            @default(0)
+  plannedAttendanceDays     String[]            @default([])
+  plannedAttendanceNotes    String              @default("")
   ownedTasks                Task[]              @relation("TaskOwner")
   mentoredTasks             Task[]              @relation("TaskMentor")
   responsibleSubsystems     Subsystem[]         @relation("ResponsibleEngineer")
@@ -459,10 +462,17 @@ model WorkLogParticipant {
 model Meeting {
   id                String             @id @default(cuid())
   title             String
+  meetingType       String             @default("general")
+  seasonId          String?
+  projectIds        String[]           @default([])
   scheduledAt       DateTime
+  endAt             DateTime?
+  location          String             @default("")
+  description       String             @default("")
   attendanceRecords AttendanceRecord[]
   rsvps             RSVP[]
   createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 }
 
 model RSVP {
