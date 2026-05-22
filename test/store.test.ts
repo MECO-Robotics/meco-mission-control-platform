@@ -10,14 +10,17 @@ import {
   createWorkstream,
   createPartDefinition,
   createPartInstance,
+  createQaRequest,
   createMember,
   createMilestone,
+  getQaRequests,
   getSnapshot,
   getTutorialBaselineState,
   getMilestonesForTask,
   getTasksForMilestone,
   removeMember,
   removePartDefinition,
+  removeSubsystem,
   resetStore,
   updateSubsystem,
   updatePartDefinition,
@@ -661,6 +664,32 @@ test("removePartDefinition clears linked part instances and task references", ()
     snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.partInstanceId,
     null,
   );
+});
+
+test("removeSubsystem clears QA requests for removed tasks", () => {
+  const taskRequest = createQaRequest({
+    taskId: "scouting-tablet-refresh",
+    subject: "Tablet refresh QA",
+    mentorId: "maria",
+    requestedById: "avery",
+  });
+  const tasklessRequest = createQaRequest({
+    subject: "General QA",
+    mentorId: "maria",
+    requestedById: "avery",
+  });
+
+  assert.ok(getQaRequests().some((request) => request.id === taskRequest.id));
+  assert.ok(getQaRequests().some((request) => request.id === tasklessRequest.id));
+
+  const removed = removeSubsystem("scouting");
+
+  assert.ok(removed);
+  assert.equal(
+    getQaRequests().some((request) => request.id === taskRequest.id),
+    false,
+  );
+  assert.ok(getQaRequests().some((request) => request.id === tasklessRequest.id));
 });
 
 test("removeMember clears linked references across the snapshot", () => {

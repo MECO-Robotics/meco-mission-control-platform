@@ -2458,6 +2458,9 @@ export function removeSubsystem(subsystemId: string) {
     qaReports: currentSnapshot.qaReports.filter(
       (report) => !taskIdsToRemove.has(report.taskId),
     ),
+    qaRequests: getQaRequests().filter(
+      (request) => !request.taskId || !taskIdsToRemove.has(request.taskId),
+    ),
     risks: currentSnapshot.risks.filter((risk) => {
       if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
         return false;
