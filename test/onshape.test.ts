@@ -2,7 +2,11 @@
 import { test } from "node:test";
 
 import { runCadImport } from "../src/onshape/cadImporter";
-import { ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
+import {
+  createOnshapeCadClient,
+  ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH,
+  ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH,
+} from "../src/onshape/onshapeCadClient";
 import {
   createOnshapeRuntimeStore,
   type OnshapeRuntimeStore,
@@ -12,6 +16,7 @@ import {
   createOnshapeApiClient,
   OnshapeCallBudgetExceededError,
   OnshapeConfigurationError,
+  type OnshapeRequestJsonArgs,
   OnshapeRateLimitError,
 } from "../src/onshape/onshapeApiClient";
 import {
@@ -26,6 +31,7 @@ import type {
   CadImportOnshapeClient,
   OnshapeAssemblyBomResponse,
   OnshapeDocumentMetadataResponse,
+  RequestPolicy,
 } from "../src/onshape/onshapeTypes";
 
 const workspaceUrl =
@@ -129,6 +135,13 @@ function createFakeClient(options: {
   };
 }
 
+const apiPolicy: RequestPolicy = {
+  priority: "snapshot",
+  maxCallsAllowed: 10,
+  allowCached: false,
+  requireFresh: true,
+};
+
 test("parses common Onshape URL shapes without network access", () => {
   assert.deepEqual(parseOnshapeUrl(workspaceUrl), {
     ok: true,
@@ -162,13 +175,120 @@ test("builds stable cache keys with immutable version identity", () => {
   const reference = parseOnshapeUrl(versionUrl);
   assert.equal(
     buildOnshapeCacheKey({
-      endpoint: "/api/documents/d/0123456789abcdef01234567",
+      endpoint: "/api/v10/documents/0123456789abcdef01234567",
       method: "GET",
       reference,
       requestHash: "metadata",
     }),
-    "GET:/api/documents/d/0123456789abcdef01234567:d/0123456789abcdef01234567:v/222222222222222222222222:e/111111111111111111111111:metadata",
+    "GET:/api/v10/documents/0123456789abcdef01234567:d/0123456789abcdef01234567:v/222222222222222222222222:e/111111111111111111111111:metadata",
   );
+});
+
+test("fetches document metadata from the supported getDocument route", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const requests: OnshapeRequestJsonArgs[] = [];
+  let callsUsed = 0;
+  const client = createOnshapeCadClient({
+    getCallsUsed() {
+      return callsUsed;
+    },
+    async requestJson<T = unknown>(args: OnshapeRequestJsonArgs): Promise<T> {
+      callsUsed += 1;
+      requests.push(args);
+      return { name: "2026 Robot", element: { name: "Master Assembly" } } as T;
+    },
+  });
+
+  const metadata = await client.fetchDocumentMetadata({
+    reference,
+    importRunId: "import-metadata",
+    policy: apiPolicy,
+  });
+
+  assert.equal(requests[0]?.endpoint, "/api/v10/documents/0123456789abcdef01234567");
+  assert.equal(requests[0]?.method, "GET");
+  assert.equal(requests[0]?.requestHash, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH);
+  assert.equal(metadata.documentName, "2026 Robot");
+  assert.equal(metadata.elementName, "Master Assembly");
+});
+
+test("normalizes native Onshape BOM table rows into parts and instances", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const nativePayload = {
+    bomTable: {
+      name: "Robot master BOM",
+      items: [
+        {
+          itemSource: {
+            documentId: "0123456789abcdef01234567",
+            wvmType: "v",
+            wvmId: "222222222222222222222222",
+            elementId: "drive-element",
+            partId: "drive-rail",
+          },
+          name: "Drive rail",
+          partNumber: "DRV-001",
+          quantity: 2,
+          material: "6061 Aluminum",
+          configuration: "default",
+        },
+      ],
+    },
+  };
+  const client = createOnshapeCadClient({
+    getCallsUsed() {
+      return 1;
+    },
+    async requestJson<T = unknown>(args: OnshapeRequestJsonArgs): Promise<T> {
+      assert.equal(args.requestHash, ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH);
+      return nativePayload as T;
+    },
+  });
+
+  const bom = await client.fetchAssemblyBom({
+    reference,
+    importRunId: "import-bom",
+    policy: apiPolicy,
+  });
+
+  assert.equal(bom.assemblyNodes[0]?.name, "Robot master BOM");
+  assert.equal(bom.assemblyNodes[0]?.metadata?.normalization, "onshape-bom-table");
+  assert.equal(bom.partDefinitions.length, 1);
+  assert.equal(bom.partDefinitions[0]?.name, "Drive rail");
+  assert.equal(bom.partDefinitions[0]?.partNumber, "DRV-001");
+  assert.equal(bom.partDefinitions[0]?.partId, "drive-rail");
+  assert.equal(bom.partDefinitions[0]?.material, "6061 Aluminum");
+  assert.equal(bom.partDefinitions[0]?.versionId, "222222222222222222222222");
+  assert.equal(bom.partInstances.length, 1);
+  assert.equal(bom.partInstances[0]?.quantity, 2);
+  assert.equal(bom.partInstances[0]?.parentAssemblySourceId, bom.assemblyNodes[0]?.sourceId);
+  assert.equal(bom.raw.payload, nativePayload);
+});
+
+test("keeps placeholder BOM fallback for unrecognized payloads", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const client = createOnshapeCadClient({
+    getCallsUsed() {
+      return 1;
+    },
+    async requestJson<T = unknown>(): Promise<T> {
+      return { unexpected: true } as T;
+    },
+  });
+
+  const bom = await client.fetchAssemblyBom({
+    reference,
+    importRunId: "import-placeholder-bom",
+    policy: apiPolicy,
+  });
+
+  assert.equal(bom.assemblyNodes.length, 1);
+  assert.equal(bom.assemblyNodes[0]?.metadata?.normalization, "placeholder");
+  assert.equal(bom.partDefinitions.length, 0);
+  assert.equal(bom.partInstances.length, 0);
 });
 
 test("builds Onshape OAuth2 authorization URLs without exposing client secrets", () => {
