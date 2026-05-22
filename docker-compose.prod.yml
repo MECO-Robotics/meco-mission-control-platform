@@ -25,6 +25,8 @@ services:
         condition: service_healthy
     env_file:
       - .env.production
+    volumes:
+      - ./.env.production:/app/.env.production
     command: >-
       sh -c "if [ -z \"$${DATABASE_URL:-}\" ]; then
       export DATABASE_URL=\"postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}?schema=public\";
