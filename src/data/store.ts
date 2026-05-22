@@ -11,8 +11,8 @@ import type {
   MilestoneStatus,
   ManufacturingItem,
   Material,
-  Mechanism,
   Meeting,
+  Mechanism,
   Member,
   PartDefinition,
   PartInstance,
@@ -44,8 +44,8 @@ import type {
   MilestoneInput,
   ManufacturingItemInput,
   MaterialInput,
-  MechanismInput,
   MeetingInput,
+  MechanismInput,
   MemberInput,
   PartDefinitionInput,
   PartInstanceInput,
@@ -71,8 +71,8 @@ export type {
   MilestoneInput,
   ManufacturingItemInput,
   MaterialInput,
-  MechanismInput,
   MeetingInput,
+  MechanismInput,
   MemberInput,
   PartDefinitionInput,
   PartInstanceInput,
@@ -1780,6 +1780,10 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
 
 export function getMembers() {
   return currentSnapshot.members;
+}
+
+export function getMeetings() {
+  return currentSnapshot.meetings;
 }
 
 export function getSubsystems() {
@@ -4804,4 +4808,3 @@ export function findArtifact(artifactId: string): Artifact | undefined {
 export function findRisk(riskId: string): Risk | undefined {
   return currentSnapshot.risks.find((risk) => risk.id === riskId);
 }
-
