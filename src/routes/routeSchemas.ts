@@ -12,6 +12,10 @@ const plannedAttendanceDaySchema = z.enum([
   "sunday",
 ]);
 
+export const devBypassSchema = z.object({
+  role: z.enum(["student", "mentor"]).default("student"),
+});
+
 export const memberSchema = z.object({
   name: z.string().trim().min(2),
   email: z.union([z.literal(""), z.string().trim().email()]).default(""),
@@ -167,6 +171,13 @@ export const testResultSchema = z.object({
   status: z.enum(["pass", "fail", "blocked"]),
   findings: z.array(z.string().trim().min(1)).default([]),
   photoUrl: z.string().trim().default(""),
+});
+
+export const userPreferencesPatchSchema = z.object({
+  taskSubteamIds: z
+    .array(z.enum(["programming", "mechanical", "electrical", "media-marketing", "business", "scouting"]))
+    .optional(),
+  themeMode: z.enum(["light", "dark"]).nullable().optional(),
 });
 
 export const reportSchema = z.object({
@@ -532,6 +543,7 @@ export const emailSignInRequestSchema = z.object({
 export const emailSignInVerifySchema = z.object({
   email: z.string().trim().email(),
   code: z.string().trim().length(emailCodeLength),
+  deviceId: z.string().trim().min(1).max(128).optional().nullable(),
 });
 
 export const tutorialSessionResetSchema = z.object({

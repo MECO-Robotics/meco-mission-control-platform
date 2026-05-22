@@ -1,5 +1,10 @@
 import { FastifyInstance } from "fastify";
-import { authConfig as runtimeAuthConfig, env, requestLimitConfig } from "../config/env";
+import {
+  authConfig as runtimeAuthConfig,
+  env,
+  requestLimitConfig,
+  setMemberSubteamsForEmail,
+} from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
   AuthError,
@@ -18,9 +23,9 @@ import {
   createMilestone,
   createManufacturingItem,
   createMaterial,
+  createMeeting,
   createMember,
   createMechanism,
-  createMeeting,
   createReport,
   createReportFinding,
   createQaReport,
@@ -120,6 +125,10 @@ import {
   updateWorkstream,
 } from "../data/store";
 import {
+  getUserPreferences,
+  updateUserPreferences,
+} from "../data/userPreferencesStore";
+import {
   buildDashboard,
   buildMetrics,
   evaluateTaskCompletion,
@@ -164,6 +173,7 @@ import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
 import {
   artifactPatchSchema,
   artifactSchema,
+  devBypassSchema,
   emailSignInRequestSchema,
   emailSignInVerifySchema,
   favoriteNavigationViewIdSchema,
@@ -206,6 +216,7 @@ import {
   taskDependencySchema,
   testResultSchema,
   tutorialSessionResetSchema,
+  userPreferencesPatchSchema,
   workLogPatchSchema,
   workLogSchema,
   workstreamPatchSchema,
@@ -295,6 +306,28 @@ export async function registerRoutes(app: FastifyInstance) {
     return null;
   };
 
+  const hasMentorPermission = (request: Parameters<typeof requireSession>[0]) => {
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    return session?.role === "lead" || session?.role === "mentor" || session?.role === "admin";
+  };
+
+  const requireMentorPermission = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    message: string,
+  ) => {
+    if (hasMentorPermission(request)) {
+      return true;
+    }
+
+    reply.code(403).send({ message });
+    return false;
+  };
+
   const isValidTaskDependencyTarget = (
     kind: "task" | "milestone" | "part_instance",
     refId: string,
@@ -380,7 +413,7 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   if (env.NODE_ENV !== "production") {
-    app.post("/api/auth/dev-bypass", async (request, reply) => {
+    app.post<{ Body: unknown }>("/api/auth/dev-bypass", async (request, reply) => {
       if (!allowAuthRouteRequest(request, reply)) {
         return;
       }
@@ -391,7 +424,15 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      const user = buildDevelopmentSessionUser();
+      const parsed = devBypassSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Development sign-in payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const user = buildDevelopmentSessionUser(parsed.data.role);
       const token = signSessionToken(user);
 
       return {
@@ -445,7 +486,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     try {
       const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
-      const token = signSessionToken(user);
+      const token = signSessionToken(user, { deviceId: parsed.data.deviceId });
 
       return {
         token,
@@ -486,6 +527,45 @@ export async function registerRoutes(app: FastifyInstance) {
       enabled: true,
       user: session,
     };
+  });
+
+  app.get("/api/users/me/preferences", async (request, reply) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return;
+    }
+
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+
+    return getUserPreferences(session.email);
+  });
+
+  app.patch<{ Body: unknown }>("/api/users/me/preferences", async (request, reply) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return;
+    }
+
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+
+    const parsed = userPreferencesPatchSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "User preferences payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const preferences = updateUserPreferences(session.email, parsed.data);
+    if (parsed.data.taskSubteamIds) {
+      setMemberSubteamsForEmail(session.email, preferences.taskSubteamIds);
+    }
+
+    return preferences;
   });
 
   app.get("/api/dashboard", async (request, reply) => {
@@ -937,6 +1017,13 @@ export async function registerRoutes(app: FastifyInstance) {
         message: "QA report payload is invalid.",
         issues: parsed.error.flatten(),
       });
+    }
+
+    if (
+      parsed.data.mentorApproved &&
+      !requireMentorPermission(request, reply, "Only mentors can approve QA.")
+    ) {
+      return;
     }
 
     const validationError = validateQaReportLinks(parsed.data);
@@ -1809,6 +1896,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can create tasks.")) {
+      return;
+    }
+
     const parsed = taskSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -1870,6 +1961,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/tasks/:taskId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can edit tasks.")) {
         return;
       }
 
@@ -1961,6 +2056,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/tasks/:taskId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete tasks.")) {
         return;
       }
 
@@ -2239,6 +2338,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can invite people.")) {
+      return;
+    }
+
     const parsed = memberSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -2285,6 +2388,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/members/:memberId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can edit people.")) {
         return;
       }
 
@@ -2341,6 +2448,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/members/:memberId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete people.")) {
         return;
       }
 
@@ -2859,6 +2970,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post<{ Body: unknown }>("/api/meetings", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    if (!requireMentorPermission(request, reply, "Only mentors can create meetings.")) {
       return;
     }
 
