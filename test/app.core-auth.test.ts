@@ -108,6 +108,34 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.deepEqual(homeBody.unreadAlerts, []);
     assert.equal(homeBody.meetingRecap, null);
     assert.deepEqual(homeBody.summaries, []);
+
+    resetLimits();
+
+    const defaultPreferencesResponse = await app.inject({
+      method: "GET",
+      url: "/api/users/me/preferences",
+    });
+    assert.equal(defaultPreferencesResponse.statusCode, 200);
+    assert.deepEqual(defaultPreferencesResponse.json(), {
+      taskSubteamIds: [],
+      themeMode: null,
+    });
+
+    resetLimits();
+
+    const updatePreferencesResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/users/me/preferences",
+      payload: {
+        taskSubteamIds: ["programming"],
+        themeMode: "light",
+      },
+    });
+    assert.equal(updatePreferencesResponse.statusCode, 200);
+    assert.deepEqual(updatePreferencesResponse.json(), {
+      taskSubteamIds: ["programming"],
+      themeMode: "light",
+    });
   });
 });
 
