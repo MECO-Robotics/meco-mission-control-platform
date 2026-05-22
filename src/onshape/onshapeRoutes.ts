@@ -44,6 +44,11 @@ function readEstimateQuery(query: unknown) {
   return onshapeImportEstimateQuerySchema.safeParse(query ?? {});
 }
 
+function readRunSnapshotId(item: { rawSummaryJson: Record<string, unknown> }) {
+  const snapshotId = item.rawSummaryJson.snapshotId;
+  return typeof snapshotId === "string" ? snapshotId : null;
+}
+
 function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyReply) {
   const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
   if (canRunDeepReleaseSync({
@@ -222,12 +227,13 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
         return reply.code(404).send({ message: "Onshape import run not found." });
       }
 
+      const runSnapshotId = readRunSnapshotId(item);
       return {
         item,
         requestLogs: store.listRequestLogs(item.id),
         warnings: store.listWarnings({ importRunId: item.id }),
         snapshots: store.listSnapshots(item.onshapeDocumentRefId).filter(
-          (snapshot) => snapshot.importRunId === item.id,
+          (snapshot) => snapshot.importRunId === item.id || snapshot.id === runSnapshotId,
         ),
       };
     },

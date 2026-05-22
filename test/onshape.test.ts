@@ -462,12 +462,46 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(snapshots.length, 1);
   assert.equal(snapshots[0]?.id, first.snapshotId);
   assert.equal(snapshots[0]?.id, second.snapshotId);
-  assert.equal(snapshots[0]?.importRunId, second.importRunId);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.equal(store.findImportRun(first.importRunId)?.rawSummaryJson.snapshotId, first.snapshotId);
+  assert.equal(store.findImportRun(second.importRunId)?.rawSummaryJson.snapshotId, second.snapshotId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);
   assert.ok(store.listWarnings().some((warning) => warning.code === "assembly_mapping_missing"));
   assert.ok(store.listWarnings().some((warning) => warning.code === "part_material_missing"));
+});
+
+test("keeps Onshape parts distinct when BOM payload omits part ids", () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+  const snapshot = store.upsertSnapshot({
+    documentRef: ref,
+    importRunId: "import-without-part-ids",
+    label: "Robot master assembly",
+  });
+
+  const definitionsBySourceId = store.upsertPartDefinitions(snapshot.id, [
+    {
+      sourceId: "part-source-a",
+      documentId: ref.documentId,
+      elementId: ref.elementId ?? undefined,
+      name: "Left bracket",
+      configuration: "default",
+    },
+    {
+      sourceId: "part-source-b",
+      documentId: ref.documentId,
+      elementId: ref.elementId ?? undefined,
+      name: "Right bracket",
+      configuration: "default",
+    },
+  ]);
+
+  const parts = store.listPartDefinitions(snapshot.id);
+  assert.equal(definitionsBySourceId.size, 2);
+  assert.equal(parts.length, 2);
+  assert.deepEqual(new Set(parts.map((part) => part.sourceId)), new Set(["part-source-a", "part-source-b"]));
 });
 
 test("does not replace the latest snapshot when BOM import fails", async () => {
