@@ -231,6 +231,21 @@ function updateEnvFileValue(path: string, key: string, value: string) {
   writeFileSync(path, `${lines.join("\n").replace(/\n*$/, "")}\n`, "utf8");
 }
 
+function removeEnvFileValue(path: string, key: string) {
+  if (!existsSync(path)) {
+    return;
+  }
+
+  const content = readFileSync(path, "utf8");
+  const keyPattern = new RegExp(`^\\s*${key}=`);
+  const lines = content
+    .split(/\r?\n/)
+    .filter((candidate) => !keyPattern.test(candidate));
+  const nextContent = lines.join("\n").replace(/\n*$/, "");
+
+  writeFileSync(path, nextContent ? `${nextContent}\n` : "", "utf8");
+}
+
 function normalizeMemberSubteams(email: string, subteams: string[]) {
   return {
     email: email.trim().toLowerCase(),
@@ -274,12 +289,18 @@ export function setMemberSubteamsForEmail(email: string, subteams: string[]) {
   }
 
   const serialized = serializeMemberSubteamsByEmail(authConfig.memberSubteamsByEmail);
-  process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL = serialized;
-  updateEnvFileValue(
-    resolveMemberSubteamsEnvPath(),
-    "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
-    serialized,
-  );
+  const envPath = resolveMemberSubteamsEnvPath();
+  if (serialized) {
+    process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL = serialized;
+    updateEnvFileValue(
+      envPath,
+      "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
+      serialized,
+    );
+  } else {
+    delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
+    removeEnvFileValue(envPath, "AUTH_MEMBER_SUBTEAMS_BY_EMAIL");
+  }
 
   return authConfig.memberSubteamsByEmail;
 }

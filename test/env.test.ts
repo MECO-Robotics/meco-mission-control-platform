@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -195,6 +198,61 @@ test("CAD persistence defaults to Prisma and allows runtime override", async () 
     const runtimeConfig = await loadEnvModule(`cad-store-runtime-${Date.now()}`);
     assert.equal(runtimeConfig.cadPersistenceConfig.storeDriver, "runtime");
   } finally {
+    restoreEnv(saved);
+  }
+});
+
+test("clearing the last member subteam mapping removes persisted env value", async () => {
+  let tempDir: string | null = null;
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
+    "AUTH_MEMBER_SUBTEAMS_ENV_PATH",
+  ]);
+
+  try {
+    tempDir = mkdtempSync(join(tmpdir(), "meco-env-test-"));
+    const envPath = join(tempDir, ".env.test");
+    writeFileSync(
+      envPath,
+      [
+        "DATABASE_URL=postgresql://example",
+        "AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev.student@mecorobotics.org=scouting",
+        "OTHER_SETTING=keep-me",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL =
+      "dev.student@mecorobotics.org=scouting";
+    process.env.AUTH_MEMBER_SUBTEAMS_ENV_PATH = envPath;
+
+    const config = await loadEnvModule(`member-subteams-clear-${Date.now()}`);
+    assert.deepEqual(config.authConfig.memberSubteamsByEmail, {
+      "dev.student@mecorobotics.org": ["scouting"],
+    });
+
+    assert.deepEqual(
+      config.setMemberSubteamsForEmail("dev.student@mecorobotics.org", []),
+      {},
+    );
+    assert.equal(process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL, undefined);
+
+    const content = readFileSync(envPath, "utf8");
+    assert.doesNotMatch(content, /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=/m);
+    assert.match(content, /^DATABASE_URL=postgresql:\/\/example$/m);
+    assert.match(content, /^OTHER_SETTING=keep-me$/m);
+  } finally {
+    if (tempDir) {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
     restoreEnv(saved);
   }
 });

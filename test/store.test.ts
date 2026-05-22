@@ -10,14 +10,18 @@ import {
   createWorkstream,
   createPartDefinition,
   createPartInstance,
+  createQaRequest,
+  createTask,
   createMember,
   createMilestone,
+  getQaRequests,
   getSnapshot,
   getTutorialBaselineState,
   getMilestonesForTask,
   getTasksForMilestone,
   removeMember,
   removePartDefinition,
+  removeSubsystem,
   resetStore,
   updateSubsystem,
   updatePartDefinition,
@@ -369,6 +373,70 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
   assert.equal(integrationTask?.mechanismId, null);
   assert.equal(integrationTask?.ownerId, "ava");
   assert.equal(integrationTask?.mentorId, "jordan");
+});
+
+test("removeSubsystem drops QA requests tied to removed tasks", () => {
+  const subsystem = createSubsystem({
+    projectId: "default-season-robot",
+    name: "QA Request Cleanup",
+    color: "#4F86C6",
+    description: "Temporary subsystem for QA request cleanup coverage.",
+    parentSubsystemId: null,
+    responsibleEngineerId: "ava",
+    mentorIds: ["jordan"],
+    risks: [],
+  });
+  const task = createTask({
+    projectId: "default-season-robot",
+    workstreamId: null,
+    workstreamIds: [],
+    title: "Remove QA request target",
+    summary: "Task used to verify subsystem cleanup removes QA requests.",
+    subsystemId: subsystem.id,
+    subsystemIds: [subsystem.id],
+    disciplineId: "testing",
+    mechanismId: null,
+    mechanismIds: [],
+    partInstanceId: null,
+    partInstanceIds: [],
+    artifactId: null,
+    artifactIds: [],
+    targetMilestoneId: null,
+    photoUrl: "",
+    ownerId: "ava",
+    assigneeIds: ["ava"],
+    mentorId: "jordan",
+    startDate: "2026-01-01",
+    dueDate: "2026-01-10",
+    priority: "medium",
+    status: "not-started",
+    blockers: [],
+    dependencyIds: [],
+    linkedManufacturingIds: [],
+    linkedPurchaseIds: [],
+    estimatedHours: 2,
+    actualHours: 0,
+    requiresDocumentation: false,
+    documentationLinked: false,
+  });
+  const removedTaskRequest = createQaRequest({
+    taskId: task.id,
+    subject: "Removed task QA request",
+    mentorId: "jordan",
+    requestedById: "ava",
+  });
+  const globalRequest = createQaRequest({
+    taskId: null,
+    subject: "Global QA request",
+    mentorId: "jordan",
+    requestedById: "ava",
+  });
+
+  removeSubsystem(subsystem.id);
+
+  const requests = getQaRequests();
+  assert.equal(requests.some((request) => request.id === removedTaskRequest.id), false);
+  assert.equal(requests.some((request) => request.id === globalRequest.id), true);
 });
 
 test("updateTask patches an existing task in place", () => {
