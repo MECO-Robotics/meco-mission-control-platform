@@ -1,14 +1,16 @@
 # Shared Skills Workflow
 
-Mission Control app repos keep `skills/` as ordinary committed files. The shared source of truth is a separate `mission-control-skills` repo, and each app repo syncs a copy from that source.
+Mission Control app repos import `skills/` as local ignored files. The shared source of truth is the separate `mission-control-skills` repo, and each app repo hydrates a local copy from that source when needed.
 
 In this workspace the app repos are `meco-mission-control-web`, `meco-mission-control-platform`, and `meco-mission-control-mobile`. Older shorthand may call them `mission-control-web`, `mission-control-api`, and `mission-control-mobile`.
 
-## Why Sync-Copy Instead of Submodules
+## Why Ignored Imports Instead of Submodules
 
-Git submodules embed another repository with separate history and a pinned commit. That adds extra clone, checkout, update, and CI handling. GitHub Actions also needs explicit submodule checkout configuration. For students, mentors, and Codex agents, a normal committed copy is easier to inspect, diff, review, and revert.
+Git submodules embed another repository with separate history and a pinned commit. That adds extra clone, checkout, update, and CI handling. GitHub Actions also needs explicit submodule checkout configuration. For students, mentors, and Codex agents, a script-managed local import is simpler to refresh and keeps app repo diffs focused.
 
 This repo intentionally does not use `.gitmodules`, `git submodule add`, or a nested Git repository under `skills/`.
+
+The app repos track the sync scripts and documentation, not the imported skill files. `skills/` is intentionally ignored by Git.
 
 ## Shared Source Layout
 
@@ -33,18 +35,14 @@ git commit -m "Update shared skills"
 git push
 ```
 
-## Sync Into an App Repo
+## Import Into an App Repo
 
 ```bash
-cd mission-control-web
+cd meco-mission-control-web
 bash scripts/sync-skills.sh
-git diff -- skills
-git add skills
-git commit -m "Sync shared skills"
-git push
 ```
 
-After running sync, commit the resulting `skills/` changes in the app repo.
+Do not `git add skills`. The imported directory is intentionally ignored and should stay out of app repo commits.
 
 ## Override the Shared Repo
 
@@ -65,21 +63,20 @@ $env:SKILLS_REPO = "git@github.com:MECO-Robotics/mission-control-skills.git"
 .\scripts\sync-skills.ps1
 ```
 
-## Check Currentness
+## Import Check
 
 ```bash
 bash scripts/check-skills-current.sh
 ```
 
-The check exits `0` when local `skills/` matches the shared source and exits `1` when it is stale. It does not modify the working tree.
+The check delegates to `scripts/sync-skills.sh`, imports the shared skills into ignored local state, and exits nonzero if the import fails.
 
-## Review Diffs
+## Review Imported Files Locally
 
-Always review the copied files before committing:
+Inspect the local imported files when changing shared skill behavior:
 
 ```bash
-git status --short -- skills
-git diff -- skills
+find skills -maxdepth 2 -type f | sort
 ```
 
-CI runs the same staleness check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
+CI runs the same import check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
