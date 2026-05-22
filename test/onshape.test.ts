@@ -282,6 +282,58 @@ test("normalizes native Onshape assembly payloads into CAD graph records", async
   assert.equal(result.partInstances[0]?.suppressed, false);
 });
 
+test("normalizes native Onshape BOM table payloads into CAD graph records", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async () => ({
+      statusCode: 200,
+      headers: {},
+      json: {
+        bomTable: {
+          name: "Robot master BOM",
+          items: [
+            {
+              itemSource: {
+                documentId: "0123456789abcdef01234567",
+                wvmType: "v",
+                wvmId: "222222222222222222222222",
+                elementId: "drive-element",
+                partId: "drive-rail",
+              },
+              name: "Drive rail",
+              partNumber: "DRV-001",
+              quantity: 2,
+              material: "6061 Aluminum",
+              configuration: "default",
+            },
+          ],
+        },
+      },
+    }),
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchAssemblyBom({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  assert.equal(result.assemblyNodes[0]?.name, "Robot master BOM");
+  assert.equal(result.assemblyNodes[0]?.metadata?.normalization, "native_onshape_bom_table");
+  assert.equal(result.partDefinitions.length, 1);
+  assert.equal(result.partDefinitions[0]?.name, "Drive rail");
+  assert.equal(result.partDefinitions[0]?.partNumber, "DRV-001");
+  assert.equal(result.partDefinitions[0]?.partId, "drive-rail");
+  assert.equal(result.partDefinitions[0]?.material, "6061 Aluminum");
+  assert.equal(result.partDefinitions[0]?.versionId, "222222222222222222222222");
+  assert.equal(result.partInstances.length, 1);
+  assert.equal(result.partInstances[0]?.quantity, 2);
+  assert.equal(result.partInstances[0]?.parentAssemblySourceId, result.assemblyNodes[0]?.sourceId);
+});
+
 test("fetches Onshape document metadata through the supported getDocument path", async () => {
   const store = createOnshapeRuntimeStore();
   const reference = createLinkedRef(store);
