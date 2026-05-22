@@ -91,7 +91,6 @@ export function buildStepParserDiagnostics(args: {
     actualParserVersion: args.parsed.parserVersion,
     parserUsedPlaceholder: args.placeholderUsed,
     warningCodes: args.parsed.warnings.map((warning) => warning.code),
-    rawStats: args.parsed.rawStats,
     ...args.parsed.rawStats,
   };
 }
@@ -245,7 +244,7 @@ export async function runStepImport(args: {
         configuredParserMode,
         actualParserVersion: parsed.parserVersion,
         parserUsedPlaceholder: placeholderUsed,
-        rawStats: parsed.rawStats,
+        rawStats: diagnostics,
         warningCount: (await args.store.listWarnings({ importRunId: importRun.id })).length,
         mappingCount: mappings.length,
       },

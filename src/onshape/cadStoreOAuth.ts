@@ -13,41 +13,18 @@ function pruneExpiredStates(state: OnshapeRuntimeState) {
 
 export function buildCadOAuthStore(state: OnshapeRuntimeState) {
   return {
-    createOAuthState(input: {
-      sessionKey: string;
-      apiSessionAccountId?: string | null;
-      apiSessionCanManageOAuthCredentials?: boolean;
-    }) {
+    createOAuthState(input: { sessionKey: string }) {
       pruneExpiredStates(state);
-      const item = {
-        state: randomUUID(),
-        createdAt: nowIso(),
-        sessionKey: input.sessionKey,
-        apiSessionAccountId: input.apiSessionAccountId ?? null,
-        apiSessionCanManageOAuthCredentials: input.apiSessionCanManageOAuthCredentials ?? false,
-      };
+      const item = { state: randomUUID(), createdAt: nowIso(), sessionKey: input.sessionKey };
       state.oauthStates.push(item);
       return clone(item);
     },
-    consumeOAuthState(oauthState: string, input: {
-      sessionKey: string;
-      requireApiSession?: boolean;
-      requireCredentialManagementPermission?: boolean;
-    }) {
+    consumeOAuthState(oauthState: string, input: { sessionKey: string }) {
       pruneExpiredStates(state);
       const index = state.oauthStates.findIndex(
         (item) => item.state === oauthState && item.sessionKey === input.sessionKey,
       );
       if (index < 0) {
-        return false;
-      }
-      if (input.requireApiSession && !state.oauthStates[index].apiSessionAccountId) {
-        return false;
-      }
-      if (
-        input.requireCredentialManagementPermission &&
-        !state.oauthStates[index].apiSessionCanManageOAuthCredentials
-      ) {
         return false;
       }
       state.oauthStates.splice(index, 1);

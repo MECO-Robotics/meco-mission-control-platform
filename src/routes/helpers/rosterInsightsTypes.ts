@@ -28,6 +28,9 @@ export interface RosterInsightsMember {
   attendanceHoursLast14Days: number;
   attendanceHoursLast30Days: number;
   attendanceSessionsLast30Days: number;
+  plannedWeeklyAttendanceHours: number;
+  plannedAttendanceDays: import("../../domain/types").PlannedAttendanceDay[];
+  plannedAttendanceNotes: string;
   availabilityStatus: RosterAvailabilityStatus;
   topTasks: RosterInsightsTaskPreview[];
 }
@@ -58,8 +61,10 @@ export interface RosterInsightsSummary {
   unassignedTaskCount: number;
   overloadedMemberCount: number;
   unavailableMemberCount: number;
+  plannedWeeklyAttendanceHours: number;
   attendanceHoursLast14Days: number;
   attendanceHoursLast30Days: number;
+  noPlannedAttendanceWithTasksCount: number;
   noRecentAttendanceWithTasksCount: number;
 }
 
@@ -83,6 +88,9 @@ export interface RosterInsightsSource {
     name: string;
     role: MemberRole;
     disciplineId?: string | null;
+    plannedWeeklyAttendanceHours?: number;
+    plannedAttendanceDays?: import("../../domain/types").PlannedAttendanceDay[];
+    plannedAttendanceNotes?: string;
   }>;
   projects: Array<{
     id: string;

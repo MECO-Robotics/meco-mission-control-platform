@@ -93,6 +93,15 @@ export type IterationStatus = "planned" | "in-progress" | "complete";
 export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
 export type TaskDependencyKind = "task" | "milestone" | "part_instance";
 export type TaskDependencyType = "hard" | "soft";
+export type PlannedAttendanceDay =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+export type MeetingType = "general" | "build" | "review" | "outreach" | "competition" | "other";
 export type TaskBlockerType =
   | "task"
   | "milestone"
@@ -132,6 +141,9 @@ export interface Member {
   disciplineId?: string | null;
   seasonId: string;
   activeSeasonIds?: string[];
+  plannedWeeklyAttendanceHours?: number;
+  plannedAttendanceDays?: PlannedAttendanceDay[];
+  plannedAttendanceNotes?: string;
 }
 
 export interface Subsystem {
@@ -275,6 +287,13 @@ export interface WorkLog {
 export interface Meeting {
   id: string;
   title: string;
+  meetingType?: MeetingType;
+  seasonId?: string;
+  projectIds?: string[];
+  startDateTime?: string;
+  endDateTime?: string | null;
+  location?: string;
+  description?: string;
   date: string;
   time: string;
   rsvpsYes: number;
@@ -575,6 +594,13 @@ export interface Escalation {
   severity: "high" | "medium";
 }
 
+export interface FavoriteView {
+  id: string;
+  userKey: string;
+  viewId: string;
+  createdAt: string;
+}
+
 export type SlackChannelKey =
   | "build"
   | "meetingPlansRecaps"
@@ -682,5 +708,6 @@ export interface PlatformSnapshot {
   purchaseItems: PurchaseItem[];
   qaReviews: QaReview[];
   escalations: Escalation[];
+  favoriteViews?: FavoriteView[];
   actions?: AuditAction[];
 }

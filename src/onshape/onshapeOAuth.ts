@@ -34,14 +34,6 @@ export function isOnshapeOAuthRefreshConfigured(config: Pick<OnshapeOAuthConfig,
   return Boolean(config.clientId && config.clientSecret);
 }
 
-export function hasUsableOnshapeOAuthCredentials(args: {
-  accessToken?: string | null;
-  refreshToken?: string | null;
-  refreshConfigured: boolean;
-}) {
-  return Boolean(args.accessToken || (args.refreshToken && args.refreshConfigured));
-}
-
 export function buildOnshapeOAuthAuthorizationUrl(args: {
   authorizationUrl: string;
   clientId: string;
@@ -142,7 +134,7 @@ function requireOAuthClientConfig(config: OnshapeOAuthConfig) {
 
 function requireOAuthRefreshConfig(config: OnshapeOAuthConfig) {
   if (!isOnshapeOAuthRefreshConfigured(config)) {
-    throw new Error("Onshape OAuth client ID and client secret are required.");
+    throw new Error("Onshape OAuth client ID and client secret are required to refresh tokens.");
   }
 }
 

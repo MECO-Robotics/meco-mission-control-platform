@@ -4,6 +4,7 @@ import type {
   Milestone,
   ManufacturingProcess,
   ManufacturingStatus,
+  Meeting,
   MaterialCategory,
   Member,
   PartInstance,
@@ -75,6 +76,20 @@ export interface MemberInput {
   disciplineId?: string | null;
   seasonId?: string;
   activeSeasonIds?: string[];
+  plannedWeeklyAttendanceHours?: number;
+  plannedAttendanceDays?: NonNullable<Member["plannedAttendanceDays"]>;
+  plannedAttendanceNotes?: string;
+}
+
+export interface MeetingInput {
+  title: string;
+  meetingType?: NonNullable<Meeting["meetingType"]>;
+  seasonId?: string;
+  projectIds?: string[];
+  startDateTime: string;
+  endDateTime?: string | null;
+  location?: string;
+  description?: string;
 }
 
 export interface SeasonInput {

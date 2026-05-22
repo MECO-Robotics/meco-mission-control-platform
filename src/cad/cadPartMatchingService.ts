@@ -44,17 +44,7 @@ function cleanPartNumber(value: string | null | undefined) {
 }
 
 function tokens(value: string) {
-  return Array.from(
-    new Set(
-      value
-        .trim()
-        .toLowerCase()
-        .replace(/&/g, " and ")
-        .split(/[^a-z0-9]+/)
-        .map((token) => normalizeCadName(token))
-        .filter(Boolean),
-    ),
-  );
+  return normalizeCadName(value).split("-").filter(Boolean);
 }
 
 function tokenScore(left: string, right: string) {

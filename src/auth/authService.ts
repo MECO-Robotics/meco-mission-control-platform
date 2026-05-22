@@ -6,6 +6,8 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
+import { getUserPreferences } from "../data/userPreferencesStore";
+import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
@@ -44,6 +46,7 @@ interface SessionClaims extends JwtPayload {
   picture?: string | null;
   hd: string;
   provider?: "google" | "email";
+  role?: MemberRole;
 }
 
 interface PendingEmailCodeRecord {
@@ -60,6 +63,12 @@ export interface SessionUser {
   name: string;
   picture: string | null;
   hostedDomain: string;
+  role: MemberRole;
+  taskSubteamIds: string[];
+}
+
+interface SessionTokenOptions {
+  deviceId?: string | null;
 }
 
 export interface EmailCodeDelivery {
@@ -254,25 +263,55 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
   }
 }
 
+function getTaskSubteamIdsForEmail(email: string) {
+  return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
+}
+
+function getRoleForEmail(email: string): MemberRole {
+  const normalizedEmail = normalizeEmailAddress(email);
+  const rosterRole = getMembers().find(
+    (member) => normalizeEmailAddress(member.email) === normalizedEmail,
+  )?.role;
+
+  if (rosterRole && rosterRole !== "external") {
+    return rosterRole;
+  }
+
+  return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
+}
+
 function buildEmailSessionUser(email: string): SessionUser {
+  const normalizedEmail = normalizeEmailAddress(email);
+
   return {
-    accountId: email,
+    accountId: normalizedEmail,
     authProvider: "email",
-    email,
-    name: email,
+    email: normalizedEmail,
+    name: normalizedEmail,
     picture: null,
     hostedDomain: authConfig.hostedDomain,
+    role: getRoleForEmail(normalizedEmail),
+    taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail),
   };
 }
 
-export function buildDevelopmentSessionUser(): SessionUser {
+function isDevelopmentSessionRole(role: MemberRole | undefined): role is "student" | "mentor" {
+  return role === "student" || role === "mentor";
+}
+
+export function buildDevelopmentSessionUser(role: "student" | "mentor" = "student"): SessionUser {
+  const emailPrefix = role === "mentor" ? "dev.mentor" : "dev.student";
+  const email = `${emailPrefix}@${authConfig.hostedDomain}`;
+
   return {
-    accountId: "local-dev",
+    accountId: `local-dev-${role}`,
     authProvider: "email",
-    email: `dev@${authConfig.hostedDomain}`,
-    name: "Local Dev",
+    email,
+    name: role === "mentor" ? "Local Dev Mentor" : "Local Dev Student",
     picture: null,
     hostedDomain: authConfig.hostedDomain,
+    role,
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
 
@@ -298,6 +337,8 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
     hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
+    role: getRoleForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
 
@@ -466,22 +507,30 @@ function requestEmailDeliveryFailure(error?: unknown): never {
   );
 }
 
-export function signSessionToken(user: SessionUser) {
+function normalizeDeviceId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : null;
+}
+
+export function signSessionToken(user: SessionUser, options: SessionTokenOptions = {}) {
   const secret = getJwtSecret();
+  const deviceId = normalizeDeviceId(options.deviceId);
 
   return jwt.sign(
     {
+      ...(deviceId ? { deviceId } : null),
       email: user.email,
       name: user.name,
       picture: user.picture,
       hd: user.hostedDomain,
       provider: user.authProvider,
+      role: user.role,
     },
     secret,
     {
       algorithm: "HS256",
       subject: user.accountId,
-      expiresIn: authConfig.tokenTtl as SignOptions["expiresIn"],
+      expiresIn: (deviceId ? authConfig.deviceTokenTtl : authConfig.tokenTtl) as SignOptions["expiresIn"],
       issuer: SESSION_ISSUER,
       audience: SESSION_AUDIENCE,
     },
@@ -514,6 +563,13 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
+  const developmentRole =
+    env.NODE_ENV !== "production" &&
+    payload.sub.startsWith("local-dev-") &&
+    isDevelopmentSessionRole(payload.role)
+      ? payload.role
+      : null;
+
   return {
     accountId: payload.sub,
     authProvider: payload.provider ?? "google",
@@ -521,6 +577,8 @@ export function verifySessionToken(token: string): SessionUser {
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
     hostedDomain: payload.hd.toLowerCase(),
+    role: developmentRole ?? getRoleForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
 

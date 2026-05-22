@@ -1,18 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { getSessionFromRequest, isAuthEnabled } from "../../auth/authService";
-import { onshapeConfig } from "../../config/env";
-import { getMembers } from "../../data/store";
-import { getOnshapeRuntimeStore } from "../cadStore";
-import { canManageOnshapeOAuthCredentials } from "../onshapeSyncPolicy";
+import { getSessionFromRequest, isAuthEnabled } from "../auth/authService";
+import { onshapeConfig } from "../config/env";
+import { getOnshapeRuntimeStore } from "./cadStore";
 import {
   buildOnshapeOAuthAuthorizationUrl,
   exchangeOnshapeOAuthCode,
   isOnshapeOAuthClientConfigured,
   isOnshapeOAuthRefreshConfigured,
   refreshOnshapeOAuthToken,
-} from "../onshapeOAuth";
+} from "./onshapeOAuth";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 
@@ -30,13 +28,9 @@ function getOAuthConfig() {
   };
 }
 
-function getCookieHeader(request: FastifyRequest) {
-  const header = request.headers.cookie;
-  return Array.isArray(header) ? header.join(";") : (header ?? "");
-}
-
 function readCookieValue(request: FastifyRequest, name: string) {
-  const cookieHeader = getCookieHeader(request);
+  const header = request.headers.cookie;
+  const cookieHeader = Array.isArray(header) ? header.join(";") : (header ?? "");
   for (const part of cookieHeader.split(";")) {
     const [rawName, ...rawValue] = part.trim().split("=");
     if (rawName === name) {
@@ -67,50 +61,53 @@ function buildExpiredOAuthSessionCookie() {
   return `${ONSHAPE_OAUTH_SESSION_COOKIE}=; Path=/api/onshape/oauth/callback; Max-Age=0; HttpOnly; SameSite=Lax`;
 }
 
-function getApiSessionAccountId(request: FastifyRequest) {
-  if (!isAuthEnabled()) {
-    return null;
-  }
-
-  return getSessionFromRequest(request)?.accountId ?? null;
-}
-
-function canRequestManageOAuthCredentials(request: FastifyRequest) {
-  const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
-  return canManageOnshapeOAuthCredentials({
-    authEnabled: isAuthEnabled(),
-    userEmail: session?.email ?? null,
-    members: getMembers(),
-  });
-}
-
-function requireOAuthCredentialPermission(request: FastifyRequest, reply: FastifyReply) {
-  if (canRequestManageOAuthCredentials(request)) {
-    return true;
-  }
-
-  reply.code(403).send({
-    message: "Onshape OAuth credential management is restricted to leads, mentors, and admins.",
-  });
-  return false;
-}
-
-function resolveOAuthCallbackSessionKey(
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
+function resolveOAuthCallbackSessionKey(request: FastifyRequest, reply: FastifyReply) {
   const sessionKey = readCookieValue(request, ONSHAPE_OAUTH_SESSION_COOKIE);
   if (sessionKey) {
     return sessionKey;
   }
 
-  reply.code(400).send({ message: "Onshape OAuth session state is missing or expired. Start the connection again in the same browser session." });
+  reply.code(400).send({
+    message: "Onshape OAuth session state is missing or expired. Start the connection again in the same browser session.",
+  });
   return null;
 }
 
-export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply: FastifyReply) {
+  if (!isAuthEnabled()) {
+    return true;
+  }
+
+  const session = getSessionFromRequest(request);
+  if (session?.role === "lead" || session?.role === "mentor" || session?.role === "admin") {
+    return true;
+  }
+
+  reply.code(403).send({
+    message: "Onshape OAuth credential updates are restricted to leads, mentors, and admins.",
+  });
+  return false;
+}
+
+export function getOAuthStatus(store: ReturnType<typeof getOnshapeRuntimeStore>) {
+  const tokenSet = store.getOAuthTokenSet();
+  const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
+  return {
+    clientConfigured: isOnshapeOAuthClientConfigured(getOAuthConfig()),
+    connected: Boolean(tokenSet || envConnected),
+    authorizationUrlAvailable: isOnshapeOAuthClientConfigured(getOAuthConfig()),
+    scopes: onshapeConfig.oauthScopes,
+    tokenExpiresAt: tokenSet?.expiresAt ?? onshapeConfig.oauthTokenExpiresAt ?? null,
+    credentialSource: tokenSet ? "runtime" : (envConnected ? "env" : "none"),
+  };
+}
+
+export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
   app.post("/api/onshape/oauth/authorization-url", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
+      return;
+    }
+    if (!requireOnshapeOAuthCredentialPermission(request, reply)) {
       return;
     }
 
@@ -122,19 +119,7 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     }
 
     const sessionKey = randomUUID();
-    const apiSessionAccountId = getApiSessionAccountId(request);
-    if (isAuthEnabled() && !apiSessionAccountId) {
-      return reply.code(401).send({ message: "A signed-in Mission Control session is required." });
-    }
-    if (!requireOAuthCredentialPermission(request, reply)) {
-      return;
-    }
-
-    const { state } = getOnshapeRuntimeStore().createOAuthState({
-      sessionKey,
-      apiSessionAccountId,
-      apiSessionCanManageOAuthCredentials: true,
-    });
+    const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
     reply.header("Set-Cookie", buildOAuthSessionCookie(sessionKey));
     return {
       authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
@@ -165,11 +150,7 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     }
 
     const store = getOnshapeRuntimeStore();
-    if (!store.consumeOAuthState(state, {
-      sessionKey,
-      requireApiSession: isAuthEnabled(),
-      requireCredentialManagementPermission: isAuthEnabled(),
-    })) {
+    if (!store.consumeOAuthState(state, { sessionKey })) {
       return reply
         .header("Set-Cookie", buildExpiredOAuthSessionCookie())
         .code(400)
@@ -190,21 +171,21 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     if (!requireApiSession(request, reply)) {
       return;
     }
-    if (!requireOAuthCredentialPermission(request, reply)) {
+    if (!requireOnshapeOAuthCredentialPermission(request, reply)) {
       return;
+    }
+
+    const config = getOAuthConfig();
+    if (!isOnshapeOAuthRefreshConfigured(config)) {
+      return reply.code(409).send({
+        message: "Onshape OAuth client ID and client secret are required to refresh tokens.",
+      });
     }
 
     const store = getOnshapeRuntimeStore();
     const refreshToken = store.getOAuthTokenSet()?.refreshToken ?? onshapeConfig.oauthRefreshToken;
     if (!refreshToken) {
       return reply.code(409).send({ message: "No Onshape OAuth refresh token is available." });
-    }
-
-    const config = getOAuthConfig();
-    if (!isOnshapeOAuthRefreshConfigured(config)) {
-      return reply.code(409).send({
-        message: "Onshape OAuth client ID and client secret are not configured.",
-      });
     }
 
     const tokenSet = await refreshOnshapeOAuthToken({ config, refreshToken });

@@ -32,7 +32,7 @@ function optionalMultipartField(value: string | undefined) {
 }
 
 function optionalMultipartBoolean(value: string | undefined) {
-  const trimmed = value?.trim().toLowerCase();
+  const trimmed = value?.trim();
   if (!trimmed) {
     return undefined;
   }
@@ -42,7 +42,7 @@ function optionalMultipartBoolean(value: string | undefined) {
   if (trimmed === "false") {
     return false;
   }
-  return value;
+  return trimmed;
 }
 
 export async function readStepImportPayload(request: FastifyRequest) {
@@ -89,6 +89,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
     if (!fileName || fileText === null) {
       throw new CadImportError("STEP import requires a file.");
     }
+
     const parsed = cadStepImportJsonSchema.safeParse({
       fileName,
       fileText,

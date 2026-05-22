@@ -1,17 +1,10 @@
 import { FastifyInstance } from "fastify";
-import { authConfig as runtimeAuthConfig, env, requestLimitConfig } from "../config/env";
+import { requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
-  AuthError,
-  buildDevelopmentSessionUser,
   getSessionFromRequest,
-  getPublicAuthConfig,
   isAuthEnabled,
   requireSession,
-  requestEmailSignInCode,
-  signSessionToken,
-  verifyEmailSignInCode,
-  verifyGoogleCredential,
 } from "../auth/authService";
 import {
   createArtifact,
@@ -38,6 +31,7 @@ import {
   createWorkLog,
   createWorkstream,
   findDiscipline,
+  getFavoriteViews,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -95,6 +89,7 @@ import {
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
+  setFavoriteView,
   updateManufacturingItem,
   updateArtifact,
   updateMaterial,
@@ -159,8 +154,8 @@ import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
 import {
   artifactPatchSchema,
   artifactSchema,
-  emailSignInRequestSchema,
-  emailSignInVerifySchema,
+  favoriteNavigationViewIdSchema,
+  favoriteViewToggleSchema,
   milestonePatchSchema,
   milestoneSchema,
   manufacturingItemPatchSchema,
@@ -210,6 +205,8 @@ import {
 import { buildSlackHomeResponse } from "../slack/homeService";
 import { registerCadRoutes } from "../cad/cadRoutes";
 import { registerOnshapeRoutes } from "../onshape/onshapeRoutes";
+import { registerAuthRoutes } from "./authRoutes";
+import { registerMeetingRoutes } from "./meetingRoutes";
 
 const allowApiRouteRequest = createRequestLimitGuard({
   scope: "api",
@@ -247,6 +244,28 @@ export async function registerRoutes(app: FastifyInstance) {
     return Boolean(requireSession(request, reply));
   };
 
+  const hasMentorPermission = (request: Parameters<typeof requireSession>[0]) => {
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    return session?.role === "lead" || session?.role === "mentor" || session?.role === "admin";
+  };
+
+  const requireMentorPermission = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    message: string,
+  ) => {
+    if (hasMentorPermission(request)) {
+      return true;
+    }
+
+    reply.code(403).send({ message });
+    return false;
+  };
+
   const isValidTaskDependencyTarget = (
     kind: "task" | "milestone" | "part_instance",
     refId: string,
@@ -266,6 +285,17 @@ export async function registerRoutes(app: FastifyInstance) {
     return false;
   };
 
+  const getNavigationPreferenceUserKey = (
+    request: Parameters<typeof getSessionFromRequest>[0],
+  ) => {
+    if (!isAuthEnabled()) {
+      return "local-development";
+    }
+
+    const session = getSessionFromRequest(request);
+    return session?.accountId || session?.email || "authenticated-user";
+  };
+
   app.get("/health", async () => {
     return {
       status: "ok",
@@ -274,159 +304,10 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/api/auth/config", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-
-    return getPublicAuthConfig();
-  });
-
-  app.post<{
-    Body: {
-      credential?: string;
-    };
-  }>("/api/auth/google", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-
-    const credential = request.body?.credential;
-    if (!credential) {
-      return reply.code(400).send({
-        message: "Google did not provide a credential to exchange.",
-      });
-    }
-
-    try {
-      const user = await verifyGoogleCredential(credential);
-      const token = signSessionToken(user);
-
-      return {
-        token,
-        user,
-      };
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Google authentication failed");
-      return reply.code(500).send({
-        message: "Google authentication failed unexpectedly.",
-      });
-    }
-  });
-
-  if (env.NODE_ENV !== "production") {
-    app.post("/api/auth/dev-bypass", async (request, reply) => {
-      if (!allowAuthRouteRequest(request, reply)) {
-        return;
-      }
-
-      if (!runtimeAuthConfig.enabled) {
-        return reply.code(503).send({
-          message: "Development sign-in is not available until auth is configured.",
-        });
-      }
-
-      const user = buildDevelopmentSessionUser();
-      const token = signSessionToken(user);
-
-      return {
-        token,
-        user,
-      };
-    });
-  }
-
-  app.post<{ Body: unknown }>("/api/auth/email/start", async (request, reply) => {
-    if (!allowAuthEmailRouteRequest(request, reply)) {
-      return;
-    }
-
-    const parsed = emailSignInRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Email sign-in payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    try {
-      return await requestEmailSignInCode(parsed.data.email);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Email sign-in code request failed");
-      return reply.code(500).send({
-        message: "Email sign-in failed unexpectedly.",
-      });
-    }
-  });
-
-  app.post<{ Body: unknown }>("/api/auth/email/verify", async (request, reply) => {
-    if (!allowAuthEmailRouteRequest(request, reply)) {
-      return;
-    }
-
-    const parsed = emailSignInVerifySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Email verification payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    try {
-      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
-      const token = signSessionToken(user);
-
-      return {
-        token,
-        user,
-      };
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Email authentication failed");
-      return reply.code(500).send({
-        message: "Email authentication failed unexpectedly.",
-      });
-    }
-  });
-
-  app.get("/api/auth/me", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-
-    if (!isAuthEnabled()) {
-      return {
-        enabled: false,
-        user: null,
-      };
-    }
-
-    const session = requireSession(request, reply);
-    if (!session) {
-      return;
-    }
-
-    return {
-      enabled: true,
-      user: session,
-    };
+  registerAuthRoutes(app, {
+    allowApiRouteRequest,
+    allowAuthEmailRouteRequest,
+    allowAuthRouteRequest,
   });
 
   app.get("/api/dashboard", async (request, reply) => {
@@ -457,9 +338,42 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const selection = readBootstrapSelection(request.query);
+    const userKey = getNavigationPreferenceUserKey(request);
 
-    return buildBootstrapResponse(snapshot, selection);
+    return {
+      ...buildBootstrapResponse(snapshot, selection),
+      favoriteViews: getFavoriteViews(userKey),
+    };
   });
+
+  app.patch<{ Body: unknown; Params: { viewId: string } }>(
+    "/api/navigation/favorites/:viewId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsedViewId = favoriteNavigationViewIdSchema.safeParse(request.params.viewId);
+      const parsedBody = favoriteViewToggleSchema.safeParse(request.body);
+      if (!parsedViewId.success || !parsedBody.success) {
+        return reply.code(400).send({
+          message: "Favorite view payload is invalid.",
+          issues: {
+            params: parsedViewId.success ? undefined : parsedViewId.error.flatten(),
+            body: parsedBody.success ? undefined : parsedBody.error.flatten(),
+          },
+        });
+      }
+
+      return {
+        favoriteViews: setFavoriteView(
+          getNavigationPreferenceUserKey(request),
+          parsedViewId.data,
+          parsedBody.data.isFavorite,
+        ),
+      };
+    },
+  );
 
   app.post("/api/tutorial/session/start", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -845,6 +759,13 @@ export async function registerRoutes(app: FastifyInstance) {
         message: "QA report payload is invalid.",
         issues: parsed.error.flatten(),
       });
+    }
+
+    if (
+      parsed.data.mentorApproved &&
+      !requireMentorPermission(request, reply, "Only mentors can approve QA.")
+    ) {
+      return;
     }
 
     const validationError = validateQaReportLinks(parsed.data);
@@ -1717,6 +1638,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can create tasks.")) {
+      return;
+    }
+
     const parsed = taskSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -1778,6 +1703,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/tasks/:taskId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can edit tasks.")) {
         return;
       }
 
@@ -1869,6 +1798,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/tasks/:taskId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete tasks.")) {
         return;
       }
 
@@ -2147,6 +2080,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can invite people.")) {
+      return;
+    }
+
     const parsed = memberSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -2193,6 +2130,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/members/:memberId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can edit people.")) {
         return;
       }
 
@@ -2249,6 +2190,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/members/:memberId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete people.")) {
         return;
       }
 
@@ -2753,17 +2698,7 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/api/meetings", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    return {
-      meetings: getSnapshot().meetings,
-      attendance: getSnapshot().attendanceRecords,
-      workLogs: getSnapshot().workLogs,
-    };
-  });
+  registerMeetingRoutes(app, { requireApiSessionIfEnabled, requireMentorPermission });
 
   app.get("/api/roster/insights", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

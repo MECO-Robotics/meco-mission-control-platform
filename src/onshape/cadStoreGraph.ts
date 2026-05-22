@@ -33,32 +33,13 @@ function findExistingSnapshot(state: OnshapeRuntimeState, ref: OnshapeDocumentRe
 }
 
 function partIdentity(part: PartDefinitionInput) {
-  if (part.missionControlExternalKey) {
-    return `external:${part.missionControlExternalKey}`;
-  }
-  if (part.partId) {
-    return `onshape:${part.documentId}:${part.elementId ?? ""}:${part.partId}:${part.configuration ?? ""}`;
-  }
-  return `source:${part.sourceId}`;
+  return part.missionControlExternalKey ||
+    `${part.documentId}:${part.elementId ?? ""}:${part.partId || `source:${part.sourceId}`}:${part.configuration ?? ""}`;
 }
 
 function existingPartIdentity(part: CadPartDefinition) {
-  if (part.missionControlExternalKey) {
-    return `external:${part.missionControlExternalKey}`;
-  }
-  if (part.partId) {
-    return `onshape:${part.documentId}:${part.elementId ?? ""}:${part.partId}:${part.configuration ?? ""}`;
-  }
-  return `source:${part.sourceId}`;
-}
-
-function linkSnapshotToImportRun(state: OnshapeRuntimeState, importRunId: string, snapshotId: string) {
-  const existing = state.snapshotRunLinks.some(
-    (link) => link.importRunId === importRunId && link.snapshotId === snapshotId,
-  );
-  if (!existing) {
-    state.snapshotRunLinks.push({ importRunId, snapshotId, createdAt: nowIso() });
-  }
+  return part.missionControlExternalKey ||
+    `${part.documentId}:${part.elementId ?? ""}:${part.partId || `source:${part.sourceId}`}:${part.configuration ?? ""}`;
 }
 
 export function buildCadGraphStore(state: OnshapeRuntimeState) {
@@ -75,7 +56,8 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
       if (existing) {
         existing.label = input.label;
         existing.notes = input.notes ?? existing.notes;
-        linkSnapshotToImportRun(state, input.importRunId, existing.id);
+        existing.createdBy = input.createdBy ?? existing.createdBy;
+        existing.source = input.source ?? existing.source;
         return clone(existing);
       }
 
@@ -104,7 +86,6 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
         immutable: isImmutableReference(input.documentRef),
       };
       state.snapshots.push(snapshot);
-      linkSnapshotToImportRun(state, input.importRunId, snapshot.id);
       return clone(snapshot);
     },
     findSnapshot(id: string) {
@@ -115,18 +96,6 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
       return clone(
         state.snapshots
           .filter((snapshot) => !documentRefId || snapshot.onshapeDocumentRefId === documentRefId)
-          .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
-      );
-    },
-    listSnapshotsForImportRun(importRunId: string) {
-      const linkedSnapshotIds = new Set(
-        state.snapshotRunLinks
-          .filter((link) => link.importRunId === importRunId)
-          .map((link) => link.snapshotId),
-      );
-      return clone(
-        state.snapshots
-          .filter((snapshot) => snapshot.importRunId === importRunId || linkedSnapshotIds.has(snapshot.id))
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       );
     },
@@ -187,8 +156,7 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
           (candidate) =>
             candidate.snapshotId === snapshotId &&
             (candidate.sourceId === part.sourceId ||
-              (part.missionControlExternalKey != null &&
-                candidate.missionControlExternalKey === part.missionControlExternalKey) ||
+              candidate.missionControlExternalKey === part.missionControlExternalKey ||
               existingPartIdentity(candidate) === identityKey),
         );
         const nextPart: CadPartDefinition = {

@@ -21,20 +21,13 @@ export interface OnshapeRuntimeState {
   requestLogs: OnshapeApiRequestLog[];
   cacheEntries: OnshapeApiCacheEntry[];
   snapshots: CadSnapshot[];
-  snapshotRunLinks: Array<{ importRunId: string; snapshotId: string; createdAt: string }>;
   assemblyNodes: CadAssemblyNode[];
   partDefinitions: CadPartDefinition[];
   partInstances: CadPartInstance[];
   warnings: CadImportWarning[];
   budget: OnshapeApiBudget;
   oauthTokenSet: OnshapeOAuthTokenSet | null;
-  oauthStates: Array<{
-    state: string;
-    createdAt: string;
-    sessionKey: string;
-    apiSessionAccountId: string | null;
-    apiSessionCanManageOAuthCredentials: boolean;
-  }>;
+  oauthStates: Array<{ state: string; createdAt: string; sessionKey: string }>;
 }
 
 export interface OnshapeRuntimeStore {
@@ -76,7 +69,6 @@ export interface OnshapeRuntimeStore {
   }): CadSnapshot;
   findSnapshot(id: string): CadSnapshot | null;
   listSnapshots(documentRefId?: string): CadSnapshot[];
-  listSnapshotsForImportRun(importRunId: string): CadSnapshot[];
   upsertAssemblyNodes(snapshotId: string, nodes: Array<{
     sourceId: string;
     parentSourceId?: string;
@@ -102,7 +94,7 @@ export interface OnshapeRuntimeStore {
     configuration?: string;
     customProperties?: Record<string, unknown>;
     metadataHash?: string;
-    missionControlExternalKey?: string | null;
+    missionControlExternalKey?: string;
   }>): Map<string, CadPartDefinition>;
   upsertPartInstances(snapshotId: string, parts: Array<{
     sourceId: string;
@@ -126,22 +118,8 @@ export interface OnshapeRuntimeStore {
   listWarnings(filter?: { importRunId?: string; snapshotId?: string }): CadImportWarning[];
   getBudget(): OnshapeApiBudget;
   recordApiCall(count: number, rateLimitRemaining?: number | null): OnshapeApiBudget;
-  createOAuthState(input: {
-    sessionKey: string;
-    apiSessionAccountId?: string | null;
-    apiSessionCanManageOAuthCredentials?: boolean;
-  }): {
-    state: string;
-    createdAt: string;
-    sessionKey: string;
-    apiSessionAccountId: string | null;
-    apiSessionCanManageOAuthCredentials: boolean;
-  };
-  consumeOAuthState(state: string, input: {
-    sessionKey: string;
-    requireApiSession?: boolean;
-    requireCredentialManagementPermission?: boolean;
-  }): boolean;
+  createOAuthState(input: { sessionKey: string }): { state: string; createdAt: string; sessionKey: string };
+  consumeOAuthState(state: string, input: { sessionKey: string }): boolean;
   getOAuthTokenSet(): OnshapeOAuthTokenSet | null;
   setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null): OnshapeOAuthTokenSet | null;
   reset(): void;

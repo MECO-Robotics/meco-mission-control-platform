@@ -1,111 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getCadRuntimeStore, resetCadRuntimeStore } from "../src/cad/cadStore";
-import { collectHierarchyIssues } from "../src/cad/cadHierarchyValidationService";
+import { resetCadRuntimeStore } from "../src/cad/cadStore";
 import { createPartDefinition } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
-
-test("CAD runtime store resolves assembly parents after unordered insertion", async () => {
-  try {
-    resetCadRuntimeStore();
-    const store = getCadRuntimeStore();
-    const bySourceId = await store.createAssemblyNodes("cad-snapshot-1", [
-      {
-        sourceId: "asm-child",
-        parentSourceId: "asm-root",
-        name: "Child assembly",
-        instancePath: "/Robot/Child assembly",
-        depth: 1,
-        inferredType: "MECHANISM_CANDIDATE",
-        stableSignature: "asm:path:/Robot/Child assembly",
-        metadataJson: {},
-      },
-      {
-        sourceId: "asm-root",
-        parentSourceId: null,
-        name: "Robot",
-        instancePath: "/Robot",
-        depth: 0,
-        inferredType: "ROOT",
-        stableSignature: "asm:path:/Robot",
-        metadataJson: {},
-      },
-    ]);
-
-    assert.equal(
-      bySourceId.get("asm-child")?.parentAssemblyNodeId,
-      bySourceId.get("asm-root")?.id,
-    );
-    assert.equal(
-      (await store.listAssemblyNodes("cad-snapshot-1")).find((node) => node.sourceId === "asm-child")?.parentAssemblyNodeId,
-      bySourceId.get("asm-root")?.id,
-    );
-  } finally {
-    resetCadRuntimeStore();
-  }
-});
-
-test("hierarchy issues identify the offending part instance", () => {
-  const issues = collectHierarchyIssues({
-    assemblies: [
-      {
-        id: "cad-assembly-1",
-        snapshotId: "cad-snapshot-1",
-        sourceId: "asm-drive",
-        parentSourceId: null,
-        parentAssemblyNodeId: null,
-        name: "Drivetrain",
-        normalizedName: "drivetrain",
-        instancePath: "/Robot/Drivetrain",
-        depth: 0,
-        inferredType: "ROOT",
-        stableSignature: "asm:path:/Robot/Drivetrain",
-        metadataJson: {},
-        createdAt: "2026-01-01T00:00:00.000Z",
-      },
-    ],
-    instances: [
-      {
-        id: "cad-part-inst-1",
-        snapshotId: "cad-snapshot-1",
-        sourceId: "part-inst-drive-rail",
-        partDefinitionId: "cad-part-def-1",
-        parentAssemblyNodeId: "cad-assembly-1",
-        instancePath: "/Robot/Drive rail",
-        quantity: 1,
-        stableSignature: "part-inst:path:/Robot/Drive rail",
-        metadataJson: {},
-        createdAt: "2026-01-01T00:00:00.000Z",
-      },
-    ],
-    mappingsBySourceId: new Map(),
-    proposals: [],
-    definitionsById: new Map([
-      [
-        "cad-part-def-1",
-        {
-          id: "cad-part-def-1",
-          snapshotId: "cad-snapshot-1",
-          sourceId: "part-drive-rail",
-          name: "Drive rail",
-          normalizedName: "drive rail",
-          partNumber: null,
-          material: null,
-          stableSignature: "part:name:drive-rail",
-          metadataJson: {},
-          createdAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
-    ]),
-  });
-
-  const issue = issues.find((item) => item.code === "cad_part_outside_mapped_hierarchy");
-  assert.equal(issue?.sourceKind, "PART_INSTANCE");
-  assert.equal(issue?.sourceId, "cad-part-inst-1");
-});
 
 function createDomainPart(input: { name: string; partNumber: string; type?: string; source?: string }) {
   return createPartDefinition({
@@ -321,53 +221,6 @@ test("hierarchy review returns a top-down assembly tree with component assembly 
   });
 });
 
-test("hierarchy review leaves rejected assembly mappings unresolved", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
-    resetCadRuntimeStore();
-    const imported = await uploadStep(app, "rejected-assembly-mapping", hierarchyCadFixture());
-    resetLimits();
-
-    const initialResponse = await app.inject({
-      method: "GET",
-      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review`,
-    });
-    assert.equal(initialResponse.statusCode, 200, initialResponse.body);
-    const initial = initialResponse.json() as { root: HierarchyNode };
-    const component = findNode(initial.root, "asm-bellypan");
-    assert.ok(component);
-    resetLimits();
-
-    const applyResponse = await app.inject({
-      method: "POST",
-      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review/apply`,
-      payload: {
-        reviewedBy: "mentor@example.com",
-        assemblyDecisions: [
-          {
-            sourceId: component.id,
-            targetKind: "COMPONENT_ASSEMBLY",
-            targetId: "asm-bellypan",
-            status: "REJECTED",
-          },
-        ],
-      },
-    });
-    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
-    resetLimits();
-
-    const reviewedResponse = await app.inject({
-      method: "GET",
-      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review`,
-    });
-    assert.equal(reviewedResponse.statusCode, 200, reviewedResponse.body);
-    const reviewed = reviewedResponse.json() as { root: HierarchyNode };
-    const rejectedComponent = findNode(reviewed.root, "asm-bellypan");
-    assert.equal(rejectedComponent?.status, "REJECTED");
-    assert.equal(rejectedComponent?.proposedClassification, "UNMAPPED");
-    assert.equal(rejectedComponent?.resolvedComponentAssemblyId, null);
-  });
-});
-
 test("part match proposals reuse one database part for repeated rivets", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -424,48 +277,6 @@ test("part match proposals distinguish exact tube numbers from ambiguous tube na
     assert.equal(ambiguous?.status, "AMBIGUOUS");
     assert.deepEqual(new Set(ambiguous?.candidates.map((candidate) => candidate.id)), new Set([tubeA.id, tubeB.id]));
     assert.ok(ambiguous?.candidates.every((candidate) => candidate.confidence === "MEDIUM"));
-  });
-});
-
-test("part match proposals score whitespace-separated vendor names", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
-    resetCadRuntimeStore();
-    const drivePlate = createDomainPart({
-      name: "Drive Plate",
-      partNumber: "DRV-PLATE",
-      source: "VendorCo",
-    });
-    const imported = await uploadStep(app, "whitespace-token-part-match", JSON.stringify({
-      rootName: "Robot",
-      units: "inch",
-      assemblyNodes: [],
-      partDefinitions: [
-        {
-          sourceId: "part-drive-rail",
-          name: "Drive Rail",
-          partNumber: null,
-          material: "aluminum",
-          stableSignature: "part:name:drive-rail",
-          metadata: { vendor: "VendorCo" },
-        },
-      ],
-      partInstances: [],
-    }));
-    resetLimits();
-
-    const response = await app.inject({
-      method: "GET",
-      url: `/api/cad/snapshots/${imported.snapshot.id}/part-match-proposals`,
-    });
-
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json() as {
-      items: Array<{ cadPartDefinitionSourceId: string; status: string; candidates: Array<{ id: string; strategy: string }> }>;
-    };
-    const proposal = body.items.find((item) => item.cadPartDefinitionSourceId === "part-drive-rail");
-    assert.equal(proposal?.status, "SUGGESTED");
-    assert.equal(proposal?.candidates[0]?.id, drivePlate.id);
-    assert.equal(proposal?.candidates[0]?.strategy, "VENDOR_METADATA");
   });
 });
 

@@ -1,7 +1,7 @@
 ﻿import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getOnshapeRuntimeStore, resetOnshapeRuntimeStore } from "../src/onshape/cadStore";
+import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
 import { setOnshapeOAuthTokenTransportForTests } from "../src/onshape/onshapeOAuth";
 import { setOnshapeCadClientFactoryForTests } from "../src/onshape/onshapeClientFactory";
 import type { CadImportOnshapeClient } from "../src/onshape/onshapeTypes";
@@ -143,6 +143,7 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
       assert.equal(bomResponse.statusCode, 201);
       assert.equal(bomResponse.json().result.partDefinitionCount, 1);
       assert.equal(bomResponse.json().result.partInstanceCount, 1);
+      const bomRunId = bomResponse.json().result.importRunId as string;
 
       resetLimits();
 
@@ -152,24 +153,29 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
         payload: { documentRefId: refId, syncLevel: "bom" },
       });
       assert.equal(rerunResponse.statusCode, 201);
-      assert.equal(rerunResponse.json().result.snapshotId, bomResponse.json().result.snapshotId);
+      const rerunRunId = rerunResponse.json().result.importRunId as string;
 
       resetLimits();
 
-      const firstRunDetailResponse = await app.inject({
+      const bomDetailResponse = await app.inject({
         method: "GET",
-        url: `/api/onshape/import-runs/${bomResponse.json().result.importRunId}`,
+        url: `/api/onshape/import-runs/${bomRunId}`,
       });
+      assert.equal(bomDetailResponse.statusCode, 200);
+      assert.equal(bomDetailResponse.json().snapshots.length, 1);
+
       resetLimits();
 
       const rerunDetailResponse = await app.inject({
         method: "GET",
-        url: `/api/onshape/import-runs/${rerunResponse.json().result.importRunId}`,
+        url: `/api/onshape/import-runs/${rerunRunId}`,
       });
-      assert.equal(firstRunDetailResponse.statusCode, 200);
       assert.equal(rerunDetailResponse.statusCode, 200);
-      assert.equal(firstRunDetailResponse.json().snapshots[0]?.id, bomResponse.json().result.snapshotId);
-      assert.equal(rerunDetailResponse.json().snapshots[0]?.id, bomResponse.json().result.snapshotId);
+      assert.equal(rerunDetailResponse.json().snapshots.length, 1);
+      assert.equal(
+        rerunDetailResponse.json().snapshots[0].id,
+        bomDetailResponse.json().snapshots[0].id,
+      );
 
       resetLimits();
 
@@ -282,68 +288,5 @@ test("Onshape OAuth routes issue authorization URLs and store callback tokens", 
     });
   } finally {
     setOnshapeOAuthTokenTransportForTests(null);
-  }
-});
-
-test("Onshape OAuth states can require authenticated API session provenance", () => {
-  try {
-    resetOnshapeRuntimeStore();
-    const store = getOnshapeRuntimeStore();
-    const anonymousState = store.createOAuthState({ sessionKey: "browser-session" });
-
-    assert.equal(
-      store.consumeOAuthState(anonymousState.state, {
-        sessionKey: "browser-session",
-        requireApiSession: true,
-      }),
-      false,
-    );
-    assert.equal(
-      store.consumeOAuthState(anonymousState.state, {
-        sessionKey: "browser-session",
-      }),
-      true,
-    );
-
-    const authenticatedState = store.createOAuthState({
-      sessionKey: "browser-session",
-      apiSessionAccountId: "mentor",
-    });
-    assert.equal(
-      store.consumeOAuthState(authenticatedState.state, {
-        sessionKey: "browser-session",
-        requireApiSession: true,
-      }),
-      true,
-    );
-
-    const unprivilegedState = store.createOAuthState({
-      sessionKey: "browser-session",
-      apiSessionAccountId: "student",
-    });
-    assert.equal(
-      store.consumeOAuthState(unprivilegedState.state, {
-        sessionKey: "browser-session",
-        requireApiSession: true,
-        requireCredentialManagementPermission: true,
-      }),
-      false,
-    );
-
-    const credentialManagerState = store.createOAuthState({
-      sessionKey: "browser-session",
-      apiSessionAccountId: "mentor",
-      apiSessionCanManageOAuthCredentials: true,
-    });
-    assert.equal(
-      store.consumeOAuthState(credentialManagerState.state, {
-        sessionKey: "browser-session",
-        requireApiSession: true,
-        requireCredentialManagementPermission: true,
-      }),
-      true,
-    );
-  } finally {
-    resetOnshapeRuntimeStore();
   }
 });

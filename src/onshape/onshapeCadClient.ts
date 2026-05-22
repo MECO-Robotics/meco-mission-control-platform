@@ -4,7 +4,7 @@ import type {
   OnshapeReference,
 } from "./onshapeTypes";
 import type { createOnshapeApiClient } from "./onshapeApiClient";
-import { normalizeOnshapeBom } from "./onshapeBomNormalizer";
+import { normalizeOnshapeBom } from "./bom/normalizer";
 
 export const ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH = "document-metadata:v1";
 export const ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH = "assembly-bom:v1";

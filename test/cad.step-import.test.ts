@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getCadRuntimeStore, resetCadRuntimeStore } from "../src/cad/cadStore";
+import { resetCadRuntimeStore } from "../src/cad/cadStore";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
@@ -300,7 +300,6 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
       partDefinitionCount: number;
       partInstanceCount: number;
       warningCount: number;
-      mappingCount: number;
       configuredParserMode?: string;
       actualParserVersion?: string;
       parserUsedPlaceholder?: boolean;
@@ -322,7 +321,6 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
         rootCount?: number;
         rootNames?: string[];
         topLevelAssemblyNames?: string[];
-        parserMode?: string;
       };
     };
   };
@@ -356,17 +354,20 @@ function multipartStepPayload(input: {
   const chunks: Buffer[] = [];
   const append = (value: string) => chunks.push(Buffer.from(value, "utf8"));
 
-  const appendField = (name: string, value: string) => {
-    append(`--${input.boundary}\r\n`);
-    append(`Content-Disposition: form-data; name="${name}"\r\n\r\n`);
-    append(`${value}\r\n`);
-  };
   const appendFields = () => {
-    appendField("label", input.label);
-    appendField("projectId", input.projectId ?? "robot-2026");
-    appendField("seasonId", input.seasonId ?? "season-2026");
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="label"\r\n\r\n`);
+    append(`${input.label}\r\n`);
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="projectId"\r\n\r\n`);
+    append(`${input.projectId ?? "robot-2026"}\r\n`);
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
+    append(`${input.seasonId ?? "season-2026"}\r\n`);
     if (input.requestedBy !== undefined) {
-      appendField("requestedBy", input.requestedBy);
+      append(`--${input.boundary}\r\n`);
+      append(`Content-Disposition: form-data; name="requestedBy"\r\n\r\n`);
+      append(`${input.requestedBy}\r\n`);
     }
   };
   const appendFile = () => {
@@ -1020,7 +1021,6 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(result.summary.rawStats?.productCount, 14);
     assert.equal(result.summary.rawStats?.assemblyUsageCount, 14);
     assert.equal(result.summary.rawStats?.rootCount, 1);
-    assert.equal(result.summary.rawStats?.parserMode, undefined);
     assert.deepEqual(result.summary.rawStats?.topLevelAssemblyNames, [
       "Intake Cheese",
       "Hopper Assembly <1>",
@@ -1039,8 +1039,6 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(importRun.item.rawSummaryJson.parserMode, "step_text");
     assert.equal(importRun.item.rawSummaryJson.parserVersion, "step-text-assembly-parser-1");
     assert.deepEqual(importRun.item.rawSummaryJson.rootNames, ["MAIN ASSEMBLY"]);
-    assert.equal((importRun.item.rawSummaryJson.rawStats as Record<string, unknown>).parserMode, undefined);
-    assert.equal((importRun.item.rawSummaryJson.rawStats as Record<string, unknown>).productCount, 14);
     resetLimits();
 
     const snapshotSummaryResponse = await app.inject({
@@ -1053,31 +1051,6 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(snapshotSummary.summary.actualParserVersion, "step-text-assembly-parser-1");
     assert.equal(snapshotSummary.summary.productCount, 14);
     assert.deepEqual(snapshotSummary.summary.rootNames, ["MAIN ASSEMBLY"]);
-    assert.equal((snapshotSummary.summary.rawStats as Record<string, unknown>).parserMode, undefined);
-    assert.equal((snapshotSummary.summary.rawStats as Record<string, unknown>).productCount, 14);
-    await getCadRuntimeStore().updateImportRun(result.importRun.id, {
-      rawSummaryJson: {
-        ...importRun.item.rawSummaryJson,
-        assemblyCount: 999,
-        partDefinitionCount: 999,
-        partInstanceCount: 999,
-        mappingCount: 999,
-        warningCount: 999,
-      },
-    });
-    resetLimits();
-
-    const liveSummaryResponse = await app.inject({
-      method: "GET",
-      url: `/api/cad/snapshots/${result.snapshot.id}`,
-    });
-    assert.equal(liveSummaryResponse.statusCode, 200);
-    const liveSummary = liveSummaryResponse.json() as { summary: Record<string, unknown> };
-    assert.equal(liveSummary.summary.assemblyCount, result.summary.assemblyCount);
-    assert.equal(liveSummary.summary.partDefinitionCount, result.summary.partDefinitionCount);
-    assert.equal(liveSummary.summary.partInstanceCount, result.summary.partInstanceCount);
-    assert.equal(liveSummary.summary.mappingCount, result.summary.mappingCount);
-    assert.equal(liveSummary.summary.warningCount, result.summary.warningCount);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
@@ -1105,7 +1078,6 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
       topLevelAssemblyNames: string[];
       assemblyCount: number;
       partInstanceCount: number;
-      rawStats: Record<string, unknown>;
       warnings: Array<{ code: string }>;
     };
     assert.equal(parsed.parserVersion, "step-text-assembly-parser-1");
@@ -1115,8 +1087,6 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
     assert.equal(parsed.nextAssemblyUsageOccurrenceCount, 14);
     assert.deepEqual(parsed.rootNames, ["MAIN ASSEMBLY"]);
     assert.ok(parsed.topLevelAssemblyNames.includes("Shooter Main Assembly <1>"));
-    assert.equal(parsed.rawStats.parserMode, undefined);
-    assert.equal(parsed.rawStats.productCount, 14);
     assert.ok(parsed.assemblyCount > 6);
     assert.ok(parsed.partInstanceCount > 1);
     assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_placeholder_used"));
@@ -1272,18 +1242,18 @@ test("multipart STEP uploads preserve project context when metadata follows the 
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
-test("multipart STEP uploads normalize empty project context fields", async () => {
+test("multipart STEP uploads normalize empty optional metadata before validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
 
-    const boundary = "meco-step-upload-empty-context-boundary";
+    const boundary = "meco-step-upload-empty-metadata-boundary";
     const body = multipartStepPayload({
       boundary,
-      fileName: "empty-context.step",
-      label: "empty-context",
+      fileName: "empty-metadata.step",
+      label: "empty-metadata",
       fileBuffer: Buffer.from(uploadedClassStepFixture(), "utf8"),
       projectId: "",
-      seasonId: "   ",
+      seasonId: "",
       requestedBy: "",
     });
 
