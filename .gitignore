@@ -5,6 +5,9 @@ coverage/
 .prisma/
 .tmp-skills-sync/
 
+# Imported shared skills
+/skills/
+
 *.tsbuildinfo
 *.log
 *.err
