@@ -8,6 +8,7 @@ import {
   buildOnshapeOAuthAuthorizationUrl,
   exchangeOnshapeOAuthCode,
   isOnshapeOAuthClientConfigured,
+  isOnshapeOAuthRefreshConfigured,
   refreshOnshapeOAuthToken,
 } from "./onshapeOAuth";
 
@@ -174,13 +175,20 @@ export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSessi
       return;
     }
 
+    const config = getOAuthConfig();
+    if (!isOnshapeOAuthRefreshConfigured(config)) {
+      return reply.code(409).send({
+        message: "Onshape OAuth client ID and client secret are required to refresh tokens.",
+      });
+    }
+
     const store = getOnshapeRuntimeStore();
     const refreshToken = store.getOAuthTokenSet()?.refreshToken ?? onshapeConfig.oauthRefreshToken;
     if (!refreshToken) {
       return reply.code(409).send({ message: "No Onshape OAuth refresh token is available." });
     }
 
-    const tokenSet = await refreshOnshapeOAuthToken({ config: getOAuthConfig(), refreshToken });
+    const tokenSet = await refreshOnshapeOAuthToken({ config, refreshToken });
     store.setOAuthTokenSet(tokenSet);
     return { item: { connected: true, tokenExpiresAt: tokenSet.expiresAt } };
   });
