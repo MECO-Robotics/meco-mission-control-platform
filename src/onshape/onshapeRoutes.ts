@@ -58,6 +58,7 @@ function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyRep
   if (canRunDeepReleaseSync({
     authEnabled: isAuthEnabled(),
     userEmail: session?.email ?? null,
+    userRole: session?.role ?? null,
     members: getMembers(),
   })) {
     return true;
