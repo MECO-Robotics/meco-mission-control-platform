@@ -32,6 +32,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
     "AUTH_MENTOR_EMAILS",
+    "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
     "AUTH_MEMBER_SUBTEAMS_ENV_PATH",
     "API_RATE_LIMIT_MAX_REQUESTS",
     "API_RATE_LIMIT_WINDOW_SECONDS",
@@ -263,6 +264,11 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         readFileSync(memberSubteamsEnvPath, "utf8"),
         /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
       );
+      assert.doesNotMatch(
+        readFileSync(memberSubteamsEnvPath, "utf8"),
+        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=/m,
+      );
+      assert.equal(process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL, undefined);
 
       resetRequestLimits();
 
