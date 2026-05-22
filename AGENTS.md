@@ -26,7 +26,7 @@
 
 * Never implement, edit files, stage, commit, or run long-lived dev servers from the base repo checkout unless the user explicitly says to work there.
 * Use base repo checkouts only for read-only inspection, fetches, and creating worktrees.
-* Before touching files, create or enter a dedicated temporary worktree rooted on `origin/development`.
+* Before touching files, create or enter a dedicated temporary worktree rooted on the intended PR target branch: use `origin/development` for normal `feature/*`, `fix/*`, and hotfixes targeting `development`; use `origin/main` for `hotfix/*` branches that will PR directly into `main`.
 * Keep worktree paths outside repo roots, such as workspace `_feature-branches/` or a Codex-managed worktree path.
 * Use branch names matching `feature/*`, `fix/*`, or `hotfix/*`; keep each worktree scoped to one task.
 * If a repo lacks `development`, create `development` from `origin/main` first, push it, then do feature work from a separate worktree branch based on `origin/development`.
