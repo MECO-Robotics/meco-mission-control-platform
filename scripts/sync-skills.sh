@@ -29,12 +29,12 @@ require_repo_root() {
 require_repo_root
 trap cleanup EXIT
 
-echo "Syncing skills from: $SKILLS_REPO"
+echo "Syncing skills from mission-control-skills repository"
 
 cleanup
 
 if ! git clone --depth 1 "$SKILLS_REPO" "$TMP_DIR"; then
-  fail "failed to clone shared skills repo: $SKILLS_REPO"
+  fail "failed to clone shared skills repository"
 fi
 
 if [ ! -d "$TMP_DIR/skills" ]; then
