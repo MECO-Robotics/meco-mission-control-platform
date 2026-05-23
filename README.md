@@ -67,6 +67,7 @@ npm install
 npm run dev
 npm run typecheck
 npm run build
+npm run smoke:test
 ```
 
 ## Local env example
@@ -142,6 +143,7 @@ that route.
 - `.env.production`: runtime environment file on the VPS
 - `.github/workflows/deploy-vps.yml`: CI + deployment workflow
 - `deploy/bootstrap-vps.sh`: first-time Docker bootstrap for Ubuntu
+- `docs/production-smoke-test-checklist.md`: production smoke-test checklist
 
 ## First-time VPS setup
 
