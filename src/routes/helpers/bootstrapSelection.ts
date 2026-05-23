@@ -376,16 +376,6 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
         task.subsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId))),
   );
   const scopedTaskIds = new Set(scopedTasks.map((task) => task.id));
-  const scopedTaskMemberIds = new Set<string>();
-  for (const task of scopedTasks) {
-    if (task.ownerId !== null) {
-      scopedTaskMemberIds.add(task.ownerId);
-    }
-
-    for (const assigneeId of task.assigneeIds) {
-      scopedTaskMemberIds.add(assigneeId);
-    }
-  }
   const scopedTasksById = new Map(scopedTasks.map((task) => [task.id, task] as const));
   const scopedWorkLogs = snapshot.workLogs.filter(
     (workLog) =>
@@ -465,11 +455,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       return false;
     }
 
-    if (selection.projectId === null) {
-      return true;
-    }
-
-    return scopedTaskMemberIds.has(record.memberId);
+    return true;
   });
   const scopedExplicitTaskDependencies = snapshot.taskDependencies
     .map((dependency) => normalizeTaskDependencyRecord(dependency as Partial<TaskDependency>))
