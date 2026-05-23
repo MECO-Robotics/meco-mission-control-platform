@@ -79,4 +79,8 @@ Inspect the local imported files when changing shared skill behavior:
 find skills -maxdepth 2 -type f | sort
 ```
 
+<<<<<<< HEAD
 CI does not currently run this import check by default. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
+=======
+CI does not currently run this import check by default. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
+>>>>>>> d6433f9 (fix: redact skills repo URL and update shared skills docs)
