@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import net from "node:net";
+import { deepStrictEqual } from "node:assert";
 
 const BASE_URL = trimTrailingSlash(
   process.env.PLATFORM_API_BASE_URL ??
@@ -12,7 +13,11 @@ const PLATFORM_TEST_TOKEN = process.env.PLATFORM_TEST_TOKEN?.trim() ?? "";
 const DATABASE_URL = process.env.DATABASE_URL ?? "";
 const REQUIRE_AUTH_ENABLED = parseBool(process.env.SMOKE_REQUIRE_AUTH_ENABLED, true);
 const ALLOW_SERVICE_DB_HOST = parseBool(process.env.SMOKE_ALLOW_SERVICE_DB_HOST, false);
-const TIMEOUT_MS = Math.max(500, Number.parseInt(process.env.SMOKE_TIMEOUT_MS ?? "10000", 10));
+const rawTimeoutMs = process.env.SMOKE_TIMEOUT_MS;
+const parsedTimeoutMs = rawTimeoutMs === undefined ? 10000 : Number.parseInt(rawTimeoutMs, 10);
+const TIMEOUT_MS = Number.isFinite(parsedTimeoutMs)
+  ? Math.max(500, parsedTimeoutMs)
+  : 10000;
 
 const results = [];
 let hasFailure = false;
@@ -219,8 +224,42 @@ async function checkCorsHeader() {
 }
 
 async function checkWebApiProxy() {
-  const { response } = await requestJson(`${WEB_BASE_URL}/api/auth/config`);
-  const directStatus = await getStatusWithoutThrow(`${BASE_URL}/api/auth/config`);
+  const { response, payload: proxyPayload } = await requestJson(
+    `${WEB_BASE_URL}/api/auth/config`,
+  );
+  const { response: directResponse, payload: directPayload } = await requestJson(
+    `${BASE_URL}/api/auth/config`,
+  );
+  const directStatus = directResponse.status;
+  if (!isAuthConfigPayload(proxyPayload)) {
+    logResult(
+      "FAIL",
+      "web_api_proxy",
+      "proxed /api/auth/config did not return a valid auth-config JSON body",
+    );
+    return;
+  }
+
+  if (!isAuthConfigPayload(directPayload)) {
+    logResult(
+      "FAIL",
+      "web_api_proxy",
+      "platform /api/auth/config did not return a valid auth-config JSON body",
+    );
+    return;
+  }
+
+  try {
+    deepStrictEqual(proxyPayload, directPayload);
+  } catch {
+    logResult(
+      "FAIL",
+      "web_api_proxy",
+      "web proxy auth-config response body does not match platform auth-config payload",
+    );
+    return;
+  }
+
   if (response.status !== 200) {
     logResult(
       "FAIL",
@@ -252,6 +291,15 @@ async function getStatusWithoutThrow(url) {
   } catch {
     return null;
   }
+}
+
+function isAuthConfigPayload(payload) {
+  return (
+    !!payload &&
+    typeof payload === "object" &&
+    typeof payload.enabled === "boolean" &&
+    typeof payload.hostedDomain === "string"
+  );
 }
 
 async function checkBootstrapUnauth(expect401WhenAuthEnabled) {
