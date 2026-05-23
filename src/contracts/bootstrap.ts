@@ -1,0 +1,140 @@
+import { z } from "zod";
+
+export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
+export const BOOTSTRAP_CONTRACT_VERSION = 1;
+
+const bootstrapCollectionSchema = z.array(z.record(z.string(), z.unknown()));
+
+export const bootstrapPayloadSchema = z
+  .object({
+    seasons: bootstrapCollectionSchema,
+    projects: bootstrapCollectionSchema,
+    workstreams: bootstrapCollectionSchema,
+    members: bootstrapCollectionSchema,
+    subsystems: bootstrapCollectionSchema,
+    disciplines: bootstrapCollectionSchema,
+    mechanisms: bootstrapCollectionSchema,
+    materials: bootstrapCollectionSchema,
+    artifacts: bootstrapCollectionSchema,
+    partDefinitions: bootstrapCollectionSchema,
+    partInstances: bootstrapCollectionSchema,
+    milestones: bootstrapCollectionSchema,
+    milestoneRequirements: bootstrapCollectionSchema,
+    reports: bootstrapCollectionSchema,
+    reportFindings: bootstrapCollectionSchema,
+    qaReports: bootstrapCollectionSchema,
+    qaRequests: bootstrapCollectionSchema,
+    testResults: bootstrapCollectionSchema,
+    risks: bootstrapCollectionSchema,
+    tasks: bootstrapCollectionSchema,
+    taskDependencies: bootstrapCollectionSchema,
+    taskBlockers: bootstrapCollectionSchema,
+    workLogs: bootstrapCollectionSchema,
+    meetings: bootstrapCollectionSchema,
+    attendanceRecords: bootstrapCollectionSchema,
+    manufacturingItems: bootstrapCollectionSchema,
+    purchaseItems: bootstrapCollectionSchema,
+    qaReviews: bootstrapCollectionSchema,
+    escalations: bootstrapCollectionSchema,
+    actions: bootstrapCollectionSchema,
+    favoriteViews: bootstrapCollectionSchema,
+    designIterations: bootstrapCollectionSchema.optional(),
+  })
+  .strict();
+
+const bootstrapCollectionSchemaJson = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
+export const bootstrapContractDocument = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://contracts.meco.ai/platform/bootstrap-v1.schema.json",
+  title: "MissionControlPlatformBootstrapContract",
+  description:
+    "Canonical payload schema for POST /api/bootstrap in meco-mission-control-platform.",
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "seasons",
+    "projects",
+    "workstreams",
+    "members",
+    "subsystems",
+    "disciplines",
+    "mechanisms",
+    "materials",
+    "artifacts",
+    "partDefinitions",
+    "partInstances",
+    "milestones",
+    "milestoneRequirements",
+    "reports",
+    "reportFindings",
+    "qaReports",
+    "qaRequests",
+    "testResults",
+    "risks",
+    "tasks",
+    "taskDependencies",
+    "taskBlockers",
+    "workLogs",
+    "meetings",
+    "attendanceRecords",
+    "manufacturingItems",
+    "purchaseItems",
+    "qaReviews",
+    "escalations",
+    "actions",
+    "favoriteViews",
+  ],
+  properties: {
+    seasons: bootstrapCollectionSchemaJson,
+    projects: bootstrapCollectionSchemaJson,
+    workstreams: bootstrapCollectionSchemaJson,
+    members: bootstrapCollectionSchemaJson,
+    subsystems: bootstrapCollectionSchemaJson,
+    disciplines: bootstrapCollectionSchemaJson,
+    mechanisms: bootstrapCollectionSchemaJson,
+    materials: bootstrapCollectionSchemaJson,
+    artifacts: bootstrapCollectionSchemaJson,
+    partDefinitions: bootstrapCollectionSchemaJson,
+    partInstances: bootstrapCollectionSchemaJson,
+    milestones: bootstrapCollectionSchemaJson,
+    milestoneRequirements: bootstrapCollectionSchemaJson,
+    reports: bootstrapCollectionSchemaJson,
+    reportFindings: bootstrapCollectionSchemaJson,
+    qaReports: bootstrapCollectionSchemaJson,
+    qaRequests: bootstrapCollectionSchemaJson,
+    testResults: bootstrapCollectionSchemaJson,
+    risks: bootstrapCollectionSchemaJson,
+    tasks: bootstrapCollectionSchemaJson,
+    taskDependencies: bootstrapCollectionSchemaJson,
+    taskBlockers: bootstrapCollectionSchemaJson,
+    workLogs: bootstrapCollectionSchemaJson,
+    meetings: bootstrapCollectionSchemaJson,
+    attendanceRecords: bootstrapCollectionSchemaJson,
+    manufacturingItems: bootstrapCollectionSchemaJson,
+    purchaseItems: bootstrapCollectionSchemaJson,
+    qaReviews: bootstrapCollectionSchemaJson,
+    escalations: bootstrapCollectionSchemaJson,
+    actions: bootstrapCollectionSchemaJson,
+    favoriteViews: bootstrapCollectionSchemaJson,
+    designIterations: bootstrapCollectionSchemaJson,
+  },
+  $comment:
+    "meco-mission-control-platform v1 bootstrap contract. Bump MAJOR on breaking shape changes.",
+  x_contract: {
+    contractName: BOOTSTRAP_CONTRACT_NAME,
+    contractVersion: BOOTSTRAP_CONTRACT_VERSION,
+    resource: "/api/bootstrap",
+    migrationPolicy: "Breaking shape changes require a MAJOR version bump and coordinated web/mobile updates.",
+  },
+} as const;
+
+export function toBootstrapContractDocument() {
+  return bootstrapContractDocument;
+}
