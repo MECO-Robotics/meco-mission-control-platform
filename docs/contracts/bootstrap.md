@@ -35,3 +35,4 @@ title: Bootstrap API Contract
   `PlatformSnapshot`. Clients must treat this field as optional and default to `[]` if missing.
 - If `designIterations` is added to `GET /api/bootstrap` in a later release, treat that as a contract-capable
   field change and update the contract together with client bootstrap defaults and normalization helpers.
+- Note: PR checks in this repository require `development`-targeted PRs with all required checks passing before merge.
