@@ -141,6 +141,7 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
     },
   createAssemblyNodes(snapshotId: string, input: CadAssemblyCreateInput[]) {
     const bySourceId = new Map<string, CadAssemblyNode>();
+    const stateIndexBySource = new Map<string, number>();
     for (const node of input) {
       const item: CadAssemblyNode = {
         ...node,
@@ -151,7 +152,8 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
         createdAt: nowIso(),
       };
       state.assemblyNodes.push(item);
-      bySourceId.set(item.sourceId, item);
+      stateIndexBySource.set(item.sourceId, state.assemblyNodes.length - 1);
+      bySourceId.set(item.sourceId, clone(item));
     }
     for (const node of input) {
       const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
@@ -163,7 +165,26 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       if (!child) {
         continue;
       }
-      child.parentAssemblyNodeId = parent.id;
+      if (child.parentAssemblyNodeId === parent.id) {
+        continue;
+      }
+
+      const stateIndex = stateIndexBySource.get(node.sourceId);
+      if (stateIndex === undefined) {
+        continue;
+      }
+
+      const stateChild = state.assemblyNodes[stateIndex];
+      if (!stateChild) {
+        continue;
+      }
+
+      const updatedChild = {
+        ...child,
+        parentAssemblyNodeId: parent.id,
+      };
+      stateChild.parentAssemblyNodeId = parent.id;
+      bySourceId.set(node.sourceId, updatedChild);
     }
     return bySourceId;
   },

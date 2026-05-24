@@ -297,7 +297,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const session = getSessionFromRequest(request);
     const email = session?.email?.trim().toLowerCase();
-    return email || session?.accountId || "authenticated-user";
+    return session?.accountId || email || "authenticated-user";
   };
 
   app.get("/health", async () => {
