@@ -126,6 +126,8 @@ function isAuthConfigPayload(payload) {
     !!payload &&
     typeof payload === "object" &&
     typeof payload.enabled === "boolean" &&
-    typeof payload.hostedDomain === "string"
+    typeof payload.hostedDomain === "string" &&
+    "googleClientId" in payload &&
+    (payload.googleClientId === null || typeof payload.googleClientId === "string")
   );
 }

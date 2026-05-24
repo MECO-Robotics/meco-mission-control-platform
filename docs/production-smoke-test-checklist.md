@@ -11,6 +11,8 @@ to verify the Platform API is truly reachable through the expected web path.
   `https://app.mecorobotics.org`.
 - `PLATFORM_TEST_TOKEN` (optional): valid JWT for a production user session if you need
   auth-protected endpoint checks.
+- `SMOKE_REQUIRE_AUTH_ENABLED=1`: required for production smoke runs so disabled auth
+  fails the check; local/dev runs default this to off.
 - Tests should run against real production endpoints only when rollback is approved.
 
 ## 1) Process started / service boot (`/health`)
@@ -151,5 +153,6 @@ Use this for CI validation and quick smoke coverage:
 npm run smoke:test
 ```
 
-`PLATFORM_API_BASE_URL` defaults to `http://127.0.0.1:8080` and token-gated checks are
-skipped if `PLATFORM_TEST_TOKEN` is not set.
+`PLATFORM_API_BASE_URL` defaults to `http://127.0.0.1:8080`, token-gated checks are
+skipped if `PLATFORM_TEST_TOKEN` is not set, and strict auth-enabled validation is
+opt-in via `SMOKE_REQUIRE_AUTH_ENABLED=1`.

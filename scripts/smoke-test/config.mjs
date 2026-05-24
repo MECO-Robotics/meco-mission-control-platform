@@ -6,7 +6,7 @@ export const BASE_URL = trimTrailingSlash(
 export const WEB_BASE_URL = trimTrailingSlash(process.env.WEB_BASE_URL ?? "");
 export const PLATFORM_TEST_TOKEN = process.env.PLATFORM_TEST_TOKEN?.trim() ?? "";
 export const DATABASE_URL = process.env.DATABASE_URL ?? "";
-export const REQUIRE_AUTH_ENABLED = parseBool(process.env.SMOKE_REQUIRE_AUTH_ENABLED, true);
+export const REQUIRE_AUTH_ENABLED = parseBool(process.env.SMOKE_REQUIRE_AUTH_ENABLED, false);
 export const ALLOW_SERVICE_DB_HOST = parseBool(process.env.SMOKE_ALLOW_SERVICE_DB_HOST, false);
 
 const rawTimeoutMs = process.env.SMOKE_TIMEOUT_MS;
