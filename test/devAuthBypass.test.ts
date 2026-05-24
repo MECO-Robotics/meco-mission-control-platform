@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import { resetUserPreferencesStoreForTests } from "../src/data/userPreferencesStore";
@@ -22,7 +19,6 @@ function restoreEnv(saved: Map<string, string | undefined>) {
 }
 
 test("buildApp exposes a development-only sign-in bypass", async () => {
-  let tempDir: string | null = null;
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
@@ -31,9 +27,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
-    "AUTH_MENTOR_EMAILS",
-    "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
-    "AUTH_MEMBER_SUBTEAMS_ENV_PATH",
     "API_RATE_LIMIT_MAX_REQUESTS",
     "API_RATE_LIMIT_WINDOW_SECONDS",
     "AUTH_RATE_LIMIT_MAX_REQUESTS",
@@ -43,9 +36,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
   ]);
 
   try {
-    tempDir = mkdtempSync(join(tmpdir(), "meco-env-test-"));
-    const memberSubteamsEnvPath = join(tempDir, ".env.test");
-    writeFileSync(memberSubteamsEnvPath, "DATABASE_URL=postgresql://example\n", "utf8");
     process.env.NODE_ENV = "development";
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
@@ -54,8 +44,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
-    delete process.env.AUTH_MENTOR_EMAILS;
-    process.env.AUTH_MEMBER_SUBTEAMS_ENV_PATH = memberSubteamsEnvPath;
     process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
     process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
     process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -218,10 +206,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         taskSubteamIds: ["scouting"],
         themeMode: "dark",
       });
-      assert.match(
-        readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
-      );
 
       resetRequestLimits();
 
@@ -260,15 +244,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         taskSubteamIds: [],
         themeMode: "dark",
       });
-      assert.doesNotMatch(
-        readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
-      );
-      assert.doesNotMatch(
-        readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=/m,
-      );
-      assert.equal(process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL, undefined);
 
       resetRequestLimits();
 
@@ -471,9 +446,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       resetRequestLimits();
     }
   } finally {
-    if (tempDir) {
-      rmSync(tempDir, { force: true, recursive: true });
-    }
     restoreEnv(saved);
   }
 });

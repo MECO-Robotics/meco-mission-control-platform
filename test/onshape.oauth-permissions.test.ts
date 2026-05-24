@@ -85,13 +85,12 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
       env: {
         AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
-        AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
       },
     },
   );
 });
 
-test("Onshape deep release sync honors mentor sessions outside the roster", async () => {
+test("Onshape deep release sync honors mentor sessions", async () => {
   setOnshapeCadClientFactoryForTests(() => createRouteFakeClient());
 
   try {
@@ -130,7 +129,6 @@ test("Onshape deep release sync honors mentor sessions outside the roster", asyn
         env: {
           AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
           GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
-          AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
         },
       },
     );

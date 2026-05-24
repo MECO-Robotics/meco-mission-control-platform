@@ -264,7 +264,7 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
 }
 
 function getTaskSubteamIdsForEmail(email: string) {
-  return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
+  return getUserPreferences(email).taskSubteamIds;
 }
 
 function getRoleForEmail(email: string): MemberRole {
@@ -277,7 +277,7 @@ function getRoleForEmail(email: string): MemberRole {
     return rosterRole;
   }
 
-  return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
+  return "student";
 }
 
 function buildEmailSessionUser(email: string): SessionUser {

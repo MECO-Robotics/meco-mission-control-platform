@@ -27,7 +27,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - The main app state starts from `src/data/mockData.ts` and is reset during app creation.
 - Core platform reads and writes go through `src/data/store.ts`.
 - Per-user preferences are stored outside git in `data/user-preferences.json`.
-- Runtime subteam onboarding also writes `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` back to the configured env file so web and mobile share the roster mapping.
+- Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - Prisma schema lives in `prisma/schema.prisma` and includes core planning/manufacturing entities plus CAD import tables.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
