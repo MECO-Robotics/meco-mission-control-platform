@@ -151,7 +151,7 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
         createdAt: nowIso(),
       };
       state.assemblyNodes.push(item);
-      bySourceId.set(item.sourceId, clone(item));
+      bySourceId.set(item.sourceId, item);
     }
     for (const node of input) {
       const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
@@ -299,3 +299,4 @@ export type CadRuntimeStore = ReturnType<typeof getCadRuntimeStore>;
 export function resetCadRuntimeStore() {
   getCadRuntimeStore().reset();
 }
+
