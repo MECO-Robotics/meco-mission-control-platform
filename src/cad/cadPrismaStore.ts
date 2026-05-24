@@ -224,24 +224,43 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       const item = await prisma.cadSnapshot.findUnique({ where: { id } });
       return item ? snapshotFromDb(item) : null;
     },
-    async createAssemblyNodes(snapshotId, input) {
-      const bySourceId = new Map<string, CadAssemblyNode>();
-      for (const node of input) {
-        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
-        const item = assemblyFromDb(
-          await prisma.cadAssemblyNode.create({
-            data: {
-              ...node,
-              snapshotId,
-              normalizedName: normalizeCadName(node.name),
-              parentAssemblyNodeId: parent?.id ?? null,
-            } as Prisma.CadAssemblyNodeUncheckedCreateInput,
-          }),
-        );
-        bySourceId.set(item.sourceId, item);
+  async createAssemblyNodes(snapshotId, input) {
+    const bySourceId = new Map<string, CadAssemblyNode>();
+    for (const node of input) {
+      const item = assemblyFromDb(
+        await prisma.cadAssemblyNode.create({
+          data: {
+            ...node,
+            snapshotId,
+            normalizedName: normalizeCadName(node.name),
+            parentAssemblyNodeId: null,
+          } as Prisma.CadAssemblyNodeUncheckedCreateInput,
+        }),
+      );
+      bySourceId.set(item.sourceId, item);
+    }
+    for (const node of input) {
+      const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
+      if (!parent) {
+        continue;
       }
-      return bySourceId;
-    },
+
+      const child = bySourceId.get(node.sourceId);
+      if (!child) {
+        continue;
+      }
+      if (child.parentAssemblyNodeId === parent.id) {
+        continue;
+      }
+
+      await prisma.cadAssemblyNode.update({
+        where: { id: child.id },
+        data: { parentAssemblyNodeId: parent.id },
+      });
+      bySourceId.set(node.sourceId, { ...child, parentAssemblyNodeId: parent.id });
+    }
+    return bySourceId;
+  },
     async createPartDefinitions(snapshotId, input) {
       const bySourceId = new Map<string, CadPartDefinition>();
       for (const part of input) {
