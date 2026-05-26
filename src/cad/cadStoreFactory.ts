@@ -9,6 +9,7 @@ let runtimeFallbackStore: CadStore | null = null;
 let prismaStoreHasSucceeded = false;
 let runtimeFallbackActive = false;
 let prismaReadinessPromise: Promise<CadStore> | null = null;
+let prismaBackedStore: CadStore | null = null;
 
 function isPrismaUnavailableError(error: unknown) {
   return (
@@ -17,7 +18,8 @@ function isPrismaUnavailableError(error: unknown) {
     (("code" in error && (error as { code?: unknown }).code === "P1001") ||
       ("message" in error &&
         typeof (error as { message?: unknown }).message === "string" &&
-        (error as { message: string }).message.includes("Can't reach database server")))
+        ((error as { message: string }).message.includes("Can't reach database server") ||
+          (error as { message: string }).message.includes("did not initialize yet"))))
   );
 }
 
@@ -46,25 +48,34 @@ function activateRuntimeFallback(error: unknown) {
   return getRuntimeFallbackStore();
 }
 
-async function resolveStoreForCall(prismaBackedStore: CadStore) {
+function getPrismaBackedStore() {
+  prismaBackedStore ??= createPrismaCadStore(getCadPrismaClient());
+  return prismaBackedStore;
+}
+
+async function resolveStoreForCall() {
   if (runtimeFallbackActive) {
     return getRuntimeFallbackStore();
   }
 
   if (prismaStoreHasSucceeded) {
-    return prismaBackedStore;
+    return getPrismaBackedStore();
   }
 
-  prismaReadinessPromise ??= getCadPrismaClient()
-    .$connect()
+  prismaReadinessPromise ??= Promise.resolve()
+    .then(() => getCadPrismaClient().$connect())
     .then(() => {
       prismaStoreHasSucceeded = true;
-      return prismaBackedStore;
+      return getPrismaBackedStore();
     })
-    .catch((error) => {
+    .catch((error: unknown) => {
       prismaReadinessPromise = null;
+    prismaBackedStore = null;
       if (canFallbackToRuntime(error)) {
         return activateRuntimeFallback(error);
+      }
+      if (error instanceof Error && error.message.includes("did not initialize yet")) {
+        throw new Error("Can't reach database at local Prisma client (run prisma generate)");
       }
       throw error;
     });
@@ -72,16 +83,15 @@ async function resolveStoreForCall(prismaBackedStore: CadStore) {
   return prismaReadinessPromise;
 }
 
-function withRuntimeFallback(store: CadStore): CadStore {
-  return new Proxy(store, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (typeof value !== "function") {
-        return value;
+function withRuntimeFallback(): CadStore {
+  return new Proxy({} as CadStore, {
+    get(_target, property) {
+      if (typeof property !== "string") {
+        return undefined;
       }
       return async (...args: unknown[]) => {
-        const activeStore = await resolveStoreForCall(target);
-        const activeValue = Reflect.get(activeStore, property, activeStore);
+        const activeStore = await resolveStoreForCall();
+        const activeValue = Reflect.get(activeStore as object, property, activeStore as object);
         if (typeof activeValue !== "function") {
           return activeValue;
         }
@@ -95,7 +105,7 @@ export function getCadStore(): CadStore {
   if (cadPersistenceConfig.storeDriver === "runtime") {
     return getCadRuntimeStore();
   }
-  prismaStore ??= withRuntimeFallback(createPrismaCadStore(getCadPrismaClient()));
+  prismaStore ??= withRuntimeFallback();
   return prismaStore;
 }
 
@@ -107,5 +117,6 @@ export async function disconnectCadStore() {
     prismaStoreHasSucceeded = false;
     runtimeFallbackActive = false;
     prismaReadinessPromise = null;
+    prismaBackedStore = null;
   }
 }
