@@ -70,7 +70,7 @@ async function resolveStoreForCall() {
     })
     .catch((error: unknown) => {
       prismaReadinessPromise = null;
-    prismaBackedStore = null;
+      prismaBackedStore = null;
       if (canFallbackToRuntime(error)) {
         return activateRuntimeFallback(error);
       }
