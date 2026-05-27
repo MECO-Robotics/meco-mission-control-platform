@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 
 import type {
   CadAssemblyNode,
@@ -13,7 +13,7 @@ import type {
 import type { CadStore } from "./cadStoreTypes";
 import { normalizeCadName } from "./cadUtils";
 
-type JsonValue = Prisma.JsonValue | null | undefined;
+type JsonValue = unknown;
 
 function asRecord(value: JsonValue): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -171,10 +171,10 @@ function warningFromDb(item: Awaited<ReturnType<PrismaClient["cadImportWarning"]
 export function createPrismaCadStore(prisma: PrismaClient): CadStore {
   return {
     async createImportRun(input) {
-      return importRunFromDb(await prisma.cadImportRun.create({ data: input as Prisma.CadImportRunCreateInput }));
+      return importRunFromDb(await prisma.cadImportRun.create({ data: input as any }));
     },
     async updateImportRun(id, patch) {
-      const item = await prisma.cadImportRun.update({ where: { id }, data: patch as Prisma.CadImportRunUpdateInput }).catch(() => null);
+      const item = await prisma.cadImportRun.update({ where: { id }, data: patch as any }).catch(() => null);
       return item ? importRunFromDb(item) : null;
     },
     async listImportRuns(filter) {
@@ -200,12 +200,12 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       });
       return snapshotFromDb(
         await prisma.cadSnapshot.create({
-          data: { ...input, previousSnapshotId: previous?.id ?? null } as Prisma.CadSnapshotUncheckedCreateInput,
+          data: { ...input, previousSnapshotId: previous?.id ?? null } as any,
         }),
       );
     },
     async updateSnapshot(id, patch) {
-      const item = await prisma.cadSnapshot.update({ where: { id }, data: patch as Prisma.CadSnapshotUpdateInput }).catch(() => null);
+      const item = await prisma.cadSnapshot.update({ where: { id }, data: patch as any }).catch(() => null);
       return item ? snapshotFromDb(item) : null;
     },
     async listSnapshots(filter) {
@@ -213,8 +213,8 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
         where: {
           projectId: filter?.projectId,
           seasonId: filter?.seasonId,
-          source: filter?.source as Prisma.EnumCadImportSourceFilter | undefined,
-          status: filter?.status as Prisma.EnumCadSnapshotStatusFilter | undefined,
+          source: filter?.source as any,
+          status: filter?.status as any,
         },
         orderBy: { createdAt: "desc" },
       });
@@ -224,43 +224,43 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       const item = await prisma.cadSnapshot.findUnique({ where: { id } });
       return item ? snapshotFromDb(item) : null;
     },
-  async createAssemblyNodes(snapshotId, input) {
-    const bySourceId = new Map<string, CadAssemblyNode>();
-    for (const node of input) {
-      const item = assemblyFromDb(
-        await prisma.cadAssemblyNode.create({
-          data: {
-            ...node,
-            snapshotId,
-            normalizedName: normalizeCadName(node.name),
-            parentAssemblyNodeId: null,
-          } as Prisma.CadAssemblyNodeUncheckedCreateInput,
-        }),
-      );
-      bySourceId.set(item.sourceId, item);
-    }
-    for (const node of input) {
-      const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
-      if (!parent) {
-        continue;
+    async createAssemblyNodes(snapshotId, input) {
+      const bySourceId = new Map<string, CadAssemblyNode>();
+      for (const node of input) {
+        const item = assemblyFromDb(
+          await prisma.cadAssemblyNode.create({
+            data: {
+              ...node,
+              snapshotId,
+              normalizedName: normalizeCadName(node.name),
+              parentAssemblyNodeId: null,
+            } as any,
+          }),
+        );
+        bySourceId.set(item.sourceId, item);
       }
+      for (const node of input) {
+        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
+        if (!parent) {
+          continue;
+        }
 
-      const child = bySourceId.get(node.sourceId);
-      if (!child) {
-        continue;
-      }
-      if (child.parentAssemblyNodeId === parent.id) {
-        continue;
-      }
+        const child = bySourceId.get(node.sourceId);
+        if (!child) {
+          continue;
+        }
+        if (child.parentAssemblyNodeId === parent.id) {
+          continue;
+        }
 
-      await prisma.cadAssemblyNode.update({
-        where: { id: child.id },
-        data: { parentAssemblyNodeId: parent.id },
-      });
-      bySourceId.set(node.sourceId, { ...child, parentAssemblyNodeId: parent.id });
-    }
-    return bySourceId;
-  },
+        await prisma.cadAssemblyNode.update({
+          where: { id: child.id },
+          data: { parentAssemblyNodeId: parent.id },
+        });
+        bySourceId.set(node.sourceId, { ...child, parentAssemblyNodeId: parent.id });
+      }
+      return bySourceId;
+    },
     async createPartDefinitions(snapshotId, input) {
       const bySourceId = new Map<string, CadPartDefinition>();
       for (const part of input) {
@@ -270,7 +270,7 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
               ...part,
               snapshotId,
               normalizedName: normalizeCadName(part.name),
-            } as Prisma.CadPartDefinitionUncheckedCreateInput,
+            } as any,
           }),
         );
         bySourceId.set(item.sourceId, item);
@@ -283,7 +283,7 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
         items.push(
           instanceFromDb(
             await prisma.cadPartInstance.create({
-              data: { ...instance, snapshotId } as Prisma.CadPartInstanceUncheckedCreateInput,
+              data: { ...instance, snapshotId } as any,
             }),
           ),
         );
@@ -300,7 +300,7 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       return (await prisma.cadPartInstance.findMany({ where: { snapshotId } })).map(instanceFromDb);
     },
     async createMappingRule(input) {
-      return ruleFromDb(await prisma.cadMappingRule.create({ data: input as Prisma.CadMappingRuleUncheckedCreateInput }));
+      return ruleFromDb(await prisma.cadMappingRule.create({ data: input as any }));
     },
     async updateMappingRule(id, patch) {
       const item = await prisma.cadMappingRule.update({ where: { id }, data: patch }).catch(() => null);
@@ -331,20 +331,20 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
               sourceId: input.sourceId,
             },
           },
-          create: input as Prisma.CadSnapshotMappingUncheckedCreateInput,
-          update: input as Prisma.CadSnapshotMappingUpdateInput,
+          create: input as any,
+          update: input as any,
         }),
       );
     },
     async updateSnapshotMapping(id, patch) {
-      const item = await prisma.cadSnapshotMapping.update({ where: { id }, data: patch as Prisma.CadSnapshotMappingUpdateInput }).catch(() => null);
+      const item = await prisma.cadSnapshotMapping.update({ where: { id }, data: patch as any }).catch(() => null);
       return item ? mappingFromDb(item) : null;
     },
     async listSnapshotMappings(snapshotId) {
       return (await prisma.cadSnapshotMapping.findMany({ where: { snapshotId } })).map(mappingFromDb);
     },
     async appendWarning(input) {
-      return warningFromDb(await prisma.cadImportWarning.create({ data: input as Prisma.CadImportWarningUncheckedCreateInput }));
+      return warningFromDb(await prisma.cadImportWarning.create({ data: input as any }));
     },
     async listWarnings(filter) {
       const items = await prisma.cadImportWarning.findMany({
