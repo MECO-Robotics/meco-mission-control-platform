@@ -149,6 +149,9 @@ import {
   buildBootstrapResponse,
   readBootstrapSelection,
 } from "./helpers/bootstrapSelection";
+import {
+  bootstrapPayloadSchema,
+} from "../contracts/bootstrap";
 import { buildRosterInsights } from "./helpers/rosterInsights";
 import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
 import {
@@ -293,7 +296,8 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const session = getSessionFromRequest(request);
-    return session?.accountId || session?.email || "authenticated-user";
+    const email = session?.email?.trim().toLowerCase();
+    return email || session?.accountId || "authenticated-user";
   };
 
   app.get("/health", async () => {
@@ -339,11 +343,19 @@ export async function registerRoutes(app: FastifyInstance) {
     const snapshot = getSnapshot();
     const selection = readBootstrapSelection(request.query);
     const userKey = getNavigationPreferenceUserKey(request);
-
-    return {
+    const bootstrapPayload = bootstrapPayloadSchema.safeParse({
       ...buildBootstrapResponse(snapshot, selection),
       favoriteViews: getFavoriteViews(userKey),
-    };
+    });
+
+    if (!bootstrapPayload.success) {
+      return reply.code(500).send({
+        message: "Bootstrap response payload does not match platform contract.",
+        issues: bootstrapPayload.error.flatten(),
+      });
+    }
+
+    return bootstrapPayload.data;
   });
 
   app.patch<{ Body: unknown; Params: { viewId: string } }>(

@@ -70,6 +70,7 @@ bash scripts/check-skills-current.sh
 ```
 
 The check delegates to `scripts/sync-skills.sh`, imports the shared skills into ignored local state, and exits nonzero if the import fails.
+CI runs the same import check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
 
 ## Review Imported Files Locally
 
