@@ -26,7 +26,9 @@ jobs:
         run: |
           test -d skills
           find skills -mindepth 2 -maxdepth 2 -name SKILL.md -print -quit | grep -q .
-          bash -n scripts/check-skills-current.sh scripts/sync-skills.sh
+          for script in scripts/check-skills-current.sh scripts/sync-skills.sh; do
+            bash -n "$script"
+          done
 
   check-skills-trusted:
     if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development') }}
