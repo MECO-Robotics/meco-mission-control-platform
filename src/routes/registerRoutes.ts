@@ -1,17 +1,10 @@
 import { FastifyInstance } from "fastify";
-import { authConfig as runtimeAuthConfig, env, requestLimitConfig } from "../config/env";
+import { requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
-  AuthError,
-  buildDevelopmentSessionUser,
   getSessionFromRequest,
-  getPublicAuthConfig,
   isAuthEnabled,
   requireSession,
-  requestEmailSignInCode,
-  signSessionToken,
-  verifyEmailSignInCode,
-  verifyGoogleCredential,
 } from "../auth/authService";
 import {
   createArtifact,
@@ -20,7 +13,6 @@ import {
   createMaterial,
   createMember,
   createMechanism,
-  createMeeting,
   createReport,
   createReportFinding,
   createQaReport,
@@ -85,7 +77,6 @@ import {
   removeMaterial,
   removeMember,
   removeMechanism,
-  removeMeeting,
   removeManufacturingItem,
   removePartDefinition,
   removePartInstance,
@@ -104,7 +95,6 @@ import {
   updateMaterial,
   updateMember,
   updateMechanism,
-  updateMeeting,
   updateMilestone,
   updatePartDefinition,
   updatePartInstance,
@@ -159,13 +149,14 @@ import {
   buildBootstrapResponse,
   readBootstrapSelection,
 } from "./helpers/bootstrapSelection";
+import {
+  bootstrapPayloadSchema,
+} from "../contracts/bootstrap";
 import { buildRosterInsights } from "./helpers/rosterInsights";
 import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
 import {
   artifactPatchSchema,
   artifactSchema,
-  emailSignInRequestSchema,
-  emailSignInVerifySchema,
   favoriteNavigationViewIdSchema,
   favoriteViewToggleSchema,
   milestonePatchSchema,
@@ -175,8 +166,6 @@ import {
   materialPatchSchema,
   materialSchema,
   mediaUploadRequestSchema,
-  meetingPatchSchema,
-  meetingSchema,
   memberPatchSchema,
   memberSchema,
   mechanismPatchSchema,
@@ -219,6 +208,8 @@ import {
 import { buildSlackHomeResponse } from "../slack/homeService";
 import { registerCadRoutes } from "../cad/cadRoutes";
 import { registerOnshapeRoutes } from "../onshape/onshapeRoutes";
+import { registerAuthRoutes } from "./authRoutes";
+import { registerMeetingRoutes } from "./meetingRoutes";
 
 const allowApiRouteRequest = createRequestLimitGuard({
   scope: "api",
@@ -256,43 +247,26 @@ export async function registerRoutes(app: FastifyInstance) {
     return Boolean(requireSession(request, reply));
   };
 
-  const resolveMeetingSeasonId = (args: {
-    currentSeasonId?: string | null;
-    projectIds: string[];
-    requestedSeasonId?: string;
-  }) =>
-    args.requestedSeasonId ??
-    args.projectIds
-      .map((projectId) => findProject(projectId)?.seasonId ?? null)
-      .find((seasonId): seasonId is string => Boolean(seasonId)) ??
-    args.currentSeasonId ??
-    null;
+  const hasMentorPermission = (request: Parameters<typeof requireSession>[0]) => {
+    if (!isAuthEnabled()) {
+      return true;
+    }
 
-  const validateMeetingSeasonProjectConsistency = (
-    seasonId: string | null,
-    projectIds: string[],
+    const session = getSessionFromRequest(request);
+    return session?.role === "lead" || session?.role === "mentor" || session?.role === "admin";
+  };
+
+  const requireMentorPermission = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    message: string,
   ) => {
-    if (seasonId && !getSeasons().some((candidate) => candidate.id === seasonId)) {
-      return "The selected season does not exist.";
+    if (hasMentorPermission(request)) {
+      return true;
     }
 
-    const projectSeasonIds = Array.from(
-      new Set(
-        projectIds
-          .map((projectId) => findProject(projectId)?.seasonId ?? null)
-          .filter((projectSeasonId): projectSeasonId is string => Boolean(projectSeasonId)),
-      ),
-    );
-
-    if (projectSeasonIds.length > 1) {
-      return "Meeting projects must belong to the same season.";
-    }
-
-    if (seasonId && projectSeasonIds.some((projectSeasonId) => projectSeasonId !== seasonId)) {
-      return "Meeting season and related projects must belong to the same season.";
-    }
-
-    return null;
+    reply.code(403).send({ message });
+    return false;
   };
 
   const isValidTaskDependencyTarget = (
@@ -322,7 +296,8 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const session = getSessionFromRequest(request);
-    return session?.accountId || session?.email || "authenticated-user";
+    const email = session?.email?.trim().toLowerCase();
+    return email || session?.accountId || "authenticated-user";
   };
 
   app.get("/health", async () => {
@@ -333,159 +308,10 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/api/auth/config", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-
-    return getPublicAuthConfig();
-  });
-
-  app.post<{
-    Body: {
-      credential?: string;
-    };
-  }>("/api/auth/google", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-
-    const credential = request.body?.credential;
-    if (!credential) {
-      return reply.code(400).send({
-        message: "Google did not provide a credential to exchange.",
-      });
-    }
-
-    try {
-      const user = await verifyGoogleCredential(credential);
-      const token = signSessionToken(user);
-
-      return {
-        token,
-        user,
-      };
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Google authentication failed");
-      return reply.code(500).send({
-        message: "Google authentication failed unexpectedly.",
-      });
-    }
-  });
-
-  if (env.NODE_ENV !== "production") {
-    app.post("/api/auth/dev-bypass", async (request, reply) => {
-      if (!allowAuthRouteRequest(request, reply)) {
-        return;
-      }
-
-      if (!runtimeAuthConfig.enabled) {
-        return reply.code(503).send({
-          message: "Development sign-in is not available until auth is configured.",
-        });
-      }
-
-      const user = buildDevelopmentSessionUser();
-      const token = signSessionToken(user);
-
-      return {
-        token,
-        user,
-      };
-    });
-  }
-
-  app.post<{ Body: unknown }>("/api/auth/email/start", async (request, reply) => {
-    if (!allowAuthEmailRouteRequest(request, reply)) {
-      return;
-    }
-
-    const parsed = emailSignInRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Email sign-in payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    try {
-      return await requestEmailSignInCode(parsed.data.email);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Email sign-in code request failed");
-      return reply.code(500).send({
-        message: "Email sign-in failed unexpectedly.",
-      });
-    }
-  });
-
-  app.post<{ Body: unknown }>("/api/auth/email/verify", async (request, reply) => {
-    if (!allowAuthEmailRouteRequest(request, reply)) {
-      return;
-    }
-
-    const parsed = emailSignInVerifySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Email verification payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    try {
-      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
-      const token = signSessionToken(user);
-
-      return {
-        token,
-        user,
-      };
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Email authentication failed");
-      return reply.code(500).send({
-        message: "Email authentication failed unexpectedly.",
-      });
-    }
-  });
-
-  app.get("/api/auth/me", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-
-    if (!isAuthEnabled()) {
-      return {
-        enabled: false,
-        user: null,
-      };
-    }
-
-    const session = requireSession(request, reply);
-    if (!session) {
-      return;
-    }
-
-    return {
-      enabled: true,
-      user: session,
-    };
+  registerAuthRoutes(app, {
+    allowApiRouteRequest,
+    allowAuthEmailRouteRequest,
+    allowAuthRouteRequest,
   });
 
   app.get("/api/dashboard", async (request, reply) => {
@@ -517,11 +343,19 @@ export async function registerRoutes(app: FastifyInstance) {
     const snapshot = getSnapshot();
     const selection = readBootstrapSelection(request.query);
     const userKey = getNavigationPreferenceUserKey(request);
-
-    return {
+    const bootstrapPayload = bootstrapPayloadSchema.safeParse({
       ...buildBootstrapResponse(snapshot, selection),
       favoriteViews: getFavoriteViews(userKey),
-    };
+    });
+
+    if (!bootstrapPayload.success) {
+      return reply.code(500).send({
+        message: "Bootstrap response payload does not match platform contract.",
+        issues: bootstrapPayload.error.flatten(),
+      });
+    }
+
+    return bootstrapPayload.data;
   });
 
   app.patch<{ Body: unknown; Params: { viewId: string } }>(
@@ -937,6 +771,13 @@ export async function registerRoutes(app: FastifyInstance) {
         message: "QA report payload is invalid.",
         issues: parsed.error.flatten(),
       });
+    }
+
+    if (
+      parsed.data.mentorApproved &&
+      !requireMentorPermission(request, reply, "Only mentors can approve QA.")
+    ) {
+      return;
     }
 
     const validationError = validateQaReportLinks(parsed.data);
@@ -1809,6 +1650,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can create tasks.")) {
+      return;
+    }
+
     const parsed = taskSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -1870,6 +1715,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/tasks/:taskId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can edit tasks.")) {
         return;
       }
 
@@ -1961,6 +1810,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/tasks/:taskId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete tasks.")) {
         return;
       }
 
@@ -2239,6 +2092,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can invite people.")) {
+      return;
+    }
+
     const parsed = memberSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -2285,6 +2142,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/members/:memberId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can edit people.")) {
         return;
       }
 
@@ -2341,6 +2202,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/members/:memberId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete people.")) {
         return;
       }
 
@@ -2845,165 +2710,7 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/api/meetings", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    return {
-      meetings: getSnapshot().meetings,
-      attendance: getSnapshot().attendanceRecords,
-      workLogs: getSnapshot().workLogs,
-    };
-  });
-
-  app.post<{ Body: unknown }>("/api/meetings", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const parsed = meetingSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Meeting payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    const projectIds = Array.from(new Set(parsed.data.projectIds ?? []));
-    const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
-    if (meetingProjectValidation) {
-      return reply.code(400).send({
-        message: meetingProjectValidation,
-      });
-    }
-    const seasonId = resolveMeetingSeasonId({
-      projectIds,
-      requestedSeasonId: parsed.data.seasonId,
-    });
-    const meetingSeasonValidation = validateMeetingSeasonProjectConsistency(
-      seasonId,
-      projectIds,
-    );
-    if (meetingSeasonValidation) {
-      return reply.code(400).send({
-        message: meetingSeasonValidation,
-      });
-    }
-
-    const meeting = createMeeting({
-      ...parsed.data,
-      seasonId: seasonId ?? undefined,
-      projectIds,
-      endDateTime: parsed.data.endDateTime ?? null,
-    });
-
-    return reply.code(201).send({
-      item: meeting,
-    });
-  });
-
-  app.patch<{ Body: unknown; Params: { meetingId: string } }>(
-    "/api/meetings/:meetingId",
-    async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsed = meetingPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Meeting update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
-      }
-
-      const currentMeeting = getSnapshot().meetings.find(
-        (meeting) => meeting.id === request.params.meetingId,
-      );
-      if (!currentMeeting) {
-        return reply.code(404).send({
-          message: "Meeting not found.",
-        });
-      }
-
-      const rawPatch =
-        request.body && typeof request.body === "object"
-          ? (request.body as Record<string, unknown>)
-          : {};
-      const patchHas = (field: string) =>
-        Object.prototype.hasOwnProperty.call(rawPatch, field);
-      const patchData = { ...parsed.data };
-      if (!patchHas("meetingType")) {
-        delete patchData.meetingType;
-      }
-      if (!patchHas("location")) {
-        delete patchData.location;
-      }
-      if (!patchHas("description")) {
-        delete patchData.description;
-      }
-
-      const projectIds =
-        !patchHas("projectIds")
-          ? currentMeeting.projectIds ?? []
-          : Array.from(new Set(patchData.projectIds ?? []));
-      const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
-      if (meetingProjectValidation) {
-        return reply.code(400).send({
-          message: meetingProjectValidation,
-        });
-      }
-      const seasonId = resolveMeetingSeasonId({
-        currentSeasonId: currentMeeting.seasonId,
-        projectIds,
-        requestedSeasonId: parsed.data.seasonId,
-      });
-      const meetingSeasonValidation = validateMeetingSeasonProjectConsistency(
-        seasonId,
-        projectIds,
-      );
-      if (meetingSeasonValidation) {
-        return reply.code(400).send({
-          message: meetingSeasonValidation,
-        });
-      }
-
-      const meeting = updateMeeting(request.params.meetingId, {
-        ...patchData,
-        seasonId: seasonId ?? undefined,
-        projectIds,
-        endDateTime:
-          patchData.endDateTime === undefined
-            ? currentMeeting.endDateTime ?? null
-            : patchData.endDateTime,
-      });
-
-      return {
-        item: meeting,
-      };
-    },
-  );
-
-  app.delete<{ Params: { meetingId: string } }>(
-    "/api/meetings/:meetingId",
-    async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const meeting = removeMeeting(request.params.meetingId);
-      if (!meeting) {
-        return reply.code(404).send({
-          message: "Meeting not found.",
-        });
-      }
-
-      return {
-        item: meeting,
-      };
-    },
-  );
+  registerMeetingRoutes(app, { requireApiSessionIfEnabled, requireMentorPermission });
 
   app.get("/api/roster/insights", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

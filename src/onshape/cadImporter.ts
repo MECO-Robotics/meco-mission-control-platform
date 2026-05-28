@@ -63,13 +63,16 @@ function completeRun(args: {
   summary?: Record<string, unknown>;
 }): CadGraphImportResult {
   const callsUsed = args.client.getCallsUsed();
+  const rawSummaryJson = args.snapshotId
+    ? { ...(args.summary ?? {}), snapshotId: args.snapshotId }
+    : (args.summary ?? {});
   args.store.updateImportRun(args.runId, {
     status: args.status,
     completedAt: new Date().toISOString(),
     callsUsed,
     stoppedReason: args.stoppedReason ?? null,
     errorMessage: args.errorMessage ?? null,
-    rawSummaryJson: args.summary ?? {},
+    rawSummaryJson,
   });
 
   return {

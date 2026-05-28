@@ -139,23 +139,34 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       const item = state.snapshots.find((snapshot) => snapshot.id === id);
       return item ? clone(item) : null;
     },
-    createAssemblyNodes(snapshotId: string, input: CadAssemblyCreateInput[]) {
-      const bySourceId = new Map<string, CadAssemblyNode>();
-      for (const node of input) {
-        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
-        const item: CadAssemblyNode = {
-          ...node,
-          id: nextId("cad-assembly", state.assemblyNodes.map((assembly) => assembly.id)),
-          snapshotId,
-          parentAssemblyNodeId: parent?.id ?? null,
-          normalizedName: normalizeCadName(node.name),
-          createdAt: nowIso(),
-        };
-        state.assemblyNodes.push(item);
-        bySourceId.set(item.sourceId, clone(item));
+  createAssemblyNodes(snapshotId: string, input: CadAssemblyCreateInput[]) {
+    const bySourceId = new Map<string, CadAssemblyNode>();
+    for (const node of input) {
+      const item: CadAssemblyNode = {
+        ...node,
+        id: nextId("cad-assembly", state.assemblyNodes.map((assembly) => assembly.id)),
+        snapshotId,
+        parentAssemblyNodeId: null,
+        normalizedName: normalizeCadName(node.name),
+        createdAt: nowIso(),
+      };
+      state.assemblyNodes.push(item);
+      bySourceId.set(item.sourceId, item);
+    }
+    for (const node of input) {
+      const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
+      if (!parent) {
+        continue;
       }
-      return bySourceId;
-    },
+
+      const child = bySourceId.get(node.sourceId);
+      if (!child) {
+        continue;
+      }
+      child.parentAssemblyNodeId = parent.id;
+    }
+    return bySourceId;
+  },
     createPartDefinitions(snapshotId: string, input: CadPartDefinitionCreateInput[]) {
       const bySourceId = new Map<string, CadPartDefinition>();
       for (const part of input) {
@@ -288,3 +299,4 @@ export type CadRuntimeStore = ReturnType<typeof getCadRuntimeStore>;
 export function resetCadRuntimeStore() {
   getCadRuntimeStore().reset();
 }
+

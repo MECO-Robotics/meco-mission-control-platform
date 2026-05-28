@@ -2,7 +2,11 @@
 import { test } from "node:test";
 
 import { runCadImport } from "../src/onshape/cadImporter";
-import { ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
+import {
+  createOnshapeCadClient,
+  ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH,
+  ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH,
+} from "../src/onshape/onshapeCadClient";
 import {
   createOnshapeRuntimeStore,
   type OnshapeRuntimeStore,
@@ -17,6 +21,7 @@ import {
 import {
   buildOnshapeOAuthAuthorizationUrl,
   normalizeOnshapeOAuthTokenResponse,
+  refreshOnshapeOAuthToken,
   shouldRefreshOnshapeOAuthToken,
 } from "../src/onshape/onshapeOAuth";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
@@ -170,6 +175,275 @@ test("builds stable cache keys with immutable version identity", () => {
   );
 });
 
+test("normalizes native Onshape assembly payloads into CAD graph records", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  let requestedEndpoint = "";
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async (request) => {
+      requestedEndpoint = request.endpoint;
+      return {
+        statusCode: 200,
+        headers: {},
+        json: {
+          rootAssembly: {
+            id: "root-assembly",
+            name: "Robot master",
+            documentId: "0123456789abcdef01234567",
+            elementId: "111111111111111111111111",
+            instances: [
+              {
+                id: "gearbox-asm",
+                type: "Assembly",
+                parentId: "drive-asm",
+                name: "Gearbox <1>",
+                documentId: "0123456789abcdef01234567",
+                elementId: "gearbox-element",
+              },
+              {
+                id: "drive-asm",
+                type: "Assembly",
+                name: "Drive Subsystem <1>",
+                documentId: "0123456789abcdef01234567",
+                elementId: "drive-element",
+              },
+              {
+                id: "rail-left",
+                parentId: "gearbox-asm",
+                type: "Part",
+                name: "Drive rail <1>",
+                partId: "drive-rail",
+                partNumber: "DRV-001",
+                documentId: "0123456789abcdef01234567",
+                elementId: "drive-element",
+                documentMicroversion: "micro-rail",
+                configuration: "default",
+                material: "6061 aluminum",
+                suppressed: false,
+              },
+              {
+                id: "rail-right",
+                parentId: "gearbox-asm",
+                type: "Part",
+                name: "Drive rail <2>",
+                partId: "drive-rail",
+                partNumber: "DRV-002",
+                documentId: "fedcba9876543210fedcba98",
+                elementId: "drive-element",
+                documentMicroversion: "micro-rail",
+                configuration: "default",
+              },
+            ],
+          },
+        },
+      };
+    },
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchAssemblyBom({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  assert.equal(
+    requestedEndpoint,
+    "/api/v10/assemblies/d/0123456789abcdef01234567/v/222222222222222222222222/e/111111111111111111111111/bom",
+  );
+  assert.equal(store.listCacheEntries().at(-1)?.requestHash, ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH);
+  assert.deepEqual(
+    result.assemblyNodes.map((node) => [node.name, node.inferredType, node.metadata?.normalization]),
+    [
+      ["Robot master", "master_assembly", "native_onshape"],
+      ["Gearbox <1>", "subassembly", "native_onshape"],
+      ["Drive Subsystem <1>", "subassembly", "native_onshape"],
+    ],
+  );
+  const rootAssembly = result.assemblyNodes.find((node) => node.name === "Robot master");
+  const driveAssembly = result.assemblyNodes.find((node) => node.name === "Drive Subsystem <1>");
+  const gearboxAssembly = result.assemblyNodes.find((node) => node.name === "Gearbox <1>");
+  assert.equal(driveAssembly?.parentSourceId, rootAssembly?.sourceId);
+  assert.equal(gearboxAssembly?.parentSourceId, driveAssembly?.sourceId);
+  assert.equal(gearboxAssembly?.instancePath, "/root-assembly/drive-asm/gearbox-asm");
+  assert.equal(result.partDefinitions.length, 2);
+  assert.deepEqual(
+    new Set(result.partDefinitions.map((part) => [part.documentId, part.partId, part.partNumber].join(":"))),
+    new Set([
+      "0123456789abcdef01234567:drive-rail:DRV-001",
+      "fedcba9876543210fedcba98:drive-rail:DRV-002",
+    ]),
+  );
+  assert.equal(result.partInstances.length, 2);
+  assert.equal(result.partInstances[0]?.partDefinitionSourceId, result.partDefinitions[0]?.sourceId);
+  assert.equal(result.partInstances[0]?.parentAssemblySourceId, gearboxAssembly?.sourceId);
+  assert.notEqual(result.partInstances[0]?.partDefinitionSourceId, result.partInstances[1]?.partDefinitionSourceId);
+  assert.equal(result.partInstances[0]?.suppressed, false);
+});
+
+test("normalizes native Onshape BOM table payloads into CAD graph records", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async () => ({
+      statusCode: 200,
+      headers: {},
+      json: {
+        bomTable: {
+          name: "Robot master BOM",
+          items: [
+            {
+              itemSource: {
+                documentId: "0123456789abcdef01234567",
+                wvmType: "v",
+                wvmId: "222222222222222222222222",
+                elementId: "drive-element",
+                partId: "drive-rail",
+              },
+              name: "Drive rail",
+              partNumber: "DRV-001",
+              quantity: 2,
+              material: "6061 Aluminum",
+              configuration: "default",
+            },
+          ],
+        },
+      },
+    }),
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchAssemblyBom({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  assert.equal(result.assemblyNodes[0]?.name, "Robot master BOM");
+  assert.equal(result.assemblyNodes[0]?.metadata?.normalization, "native_onshape_bom_table");
+  assert.equal(result.partDefinitions.length, 1);
+  assert.equal(result.partDefinitions[0]?.name, "Drive rail");
+  assert.equal(result.partDefinitions[0]?.partNumber, "DRV-001");
+  assert.equal(result.partDefinitions[0]?.partId, "drive-rail");
+  assert.equal(result.partDefinitions[0]?.material, "6061 Aluminum");
+  assert.equal(result.partDefinitions[0]?.versionId, "222222222222222222222222");
+  assert.equal(result.partInstances.length, 1);
+  assert.equal(result.partInstances[0]?.quantity, 2);
+  assert.equal(result.partInstances[0]?.parentAssemblySourceId, result.assemblyNodes[0]?.sourceId);
+});
+
+test("fetches Onshape document metadata through the supported getDocument path", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  let requestedEndpoint = "";
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async (request) => {
+      requestedEndpoint = request.endpoint;
+      return {
+        statusCode: 200,
+        headers: {},
+        json: { name: "2026 Robot CAD" },
+      };
+    },
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchDocumentMetadata({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  assert.equal(requestedEndpoint, "/api/v10/documents/0123456789abcdef01234567");
+  assert.equal(store.listCacheEntries().at(-1)?.requestHash, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH);
+  assert.equal(result.documentName, "2026 Robot CAD");
+});
+
+test("normalizes Onshape bomTable payloads into CAD graph records", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async () => ({
+      statusCode: 200,
+      headers: {},
+      json: {
+        bomTable: {
+          name: "Robot BOM",
+          rows: [
+            {
+              itemNumber: "1",
+              type: "Assembly",
+              id: "drive-assembly",
+              name: "Drive Assembly",
+              documentId: "0123456789abcdef01234567",
+              elementId: "drive-element",
+            },
+            {
+              itemNumber: "1.1",
+              type: "Part",
+              id: "left-rail-instance",
+              partId: "drive-rail",
+              partNumber: "DRV-001",
+              name: "Left rail",
+              quantity: "2",
+              documentId: "0123456789abcdef01234567",
+              elementId: "drive-element",
+              documentMicroversion: "micro-rail",
+              configuration: "default",
+              material: "6061 aluminum",
+            },
+          ],
+        },
+      },
+    }),
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchAssemblyBom({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  const driveAssembly = result.assemblyNodes.find((node) => node.name === "Drive Assembly");
+  assert.equal(driveAssembly?.parentSourceId, result.assemblyNodes[0]?.sourceId);
+  assert.equal(driveAssembly?.metadata?.normalization, "native_onshape_bom_table");
+  assert.equal(result.partDefinitions.length, 1);
+  assert.equal(result.partDefinitions[0]?.partId, "drive-rail");
+  assert.equal(result.partDefinitions[0]?.partNumber, "DRV-001");
+  assert.equal(result.partInstances.length, 1);
+  assert.equal(result.partInstances[0]?.parentAssemblySourceId, driveAssembly?.sourceId);
+  assert.equal(result.partInstances[0]?.quantity, 2);
+});
+
+test("rejects unrecognized successful Onshape BOM payloads", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async () => ({
+      statusCode: 200,
+      headers: {},
+      json: { message: "unexpected success payload" },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      createOnshapeCadClient(lowLevelClient).fetchAssemblyBom({
+        reference,
+        importRunId: "import-1",
+        policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+      }),
+    /BOM payload was not recognized/,
+  );
+});
+
 test("builds Onshape OAuth2 authorization URLs without exposing client secrets", () => {
   const url = buildOnshapeOAuthAuthorizationUrl({
     authorizationUrl: "https://oauth.onshape.com/oauth/authorize",
@@ -208,6 +482,37 @@ test("normalizes Onshape OAuth2 token responses and refresh timing", () => {
   assert.equal(tokenSet.expiresAt, new Date(3_601_000).toISOString());
   assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_540_000), false);
   assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_550_000), true);
+});
+
+test("refreshes Onshape OAuth2 tokens without a redirect URI", async () => {
+  const tokenSet = await refreshOnshapeOAuthToken({
+    config: {
+      authorizationUrl: "https://oauth.onshape.com/oauth/authorize",
+      tokenUrl: "https://oauth.onshape.com/oauth/token",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      scopes: ["OAuth2Read"],
+    },
+    refreshToken: "existing-refresh-token",
+    transport: async ({ body }) => {
+      assert.equal(body.get("grant_type"), "refresh_token");
+      assert.equal(body.get("refresh_token"), "existing-refresh-token");
+      assert.equal(body.get("client_id"), "client-id");
+      assert.equal(body.get("client_secret"), "client-secret");
+      assert.equal(body.get("redirect_uri"), null);
+      return {
+        statusCode: 200,
+        json: {
+          access_token: "refreshed-access-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+        },
+      };
+    },
+  });
+
+  assert.equal(tokenSet.accessToken, "refreshed-access-token");
+  assert.equal(tokenSet.refreshToken, "existing-refresh-token");
 });
 
 test("serves immutable cached responses without spending calls", async () => {
@@ -428,13 +733,48 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(second.status, "completed");
   const snapshots = store.listSnapshots();
   assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0]?.id, first.snapshotId);
+  assert.equal(snapshots[0]?.id, second.snapshotId);
   assert.equal(snapshots[0]?.importRunId, first.importRunId);
-  assert.notEqual(snapshots[0]?.importRunId, second.importRunId);
+  assert.equal(store.findImportRun(first.importRunId)?.rawSummaryJson.snapshotId, first.snapshotId);
+  assert.equal(store.findImportRun(second.importRunId)?.rawSummaryJson.snapshotId, second.snapshotId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);
   assert.ok(store.listWarnings().some((warning) => warning.code === "assembly_mapping_missing"));
   assert.ok(store.listWarnings().some((warning) => warning.code === "part_material_missing"));
+});
+
+test("keeps Onshape parts distinct when BOM payload omits part ids", () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+  const snapshot = store.upsertSnapshot({
+    documentRef: ref,
+    importRunId: "import-without-part-ids",
+    label: "Robot master assembly",
+  });
+
+  const definitionsBySourceId = store.upsertPartDefinitions(snapshot.id, [
+    {
+      sourceId: "part-source-a",
+      documentId: ref.documentId,
+      elementId: ref.elementId ?? undefined,
+      name: "Left bracket",
+      configuration: "default",
+    },
+    {
+      sourceId: "part-source-b",
+      documentId: ref.documentId,
+      elementId: ref.elementId ?? undefined,
+      name: "Right bracket",
+      configuration: "default",
+    },
+  ]);
+
+  const parts = store.listPartDefinitions(snapshot.id);
+  assert.equal(definitionsBySourceId.size, 2);
+  assert.equal(parts.length, 2);
+  assert.deepEqual(new Set(parts.map((part) => part.sourceId)), new Set(["part-source-a", "part-source-b"]));
 });
 
 test("does not replace the latest snapshot when BOM import fails", async () => {

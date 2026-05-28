@@ -450,6 +450,13 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
 
     return true;
   });
+  const scopedAttendanceRecords = snapshot.attendanceRecords.filter((record) => {
+    if (selection.personId !== null && record.memberId !== selection.personId) {
+      return false;
+    }
+
+    return true;
+  });
   const scopedExplicitTaskDependencies = snapshot.taskDependencies
     .map((dependency) => normalizeTaskDependencyRecord(dependency as Partial<TaskDependency>))
     .filter((dependency) => {
@@ -607,7 +614,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     taskBlockers: scopedTaskBlockers,
     workLogs: scopedWorkLogs,
     meetings: scopedMeetings,
-    attendanceRecords: snapshot.attendanceRecords,
+    attendanceRecords: scopedAttendanceRecords,
     manufacturingItems: scopedManufacturingItems.map((item) => ({
       ...item,
       qaReviewCount: manufacturingQaReviewCounts.get(item.id) ?? 0,

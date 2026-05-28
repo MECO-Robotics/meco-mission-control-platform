@@ -6,24 +6,6 @@ on:
     branches:
       - development
       - main
-    paths:
-      - ".editorconfig"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/deploy-vps.yml"
-      - ".gitignore"
-      - ".dockerignore"
-      - "Dockerfile"
-      - "docker-compose.prod.yml"
-      - "package.json"
-      - "package-lock.json"
-      - "prisma/**"
-      - "prisma.config.ts"
-      - "deploy/**"
-      - "src/**"
-      - "test/**"
-      - "tsconfig.json"
-      - "tsconfig.test.json"
-      - ".env.production.example"
   push:
     branches:
       - development
@@ -32,6 +14,7 @@ on:
       - "fix/**"
       - "hotfix/**"
     paths:
+      - "AGENTS.md"
       - ".editorconfig"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy-vps.yml"
@@ -44,6 +27,9 @@ on:
       - "prisma/**"
       - "prisma.config.ts"
       - "deploy/**"
+      - "docs/**"
+      - "scripts/**"
+      - "skills/**"
       - "src/**"
       - "test/**"
       - "tsconfig.json"
@@ -114,6 +100,8 @@ jobs:
         run: npm run typecheck:test
 
       - name: Run verification suite
+        env:
+          PLATFORM_BOOTSTRAP_CONTRACT_BRANCH: development
         run: npm run verify
 
       - name: Validate Prisma schema
@@ -258,4 +246,53 @@ jobs:
 
             console.log(`Validated ${owner}/${repo}@${sha}`);
           }
+          NODE
+
+  merge-requirements:
+    name: merge-requirements
+    if: always()
+    needs:
+      - branch-model
+      - ci-validate
+      - snapshot-validate
+      - cross-repo-production-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate dynamic merge requirements
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BRANCH_MODEL_RESULT: ${{ needs.branch-model.result }}
+          CI_VALIDATE_RESULT: ${{ needs.ci-validate.result }}
+          SNAPSHOT_VALIDATE_RESULT: ${{ needs.snapshot-validate.result }}
+          CROSS_REPO_PRODUCTION_GATE_RESULT: ${{ needs.cross-repo-production-gate.result }}
+        run: |
+          node <<'NODE'
+          const eventName = process.env.EVENT_NAME;
+          const baseRef = process.env.BASE_REF;
+
+          if (eventName !== 'pull_request') {
+            console.log(`merge-requirements is enforced for pull_request events; current event is ${eventName}.`);
+            process.exit(0);
+          }
+
+          const requiredChecks = [
+            ['branch-model', process.env.BRANCH_MODEL_RESULT],
+            ['ci-validate', process.env.CI_VALIDATE_RESULT],
+            ['snapshot-validate', process.env.SNAPSHOT_VALIDATE_RESULT],
+          ];
+
+          if (baseRef === 'main') {
+            requiredChecks.push(['cross-repo-production-gate', process.env.CROSS_REPO_PRODUCTION_GATE_RESULT]);
+          }
+
+          const failures = requiredChecks.filter(([, result]) => result !== 'success');
+
+          if (failures.length > 0) {
+            const summary = failures.map(([name, result]) => `${name}=${result}`).join(', ');
+            throw new Error(`Required merge checks did not pass: ${summary}`);
+          }
+
+          const enforced = requiredChecks.map(([name]) => name).join(', ');
+          console.log(`Required merge checks passed for ${baseRef}: ${enforced}`);
           NODE

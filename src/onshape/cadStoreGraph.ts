@@ -34,12 +34,12 @@ function findExistingSnapshot(state: OnshapeRuntimeState, ref: OnshapeDocumentRe
 
 function partIdentity(part: PartDefinitionInput) {
   return part.missionControlExternalKey ||
-    `${part.documentId}:${part.elementId ?? ""}:${part.partId ?? ""}:${part.configuration ?? ""}`;
+    `${part.documentId}:${part.elementId ?? ""}:${part.partId || `source:${part.sourceId}`}:${part.configuration ?? ""}`;
 }
 
 function existingPartIdentity(part: CadPartDefinition) {
   return part.missionControlExternalKey ||
-    `${part.documentId}:${part.elementId ?? ""}:${part.partId ?? ""}:${part.configuration ?? ""}`;
+    `${part.documentId}:${part.elementId ?? ""}:${part.partId || `source:${part.sourceId}`}:${part.configuration ?? ""}`;
 }
 
 export function buildCadGraphStore(state: OnshapeRuntimeState) {
@@ -56,6 +56,8 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
       if (existing) {
         existing.label = input.label;
         existing.notes = input.notes ?? existing.notes;
+        existing.createdBy = input.createdBy ?? existing.createdBy;
+        existing.source = input.source ?? existing.source;
         return clone(existing);
       }
 
