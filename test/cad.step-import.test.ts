@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { test } from "node:test";
+import { promisify } from "node:util";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+const execFileAsync = promisify(execFile);
 
 function stepEntityFixture(options?: {
   multipleTopLevel?: boolean;
@@ -183,6 +187,35 @@ function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean; re
         stableSignature: "inst:path:/Robot/Spacer-1",
       },
     ],
+  });
+}
+
+function cyclicAssemblyCadFixture() {
+  return JSON.stringify({
+    rootName: "Robot master assembly",
+    units: "millimeter",
+    assemblyNodes: [
+      {
+        sourceId: "asm-a",
+        parentSourceId: "asm-b",
+        name: "Assembly A",
+        instancePath: "/Assembly A",
+        depth: 0,
+        inferredType: "ROOT",
+        stableSignature: "asm:path:/Assembly A",
+      },
+      {
+        sourceId: "asm-b",
+        parentSourceId: "asm-a",
+        name: "Assembly B",
+        instancePath: "/Assembly B",
+        depth: 1,
+        inferredType: "SUBSYSTEM_CANDIDATE",
+        stableSignature: "asm:path:/Assembly B",
+      },
+    ],
+    partDefinitions: [],
+    partInstances: [],
   });
 }
 
@@ -1173,6 +1206,123 @@ test("normal STEP upload rejects placeholder parser mode instead of creating a p
     assert.equal(snapshotsResponse.statusCode, 200);
     assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
   }, { env: { CAD_STEP_PARSER_MODE: "placeholder" } });
+});
+
+test("STEP import rejects cyclic assembly parent relationships from JSON fixtures", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      payload: {
+        fileName: "cyclic.step",
+        fileText: cyclicAssemblyCadFixture(),
+        label: "cyclic-assembly",
+      },
+    });
+
+    assert.equal(response.statusCode, 422, response.body);
+    assert.match(response.body, /assembly hierarchy.*cycle/i);
+    resetLimits();
+
+    const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
+    assert.equal(snapshotsResponse.statusCode, 200, snapshotsResponse.body);
+    assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+  });
+});
+
+test("unauthenticated STEP JSON uploads are rejected before large body parsing", async () => {
+  const script = `
+    import assert from "node:assert/strict";
+
+    const { buildApp } = (await import("./src/app.ts")).default;
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/cad/step-imports",
+        headers: {
+          "content-type": "application/json",
+        },
+        payload: '{"fileName":"large.step","fileText":"' + "x".repeat((2 * 1024 * 1024) + 1024),
+      });
+
+      assert.equal(response.statusCode, 401, response.body);
+      assert.match(response.body, /Use your/i);
+    } finally {
+      await app.close();
+    }
+  `;
+
+  const result = await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public",
+      GOOGLE_CLIENT_ID: "test-google-client",
+      AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
+      CAD_STORE_DRIVER: "runtime",
+    },
+    timeout: 10_000,
+  });
+
+  assert.equal(result.stderr, "");
+});
+
+test("authenticated STEP uploads still accept JSON payloads", async () => {
+  const script = `
+    import assert from "node:assert/strict";
+
+    const { buildApp } = (await import("./src/app.ts")).default;
+    const app = await buildApp();
+    try {
+      const signInResponse = await app.inject({
+        method: "POST",
+        url: "/api/auth/dev-bypass",
+        payload: {
+          role: "mentor",
+        },
+      });
+      assert.equal(signInResponse.statusCode, 200, signInResponse.body);
+      const token = signInResponse.json().token;
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/cad/step-imports",
+        headers: {
+          authorization: "Bearer " + token,
+        },
+        payload: {
+          fileName: "authenticated.step",
+          fileText: ${JSON.stringify(cadFixture())},
+          label: "authenticated-upload",
+        },
+      });
+
+      assert.equal(response.statusCode, 201, response.body);
+    } finally {
+      await app.close();
+    }
+  `;
+
+  const result = await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public",
+      GOOGLE_CLIENT_ID: "test-google-client",
+      AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
+      CAD_STORE_DRIVER: "runtime",
+      API_RATE_LIMIT_MAX_REQUESTS: "5",
+      AUTH_RATE_LIMIT_MAX_REQUESTS: "5",
+    },
+    timeout: 10_000,
+  });
+
+  assert.equal(result.stderr, "");
 });
 
 test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {
