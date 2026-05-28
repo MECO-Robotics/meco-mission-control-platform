@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import jwt from "jsonwebtoken";
+
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 import type { MemberRole } from "../src/domain/types";
 
@@ -201,6 +203,42 @@ test("google sessions for hosted-domain emails require the hosted-domain claim",
 
       assert.throws(
         () => verifySessionToken(forgedHostedDomainToken),
+        (error) => {
+          assert.ok(error instanceof AuthError);
+          assert.equal(error.statusCode, 403);
+          assert.match(error.message, /hosted domain/i);
+          return true;
+        },
+      );
+    },
+    { env: authEnv },
+  );
+});
+
+test("legacy google sessions without hosted-domain proof are rejected", async () => {
+  await withIntegrationApp(
+    async () => {
+      const legacyToken = jwt.sign(
+        {
+          email: "student@mecorobotics.org",
+          hd: "mecorobotics.org",
+          name: "student@mecorobotics.org",
+          provider: "google",
+          role: "student",
+        },
+        authEnv.AUTH_JWT_SECRET,
+        {
+          algorithm: "HS256",
+          audience: "meco-apps",
+          expiresIn: "12h",
+          issuer: "meco-platform",
+          subject: "student@mecorobotics.org",
+        },
+      );
+      const { AuthError, verifySessionToken } = await import("../src/auth/authService");
+
+      assert.throws(
+        () => verifySessionToken(legacyToken),
         (error) => {
           assert.ok(error instanceof AuthError);
           assert.equal(error.statusCode, 403);

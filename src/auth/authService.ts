@@ -45,6 +45,7 @@ interface SessionClaims extends JwtPayload {
   name: string;
   picture?: string | null;
   hd: string;
+  googleHostedDomainVerified?: boolean;
   provider?: "google" | "email";
   role?: MemberRole;
 }
@@ -523,10 +524,15 @@ function normalizeDeviceId(value: string | null | undefined) {
 export function signSessionToken(user: SessionUser, options: SessionTokenOptions = {}) {
   const secret = getJwtSecret();
   const deviceId = normalizeDeviceId(options.deviceId);
+  const googleHostedDomainVerified =
+    user.authProvider === "google" &&
+    isAllowedHostedDomain(user.email) &&
+    user.hostedDomain.toLowerCase() === authConfig.hostedDomain;
 
   return jwt.sign(
     {
       ...(deviceId ? { deviceId } : null),
+      ...(googleHostedDomainVerified ? { googleHostedDomainVerified: true } : null),
       email: user.email,
       name: user.name,
       picture: user.picture,
@@ -562,13 +568,20 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError("The session token is missing required identity fields.", 401);
   }
 
-  if (payload.provider && payload.provider !== "google" && payload.provider !== "email") {
+  const provider = payload.provider ?? "google";
+  if (provider !== "google" && provider !== "email") {
     throw new AuthError("The session token uses an unknown sign-in provider.", 401);
   }
 
   const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd.toLowerCase();
-  if (payload.provider === "google" && isAllowedHostedDomain(email) && hostedDomain !== authConfig.hostedDomain) {
+  const requiresGoogleHostedDomainProof =
+    provider === "google" && isAllowedHostedDomain(email);
+  if (
+    requiresGoogleHostedDomainProof &&
+    (hostedDomain !== authConfig.hostedDomain ||
+      payload.googleHostedDomainVerified !== true)
+  ) {
     throw new AuthError("Google sessions require a verified hosted domain claim.", 403);
   }
 
@@ -585,7 +598,7 @@ export function verifySessionToken(token: string): SessionUser {
 
   return {
     accountId: payload.sub,
-    authProvider: payload.provider ?? "google",
+    authProvider: provider,
     email,
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
