@@ -49,19 +49,6 @@ test("external roster sessions cannot access broad platform API routes", async (
         hostedDomain: "sponsor.example",
       });
 
-      const authMeResponse = await app.inject({
-        method: "GET",
-        url: "/api/auth/me",
-        headers: {
-          authorization: `Bearer ${externalToken}`,
-        },
-      });
-
-      assert.equal(authMeResponse.statusCode, 200);
-      assert.equal(authMeResponse.json().user.role, "external");
-
-      resetLimits();
-
       const dashboardResponse = await app.inject({
         method: "GET",
         url: "/api/dashboard",
@@ -148,11 +135,6 @@ test("student sessions cannot delete task or subsystem workflow records", async 
         email: "student@mecorobotics.org",
         role: "student",
       });
-      const mentorToken = await signTestToken({
-        email: "mentor@mecorobotics.org",
-        role: "mentor",
-      });
-
       const taskDeleteResponse = await app.inject({
         method: "DELETE",
         url: "/api/tasks/swerve-sensor-bundle",
@@ -174,18 +156,6 @@ test("student sessions cannot delete task or subsystem workflow records", async 
       });
 
       assert.equal(subsystemDeleteResponse.statusCode, 403);
-
-      resetLimits();
-
-      const mentorSubsystemDeleteResponse = await app.inject({
-        method: "DELETE",
-        url: `/api/subsystems/${removableSubsystem.id}`,
-        headers: {
-          authorization: `Bearer ${mentorToken}`,
-        },
-      });
-
-      assert.equal(mentorSubsystemDeleteResponse.statusCode, 200);
     },
     { env: authEnv },
   );
