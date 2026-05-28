@@ -12,9 +12,7 @@ const plannedAttendanceDaySchema = z.enum([
   "sunday",
 ]);
 
-export const devBypassSchema = z.object({
-  role: z.enum(["student", "mentor"]).default("student"),
-});
+export const devBypassSchema = z.object({}).strict();
 
 export const memberSchema = z.object({
   name: z.string().trim().min(2),

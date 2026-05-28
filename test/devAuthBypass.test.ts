@@ -109,7 +109,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
-      const mentorBypassResponse = await app.inject({
+      const roleBypassResponse = await app.inject({
         method: "POST",
         url: "/api/auth/dev-bypass",
         payload: {
@@ -117,21 +117,8 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         },
       });
 
-      assert.equal(mentorBypassResponse.statusCode, 200);
-      const mentorBypassBody = mentorBypassResponse.json() as {
-        token: string;
-        user: {
-          accountId: string;
-          email: string;
-          name: string;
-          role: string;
-        };
-      };
-      assert.equal(mentorBypassBody.user.accountId, "local-dev-student");
-      assert.equal(mentorBypassBody.user.email, "dev.student@mecorobotics.org");
-      assert.equal(mentorBypassBody.user.name, "Local Dev Student");
-      assert.equal(mentorBypassBody.user.role, "student");
-      assert.ok(mentorBypassBody.token.length > 0);
+      assert.equal(roleBypassResponse.statusCode, 400);
+      assert.match(roleBypassResponse.json().message, /invalid/i);
 
       resetRequestLimits();
 
