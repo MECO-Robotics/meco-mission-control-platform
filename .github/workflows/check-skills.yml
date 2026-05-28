@@ -21,9 +21,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Import shared skills without secrets
+      - name: Validate vendored skills snapshot without secrets
         shell: bash
-        run: bash scripts/check-skills-current.sh
+        run: |
+          test -d skills
+          find skills -mindepth 2 -maxdepth 2 -name SKILL.md -print -quit | grep -q .
+          bash -n scripts/check-skills-current.sh scripts/sync-skills.sh
 
   check-skills-trusted:
     if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development') }}
