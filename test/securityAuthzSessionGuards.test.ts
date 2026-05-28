@@ -48,6 +48,10 @@ test("external roster sessions cannot access broad platform API routes", async (
         role: "external",
         hostedDomain: "sponsor.example",
       });
+      const { verifySessionToken } = await import("../src/auth/authService");
+      const externalSession = verifySessionToken(externalToken);
+
+      assert.equal(externalSession.role, "external");
 
       const dashboardResponse = await app.inject({
         method: "GET",
