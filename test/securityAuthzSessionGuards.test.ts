@@ -35,14 +35,6 @@ async function signTestToken(args: {
 test("external roster sessions cannot access broad platform API routes", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createMember } = await import("../src/data/store");
-
-      createMember({
-        name: "Sponsor Viewer",
-        email: "viewer@sponsor.example",
-        role: "external",
-      });
-
       const externalToken = await signTestToken({
         email: "viewer@sponsor.example",
         role: "external",
@@ -64,7 +56,16 @@ test("external roster sessions cannot access broad platform API routes", async (
       assert.equal(dashboardResponse.statusCode, 403);
       assert.match(dashboardResponse.json().message, /external roster/i);
     },
-    { env: authEnv },
+    {
+      env: authEnv,
+      members: [
+        {
+          name: "Sponsor Viewer",
+          email: "viewer@sponsor.example",
+          role: "external",
+        },
+      ],
+    },
   );
 });
 
