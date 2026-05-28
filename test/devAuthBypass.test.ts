@@ -127,10 +127,10 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           role: string;
         };
       };
-      assert.equal(mentorBypassBody.user.accountId, "local-dev-mentor");
-      assert.equal(mentorBypassBody.user.email, "dev.mentor@mecorobotics.org");
-      assert.equal(mentorBypassBody.user.name, "Local Dev Mentor");
-      assert.equal(mentorBypassBody.user.role, "mentor");
+      assert.equal(mentorBypassBody.user.accountId, "local-dev-student");
+      assert.equal(mentorBypassBody.user.email, "dev.student@mecorobotics.org");
+      assert.equal(mentorBypassBody.user.name, "Local Dev Student");
+      assert.equal(mentorBypassBody.user.role, "student");
       assert.ok(mentorBypassBody.token.length > 0);
 
       resetRequestLimits();

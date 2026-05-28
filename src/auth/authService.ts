@@ -303,18 +303,17 @@ function isDevelopmentSessionRole(role: MemberRole | undefined): role is "studen
   return role === "student" || role === "mentor";
 }
 
-export function buildDevelopmentSessionUser(role: "student" | "mentor" = "student"): SessionUser {
-  const emailPrefix = role === "mentor" ? "dev.mentor" : "dev.student";
-  const email = `${emailPrefix}@${authConfig.hostedDomain}`;
+export function buildDevelopmentSessionUser(): SessionUser {
+  const email = `dev.student@${authConfig.hostedDomain}`;
 
   return {
-    accountId: `local-dev-${role}`,
+    accountId: "local-dev-student",
     authProvider: "email",
     email,
-    name: role === "mentor" ? "Local Dev Mentor" : "Local Dev Student",
+    name: "Local Dev Student",
     picture: null,
     hostedDomain: authConfig.hostedDomain,
-    role,
+    role: "student",
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
@@ -330,6 +329,11 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
 
   const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd?.toLowerCase();
+  const hostedDomainEmail = isAllowedHostedDomain(email);
+  if (hostedDomainEmail && hostedDomain !== authConfig.hostedDomain) {
+    throw new AuthError("Google sign-in requires a verified hosted domain claim.", 403);
+  }
+
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
@@ -340,7 +344,7 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     email,
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
-    hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
+    hostedDomain: hostedDomain ?? authConfig.hostedDomain,
     role: getRoleForEmail(email),
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
@@ -563,6 +567,11 @@ export function verifySessionToken(token: string): SessionUser {
   }
 
   const email = normalizeEmailAddress(payload.email);
+  const hostedDomain = payload.hd.toLowerCase();
+  if (payload.provider === "google" && isAllowedHostedDomain(email) && hostedDomain !== authConfig.hostedDomain) {
+    throw new AuthError("Google sessions require a verified hosted domain claim.", 403);
+  }
+
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
@@ -580,7 +589,7 @@ export function verifySessionToken(token: string): SessionUser {
     email,
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
-    hostedDomain: payload.hd.toLowerCase(),
+    hostedDomain,
     role: developmentRole ?? getRoleForEmail(email),
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };

@@ -53,6 +53,36 @@ test("production config refuses wildcard CORS and missing auth", async () => {
   }
 });
 
+test("production config refuses public sample JWT secrets", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "AUTH_JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "AUTH_EMAIL_SMTP_HOST",
+    "AUTH_EMAIL_FROM",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "https://app.example.com";
+    process.env.AUTH_JWT_SECRET = "replace-with-a-long-random-secret";
+    process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
+    delete process.env.AUTH_EMAIL_SMTP_HOST;
+    delete process.env.AUTH_EMAIL_FROM;
+
+    await assert.rejects(
+      loadEnvModule(`production-public-jwt-secret-${Date.now()}`),
+      /sample AUTH_JWT_SECRET/i,
+    );
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
 test("production config loads when auth and explicit origins are configured", async () => {
   const saved = saveEnv([
     "NODE_ENV",

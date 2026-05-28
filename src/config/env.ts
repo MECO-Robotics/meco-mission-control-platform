@@ -89,6 +89,10 @@ const envSchema = z.object({
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
+const sampleJwtSecrets = new Set([
+  "replace-with-a-long-random-secret",
+  "replace-with-a-long-random-secret-123456",
+]);
 
 export const env = envSchema.parse(process.env);
 
@@ -211,6 +215,12 @@ export const corsConfig = {
 function assertProductionSecurityConfig() {
   if (env.NODE_ENV !== "production") {
     return;
+  }
+
+  if (env.AUTH_JWT_SECRET && sampleJwtSecrets.has(env.AUTH_JWT_SECRET)) {
+    throw new Error(
+      "Production deployments must replace the sample AUTH_JWT_SECRET with a generated secret.",
+    );
   }
 
   if (!authConfig.enabled) {
