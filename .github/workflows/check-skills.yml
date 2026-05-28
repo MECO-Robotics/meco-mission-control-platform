@@ -8,6 +8,9 @@ on:
       - development
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check-skills-pr:
     if: ${{ github.event_name == 'pull_request' }}
