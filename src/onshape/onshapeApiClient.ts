@@ -1,5 +1,6 @@
 ﻿import type { OnshapeCredentials, OnshapeReference, OnshapeTransport, RequestPolicy } from "./onshapeTypes";
 import type { OnshapeRuntimeStore } from "./cadStore";
+import { parseJsonResponseText } from "../shared/json";
 
 export class OnshapeCallBudgetExceededError extends Error {
   constructor(message = "max_calls_allowed") {
@@ -115,14 +116,7 @@ async function defaultTransport(baseUrl: string, request: Parameters<OnshapeTran
     headers: request.headers,
   });
   const text = await response.text();
-  let json: unknown = {};
-  if (text.trim()) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = { rawText: text };
-    }
-  }
+  const json = parseJsonResponseText(text);
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key] = value;
