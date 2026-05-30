@@ -1,0 +1,198 @@
+import type { PlatformSnapshot } from "../../domain/types";
+import type { SeedMechanism, SeedPartDefinition } from "../seedTypes";
+
+export const offseasonMembers = [
+    {
+      id: "diego",
+      name: "Diego Alvarez",
+      email: "diego.alvarez@mecorobotics.org",
+      role: "student",
+      elevated: false,
+      disciplineId: "manufacturing",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 7,
+      plannedAttendanceDays: ["tuesday", "thursday", "saturday"],
+      plannedAttendanceNotes: "Primary offseason shop-night coverage for drivetrain service.",
+    },
+    {
+      id: "emma",
+      name: "Emma Nguyen",
+      email: "emma.nguyen@mecorobotics.org",
+      role: "mentor",
+      elevated: false,
+      disciplineId: "testing",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 5,
+      plannedAttendanceDays: ["wednesday", "saturday"],
+      plannedAttendanceNotes: "Mentor QA rotation for summer scrimmage readiness.",
+    },
+  ] satisfies PlatformSnapshot["members"];
+
+export const offseasonMechanisms = [
+    {
+      id: "swerve-service-cart",
+      subsystemId: "drive",
+      name: "Swerve Service Cart",
+      description: "Offseason service station for wheel swaps, module checks, and spare tracking.",
+    },
+    {
+      id: "battery-checkout",
+      subsystemId: "pit-readiness",
+      name: "Battery Checkout",
+      description: "Battery health, charger labeling, and event-ready checkout workflow.",
+    },
+    {
+      id: "driver-station-replay",
+      subsystemId: "controls",
+      name: "Driver Station Replay",
+      description: "Replay setup for driver practice, log review, and autonomous regression runs.",
+    },
+    {
+      id: "event-data-review",
+      subsystemId: "scouting",
+      name: "Event Data Review",
+      description: "Post-event scouting normalization, rubric checks, and strategy handoff.",
+    },
+] satisfies SeedMechanism[];
+
+export const offseasonMaterials = [
+    {
+      id: "mat-traction-wheel-set",
+      name: "4 in Traction Wheel Set",
+      category: "hardware",
+      unit: "set",
+      onHandQuantity: 3,
+      reorderPoint: 4,
+      location: "Drive spares bin",
+      vendor: "WCP",
+      notes: "Used for offseason module swaps and practice-worn wheel replacement.",
+    },
+    {
+      id: "mat-xt30-connectors",
+      name: "XT30 Connector Pair",
+      category: "electronics",
+      unit: "pair",
+      onHandQuantity: 18,
+      reorderPoint: 12,
+      location: "Electrical small parts",
+      vendor: "REV Robotics",
+      notes: "Low-current sensor and accessory connector standard for the offseason robot.",
+    },
+  ] satisfies PlatformSnapshot["materials"];
+
+export const offseasonArtifacts = [
+    {
+      id: "artifact-summer-scrimmage-runbook",
+      projectId: "project-operations-2026",
+      workstreamId: "workstream-operations-logistics",
+      kind: "document",
+      title: "Summer Scrimmage Runbook",
+      summary: "Load-in, inspection, pit roles, battery rotation, and field reset plan for June scrimmage.",
+      status: "in-review",
+      link: "https://example.org/meco/summer-scrimmage-runbook-2026",
+      isArchived: false,
+      updatedAt: "2026-05-29T18:40:00-04:00",
+    },
+    {
+      id: "artifact-drive-log-template-may",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-controls",
+      kind: "document",
+      title: "Driver Practice Log Template",
+      summary: "Structured log template for practice cycles, auto replay notes, and reliability findings.",
+      status: "published",
+      link: "https://example.org/meco/driver-practice-log-template",
+      isArchived: false,
+      updatedAt: "2026-05-28T20:15:00-04:00",
+    },
+    {
+      id: "artifact-scouting-normalization-guide",
+      projectId: "project-training-2026",
+      workstreamId: "workstream-scouting-data",
+      kind: "document",
+      title: "Scouting Data Normalization Guide",
+      summary: "Rules for cleaning tablet exports before strategy review and pick-list updates.",
+      status: "in-review",
+      link: "https://example.org/meco/scouting-normalization-guide",
+      isArchived: false,
+      updatedAt: "2026-05-30T09:25:00-04:00",
+    },
+    {
+      id: "artifact-open-house-demo-loop",
+      projectId: "project-outreach-2026",
+      workstreamId: "workstream-outreach-content",
+      kind: "document",
+      title: "Open House Demo Loop",
+      summary: "Sponsor-facing runbook with driver cues, student talking points, and photo-safe reset moments.",
+      status: "in-review",
+      link: "https://example.org/meco/open-house-demo-loop-2026",
+      isArchived: false,
+      updatedAt: "2026-06-05T16:35:00-04:00",
+    },
+  ] satisfies PlatformSnapshot["artifacts"];
+
+export const offseasonPartDefinitions = [
+    {
+      id: "pd-swerve-wheel-service-kit",
+      name: "Swerve Wheel Service Kit",
+      partNumber: "DRV-330",
+      revision: "A",
+      type: "service kit",
+      source: "WCP",
+      materialId: "mat-traction-wheel-set",
+      description: "Practice-wear wheel, tread, and fastener bundle for module service work.",
+    },
+    {
+      id: "pd-battery-cart-harness",
+      name: "Battery Cart Harness",
+      partNumber: "OPS-305",
+      revision: "B",
+      type: "custom",
+      source: "In-house wiring",
+      materialId: "mat-anderson-pack",
+      description: "Service harness used for battery checkout, charger labeling, and event readiness.",
+    },
+    {
+      id: "pd-driver-station-image",
+      name: "Driver Station Image",
+      partNumber: "CTL-410",
+      revision: "C",
+      type: "software artifact",
+      source: "Team repository",
+      materialId: null,
+      description: "Pinned driver station configuration image with logging tools and controller profiles.",
+    },
+  ] satisfies SeedPartDefinition[];
+
+export const offseasonPartInstances = [
+    {
+      id: "pi-swerve-wheel-service-kit",
+      subsystemId: "drive",
+      mechanismId: "swerve-service-cart",
+      partDefinitionId: "pd-swerve-wheel-service-kit",
+      name: "Offseason swerve wheel service kit",
+      quantity: 4,
+      trackIndividually: false,
+      status: "qa",
+    },
+    {
+      id: "pi-battery-cart-harness",
+      subsystemId: "pit-readiness",
+      mechanismId: "battery-checkout",
+      partDefinitionId: "pd-battery-cart-harness",
+      name: "Battery checkout cart harness",
+      quantity: 1,
+      trackIndividually: true,
+      status: "ready",
+    },
+    {
+      id: "pi-driver-station-image",
+      subsystemId: "controls",
+      mechanismId: "driver-station-replay",
+      partDefinitionId: "pd-driver-station-image",
+      name: "Driver station laptop image",
+      quantity: 2,
+      trackIndividually: true,
+      status: "blocked",
+    },
+  ] satisfies PlatformSnapshot["partInstances"];
