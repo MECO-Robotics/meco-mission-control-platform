@@ -1,8 +1,14 @@
-﻿# Platform PR checklist
+# Platform PR checklist
 
 ## Summary
 
 <!-- One concise paragraph for what changed and why -->
+
+## Issue / context
+
+- Closes:
+- Related web/mobile coordination:
+- Contract owner/reviewer:
 
 ## Validation
 
@@ -15,6 +21,8 @@
 
 - Command output / results:
 - Test coverage changed:
+- API smoke checks run:
+- Screenshots/video, if a client-visible behavior changed:
 
 ## Migration notes
 
@@ -22,19 +30,21 @@
 - Backfill or data-corrective work:
 - Rollback SQL / compensating operation:
 - Migration validation executed:
+- Deployment order required:
 
 ## Environment variable changes
 
 - Added:
 - Updated:
 - Removed:
-- Any production-only behavior change (e.g., auth/CORS/rate limits):
+- Any production-only behavior change (auth, CORS, rate limits, other):
 
 ## API contract changes
 
 - Endpoints added/changed:
 - Request/response schema changes:
 - Auth/session behavior changes:
+- Validation/error behavior changes:
 - Consumer repos/components to coordinate:
 
 ## Database impact
@@ -59,6 +69,8 @@
 - Revert strategy:
 - Partial rollback constraints:
 - Blast radius and mitigation:
+- Data integrity risk:
+- Operational risk:
 - Required owner signoff for merge:
 
 ## Notes
