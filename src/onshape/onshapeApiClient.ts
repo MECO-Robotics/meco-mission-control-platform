@@ -1,6 +1,7 @@
 ﻿import type { OnshapeCredentials, OnshapeReference, OnshapeTransport, RequestPolicy } from "./onshapeTypes";
 import type { OnshapeRuntimeStore } from "./cadStore";
 import { parseJsonResponseText } from "../shared/json";
+import { isImmutableReference } from "./cadStoreUtils";
 
 export class OnshapeCallBudgetExceededError extends Error {
   constructor(message = "max_calls_allowed") {
@@ -37,10 +38,6 @@ interface CreateClientArgs {
   credentials: OnshapeCredentials;
   transport?: OnshapeTransport;
   baseUrl?: string;
-}
-
-function isImmutableReference(reference: Partial<OnshapeReference>) {
-  return reference.referenceType === "version" || reference.referenceType === "microversion";
 }
 
 function normalizeHeaders(headers: Record<string, string | number | undefined>) {
