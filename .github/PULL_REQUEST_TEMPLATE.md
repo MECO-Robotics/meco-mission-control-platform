@@ -12,10 +12,10 @@
 
 ## Validation
 
-- [ ] `npm.cmd run typecheck:test`
-- [ ] `npm.cmd run test`
-- [ ] `npm.cmd run build`
-- [ ] `npm.cmd run verify` (only if not run above, or if additional checks are in scope)
+- [ ] `npm run typecheck:test` (`npm.cmd run typecheck:test` on Windows)
+- [ ] `npm run test` (`npm.cmd run test` on Windows)
+- [ ] `npm run build` (`npm.cmd run build` on Windows)
+- [ ] `npm run verify` (`npm.cmd run verify` on Windows; only if not run above, or if additional checks are in scope)
 
 ### Verification notes
 

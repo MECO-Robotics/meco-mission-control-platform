@@ -43,8 +43,8 @@ assignees: []
 - [ ] Reproduced locally or in the named environment.
 - [ ] Verified expected backend route/schema behavior.
 - [ ] Ran relevant command(s):
-  - `npm.cmd run typecheck:test`
-  - `npm.cmd run test`
+  - `npm run typecheck:test` (`npm.cmd run typecheck:test` on Windows)
+  - `npm run test` (`npm.cmd run test` on Windows)
   - Other:
 - [ ] Confirmed downstream client impact (`web`/`mobile`) or marked not applicable.
 

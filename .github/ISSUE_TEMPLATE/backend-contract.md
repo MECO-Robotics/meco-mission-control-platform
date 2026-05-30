@@ -35,8 +35,8 @@ assignees: []
 ### Validation plan
 
 - Local command(s):
-  - `npm.cmd run typecheck:test`
-  - `npm.cmd run test`
+  - `npm run typecheck:test` (`npm.cmd run typecheck:test` on Windows)
+  - `npm run test` (`npm.cmd run test` on Windows)
 - API smoke check(s):
 - Contract fixture/example request:
 - Cross-repo verification needed in consumer:
