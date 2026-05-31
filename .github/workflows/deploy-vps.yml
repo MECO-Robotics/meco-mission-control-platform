@@ -178,13 +178,23 @@ jobs:
         run: |
           ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
           set -euo pipefail
+          umask 077
           backup_root=/opt/pm-backups/server
           timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-          mkdir -p "$backup_root"
+          install -m 700 -d "$backup_root"
+          chmod 700 "$backup_root"
 
           if [ -d /opt/pm-server ]; then
-            tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf "$backup_root/pm-server-files-${timestamp}.tgz" -C /opt pm-server
-            echo "Created file backup: $backup_root/pm-server-files-${timestamp}.tgz"
+            backup_file="$backup_root/pm-server-files-${timestamp}.tgz"
+            tar \
+              --exclude='.git' \
+              --exclude='node_modules' \
+              --exclude='dist' \
+              --exclude='.env*' \
+              --exclude='pm-server/.env*' \
+              -czf "$backup_file" -C /opt pm-server
+            chmod 600 "$backup_file"
+            echo "Created file backup: $backup_file"
           else
             echo "No existing /opt/pm-server directory found; skipping file backup tarball."
           fi
