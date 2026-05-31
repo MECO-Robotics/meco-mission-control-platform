@@ -91,6 +91,7 @@ GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
 # Manage member roles, external access, and subteam preferences through the apps.
+# AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 # Local SMTP sink for email-code testing.
 AUTH_EMAIL_SMTP_HOST=127.0.0.1
 AUTH_EMAIL_SMTP_PORT=1025
@@ -187,6 +188,7 @@ AUTH_JWT_SECRET=replace-with-a-long-random-secret
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
 # Manage member roles, external access, and subteam preferences through the apps.
+# AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -220,7 +222,7 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - The server issues its own signed app session token with `AUTH_JWT_SECRET`.
 - Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
-- Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access.
+- Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
 - User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
 - For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.

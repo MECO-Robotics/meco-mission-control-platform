@@ -47,6 +47,29 @@ async function createAuthHeadersFor(email: string, role: "student" | "lead" | "m
   return { authorization: `Bearer ${token}` };
 }
 
+test("Onshape OAuth credential routes allow configured bootstrap mentors outside the roster", async () => {
+  await withIntegrationApp(
+    async ({ app }) => {
+      const mentorHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+
+      const allowedAuthorizationResponse = await app.inject({
+        method: "POST",
+        url: "/api/onshape/oauth/authorization-url",
+        headers: mentorHeaders,
+      });
+      assert.equal(allowedAuthorizationResponse.statusCode, 200);
+      assert.equal(typeof allowedAuthorizationResponse.json().authorizationUrl, "string");
+    },
+    {
+      env: {
+        AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
+        GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
+        AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
+      },
+    },
+  );
+});
+
 test("Onshape OAuth credential routes require lead mentor or admin permissions when auth is enabled", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {

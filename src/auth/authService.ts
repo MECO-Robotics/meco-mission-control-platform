@@ -277,7 +277,7 @@ function getRoleForEmail(email: string): MemberRole {
     return rosterRole;
   }
 
-  return "student";
+  return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
 }
 
 function buildEmailSessionUser(email: string): SessionUser {
