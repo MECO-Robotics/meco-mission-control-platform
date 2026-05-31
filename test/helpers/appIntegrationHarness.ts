@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
-import { resetStore } from "../../src/data/store";
+import { createMember, resetStore, type MemberInput } from "../../src/data/store";
 import { resetRequestLimits } from "../../src/security/requestLimits";
 
 const APP_ENV_KEYS = [
@@ -132,6 +132,7 @@ export async function withIntegrationApp(
   }) => Promise<void>,
   options?: {
     env?: Partial<Record<AppEnvKey, string | undefined>>;
+    members?: MemberInput[];
   },
 ) {
   const envSnapshot = saveEnv();
@@ -142,6 +143,9 @@ export async function withIntegrationApp(
 
     const { buildApp } = await import("../../src/app");
     const app = await buildApp();
+    for (const member of options?.members ?? []) {
+      createMember(member);
+    }
 
     try {
       resetRequestLimits();

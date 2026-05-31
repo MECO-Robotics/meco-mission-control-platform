@@ -244,7 +244,19 @@ export async function registerRoutes(app: FastifyInstance) {
       return true;
     }
 
-    return Boolean(requireSession(request, reply));
+    const session = requireSession(request, reply);
+    if (!session) {
+      return false;
+    }
+
+    if (session.role === "external") {
+      reply.code(403).send({
+        message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    return true;
   };
 
   const hasMentorPermission = (request: Parameters<typeof requireSession>[0]) => {
@@ -392,6 +404,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can start global tutorial sessions.")) {
+      return;
+    }
+
     startInteractiveTutorialSession();
     return {
       ok: true,
@@ -402,6 +418,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post<{ Body: unknown }>("/api/tutorial/session/reset", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    if (!requireMentorPermission(request, reply, "Only mentors can reset global tutorial sessions.")) {
       return;
     }
 
@@ -2380,6 +2400,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/subsystems/:subsystemId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete subsystems.")) {
         return;
       }
 

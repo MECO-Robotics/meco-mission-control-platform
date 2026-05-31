@@ -87,7 +87,7 @@ AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
+# AUTH_JWT_SECRET=
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
@@ -133,9 +133,9 @@ you can copy the sign-in code during local testing.
 
 When the server runs with auth configured outside production, it also exposes a
 development-only `/api/auth/dev-bypass` endpoint that the web app can use for a
-local access button. Send `{ "role": "student" }` or `{ "role": "mentor" }` to
-test both permission modes without an email. Production builds do not register
-that route.
+local access button. Send an empty request body; the endpoint always returns a
+local student session and rejects caller-selected roles. Production builds do
+not register that route.
 
 ## Production files
 
@@ -186,7 +186,7 @@ AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
+# AUTH_JWT_SECRET=
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
 # Manage member roles, external access, and subteam preferences through the apps.

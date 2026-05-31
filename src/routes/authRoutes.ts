@@ -111,7 +111,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         });
       }
 
-      const user = buildDevelopmentSessionUser(parsed.data.role);
+      const user = buildDevelopmentSessionUser();
       const token = signSessionToken(user);
 
       return { token, user };

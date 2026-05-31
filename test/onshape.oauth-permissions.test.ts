@@ -96,7 +96,7 @@ test("Onshape OAuth credential routes keep external roster members from inheriti
         headers: externalHeaders,
       });
       assert.equal(deniedAuthorizationResponse.statusCode, 403);
-      assert.match(deniedAuthorizationResponse.json().message, /restricted to leads, mentors, and admins/i);
+      assert.match(deniedAuthorizationResponse.json().message, /external roster sessions cannot access internal platform api routes/i);
     },
     {
       env: {

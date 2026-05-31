@@ -9,6 +9,12 @@ import {
   pickFirstString,
 } from "./envHelpers";
 
+const optionalJwtSecret = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim().length === 0 ? undefined : value,
+  z.string().min(32).optional(),
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
@@ -22,7 +28,7 @@ const envSchema = z.object({
   AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ALLOWED_HOSTED_DOMAIN: z.string().min(1).default("mecorobotics.org"),
-  AUTH_JWT_SECRET: z.string().min(32).optional(),
+  AUTH_JWT_SECRET: optionalJwtSecret,
   AUTH_TOKEN_TTL: z.string().min(2).default("12h"),
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
@@ -89,6 +95,10 @@ const envSchema = z.object({
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
+const sampleJwtSecrets = new Set([
+  "replace-with-a-long-random-secret",
+  "replace-with-a-long-random-secret-123456",
+]);
 
 export const env = envSchema.parse(process.env);
 
@@ -211,6 +221,12 @@ export const corsConfig = {
 function assertProductionSecurityConfig() {
   if (env.NODE_ENV !== "production") {
     return;
+  }
+
+  if (env.AUTH_JWT_SECRET && sampleJwtSecrets.has(env.AUTH_JWT_SECRET)) {
+    throw new Error(
+      "Production deployments must replace the sample AUTH_JWT_SECRET with a generated secret.",
+    );
   }
 
   if (!authConfig.enabled) {
