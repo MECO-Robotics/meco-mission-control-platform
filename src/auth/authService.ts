@@ -269,12 +269,12 @@ function getTaskSubteamIdsForEmail(email: string) {
 
 function getRoleForEmail(email: string): MemberRole {
   const normalizedEmail = normalizeEmailAddress(email);
-  const rosterRole = getMembers().find(
+  const rosterMember = getMembers().find(
     (member) => normalizeEmailAddress(member.email) === normalizedEmail,
-  )?.role;
+  );
 
-  if (rosterRole && rosterRole !== "external") {
-    return rosterRole;
+  if (rosterMember) {
+    return rosterMember.role;
   }
 
   return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
