@@ -52,9 +52,27 @@ function normalizePreferences(value: StoredUserPreferences | undefined): UserPre
   };
 }
 
+function hasPreferenceField(
+  value: StoredUserPreferences | undefined,
+  field: keyof UserPreferences,
+) {
+  return value !== undefined && Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function normalizeStoredPreferences(value: StoredUserPreferences | undefined): StoredUserPreferences {
+  const normalizedPreferences = normalizePreferences(value);
+
+  return {
+    ...(hasPreferenceField(value, "taskSubteamIds")
+      ? { taskSubteamIds: normalizedPreferences.taskSubteamIds }
+      : {}),
+    themeMode: normalizedPreferences.themeMode,
+  };
+}
+
 function loadPreferences() {
   if (!existsSync(preferencesPath)) {
-    return {} as Record<string, UserPreferences>;
+    return {} as Record<string, StoredUserPreferences>;
   }
 
   try {
@@ -66,9 +84,9 @@ function loadPreferences() {
     return Object.fromEntries(
       Object.entries(parsed).map(([email, preferences]) => [
         normalizeEmail(email),
-        normalizePreferences(preferences),
+        normalizeStoredPreferences(preferences),
       ]),
-    ) as Record<string, UserPreferences>;
+    ) as Record<string, StoredUserPreferences>;
   } catch {
     return {};
   }
@@ -89,7 +107,10 @@ export function getUserPreferences(email: string): UserPreferences {
 
 export function getUserTaskSubteamIdsPreference(email: string) {
   const preferences = preferencesByEmail[normalizeEmail(email)];
-  if (!preferences || !Array.isArray(preferences.taskSubteamIds)) {
+  if (
+    !hasPreferenceField(preferences, "taskSubteamIds") ||
+    !Array.isArray(preferences.taskSubteamIds)
+  ) {
     return null;
   }
 
@@ -101,14 +122,15 @@ export function updateUserPreferences(
   patch: Partial<UserPreferences>,
 ): UserPreferences {
   const normalizedEmail = normalizeEmail(email);
-  const nextPreferences = normalizePreferences({
+  const storedPreferences = normalizeStoredPreferences({
     ...preferencesByEmail[normalizedEmail],
     ...patch,
   });
+  const nextPreferences = normalizePreferences(storedPreferences);
 
   preferencesByEmail = {
     ...preferencesByEmail,
-    [normalizedEmail]: nextPreferences,
+    [normalizedEmail]: storedPreferences,
   };
   savePreferences();
 

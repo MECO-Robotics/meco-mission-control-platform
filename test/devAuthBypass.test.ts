@@ -178,6 +178,43 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
+      const updateThemeOnlyPreferencesResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/users/me/preferences",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          themeMode: "dark",
+        },
+      });
+
+      assert.equal(updateThemeOnlyPreferencesResponse.statusCode, 200);
+      assert.deepEqual(updateThemeOnlyPreferencesResponse.json(), {
+        taskSubteamIds: [],
+        themeMode: "dark",
+      });
+
+      resetRequestLimits();
+
+      const themeOnlyAuthMeResponse = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(themeOnlyAuthMeResponse.statusCode, 200);
+      const themeOnlyAuthMeBody = themeOnlyAuthMeResponse.json() as {
+        user: {
+          taskSubteamIds: string[];
+        } | null;
+      };
+      assert.deepEqual(themeOnlyAuthMeBody.user?.taskSubteamIds, ["scouting"]);
+
+      resetRequestLimits();
+
       const updatePreferencesResponse = await app.inject({
         method: "PATCH",
         url: "/api/users/me/preferences",
@@ -185,14 +222,14 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           authorization: `Bearer ${bypassBody.token}`,
         },
         payload: {
-          taskSubteamIds: ["scouting"],
+          taskSubteamIds: ["programming"],
           themeMode: "dark",
         },
       });
 
       assert.equal(updatePreferencesResponse.statusCode, 200);
       assert.deepEqual(updatePreferencesResponse.json(), {
-        taskSubteamIds: ["scouting"],
+        taskSubteamIds: ["programming"],
         themeMode: "dark",
       });
 
@@ -208,7 +245,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       assert.equal(savedPreferencesResponse.statusCode, 200);
       assert.deepEqual(savedPreferencesResponse.json(), {
-        taskSubteamIds: ["scouting"],
+        taskSubteamIds: ["programming"],
         themeMode: "dark",
       });
 
@@ -228,7 +265,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           taskSubteamIds: string[];
         } | null;
       };
-      assert.deepEqual(updatedAuthMeBody.user?.taskSubteamIds, ["scouting"]);
+      assert.deepEqual(updatedAuthMeBody.user?.taskSubteamIds, ["programming"]);
 
       resetRequestLimits();
 
