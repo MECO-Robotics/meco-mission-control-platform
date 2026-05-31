@@ -51,7 +51,7 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
       const studentHeaders = await createAuthHeadersFor("ava.chen@mecorobotics.org", "student");
-      const mentorHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+      const mentorHeaders = await createAuthHeadersFor("jordan.lee@mecorobotics.org", "mentor");
 
       const deniedAuthorizationResponse = await app.inject({
         method: "POST",
@@ -96,7 +96,7 @@ test("Onshape deep release sync honors mentor sessions", async () => {
   try {
     await withIntegrationApp(
       async ({ app, resetLimits }) => {
-        const mentorHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+        const mentorHeaders = await createAuthHeadersFor("jordan.lee@mecorobotics.org", "mentor");
 
         const createResponse = await app.inject({
           method: "POST",
