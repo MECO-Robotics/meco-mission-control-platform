@@ -8,6 +8,7 @@ import type {
   StepParseResult,
 } from "./cadTypes";
 import { applyMappingRules } from "./cadMappingEngine";
+import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { hashText } from "./cadUtils";
 
 export class CadImportError extends Error {
@@ -143,6 +144,18 @@ export async function runStepImport(args: {
       });
       throw new Error("Placeholder STEP parser output is disabled for normal uploads.");
     }
+    const assemblyNodeInputs = parsed.assemblyNodes.map((node): Omit<CadAssemblyNode, "id" | "snapshotId" | "createdAt" | "normalizedName" | "parentAssemblyNodeId"> => ({
+      sourceId: node.sourceId,
+      parentSourceId: node.parentSourceId ?? null,
+      name: node.name,
+      instancePath: node.instancePath,
+      depth: node.depth,
+      inferredType: node.inferredType,
+      stableSignature: node.stableSignature ?? `asm:source:${node.sourceId}`,
+      metadataJson: node.metadata ?? {},
+    }));
+    assertAcyclicAssemblyParents(assemblyNodeInputs);
+
     const diagnostics = buildStepParserDiagnostics({ parsed, configuredParserMode, placeholderUsed });
     const parseCompletedAt = new Date().toISOString();
     const snapshot = await args.store.createSnapshot({
@@ -160,19 +173,7 @@ export async function runStepImport(args: {
       notes: null,
     });
 
-    const assemblyNodesBySourceId = await args.store.createAssemblyNodes(
-      snapshot.id,
-      parsed.assemblyNodes.map((node): Omit<CadAssemblyNode, "id" | "snapshotId" | "createdAt" | "normalizedName" | "parentAssemblyNodeId"> => ({
-        sourceId: node.sourceId,
-        parentSourceId: node.parentSourceId ?? null,
-        name: node.name,
-        instancePath: node.instancePath,
-        depth: node.depth,
-        inferredType: node.inferredType,
-        stableSignature: node.stableSignature ?? `asm:source:${node.sourceId}`,
-        metadataJson: node.metadata ?? {},
-      })),
-    );
+    const assemblyNodesBySourceId = await args.store.createAssemblyNodes(snapshot.id, assemblyNodeInputs);
 
     const partDefinitionsBySourceId = await args.store.createPartDefinitions(
       snapshot.id,

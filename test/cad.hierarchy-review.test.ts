@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { test } from "node:test";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
@@ -6,6 +8,7 @@ import { createPartDefinition } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
+const execFileAsync = promisify(execFile);
 
 function createDomainPart(input: { name: string; partNumber: string; type?: string; source?: string }) {
   return createPartDefinition({
@@ -452,4 +455,77 @@ test("finalize reports hierarchy validation issues and still honors allowUnresol
     assert.equal(forcedBody.item.status, "finalized");
     assert.ok(forcedBody.warnings.some((warning) => warning.code === "cad_component_assembly_missing_parent"));
   });
+});
+
+test("hierarchy validation returns instead of looping on cyclic parent links", async () => {
+  const script = `
+    import assert from "node:assert/strict";
+    import hierarchyValidation from "./src/cad/cadHierarchyValidationService.ts";
+
+    const { collectHierarchyIssues } = hierarchyValidation;
+
+    const assemblies = [
+      {
+        id: "cad-assembly-a",
+        snapshotId: "cad-snapshot-1",
+        sourceId: "asm-a",
+        parentSourceId: "asm-b",
+        parentAssemblyNodeId: "cad-assembly-b",
+        name: "Assembly A",
+        normalizedName: "assembly a",
+        instancePath: "/Assembly A",
+        depth: 1,
+        inferredType: "COMPONENT_ASSEMBLY_CANDIDATE",
+        stableSignature: "asm:path:/Assembly A",
+        metadataJson: {},
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "cad-assembly-b",
+        snapshotId: "cad-snapshot-1",
+        sourceId: "asm-b",
+        parentSourceId: "asm-a",
+        parentAssemblyNodeId: "cad-assembly-a",
+        name: "Assembly B",
+        normalizedName: "assembly b",
+        instancePath: "/Assembly B",
+        depth: 2,
+        inferredType: "MECHANISM_CANDIDATE",
+        stableSignature: "asm:path:/Assembly B",
+        metadataJson: {},
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const issues = collectHierarchyIssues({
+      assemblies,
+      instances: [],
+      mappingsBySourceId: new Map([
+        ["cad-assembly-a", {
+          id: "cad-mapping-a",
+          snapshotId: "cad-snapshot-1",
+          mappingRuleId: null,
+          sourceKind: "ASSEMBLY_NODE",
+          sourceId: "cad-assembly-a",
+          targetKind: "COMPONENT_ASSEMBLY",
+          targetId: "assembly-a",
+          confidence: "MANUAL",
+          status: "CONFIRMED",
+          reviewedBy: null,
+          reviewedAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }],
+      ]),
+      proposals: [],
+      definitionsById: new Map(),
+    });
+    assert.ok(issues.some((issue) => issue.code === "cad_assembly_parent_cycle"));
+  `;
+
+  const result = await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    timeout: 2_000,
+  });
+
+  assert.equal(result.stderr, "");
 });

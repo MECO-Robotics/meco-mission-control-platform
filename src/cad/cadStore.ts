@@ -23,6 +23,7 @@ import type {
   CadStore,
   CadWarningCreateInput,
 } from "./cadStoreTypes";
+import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { clone, nextId, normalizeCadName, nowIso } from "./cadUtils";
 
 interface CadRuntimeState {
@@ -140,6 +141,8 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       return item ? clone(item) : null;
     },
   createAssemblyNodes(snapshotId: string, input: CadAssemblyCreateInput[]) {
+    assertAcyclicAssemblyParents(input);
+
     const bySourceId = new Map<string, CadAssemblyNode>();
     for (const node of input) {
       const item: CadAssemblyNode = {
