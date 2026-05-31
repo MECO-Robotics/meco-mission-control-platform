@@ -148,10 +148,9 @@ function isAllowedHostedDomain(email: string) {
   return domain === authConfig.hostedDomain;
 }
 
-function isExternalRosterEmailAllowed(email: string) {
+function isRosterEmailAllowed(email: string) {
   return getMembers().some((member) => {
     return (
-      member.role === "external" &&
       member.email.length > 0 &&
       normalizeEmailAddress(member.email) === email
     );
@@ -159,11 +158,11 @@ function isExternalRosterEmailAllowed(email: string) {
 }
 
 function isAllowedSignInEmail(email: string) {
-  return isAllowedHostedDomain(email) || isExternalRosterEmailAllowed(email);
+  return isAllowedHostedDomain(email) || isRosterEmailAllowed(email);
 }
 
 function buildSignInAccessMessage() {
-  return `Use your ${authConfig.hostedDomain} email address or an external access email from the roster to continue.`;
+  return `Use your ${authConfig.hostedDomain} email address or a roster email to continue.`;
 }
 
 function formatEmailLocalPart(localPart: string) {
