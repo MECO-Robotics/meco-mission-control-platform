@@ -72,13 +72,22 @@ test("Onshape OAuth credential routes allow configured bootstrap mentors outside
 
 test("Onshape OAuth credential routes keep external roster members from inheriting bootstrap mentor access", async () => {
   await withIntegrationApp(
-    async ({ app }) => {
-      const { createMember } = await import("../src/data/store");
-      createMember({
-        name: "External Sponsor",
-        email: "mentor.override@mecorobotics.org",
-        role: "external",
+    async ({ app, resetLimits }) => {
+      const adminHeaders = await createAuthHeadersFor("maya.ortiz@mecorobotics.org", "admin");
+      const createExternalResponse = await app.inject({
+        method: "POST",
+        url: "/api/members",
+        headers: adminHeaders,
+        payload: {
+          name: "External Sponsor",
+          email: "mentor.override@mecorobotics.org",
+          role: "external",
+        },
       });
+      assert.equal(createExternalResponse.statusCode, 201);
+
+      resetLimits();
+
       const externalHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
 
       const deniedAuthorizationResponse = await app.inject({
