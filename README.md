@@ -91,8 +91,8 @@ AUTH_JWT_SECRET=replace-with-a-long-random-secret
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 # Local SMTP sink for email-code testing.
 AUTH_EMAIL_SMTP_HOST=127.0.0.1
 AUTH_EMAIL_SMTP_PORT=1025
@@ -189,8 +189,8 @@ GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 AUTH_JWT_SECRET=replace-with-a-long-random-secret
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -224,9 +224,8 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - The server issues its own signed app session token with `AUTH_JWT_SECRET`.
 - Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
-- Put mentor emails in `AUTH_MENTOR_EMAILS` as a comma-separated list. Hosted-domain emails not present in the roster or mentor list are treated as students for task management and QA approval.
-- Put email-to-subteam assignments in server env with `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` using `email=subteam;email=subteam,subteam`. Valid subteam IDs are `programming`, `mechanical`, `electrical`, `media-marketing`, `business`, and `scouting`.
-- When mobile saves `taskSubteamIds` through `PATCH /api/users/me/preferences`, the server also updates the live `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` map and writes that line back to the env file. Set `AUTH_MEMBER_SUBTEAMS_ENV_PATH` only if the env file is not `.env` locally or `.env.production` in production.
+- Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
+- User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
 - For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
 - If you use separate Google OAuth client IDs for local and production, set `GOOGLE_CLIENT_ID` to a comma-separated list and put the client ID you want the frontend to use first.

@@ -6,7 +6,7 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
-import { getUserPreferences } from "../data/userPreferencesStore";
+import { getUserTaskSubteamIdsPreference } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
@@ -148,10 +148,9 @@ function isAllowedHostedDomain(email: string) {
   return domain === authConfig.hostedDomain;
 }
 
-function isExternalRosterEmailAllowed(email: string) {
+function isRosterEmailAllowed(email: string) {
   return getMembers().some((member) => {
     return (
-      member.role === "external" &&
       member.email.length > 0 &&
       normalizeEmailAddress(member.email) === email
     );
@@ -159,11 +158,11 @@ function isExternalRosterEmailAllowed(email: string) {
 }
 
 function isAllowedSignInEmail(email: string) {
-  return isAllowedHostedDomain(email) || isExternalRosterEmailAllowed(email);
+  return isAllowedHostedDomain(email) || isRosterEmailAllowed(email);
 }
 
 function buildSignInAccessMessage() {
-  return `Use your ${authConfig.hostedDomain} email address or an external access email from the roster to continue.`;
+  return `Use your ${authConfig.hostedDomain} email address or a roster email to continue.`;
 }
 
 function formatEmailLocalPart(localPart: string) {
@@ -264,17 +263,22 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
 }
 
 function getTaskSubteamIdsForEmail(email: string) {
-  return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
+  const normalizedEmail = normalizeEmailAddress(email);
+  return (
+    getUserTaskSubteamIdsPreference(normalizedEmail) ??
+    authConfig.memberSubteamsByEmail[normalizedEmail] ??
+    []
+  );
 }
 
 function getRoleForEmail(email: string): MemberRole {
   const normalizedEmail = normalizeEmailAddress(email);
-  const rosterRole = getMembers().find(
+  const rosterMember = getMembers().find(
     (member) => normalizeEmailAddress(member.email) === normalizedEmail,
-  )?.role;
+  );
 
-  if (rosterRole && rosterRole !== "external") {
-    return rosterRole;
+  if (rosterMember) {
+    return rosterMember.role;
   }
 
   return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";

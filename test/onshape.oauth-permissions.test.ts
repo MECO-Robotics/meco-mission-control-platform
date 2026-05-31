@@ -47,11 +47,72 @@ async function createAuthHeadersFor(email: string, role: "student" | "lead" | "m
   return { authorization: `Bearer ${token}` };
 }
 
+test("Onshape OAuth credential routes allow configured bootstrap mentors outside the roster", async () => {
+  await withIntegrationApp(
+    async ({ app }) => {
+      const mentorHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+
+      const allowedAuthorizationResponse = await app.inject({
+        method: "POST",
+        url: "/api/onshape/oauth/authorization-url",
+        headers: mentorHeaders,
+      });
+      assert.equal(allowedAuthorizationResponse.statusCode, 200);
+      assert.equal(typeof allowedAuthorizationResponse.json().authorizationUrl, "string");
+    },
+    {
+      env: {
+        AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
+        GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
+        AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
+      },
+    },
+  );
+});
+
+test("Onshape OAuth credential routes keep external roster members from inheriting bootstrap mentor access", async () => {
+  await withIntegrationApp(
+    async ({ app, resetLimits }) => {
+      const adminHeaders = await createAuthHeadersFor("maya.ortiz@mecorobotics.org", "admin");
+      const createExternalResponse = await app.inject({
+        method: "POST",
+        url: "/api/members",
+        headers: adminHeaders,
+        payload: {
+          name: "External Sponsor",
+          email: "mentor.override@mecorobotics.org",
+          role: "external",
+        },
+      });
+      assert.equal(createExternalResponse.statusCode, 201);
+
+      resetLimits();
+
+      const externalHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+
+      const deniedAuthorizationResponse = await app.inject({
+        method: "POST",
+        url: "/api/onshape/oauth/authorization-url",
+        headers: externalHeaders,
+      });
+      assert.equal(deniedAuthorizationResponse.statusCode, 403);
+      assert.match(deniedAuthorizationResponse.json().message, /restricted to leads, mentors, and admins/i);
+    },
+    {
+      env: {
+        AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
+        GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
+        AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
+      },
+    },
+  );
+});
+
 test("Onshape OAuth credential routes require lead mentor or admin permissions when auth is enabled", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
       const studentHeaders = await createAuthHeadersFor("ava.chen@mecorobotics.org", "student");
-      const mentorHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+      const mentorHeaders = await createAuthHeadersFor("jordan.lee@mecorobotics.org", "mentor");
 
       const deniedAuthorizationResponse = await app.inject({
         method: "POST",
@@ -85,19 +146,18 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
       env: {
         AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
-        AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
       },
     },
   );
 });
 
-test("Onshape deep release sync honors mentor sessions outside the roster", async () => {
+test("Onshape deep release sync honors mentor sessions", async () => {
   setOnshapeCadClientFactoryForTests(() => createRouteFakeClient());
 
   try {
     await withIntegrationApp(
       async ({ app, resetLimits }) => {
-        const mentorHeaders = await createAuthHeadersFor("mentor.override@mecorobotics.org", "mentor");
+        const mentorHeaders = await createAuthHeadersFor("jordan.lee@mecorobotics.org", "mentor");
 
         const createResponse = await app.inject({
           method: "POST",
@@ -130,7 +190,6 @@ test("Onshape deep release sync honors mentor sessions outside the roster", asyn
         env: {
           AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
           GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
-          AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
         },
       },
     );
