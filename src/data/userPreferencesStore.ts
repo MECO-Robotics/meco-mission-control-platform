@@ -87,6 +87,15 @@ export function getUserPreferences(email: string): UserPreferences {
   return normalizePreferences(preferencesByEmail[normalizeEmail(email)]);
 }
 
+export function getUserTaskSubteamIdsPreference(email: string) {
+  const preferences = preferencesByEmail[normalizeEmail(email)];
+  if (!preferences || !Array.isArray(preferences.taskSubteamIds)) {
+    return null;
+  }
+
+  return normalizePreferences(preferences).taskSubteamIds;
+}
+
 export function updateUserPreferences(
   email: string,
   patch: Partial<UserPreferences>,

@@ -56,6 +56,7 @@ const envSchema = z.object({
   AUTH_EMAIL_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_DEVICE_TOKEN_TTL: z.string().min(2).default("3650d"),
   AUTH_MENTOR_EMAILS: z.string().min(1).optional(),
+  AUTH_MEMBER_SUBTEAMS_BY_EMAIL: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   S3_ENDPOINT: z.string().min(1).optional(),
@@ -152,6 +153,36 @@ export const emailSmtpConfig = {
 const hasEmailDeliveryConfig =
   Boolean(emailSmtpConfig.host) && Boolean(emailSmtpConfig.from);
 const corsOrigins = parseCorsOrigins(env.CORS_ORIGIN);
+const taskSubteamIds = new Set([
+  "programming",
+  "mechanical",
+  "electrical",
+  "media-marketing",
+  "business",
+  "scouting",
+]);
+
+function parseMemberSubteamsByEmail(value: string | undefined) {
+  const entries = value?.trim();
+  if (!entries) {
+    return {};
+  }
+
+  return entries.split(";").reduce<Record<string, string[]>>((mapping, entry) => {
+    const [rawEmail, rawSubteams] = entry.split("=", 2);
+    const email = rawEmail?.trim().toLowerCase();
+    const subteams = rawSubteams
+      ?.split(",")
+      .map((subteam) => subteam.trim())
+      .filter((subteam) => taskSubteamIds.has(subteam));
+
+    if (email && subteams && subteams.length > 0) {
+      mapping[email] = subteams;
+    }
+
+    return mapping;
+  }, {});
+}
 
 export const authConfig = {
   enabled: Boolean(
@@ -164,6 +195,7 @@ export const authConfig = {
   tokenTtl: env.AUTH_TOKEN_TTL,
   deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
   mentorEmails: new Set(parseCsv(env.AUTH_MENTOR_EMAILS).map((email) => email.toLowerCase())),
+  memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   emailEnabled: hasEmailDeliveryConfig,
   emailCodeTtlMinutes: env.AUTH_EMAIL_CODE_TTL_MINUTES,
   emailCodeLength: env.AUTH_EMAIL_CODE_LENGTH,

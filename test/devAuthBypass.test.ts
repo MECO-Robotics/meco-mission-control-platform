@@ -27,6 +27,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
+    "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
     "API_RATE_LIMIT_MAX_REQUESTS",
     "API_RATE_LIMIT_WINDOW_SECONDS",
     "AUTH_RATE_LIMIT_MAX_REQUESTS",
@@ -44,6 +45,8 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
+    process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL =
+      "dev.student@mecorobotics.org=scouting";
     process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
     process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
     process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -90,6 +93,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           name: string;
           picture: string | null;
           role: string;
+          taskSubteamIds: string[];
         };
       };
 
@@ -100,6 +104,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       assert.equal(bypassBody.user.hostedDomain, "mecorobotics.org");
       assert.equal(bypassBody.user.picture, null);
       assert.equal(bypassBody.user.role, "student");
+      assert.deepEqual(bypassBody.user.taskSubteamIds, ["scouting"]);
       assert.ok(bypassBody.token.length > 0);
 
       resetRequestLimits();

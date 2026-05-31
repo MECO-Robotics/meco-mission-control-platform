@@ -6,7 +6,7 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
-import { getUserPreferences } from "../data/userPreferencesStore";
+import { getUserTaskSubteamIdsPreference } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
@@ -263,7 +263,12 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
 }
 
 function getTaskSubteamIdsForEmail(email: string) {
-  return getUserPreferences(email).taskSubteamIds;
+  const normalizedEmail = normalizeEmailAddress(email);
+  return (
+    getUserTaskSubteamIdsPreference(normalizedEmail) ??
+    authConfig.memberSubteamsByEmail[normalizedEmail] ??
+    []
+  );
 }
 
 function getRoleForEmail(email: string): MemberRole {

@@ -11,6 +11,7 @@ const APP_ENV_KEYS = [
   "AUTH_EMAIL_SMTP_HOST",
   "AUTH_EMAIL_FROM",
   "AUTH_MENTOR_EMAILS",
+  "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
   "API_RATE_LIMIT_MAX_REQUESTS",
   "API_RATE_LIMIT_WINDOW_SECONDS",
@@ -78,6 +79,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   delete process.env.AUTH_EMAIL_SMTP_HOST;
   delete process.env.AUTH_EMAIL_FROM;
   delete process.env.AUTH_MENTOR_EMAILS;
+  delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
   process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
   process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
