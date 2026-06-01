@@ -24,6 +24,7 @@ const APP_ENV_KEYS = [
   "S3_ENDPOINT",
   "S3_PUBLIC_BASE_URL",
   "S3_REGION",
+  "S3_BUCKET_PREFIX",
   "S3_BUCKET",
   "S3_PRESIGN_TTL_SECONDS",
   "SLACK_BOT_TOKEN",
@@ -91,6 +92,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.S3_ENDPOINT = "https://s3.example.test";
   process.env.S3_PUBLIC_BASE_URL = "https://cdn.example.test";
   process.env.S3_REGION = "us-test-1";
+  process.env.S3_BUCKET_PREFIX = "meco-pm";
   process.env.S3_BUCKET = "meco-pm";
   process.env.S3_PRESIGN_TTL_SECONDS = "300";
   delete process.env.SLACK_BOT_TOKEN;

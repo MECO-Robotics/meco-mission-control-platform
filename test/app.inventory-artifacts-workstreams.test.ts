@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { Project } from "../src/domain/types";
+import { createProject, getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("artifact and workstream endpoints preserve seeded, paginated, and CRUD contracts", async () => {
@@ -441,12 +443,12 @@ test("media upload endpoint returns a presigned image upload contract", async ()
       /^projects\/project-media-2026\/images\/\d{4}\/\d{2}\/\d+-[a-f0-9]{12}-robot-reveal-photo\.png$/,
     );
     assert.ok(
-      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm/projects/project-media-2026/images/"),
+      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm-meco-robotics/projects/project-media-2026/images/"),
     );
 
     const uploadUrl = new URL(presignBody.uploadUrl);
     assert.equal(uploadUrl.origin, "https://s3.example.test");
-    assert.ok(uploadUrl.pathname.startsWith("/meco-pm/projects/project-media-2026/images/"));
+    assert.ok(uploadUrl.pathname.startsWith("/meco-pm-meco-robotics/projects/project-media-2026/images/"));
     assert.equal(uploadUrl.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
 
     resetLimits();
@@ -465,6 +467,80 @@ test("media upload endpoint returns a presigned image upload contract", async ()
     assert.equal(
       invalidTypeResponse.json().message,
       "Only image uploads are supported by the media bucket.",
+    );
+  });
+});
+
+test("media upload endpoint selects buckets from server-owned project team ids", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const otherTeamProject = createProject({
+      teamId: "Team 2468",
+      seasonId: "default-season",
+      name: "Team 2468 Media",
+      projectType: "other",
+      description: "Media workspace for another purchasing team.",
+      status: "active",
+    });
+
+    const presignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        teamId: "meco-robotics",
+        projectId: otherTeamProject.id,
+        fileName: "Sponsor banner.png",
+        contentType: "image/png",
+      },
+    });
+
+    assert.equal(presignResponse.statusCode, 200);
+    const presignBody = presignResponse.json() as {
+      key: string;
+      publicUrl: string;
+      uploadUrl: string;
+    };
+
+    assert.match(
+      presignBody.key,
+      new RegExp(`^projects/${otherTeamProject.id}/images/\\d{4}/\\d{2}/\\d+-[a-f0-9]{12}-sponsor-banner\\.png$`),
+    );
+    assert.ok(
+      presignBody.publicUrl.startsWith(
+        `https://cdn.example.test/meco-pm-team-2468/projects/${otherTeamProject.id}/images/`,
+      ),
+    );
+    assert.ok(new URL(presignBody.uploadUrl).pathname.startsWith(`/meco-pm-team-2468/projects/${otherTeamProject.id}/images/`));
+
+    resetLimits();
+
+    const snapshot = getSnapshot();
+    snapshot.projects.push({
+      id: "legacy-media-project",
+      seasonId: "default-season",
+      name: "Legacy Media",
+      projectType: "other",
+      description: "Project record created before team-scoped buckets existed.",
+      status: "active",
+    } as Project);
+
+    const legacyPresignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "legacy-media-project",
+        fileName: "Legacy reveal.png",
+        contentType: "image/png",
+      },
+    });
+
+    assert.equal(legacyPresignResponse.statusCode, 200);
+    const legacyPresignBody = legacyPresignResponse.json() as {
+      publicUrl: string;
+    };
+    assert.ok(
+      legacyPresignBody.publicUrl.startsWith(
+        "https://cdn.example.test/meco-pm-default-team/projects/legacy-media-project/images/",
+      ),
     );
   });
 });
@@ -500,7 +576,7 @@ test("video upload endpoint returns a presigned video upload contract", async ()
       /^projects\/project-media-2026\/videos\/\d{4}\/\d{2}\/\d+-[a-f0-9]{12}-qa-review-clip\.mp4$/,
     );
     assert.ok(
-      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm/projects/project-media-2026/videos/"),
+      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm-meco-robotics/projects/project-media-2026/videos/"),
     );
 
     resetLimits();
