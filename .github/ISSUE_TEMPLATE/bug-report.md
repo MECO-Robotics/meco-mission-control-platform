@@ -1,6 +1,6 @@
-﻿---
+---
 name: Bug report
-about: Report a platform regression or runtime fault
+about: Report a platform regression, backend fault, or contract mismatch
 title: "bug: "
 labels:
   - bug
@@ -10,7 +10,7 @@ assignees: []
 
 ### Description
 
-- What is broken?
+- What is broken:
 - Expected behavior:
 - Actual behavior:
 
@@ -20,11 +20,15 @@ assignees: []
 2.
 3.
 
-### Scope
+### Scope and contract impact
 
 - Endpoint(s) / route(s):
-- Browser / client type:
-- Environment (dev/test/prod):
+- Client(s) affected (`web`, `mobile`, internal script, other):
+- Environment (`dev`, `test`, `prod`):
+- Request/response contract affected:
+- Validation/schema/auth behavior affected:
+- Migration or data state involved:
+- Env/config/secrets involved:
 - Recent change or commit that introduced issue:
 
 ### Evidence
@@ -32,8 +36,22 @@ assignees: []
 - Request/response snippet:
 - Logs / error messages:
 - Relevant request-id or trace:
+- Screenshot/video, if a client-visible behavior is affected:
 
-### Recovery notes
+### Validation
 
+- [ ] Reproduced locally or in the named environment.
+- [ ] Verified expected backend route/schema behavior.
+- [ ] Ran relevant command(s):
+  - `npm run typecheck:test` (`npm.cmd run typecheck:test` on Windows)
+  - `npm run test` (`npm.cmd run test` on Windows)
+  - Other:
+- [ ] Confirmed downstream client impact (`web`/`mobile`) or marked not applicable.
+
+### Risk and rollback notes
+
+- User/customer impact:
+- Data integrity risk:
 - Workaround:
-- Urgency / impact:
+- Rollback or mitigation path:
+- Urgency / priority:

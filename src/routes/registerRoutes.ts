@@ -244,7 +244,19 @@ export async function registerRoutes(app: FastifyInstance) {
       return true;
     }
 
-    return Boolean(requireSession(request, reply));
+    const session = requireSession(request, reply);
+    if (!session) {
+      return false;
+    }
+
+    if (session.role === "external") {
+      reply.code(403).send({
+        message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    return true;
   };
 
   const hasMentorPermission = (request: Parameters<typeof requireSession>[0]) => {
@@ -392,6 +404,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can start global tutorial sessions.")) {
+      return;
+    }
+
     startInteractiveTutorialSession();
     return {
       ok: true,
@@ -402,6 +418,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post<{ Body: unknown }>("/api/tutorial/session/reset", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    if (!requireMentorPermission(request, reply, "Only mentors can reset global tutorial sessions.")) {
       return;
     }
 
@@ -1480,14 +1500,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findProject(parsed.data.projectId)) {
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
       return reply.code(400).send({
         message: "The selected project does not exist.",
       });
     }
 
     try {
-      return await presignImageUpload(parsed.data);
+      return await presignImageUpload({ ...parsed.data, teamId: project.teamId });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({
@@ -1515,14 +1536,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findProject(parsed.data.projectId)) {
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
       return reply.code(400).send({
         message: "The selected project does not exist.",
       });
     }
 
     try {
-      return await presignVideoUpload(parsed.data);
+      return await presignVideoUpload({ ...parsed.data, teamId: project.teamId });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({
@@ -2380,6 +2402,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/subsystems/:subsystemId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete subsystems.")) {
         return;
       }
 

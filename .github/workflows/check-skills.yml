@@ -3,9 +3,35 @@ name: Check shared skills
 on:
   pull_request:
   push:
+    branches:
+      - main
+      - development
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  check-skills:
+  check-skills-pr:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    env:
+      SKILLS_REPO: ${{ vars.SKILLS_REPO || 'https://github.com/MECO-Robotics/mission-control-skills.git' }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Validate vendored skills snapshot without secrets
+        shell: bash
+        run: |
+          test -d skills
+          find skills -mindepth 2 -maxdepth 2 -name SKILL.md -print -quit | grep -q .
+          for script in scripts/check-skills-current.sh scripts/sync-skills.sh; do
+            bash -n "$script"
+          done
+
+  check-skills-trusted:
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development') }}
     runs-on: ubuntu-latest
     env:
       SKILLS_REPO: ${{ vars.SKILLS_REPO || secrets.SKILLS_REPO || 'https://github.com/MECO-Robotics/mission-control-skills.git' }}

@@ -100,6 +100,7 @@ export interface SeasonInput {
 }
 
 export interface ProjectInput {
+  teamId?: string;
   seasonId: string;
   name: string;
   projectType: Project["projectType"];

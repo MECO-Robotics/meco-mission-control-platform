@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
-import { resetStore } from "../../src/data/store";
+import { createMember, resetStore, type MemberInput } from "../../src/data/store";
 import { resetRequestLimits } from "../../src/security/requestLimits";
 
 const APP_ENV_KEYS = [
@@ -11,6 +11,7 @@ const APP_ENV_KEYS = [
   "AUTH_EMAIL_SMTP_HOST",
   "AUTH_EMAIL_FROM",
   "AUTH_MENTOR_EMAILS",
+  "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
   "API_RATE_LIMIT_MAX_REQUESTS",
   "API_RATE_LIMIT_WINDOW_SECONDS",
@@ -23,6 +24,7 @@ const APP_ENV_KEYS = [
   "S3_ENDPOINT",
   "S3_PUBLIC_BASE_URL",
   "S3_REGION",
+  "S3_BUCKET_PREFIX",
   "S3_BUCKET",
   "S3_PRESIGN_TTL_SECONDS",
   "SLACK_BOT_TOKEN",
@@ -78,6 +80,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   delete process.env.AUTH_EMAIL_SMTP_HOST;
   delete process.env.AUTH_EMAIL_FROM;
   delete process.env.AUTH_MENTOR_EMAILS;
+  delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
   process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
   process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -89,6 +92,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.S3_ENDPOINT = "https://s3.example.test";
   process.env.S3_PUBLIC_BASE_URL = "https://cdn.example.test";
   process.env.S3_REGION = "us-test-1";
+  process.env.S3_BUCKET_PREFIX = "meco-pm";
   process.env.S3_BUCKET = "meco-pm";
   process.env.S3_PRESIGN_TTL_SECONDS = "300";
   delete process.env.SLACK_BOT_TOKEN;
@@ -130,6 +134,7 @@ export async function withIntegrationApp(
   }) => Promise<void>,
   options?: {
     env?: Partial<Record<AppEnvKey, string | undefined>>;
+    members?: MemberInput[];
   },
 ) {
   const envSnapshot = saveEnv();
@@ -140,6 +145,9 @@ export async function withIntegrationApp(
 
     const { buildApp } = await import("../../src/app");
     const app = await buildApp();
+    for (const member of options?.members ?? []) {
+      createMember(member);
+    }
 
     try {
       resetRequestLimits();

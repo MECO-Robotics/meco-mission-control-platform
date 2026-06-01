@@ -27,7 +27,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - The main app state starts from `src/data/mockData.ts` and is reset during app creation.
 - Core platform reads and writes go through `src/data/store.ts`.
 - Per-user preferences are stored outside git in `data/user-preferences.json`.
-- Runtime subteam onboarding also writes `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` back to the configured env file so web and mobile share the roster mapping.
+- Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - Prisma schema lives in `prisma/schema.prisma` and includes core planning/manufacturing entities plus CAD import tables.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
@@ -45,7 +45,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Integrations
 
-- S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured.
+- S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured. Media buckets are derived per project team as `<S3_BUCKET_PREFIX>-<teamId>`; legacy `S3_BUCKET` is still accepted as the prefix.
 - Slack support is enabled by `SLACK_BOT_TOKEN` and channel/usergroup environment variables.
 - STEP CAD imports run through `StepParserClient`, parser mode config, mapping review, hierarchy validation, and snapshot finalization.
 - Onshape integration uses OAuth, saved document references, sync estimates, request logs, runtime budget tracking, and explicit sync runs.

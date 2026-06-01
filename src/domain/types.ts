@@ -93,6 +93,7 @@ export type IterationStatus = "planned" | "in-progress" | "complete";
 export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
 export type TaskDependencyKind = "task" | "milestone" | "part_instance";
 export type TaskDependencyType = "hard" | "soft";
+export const DEFAULT_PROJECT_TEAM_ID = "default-team";
 export type PlannedAttendanceDay =
   | "monday"
   | "tuesday"
@@ -464,6 +465,7 @@ export interface Season {
 
 export interface Project {
   id: string;
+  teamId: string;
   seasonId: string;
   name: string;
   projectType: ProjectType;
