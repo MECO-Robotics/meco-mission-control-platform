@@ -144,6 +144,7 @@ not register that route.
 - `.github/workflows/deploy-vps.yml`: CI + deployment workflow
 - `deploy/bootstrap-vps.sh`: first-time Docker bootstrap for Ubuntu
 - `docs/production-smoke-test-checklist.md`: production smoke-test checklist
+- `docs/backup-restore-drill.md`: backup command, disposable restore target, restore verification, and failure handling
 
 ## First-time VPS setup
 
@@ -275,3 +276,5 @@ On every push to `main`, GitHub Actions will:
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
+
+Backups are created before production deploys. Use `docs/backup-restore-drill.md` to prove a dump can be restored into a disposable local target before relying on it during an incident.
