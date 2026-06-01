@@ -365,6 +365,163 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
+      const { signSessionToken } = await import("../src/auth/authService");
+      const mentorToken = signSessionToken({
+        accountId: "local-dev-mentor",
+        authProvider: "email",
+        email: "mentor@mecorobotics.org",
+        hostedDomain: "mecorobotics.org",
+        name: "Mentor Test",
+        picture: null,
+        role: "mentor",
+        taskSubteamIds: [],
+      });
+
+      const claimableTaskPayload = {
+        title: "Claimable student task",
+        summary: "Students can claim this task from mobile.",
+        subsystemId: "drive",
+        disciplineId: "design",
+        mechanismId: null,
+        partInstanceId: null,
+        targetMilestoneId: null,
+        ownerId: null,
+        mentorId: "riley",
+        dueDate: "2026-05-06",
+        priority: "medium",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 0,
+        actualHours: 0,
+      };
+      const claimableTaskResponse = await app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+        payload: claimableTaskPayload,
+      });
+
+      assert.equal(claimableTaskResponse.statusCode, 201);
+      const claimableTask = claimableTaskResponse.json() as { item: { id: string; ownerId: string | null } };
+      assert.equal(claimableTask.item.ownerId, null);
+
+      resetRequestLimits();
+
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(claimResponse.statusCode, 200);
+      assert.equal((claimResponse.json() as { item: { ownerId: string } }).item.ownerId, "ava");
+
+      resetRequestLimits();
+
+      const releaseResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/release`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(releaseResponse.statusCode, 200);
+      assert.equal((releaseResponse.json() as { item: { ownerId: string | null } }).item.ownerId, null);
+
+      resetRequestLimits();
+
+      const startClaimTaskResponse = await app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+        payload: {
+          ...claimableTaskPayload,
+          title: "Start claim student task",
+        },
+      });
+      assert.equal(startClaimTaskResponse.statusCode, 201);
+      const startClaimTask = startClaimTaskResponse.json() as { item: { id: string } };
+
+      resetRequestLimits();
+
+      const startClaimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          start: true,
+        },
+      });
+
+      assert.equal(startClaimResponse.statusCode, 200);
+      const startClaimBody = startClaimResponse.json() as {
+        item: { ownerId: string; status: string };
+      };
+      assert.equal(startClaimBody.item.ownerId, "ava");
+      assert.equal(startClaimBody.item.status, "in-progress");
+
+      resetRequestLimits();
+
+      const reassignResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/reassign`,
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+        payload: {
+          ownerId: "lucas",
+        },
+      });
+
+      assert.equal(reassignResponse.statusCode, 200);
+      assert.equal((reassignResponse.json() as { item: { ownerId: string } }).item.ownerId, "lucas");
+
+      resetRequestLimits();
+
+      const forbiddenReleaseResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/release`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(forbiddenReleaseResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const conflictResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(conflictResponse.statusCode, 409);
+      assert.deepEqual(conflictResponse.json(), {
+        code: "task_already_claimed",
+        message: "Task is already claimed.",
+        ownerId: "lucas",
+        taskId: startClaimTask.item.id,
+      });
+
+      resetRequestLimits();
+
       const studentQaApprovalResponse = await app.inject({
         method: "POST",
         url: "/api/qa-reports",

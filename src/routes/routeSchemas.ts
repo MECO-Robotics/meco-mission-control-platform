@@ -98,6 +98,12 @@ export const taskSchema = z.object({
 });
 
 export const taskPatchSchema = taskSchema.partial();
+export const taskClaimSchema = z.object({
+  start: z.boolean().optional().default(false),
+});
+export const taskReassignSchema = z.object({
+  ownerId: z.string().trim().min(1).nullable(),
+});
 
 export const milestoneSchema = z.object({
   title: z.string().trim().min(2),
