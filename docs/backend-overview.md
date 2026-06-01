@@ -45,7 +45,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Integrations
 
-- S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured.
+- S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured. Media buckets are derived per project team as `<S3_BUCKET_PREFIX>-<teamId>`; legacy `S3_BUCKET` is still accepted as the prefix.
 - Slack support is enabled by `SLACK_BOT_TOKEN` and channel/usergroup environment variables.
 - STEP CAD imports run through `StepParserClient`, parser mode config, mapping review, hierarchy validation, and snapshot finalization.
 - Onshape integration uses OAuth, saved document references, sync estimates, request logs, runtime budget tracking, and explicit sync runs.

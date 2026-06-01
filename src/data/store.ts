@@ -1,4 +1,5 @@
 import { snapshot as initialSnapshot } from "./mockData";
+import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import type {
   AuditAction,
   AuditActionOperation,
@@ -470,7 +471,11 @@ function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnaps
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
-  const projectsById = new Map(clonedSnapshot.projects.map((project) => [project.id, project] as const));
+  const normalizedProjects = clonedSnapshot.projects.map((project) => ({
+    ...project,
+    teamId: normalizeProjectTeamId(project.teamId),
+  }));
+  const projectsById = new Map(normalizedProjects.map((project) => [project.id, project] as const));
 
   const normalizeMilestoneSeasonId = (milestone: Milestone) => {
     if (milestone.seasonId) {
@@ -534,6 +539,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
   const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
+    projects: normalizedProjects,
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
     ),
@@ -557,6 +563,16 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
 let interactiveTutorialSnapshot: PlatformSnapshot | null = null;
+
+function normalizeProjectTeamId(teamId: string | null | undefined) {
+  const normalized = teamId?.trim();
+  return normalized ? normalized : DEFAULT_PROJECT_TEAM_ID;
+}
+
+function getDefaultProjectTeamId(snapshot: Pick<PlatformSnapshot, "projects">) {
+  const firstTeamId = snapshot.projects.find((project) => project.teamId?.trim())?.teamId;
+  return normalizeProjectTeamId(firstTeamId);
+}
 
 function isElevatedMemberRole(role: Member["role"]): boolean {
   return role === "lead" || role === "admin";
@@ -1511,12 +1527,14 @@ export function createSeason(input: SeasonInput) {
   };
 
   const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
+  const teamId = getDefaultProjectTeamId(currentSnapshot);
   const projects: Project[] = DEFAULT_SEASON_PROJECTS.map((template) => {
     const projectId = uniqueId(`${seasonId}-${template.key}`, projectIds);
     projectIds.add(projectId);
 
     return {
       id: projectId,
+      teamId,
       seasonId: season.id,
       name: template.name,
       projectType: template.projectType,
@@ -1565,8 +1583,10 @@ export function getProjects() {
 export function createProject(input: ProjectInput) {
   const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
   const season = currentSnapshot.seasons.find((candidate) => candidate.id === input.seasonId);
+  const teamId = normalizeProjectTeamId(input.teamId ?? getDefaultProjectTeamId(currentSnapshot));
   const project: Project = {
     id: uniqueId(toSlug(`${input.seasonId}-${input.name}`) || "project", projectIds),
+    teamId,
     seasonId: input.seasonId,
     name: input.name,
     projectType: input.projectType,

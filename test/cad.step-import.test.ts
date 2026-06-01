@@ -1281,9 +1281,6 @@ test("authenticated STEP uploads still accept JSON payloads", async () => {
       const signInResponse = await app.inject({
         method: "POST",
         url: "/api/auth/dev-bypass",
-        payload: {
-          role: "mentor",
-        },
       });
       assert.equal(signInResponse.statusCode, 200, signInResponse.body);
       const token = signInResponse.json().token;

@@ -68,6 +68,7 @@ const envSchema = z.object({
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_PUBLIC_BASE_URL: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).optional(),
+  S3_BUCKET_PREFIX: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
@@ -152,6 +153,7 @@ const resolvedEmailFrom = pickFirstString(
 );
 const s3Endpoint = normalizeUrl(env.S3_ENDPOINT);
 const s3PublicBaseUrl = normalizeUrl(env.S3_PUBLIC_BASE_URL) ?? s3Endpoint;
+const s3BucketPrefix = env.S3_BUCKET_PREFIX ?? env.S3_BUCKET;
 export const emailSmtpConfig = {
   host: resolvedEmailSmtpHost,
   port: resolvedEmailSmtpPort,
@@ -271,14 +273,14 @@ export const mediaUploadConfig = {
       env.S3_SECRET_ACCESS_KEY &&
       env.S3_ENDPOINT &&
       env.S3_REGION &&
-      env.S3_BUCKET,
+      s3BucketPrefix,
   ),
   accessKeyId: env.S3_ACCESS_KEY_ID,
   secretAccessKey: env.S3_SECRET_ACCESS_KEY,
   endpoint: s3Endpoint,
   publicBaseUrl: s3PublicBaseUrl,
   region: env.S3_REGION,
-  bucket: env.S3_BUCKET,
+  bucketPrefix: s3BucketPrefix,
   presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
 } as const;
 

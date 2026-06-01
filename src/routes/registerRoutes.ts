@@ -1500,14 +1500,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findProject(parsed.data.projectId)) {
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
       return reply.code(400).send({
         message: "The selected project does not exist.",
       });
     }
 
     try {
-      return await presignImageUpload(parsed.data);
+      return await presignImageUpload({ ...parsed.data, teamId: project.teamId });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({
@@ -1535,14 +1536,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findProject(parsed.data.projectId)) {
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
       return reply.code(400).send({
         message: "The selected project does not exist.",
       });
     }
 
     try {
-      return await presignVideoUpload(parsed.data);
+      return await presignVideoUpload({ ...parsed.data, teamId: project.teamId });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({

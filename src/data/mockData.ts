@@ -177,6 +177,7 @@ const snapshotSeed: Omit<
   projects: [
     {
       id: "project-robot-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Tutorial Robot 2026",
       projectType: "robot",
@@ -185,6 +186,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-media-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Media",
       projectType: "other",
@@ -193,6 +195,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-outreach-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Outreach",
       projectType: "outreach",
@@ -201,6 +204,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-operations-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Operations",
       projectType: "operations",
@@ -209,6 +213,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-strategy-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Strategy",
       projectType: "other",
@@ -217,6 +222,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-training-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Training",
       projectType: "other",

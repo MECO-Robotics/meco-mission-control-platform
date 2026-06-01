@@ -5,6 +5,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { mediaUploadConfig } from "../config/env";
+import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 
 const IMAGE_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "image/avif": ".avif",
@@ -42,6 +43,7 @@ interface PresignMediaUploadInput {
   contentType: string;
   fileName: string;
   projectId: string;
+  teamId?: string | null;
 }
 
 type MediaUploadKind = "image" | "video";
@@ -108,6 +110,21 @@ function buildPublicUrl(bucket: string, key: string) {
   return `${baseUrl}/${encodeURIComponent(bucket)}/${encodeObjectKey(key)}`;
 }
 
+function createTeamBucketName(teamId: string | null | undefined) {
+  const bucketPrefix = mediaUploadConfig.bucketPrefix;
+  if (!bucketPrefix) {
+    throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
+  }
+
+  const prefixSegment = sanitizePathSegment(bucketPrefix, "media").slice(0, 40).replace(/-+$/g, "") || "media";
+  const teamSegmentMaxLength = Math.max(1, 63 - prefixSegment.length - 1);
+  const teamSegment =
+    sanitizePathSegment(teamId ?? "", DEFAULT_PROJECT_TEAM_ID).slice(0, teamSegmentMaxLength).replace(/-+$/g, "") ||
+    DEFAULT_PROJECT_TEAM_ID;
+
+  return `${prefixSegment}-${teamSegment}`;
+}
+
 function createObjectKey(projectId: string, fileName: string, contentType: string, kind: MediaUploadKind) {
   const now = new Date();
   const year = now.getUTCFullYear().toString();
@@ -133,10 +150,7 @@ async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUpl
     throw new MediaUploadError(`${kind === "image" ? "Image" : "Video"} uploads require a file name.`);
   }
 
-  const bucket = mediaUploadConfig.bucket;
-  if (!bucket) {
-    throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
-  }
+  const bucket = createTeamBucketName(input.teamId);
 
   const key = createObjectKey(input.projectId, fileName, contentType, kind);
   const client = getStorageClient();
