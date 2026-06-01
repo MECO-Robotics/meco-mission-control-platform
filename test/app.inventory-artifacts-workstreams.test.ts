@@ -542,6 +542,50 @@ test("media upload endpoint selects buckets from server-owned project team ids",
         "https://cdn.example.test/meco-pm-default-team/projects/legacy-media-project/images/",
       ),
     );
+
+    resetLimits();
+
+    const apiProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        teamId: "Team 1357",
+        seasonId: "default-season",
+        name: "Team 1357 Media",
+        projectType: "other",
+      },
+    });
+
+    assert.equal(apiProjectResponse.statusCode, 201);
+    const apiProjectBody = apiProjectResponse.json() as {
+      item: {
+        id: string;
+        teamId: string;
+      };
+    };
+    assert.equal(apiProjectBody.item.teamId, "Team 1357");
+
+    resetLimits();
+
+    const apiProjectPresignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: apiProjectBody.item.id,
+        fileName: "API-created project.png",
+        contentType: "image/png",
+      },
+    });
+
+    assert.equal(apiProjectPresignResponse.statusCode, 200);
+    const apiProjectPresignBody = apiProjectPresignResponse.json() as {
+      publicUrl: string;
+    };
+    assert.ok(
+      apiProjectPresignBody.publicUrl.startsWith(
+        `https://cdn.example.test/meco-pm-team-1357/projects/${apiProjectBody.item.id}/images/`,
+      ),
+    );
   });
 });
 

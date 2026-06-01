@@ -50,6 +50,7 @@ export const seasonSchema = z.object({
 });
 
 export const projectSchema = z.object({
+  teamId: z.string().trim().min(1).optional(),
   seasonId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   projectType: z.enum(["robot", "operations", "outreach", "other"]).default("robot"),
