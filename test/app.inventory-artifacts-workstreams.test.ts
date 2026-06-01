@@ -551,7 +551,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
       payload: {
         teamId: "Team 1357",
         seasonId: "default-season",
-        name: "Team 1357 Media",
+        name: "API Media",
         projectType: "other",
       },
     });
@@ -563,7 +563,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
         teamId: string;
       };
     };
-    assert.equal(apiProjectBody.item.teamId, "Team 1357");
+    assert.equal(apiProjectBody.item.teamId, "meco-robotics");
 
     resetLimits();
 
@@ -583,7 +583,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
     };
     assert.ok(
       apiProjectPresignBody.publicUrl.startsWith(
-        `https://cdn.example.test/meco-pm-team-1357/projects/${apiProjectBody.item.id}/images/`,
+        `https://cdn.example.test/meco-pm-meco-robotics/projects/${apiProjectBody.item.id}/images/`,
       ),
     );
   });
