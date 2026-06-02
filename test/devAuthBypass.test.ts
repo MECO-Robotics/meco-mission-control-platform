@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { createMember } from "../src/data/store";
 import { resetUserPreferencesStoreForTests } from "../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
@@ -412,6 +413,26 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
+      const nonRosterClaimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(nonRosterClaimResponse.statusCode, 403);
+
+      const localDevStudent = createMember({
+        name: "Local Dev Student",
+        email: "dev.student@mecorobotics.org",
+        role: "student",
+      });
+      assert.equal(localDevStudent.id, "local-dev-student");
+
+      resetRequestLimits();
+
       const claimResponse = await app.inject({
         method: "POST",
         url: `/api/tasks/${claimableTask.item.id}/claim`,
@@ -422,7 +443,10 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       });
 
       assert.equal(claimResponse.statusCode, 200);
-      assert.equal((claimResponse.json() as { item: { ownerId: string } }).item.ownerId, "ava");
+      assert.equal(
+        (claimResponse.json() as { item: { ownerId: string } }).item.ownerId,
+        "local-dev-student",
+      );
 
       resetRequestLimits();
 
@@ -470,7 +494,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       const startClaimBody = startClaimResponse.json() as {
         item: { ownerId: string; status: string };
       };
-      assert.equal(startClaimBody.item.ownerId, "ava");
+      assert.equal(startClaimBody.item.ownerId, "local-dev-student");
       assert.equal(startClaimBody.item.status, "in-progress");
 
       resetRequestLimits();
@@ -519,6 +543,23 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         ownerId: "lucas",
         taskId: startClaimTask.item.id,
       });
+
+      resetRequestLimits();
+
+      const managerReleaseResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/release`,
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+      });
+
+      assert.equal(managerReleaseResponse.statusCode, 200);
+      const managerReleaseBody = managerReleaseResponse.json() as {
+        item: { assigneeIds: string[]; ownerId: string | null };
+      };
+      assert.equal(managerReleaseBody.item.ownerId, null);
+      assert.deepEqual(managerReleaseBody.item.assigneeIds, []);
 
       resetRequestLimits();
 

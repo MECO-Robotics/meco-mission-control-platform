@@ -310,14 +310,6 @@ export async function registerRoutes(app: FastifyInstance) {
       return exactMatch;
     }
 
-    if (session?.role === "student") {
-      return members.find((member) => member.role === "student" || member.role === "lead") ?? null;
-    }
-
-    if (session?.role === "mentor") {
-      return members.find((member) => member.role === "mentor" || member.role === "admin") ?? null;
-    }
-
     return null;
   };
 
@@ -1863,26 +1855,23 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       const member = getTaskActionMember(request);
-      if (!member) {
+      const canManage = canManageTaskAssignment(request);
+      if (!member && !canManage) {
         return reply.code(403).send({
           message: "Only roster members can release tasks.",
         });
       }
 
-      if (currentTask.ownerId !== member.id && !canManageTaskAssignment(request)) {
+      if (currentTask.ownerId !== member?.id && !canManage) {
         return reply.code(403).send({
           message: "Only the task owner or mentors can release this task.",
         });
       }
 
-      const ownerId = currentTask.ownerId === member.id || canManageTaskAssignment(request)
-        ? null
-        : currentTask.ownerId;
-      const removeMemberId = currentTask.ownerId ?? member.id;
       const updatedTask = updateTask(currentTask.id, {
-        ownerId,
+        ownerId: null,
         assigneeIds: (currentTask.assigneeIds ?? []).filter(
-          (assigneeId) => assigneeId !== removeMemberId,
+          (assigneeId) => assigneeId !== currentTask.ownerId,
         ),
       });
 
@@ -1927,11 +1916,18 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
+      const existingAssigneeIds = uniqueIds(currentTask.assigneeIds ?? []);
+      const assigneeIdsWithoutPreviousOwner =
+        currentTask.ownerId && currentTask.ownerId !== parsed.data.ownerId
+          ? existingAssigneeIds.filter((assigneeId) => assigneeId !== currentTask.ownerId)
+          : existingAssigneeIds;
+      const nextAssigneeIds = parsed.data.ownerId
+        ? uniqueIds([...assigneeIdsWithoutPreviousOwner, parsed.data.ownerId])
+        : assigneeIdsWithoutPreviousOwner;
+
       const updatedTask = updateTask(currentTask.id, {
         ownerId: parsed.data.ownerId,
-        assigneeIds: parsed.data.ownerId
-          ? uniqueIds([...(currentTask.assigneeIds ?? []), parsed.data.ownerId])
-          : [],
+        assigneeIds: nextAssigneeIds,
       });
 
       return {
