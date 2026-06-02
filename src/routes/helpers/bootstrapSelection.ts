@@ -294,7 +294,39 @@ function buildReportFindings(args: {
   return [...qaFindings, ...testFindings];
 }
 
+function parseDateMs(value: string) {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isSeasonScopedByProjectLinks(args: {
+  selectedSeasonId: string | null;
+  recordSeasonId?: string;
+  projectIds: string[];
+  activeProjectIds: Set<string>;
+}) {
+  if (!args.selectedSeasonId) {
+    return true;
+  }
+
+  if (args.recordSeasonId) {
+    return args.recordSeasonId === args.selectedSeasonId;
+  }
+
+  return (
+    args.projectIds.length > 0 &&
+    args.projectIds.some((projectId) => args.activeProjectIds.has(projectId))
+  );
+}
+
 export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: BootstrapSelection) {
+  const selectedSeasonId = selection.seasonId;
+  const selectedSeason = selectedSeasonId
+    ? snapshot.seasons.find((season) => season.id === selectedSeasonId) ?? null
+    : null;
+  const scopedSeasons = selectedSeasonId
+    ? snapshot.seasons.filter((season) => season.id === selectedSeasonId)
+    : snapshot.seasons;
   const seasonScopedProjects = selection.seasonId
     ? snapshot.projects.filter((project) => project.seasonId === selection.seasonId)
     : snapshot.projects;
@@ -315,6 +347,11 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     activeProjectIds.has(subsystem.projectId),
   );
   const scopedSubsystemIds = new Set(scopedSubsystems.map((subsystem) => subsystem.id));
+  const scopedPartDefinitions = selectedSeasonId
+    ? snapshot.partDefinitions.filter((partDefinition) =>
+        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
+      )
+    : snapshot.partDefinitions;
   const scopedMechanisms = snapshot.mechanisms.filter((mechanism) =>
     scopedSubsystemIds.has(mechanism.subsystemId),
   );
@@ -332,16 +369,34 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   );
   const scopedMilestones = snapshot.milestones.filter((milestone) => {
     const milestoneProjectIds = milestone.projectIds ?? [];
+    if (
+      !isSeasonScopedByProjectLinks({
+        selectedSeasonId,
+        recordSeasonId: milestone.seasonId,
+        projectIds: milestoneProjectIds,
+        activeProjectIds,
+      })
+    ) {
+      return false;
+    }
+
     return milestoneProjectIds.length === 0
       ? true
       : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
   });
   const scopedMeetings = snapshot.meetings.filter((meeting) => {
-    if (selection.seasonId && meeting.seasonId && meeting.seasonId !== selection.seasonId) {
+    const meetingProjectIds = meeting.projectIds ?? [];
+    if (
+      !isSeasonScopedByProjectLinks({
+        selectedSeasonId,
+        recordSeasonId: meeting.seasonId,
+        projectIds: meetingProjectIds,
+        activeProjectIds,
+      })
+    ) {
       return false;
     }
 
-    const meetingProjectIds = meeting.projectIds ?? [];
     return meetingProjectIds.length === 0
       ? true
       : meetingProjectIds.some((projectId) => activeProjectIds.has(projectId));
@@ -401,6 +456,10 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   });
   const isProjectScoped = selection.projectId !== null;
   const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+    if (selectedSeasonId && !request.taskId) {
+      return false;
+    }
+
     const isTaskInScope = request.taskId
       ? scopedTaskIds.has(request.taskId)
       : !isProjectScoped;
@@ -436,6 +495,14 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       return false;
     }
 
+    if (risk.attachmentType === "mechanism" && !scopedMechanismIds.has(risk.attachmentId)) {
+      return false;
+    }
+
+    if (risk.attachmentType === "part-instance" && !scopedPartInstanceIds.has(risk.attachmentId)) {
+      return false;
+    }
+
     if (risk.mitigationTaskId && !scopedTaskIds.has(risk.mitigationTaskId)) {
       return false;
     }
@@ -450,9 +517,28 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
 
     return true;
   });
+  const scopedMembers = selectedSeasonId
+    ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
+    : snapshot.members;
+  const scopedMemberIds = new Set(scopedMembers.map((member) => member.id));
   const scopedAttendanceRecords = snapshot.attendanceRecords.filter((record) => {
     if (selection.personId !== null && record.memberId !== selection.personId) {
       return false;
+    }
+
+    if (selectedSeasonId && !scopedMemberIds.has(record.memberId)) {
+      return false;
+    }
+
+    if (selectedSeason) {
+      const attendanceDate = parseDateMs(record.date);
+      const seasonStart = parseDateMs(selectedSeason.startDate);
+      const seasonEnd = parseDateMs(selectedSeason.endDate);
+      if (attendanceDate === null || seasonStart === null || seasonEnd === null) {
+        return false;
+      }
+
+      return attendanceDate >= seasonStart && attendanceDate <= seasonEnd;
     }
 
     return true;
@@ -533,15 +619,6 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       (manufacturingQaReviewCounts.get(review.subjectId) ?? 0) + 1,
     );
   }
-  const selectedSeasonId = selection.seasonId;
-  const scopedMembers = selectedSeasonId
-    ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
-    : snapshot.members;
-  const scopedPartDefinitions = selectedSeasonId
-    ? snapshot.partDefinitions.filter((partDefinition) =>
-        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
-      )
-    : snapshot.partDefinitions;
   const scopedActions = (snapshot.actions ?? [])
     .filter((action) => {
       const actionProjectIds =
@@ -582,16 +659,34 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       return true;
     })
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  const scopedMaterialIds = new Set(
+    [
+      ...scopedPartDefinitions.map((partDefinition) => partDefinition.materialId),
+      ...scopedManufacturingItems.map((item) => item.materialId),
+    ].filter((materialId): materialId is string => Boolean(materialId)),
+  );
+  const scopedMaterials = selectedSeasonId
+    ? snapshot.materials.filter((material) => scopedMaterialIds.has(material.id))
+    : snapshot.materials;
+  const scopedDisciplineIds = new Set(
+    [
+      ...scopedTasks.map((task) => task.disciplineId),
+      ...scopedMembers.map((member) => member.disciplineId ?? null),
+    ].filter((disciplineId): disciplineId is string => Boolean(disciplineId)),
+  );
+  const scopedDisciplines = selectedSeasonId
+    ? snapshot.disciplines.filter((discipline) => scopedDisciplineIds.has(discipline.id))
+    : snapshot.disciplines;
 
   return {
-    seasons: snapshot.seasons,
+    seasons: scopedSeasons,
     projects: seasonScopedProjects,
     workstreams: scopedWorkstreams,
     members: scopedMembers,
     subsystems: scopedSubsystems,
-    disciplines: snapshot.disciplines,
+    disciplines: scopedDisciplines,
     mechanisms: scopedMechanisms,
-    materials: snapshot.materials,
+    materials: scopedMaterials,
     artifacts: scopedArtifacts,
     partDefinitions: scopedPartDefinitions,
     partInstances: scopedPartInstances,
@@ -621,7 +716,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     })),
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
-    escalations: snapshot.escalations,
+    escalations: selectedSeasonId ? [] : snapshot.escalations,
     actions: scopedActions as AuditAction[],
   };
 }

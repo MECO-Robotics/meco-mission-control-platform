@@ -132,15 +132,49 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       assert.equal(demoResponse.statusCode, 200);
       const demoBody = demoResponse.json() as {
-        projects: Array<{ seasonId: string }>;
-        seasons: Array<{ id: string }>;
+        attendanceRecords: Array<{ date: string }>;
+        escalations: unknown[];
+        meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
+        milestones: Array<{ seasonId?: string; projectIds: string[] }>;
+        projects: Array<{ id: string; seasonId: string }>;
+        qaRequests: Array<{ taskId: string | null }>;
+        seasons: Array<{ id: string; startDate: string; endDate: string }>;
       };
-      assert.ok(demoBody.seasons.some((season) => season.id === "default-season"));
+      assert.equal(demoBody.seasons.every((season) => season.id === "default-season"), true);
       assert.ok(demoBody.projects.length > 0);
       assert.equal(
         demoBody.projects.every((project) => project.seasonId === "default-season"),
         true,
       );
+      assert.equal(demoBody.escalations.length, 0);
+      const demoSeason = demoBody.seasons[0];
+      assert.ok(demoSeason);
+      assert.equal(
+        demoBody.attendanceRecords.every(
+          (record) =>
+            record.date >= demoSeason.startDate &&
+            record.date <= demoSeason.endDate,
+        ),
+        true,
+      );
+      const demoProjectIds = new Set(demoBody.projects.map((project) => project.id));
+      assert.equal(
+        demoBody.milestones.every(
+          (milestone) =>
+            milestone.seasonId === "default-season" ||
+            milestone.projectIds.some((projectId) => demoProjectIds.has(projectId)),
+        ),
+        true,
+      );
+      assert.equal(
+        demoBody.meetings.every(
+          (meeting) =>
+            meeting.seasonId === "default-season" ||
+            (meeting.projectIds ?? []).some((projectId) => demoProjectIds.has(projectId)),
+        ),
+        true,
+      );
+      assert.equal(demoBody.qaRequests.every((request) => request.taskId !== null), true);
 
       resetLimits();
 

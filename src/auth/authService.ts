@@ -11,6 +11,7 @@ import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
+const PUBLIC_DEMO_SEASON_ID = "default-season";
 
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
@@ -319,6 +320,34 @@ export function buildDevelopmentSessionUser(): SessionUser {
   };
 }
 
+function buildPublicDemoSessionUser(): SessionUser {
+  const email = `public.demo@${authConfig.hostedDomain}`;
+
+  return {
+    accountId: "public-demo",
+    authProvider: "email",
+    email,
+    name: "Public Demo",
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
+    role: "student",
+    taskSubteamIds: [],
+  };
+}
+
+function isPublicDemoBootstrapRequest(request: FastifyRequest) {
+  if (request.method !== "GET") {
+    return false;
+  }
+
+  const [path = "", rawQuery = ""] = request.url.split("?", 2);
+  if (path !== "/api/bootstrap") {
+    return false;
+  }
+
+  return new URLSearchParams(rawQuery).get("seasonId") === PUBLIC_DEMO_SEASON_ID;
+}
+
 function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
   if (!payload?.sub || !payload.email) {
     throw new AuthError("Google did not return the required identity fields.", 401);
@@ -624,6 +653,10 @@ export function readBearerToken(headerValue: string | undefined) {
 export function getSessionFromRequest(request: FastifyRequest) {
   const token = readBearerToken(request.headers.authorization);
   if (!token) {
+    if (authConfig.enabled && isPublicDemoBootstrapRequest(request)) {
+      return buildPublicDemoSessionUser();
+    }
+
     return null;
   }
 
