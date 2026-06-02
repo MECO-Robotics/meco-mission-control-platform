@@ -143,6 +143,7 @@ not register that route.
 - `.env.production`: runtime environment file on the VPS
 - `.github/workflows/deploy-vps.yml`: CI + deployment workflow
 - `deploy/bootstrap-vps.sh`: first-time Docker bootstrap for Ubuntu
+- `docs/platform-deployment-recovery.md`: production env, VPS deploy path, backups, restore expectations, and rollback options
 - `docs/production-smoke-test-checklist.md`: production smoke-test checklist
 - `docs/backup-restore-drill.md`: backup command, disposable restore target, restore verification, and failure handling
 
@@ -263,6 +264,10 @@ When `RESEND_API_KEY` is present and no explicit `AUTH_EMAIL_SMTP_HOST` is confi
 
 ## Deployment behavior
 
+Use `docs/platform-deployment-recovery.md` as the canonical operator runbook for
+production env, VPS deploy path, backups, restore expectations, and rollback
+options.
+
 On every push to `main`, GitHub Actions will:
 
 1. install dependencies
@@ -272,9 +277,14 @@ On every push to `main`, GitHub Actions will:
 5. sync the repo to `/opt/pm-server`
 6. write `.env.production`
 7. run `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`
+8. check `/health` on the VPS
 
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
 
-Backups are created before production deploys. Use `docs/backup-restore-drill.md` to prove a dump can be restored into a disposable local target before relying on it during an incident.
+Backups are created before production deploys under `/opt/pm-backups/server`.
+The deployment and recovery runbook documents what is backed up, how restore
+should be handled, and which rollback option to choose during an incident.
+Use `docs/backup-restore-drill.md` to prove a dump can be restored into a
+disposable local target before relying on it during an incident.

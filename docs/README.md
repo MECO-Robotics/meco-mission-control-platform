@@ -8,6 +8,7 @@ Use this folder for living project documentation and historical requirements art
 - `backend-overview.md`: runtime architecture, source layout, data model, security posture, integrations, local workflow, deployment, and documentation maintenance.
 - `cad-step-mapping.md`: STEP import workflow, parser behavior, CAD persistence, mapping review, finalization, and current limits.
 - `onshape-integration.md`: Onshape OAuth, document references, sync levels, budgeting, permissions, route behavior, and known limitations.
+- `platform-deployment-recovery.md`: production env, VPS deploy flow, backup behavior, restore expectations, and rollback options.
 
 ## Historical Artifacts
 
@@ -29,5 +30,6 @@ Use this folder for living project documentation and historical requirements art
 - Update `backend-overview.md` when source layout, runtime assumptions, environment requirements, deployment workflow, or verification commands change.
 - Update `cad-step-mapping.md` when STEP parser modes, CAD store behavior, mapping rules, hierarchy review, diffing, or finalization changes.
 - Update `onshape-integration.md` when Onshape OAuth, reference parsing, sync levels, request budgeting, permissions, or route behavior changes.
+- Update `platform-deployment-recovery.md` when production env requirements, deploy workflow behavior, VPS paths, backup retention, restore procedure, or rollback options change.
 - Add a new Markdown file only when the topic does not fit one of the living docs and has more than five concrete points to document.
 - Keep Word files as source/history snapshots, not as the only record of implemented behavior.
