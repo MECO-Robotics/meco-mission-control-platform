@@ -126,10 +126,14 @@ test("unsigned users can read only the demo season bootstrap", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
       const { createMember } = await import("../src/data/store");
-      createMember({
+      const publicProbeMember = createMember({
         name: "Public Demo Global Audit Probe",
         email: "public-demo-audit-probe@mecorobotics.org",
-        role: "student",
+        photoUrl: "https://example.test/public-demo-audit-probe.png",
+        role: "admin",
+        plannedWeeklyAttendanceHours: 4,
+        plannedAttendanceDays: ["monday"],
+        plannedAttendanceNotes: "Private public demo probe availability.",
       });
 
       const demoResponse = await app.inject({
@@ -143,6 +147,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         attendanceRecords: Array<{ date: string }>;
         escalations: unknown[];
         meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
+        members: Array<Record<string, unknown>>;
         milestones: Array<{ seasonId?: string; projectIds: string[] }>;
         projects: Array<{ id: string; seasonId: string }>;
         qaRequests: Array<{ taskId: string | null }>;
@@ -152,6 +157,25 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       assert.ok(demoBody.projects.length > 0);
       assert.equal(
         demoBody.projects.every((project) => project.seasonId === "default-season"),
+        true,
+      );
+      const publicProbeRecord = demoBody.members.find(
+        (member) => member.id === publicProbeMember.id,
+      );
+      assert.ok(publicProbeRecord);
+      assert.match(String(publicProbeRecord.name), /^Demo Member \d+$/);
+      assert.notEqual(publicProbeRecord.name, publicProbeMember.name);
+      assert.equal(
+        demoBody.members.every(
+          (member) =>
+            !("email" in member) &&
+            !("role" in member) &&
+            !("elevated" in member) &&
+            !("photoUrl" in member) &&
+            !("plannedWeeklyAttendanceHours" in member) &&
+            !("plannedAttendanceDays" in member) &&
+            !("plannedAttendanceNotes" in member),
+        ),
         true,
       );
       assert.equal(demoBody.escalations.length, 0);
@@ -235,6 +259,14 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 test("authenticated season bootstrap preserves escalations", async () => {
   await withIntegrationApp(
     async ({ app }) => {
+      const { createMember } = await import("../src/data/store");
+      const authenticatedProbeMember = createMember({
+        name: "Authenticated Bootstrap Probe",
+        email: "authenticated-bootstrap-probe@mecorobotics.org",
+        photoUrl: "https://example.test/authenticated-bootstrap-probe.png",
+        role: "admin",
+        plannedAttendanceNotes: "Private authenticated availability.",
+      });
       const mentorToken = await signTestToken({
         email: "mentor@mecorobotics.org",
         role: "mentor",
@@ -251,10 +283,23 @@ test("authenticated season bootstrap preserves escalations", async () => {
       assert.equal(response.statusCode, 200);
       const body = response.json() as {
         escalations: unknown[];
+        members: Array<Record<string, unknown>>;
         seasons: Array<{ id: string }>;
       };
       assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
       assert.ok(body.escalations.length > 0);
+      const authenticatedProbeRecord = body.members.find(
+        (member) => member.id === authenticatedProbeMember.id,
+      );
+      assert.ok(authenticatedProbeRecord);
+      assert.equal(authenticatedProbeRecord.name, authenticatedProbeMember.name);
+      assert.equal(authenticatedProbeRecord.email, authenticatedProbeMember.email);
+      assert.equal(authenticatedProbeRecord.role, "admin");
+      assert.equal(authenticatedProbeRecord.elevated, true);
+      assert.equal(
+        authenticatedProbeRecord.plannedAttendanceNotes,
+        authenticatedProbeMember.plannedAttendanceNotes,
+      );
     },
     { env: authEnv },
   );

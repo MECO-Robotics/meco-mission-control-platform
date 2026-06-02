@@ -115,6 +115,7 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
+import type { Member } from "../domain/types";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
   filterManufacturingItemsForPerson,
@@ -226,6 +227,16 @@ const allowAuthEmailRouteRequest = createRequestLimitGuard({
   ...requestLimitConfig.authEmail,
 });
 const PUBLIC_DEMO_SEASON_ID = "default-season";
+
+function sanitizePublicDemoMembers(members: Member[]) {
+  return members.map((member, memberIndex) => ({
+    id: member.id,
+    name: `Demo Member ${memberIndex + 1}`,
+    seasonId: member.seasonId,
+    activeSeasonIds: member.activeSeasonIds,
+    ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
+  }));
+}
 
 interface TutorialResetResponse {
   ok: boolean;
@@ -450,6 +461,9 @@ export async function registerRoutes(app: FastifyInstance) {
     });
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
       ...selectedBootstrap,
+      members: isPublicDemoBootstrap
+        ? sanitizePublicDemoMembers(selectedBootstrap.members)
+        : selectedBootstrap.members,
       actions: isPublicDemoBootstrap ? [] : selectedBootstrap.actions,
       favoriteViews: getFavoriteViews(userKey),
     });
