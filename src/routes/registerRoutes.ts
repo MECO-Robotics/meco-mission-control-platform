@@ -228,14 +228,98 @@ const allowAuthEmailRouteRequest = createRequestLimitGuard({
 });
 const PUBLIC_DEMO_SEASON_ID = "default-season";
 
-function sanitizePublicDemoMembers(members: Member[]) {
-  return members.map((member, memberIndex) => ({
-    id: member.id,
+function rewriteDemoMemberId(
+  memberId: string | null | undefined,
+  memberIdsByOriginalId: Map<string, string>,
+) {
+  if (!memberId) {
+    return memberId ?? null;
+  }
+
+  return memberIdsByOriginalId.get(memberId) ?? memberId;
+}
+
+function rewriteDemoMemberIds(
+  memberIds: string[] | undefined,
+  memberIdsByOriginalId: Map<string, string>,
+) {
+  return (memberIds ?? []).map((memberId) =>
+    rewriteDemoMemberId(memberId, memberIdsByOriginalId),
+  );
+}
+
+function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildBootstrapResponse>) {
+  const memberIdsByOriginalId = new Map(
+    selectedBootstrap.members.map((member, memberIndex) => [
+      member.id,
+      `demo-member-${memberIndex + 1}`,
+    ]),
+  );
+
+  const members = selectedBootstrap.members.map((member, memberIndex) => ({
+    id: rewriteDemoMemberId(member.id, memberIdsByOriginalId),
     name: `Demo Member ${memberIndex + 1}`,
     seasonId: member.seasonId,
     activeSeasonIds: member.activeSeasonIds,
     ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
   }));
+
+  return {
+    ...selectedBootstrap,
+    members,
+    subsystems: selectedBootstrap.subsystems.map((subsystem) => ({
+      ...subsystem,
+      responsibleEngineerId: rewriteDemoMemberId(
+        subsystem.responsibleEngineerId,
+        memberIdsByOriginalId,
+      ),
+      mentorIds: rewriteDemoMemberIds(subsystem.mentorIds, memberIdsByOriginalId),
+    })),
+    reports: selectedBootstrap.reports.map((report) => ({
+      ...report,
+      createdByMemberId: rewriteDemoMemberId(report.createdByMemberId, memberIdsByOriginalId),
+      participantIds:
+        report.participantIds === undefined
+          ? report.participantIds
+          : rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
+    })),
+    tasks: selectedBootstrap.tasks.map((task) => ({
+      ...task,
+      ownerId: rewriteDemoMemberId(task.ownerId, memberIdsByOriginalId),
+      assigneeIds: rewriteDemoMemberIds(task.assigneeIds, memberIdsByOriginalId),
+      mentorId: rewriteDemoMemberId(task.mentorId, memberIdsByOriginalId),
+    })),
+    workLogs: selectedBootstrap.workLogs.map((workLog) => ({
+      ...workLog,
+      participantIds: rewriteDemoMemberIds(workLog.participantIds, memberIdsByOriginalId),
+    })),
+    attendanceRecords: selectedBootstrap.attendanceRecords.map((record) => ({
+      ...record,
+      memberId: rewriteDemoMemberId(record.memberId, memberIdsByOriginalId),
+    })),
+    manufacturingItems: selectedBootstrap.manufacturingItems.map((item) => ({
+      ...item,
+      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+    })),
+    purchaseItems: selectedBootstrap.purchaseItems.map((item) => ({
+      ...item,
+      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+    })),
+    qaReports: selectedBootstrap.qaReports.map((report) => ({
+      ...report,
+      participantIds: rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
+    })),
+    qaRequests: selectedBootstrap.qaRequests.map((request) => ({
+      ...request,
+      mentorId: rewriteDemoMemberId(request.mentorId, memberIdsByOriginalId),
+      requestedById: rewriteDemoMemberId(request.requestedById, memberIdsByOriginalId),
+    })),
+    qaReviews: selectedBootstrap.qaReviews.map((review) => ({
+      ...review,
+      participantIds: rewriteDemoMemberIds(review.participantIds, memberIdsByOriginalId),
+    })),
+    actions: [],
+  };
 }
 
 interface TutorialResetResponse {
@@ -459,12 +543,11 @@ export async function registerRoutes(app: FastifyInstance) {
     const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
       sanitizeEscalations: isPublicDemoBootstrap,
     });
+    const responseBootstrap = isPublicDemoBootstrap
+      ? sanitizePublicDemoBootstrap(selectedBootstrap)
+      : selectedBootstrap;
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
-      ...selectedBootstrap,
-      members: isPublicDemoBootstrap
-        ? sanitizePublicDemoMembers(selectedBootstrap.members)
-        : selectedBootstrap.members,
-      actions: isPublicDemoBootstrap ? [] : selectedBootstrap.actions,
+      ...responseBootstrap,
       favoriteViews: getFavoriteViews(userKey),
     });
 

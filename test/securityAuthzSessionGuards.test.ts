@@ -144,14 +144,22 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       assert.equal(demoResponse.statusCode, 200);
       const demoBody = demoResponse.json() as {
         actions: unknown[];
-        attendanceRecords: Array<{ date: string }>;
+        attendanceRecords: Array<{ date: string; memberId: string }>;
         escalations: unknown[];
         meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
         members: Array<Record<string, unknown>>;
         milestones: Array<{ seasonId?: string; projectIds: string[] }>;
+        manufacturingItems: Array<{ requestedById: string | null }>;
         projects: Array<{ id: string; seasonId: string }>;
-        qaRequests: Array<{ taskId: string | null }>;
+        purchaseItems: Array<{ requestedById: string | null }>;
+        qaReports: Array<{ participantIds: string[] }>;
+        qaRequests: Array<{ mentorId: string; requestedById: string | null; taskId: string | null }>;
+        qaReviews: Array<{ participantIds: string[] }>;
+        reports: Array<{ createdByMemberId: string | null; participantIds?: string[] }>;
         seasons: Array<{ id: string; startDate: string; endDate: string }>;
+        subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
+        tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
+        workLogs: Array<{ participantIds: string[] }>;
       };
       assert.equal(demoBody.seasons.every((season) => season.id === "default-season"), true);
       assert.ok(demoBody.projects.length > 0);
@@ -159,12 +167,24 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         demoBody.projects.every((project) => project.seasonId === "default-season"),
         true,
       );
-      const publicProbeRecord = demoBody.members.find(
-        (member) => member.id === publicProbeMember.id,
+      const demoMemberIds = new Set(demoBody.members.map((member) => String(member.id)));
+      assert.equal(demoMemberIds.has(publicProbeMember.id), false);
+      assert.equal(
+        demoBody.members.every((member) => /^demo-member-\d+$/.test(String(member.id))),
+        true,
       );
-      assert.ok(publicProbeRecord);
-      assert.match(String(publicProbeRecord.name), /^Demo Member \d+$/);
-      assert.notEqual(publicProbeRecord.name, publicProbeMember.name);
+      assert.equal(
+        demoBody.members.some((member) => String(member.id).includes("public-demo-global-audit-probe")),
+        false,
+      );
+      assert.equal(
+        demoBody.members.every((member) => /^Demo Member \d+$/.test(String(member.name))),
+        true,
+      );
+      assert.equal(
+        demoBody.members.some((member) => member.name === publicProbeMember.name),
+        false,
+      );
       assert.equal(
         demoBody.members.every(
           (member) =>
@@ -207,6 +227,27 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         true,
       );
       assert.equal(demoBody.qaRequests.every((request) => request.taskId !== null), true);
+      const memberReferences = [
+        ...demoBody.subsystems.flatMap((subsystem) => [
+          subsystem.responsibleEngineerId,
+          ...subsystem.mentorIds,
+        ]),
+        ...demoBody.reports.flatMap((report) => [
+          report.createdByMemberId,
+          ...(report.participantIds ?? []),
+        ]),
+        ...demoBody.tasks.flatMap((task) => [task.ownerId, task.mentorId, ...task.assigneeIds]),
+        ...demoBody.workLogs.flatMap((workLog) => workLog.participantIds),
+        ...demoBody.attendanceRecords.map((record) => record.memberId),
+        ...demoBody.manufacturingItems.map((item) => item.requestedById),
+        ...demoBody.purchaseItems.map((item) => item.requestedById),
+        ...demoBody.qaReports.flatMap((report) => report.participantIds),
+        ...demoBody.qaRequests.flatMap((request) => [request.mentorId, request.requestedById]),
+        ...demoBody.qaReviews.flatMap((review) => review.participantIds),
+      ].filter((memberId): memberId is string => typeof memberId === "string" && memberId.length > 0);
+      assert.ok(memberReferences.length > 0);
+      assert.equal(memberReferences.every((memberId) => demoMemberIds.has(memberId)), true);
+      assert.equal(memberReferences.includes(publicProbeMember.id), false);
       assert.equal(demoBody.actions.length, 0);
 
       resetLimits();
