@@ -1029,6 +1029,63 @@ test("snapshot diff reports grouped repeated-instance quantity changes", async (
   });
 });
 
+test("snapshot diff surfaces removed and renamed CAD parts as review evidence", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    await uploadStep(app, "rename-removal-iteration-1", repeatedPartCadFixture({
+      includeSingletonPart: true,
+      labelPrefix: "PRT",
+    }));
+    resetLimits();
+    const second = await uploadStep(app, "rename-removal-iteration-2", repeatedPartCadFixture({
+      includeSingletonPart: false,
+      labelPrefix: "RENAMED PRT",
+    }));
+    resetLimits();
+
+    const diffResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${second.snapshot.id}/diff`,
+    });
+    assert.equal(diffResponse.statusCode, 200, diffResponse.body);
+    const diff = diffResponse.json() as {
+      addedParts: Array<{ partNumber: string | null; name: string }>;
+      removedParts: Array<{ sourceId: string; partNumber: string | null; name: string; stableSignature: string }>;
+      removedPartInstances: Array<{ sourceId: string; instancePath: string }>;
+    };
+
+    assert.deepEqual(diff.addedParts, []);
+    assert.equal(diff.removedParts.length, 1);
+    assert.deepEqual(
+      {
+        sourceId: diff.removedParts[0]?.sourceId,
+        name: diff.removedParts[0]?.name,
+        partNumber: diff.removedParts[0]?.partNumber,
+        stableSignature: diff.removedParts[0]?.stableSignature,
+      },
+      {
+        sourceId: "part-plate",
+        name: "PRT - Shooter - Mounting Plate",
+        partNumber: "SHR-002",
+        stableSignature: "part:number:SHR-002",
+      },
+    );
+    assert.deepEqual(
+      diff.removedPartInstances.map((instance) => ({
+        sourceId: instance.sourceId,
+        instancePath: instance.instancePath,
+      })),
+      [
+        {
+          sourceId: "inst-plate-1",
+          instancePath: "/Robot/MECH - Shooter - Flywheel/Mounting Plate <1>",
+        },
+      ],
+    );
+  });
+});
+
 test("STEP import route honors explicit step_text mode and returns parser diagnostics", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
