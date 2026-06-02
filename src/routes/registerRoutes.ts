@@ -289,6 +289,13 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
       assigneeIds: rewriteDemoMemberIds(task.assigneeIds, memberIdsByOriginalId),
       mentorId: rewriteDemoMemberId(task.mentorId, memberIdsByOriginalId),
     })),
+    taskBlockers: selectedBootstrap.taskBlockers.map((blocker) => ({
+      ...blocker,
+      createdByMemberId: rewriteDemoMemberId(
+        blocker.createdByMemberId,
+        memberIdsByOriginalId,
+      ),
+    })),
     workLogs: selectedBootstrap.workLogs.map((workLog) => ({
       ...workLog,
       participantIds: rewriteDemoMemberIds(workLog.participantIds, memberIdsByOriginalId),
@@ -474,6 +481,11 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const session = getSessionFromRequest(request);
+    if (selection.personId !== null && (!session || session.isPublicDemo)) {
+      requireSession(request, reply);
+      return false;
+    }
+
     if (!session) {
       if (selection.seasonId === PUBLIC_DEMO_SEASON_ID) {
         return true;

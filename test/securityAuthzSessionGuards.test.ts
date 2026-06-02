@@ -158,6 +158,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         reports: Array<{ createdByMemberId: string | null; participantIds?: string[] }>;
         seasons: Array<{ id: string; startDate: string; endDate: string }>;
         subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
+        taskBlockers: Array<{ createdByMemberId: string | null }>;
         tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
         workLogs: Array<{ participantIds: string[] }>;
       };
@@ -237,6 +238,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
           ...(report.participantIds ?? []),
         ]),
         ...demoBody.tasks.flatMap((task) => [task.ownerId, task.mentorId, ...task.assigneeIds]),
+        ...demoBody.taskBlockers.map((blocker) => blocker.createdByMemberId),
         ...demoBody.workLogs.flatMap((workLog) => workLog.participantIds),
         ...demoBody.attendanceRecords.map((record) => record.memberId),
         ...demoBody.manufacturingItems.map((item) => item.requestedById),
@@ -249,6 +251,15 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       assert.equal(memberReferences.every((memberId) => demoMemberIds.has(memberId)), true);
       assert.equal(memberReferences.includes(publicProbeMember.id), false);
       assert.equal(demoBody.actions.length, 0);
+
+      resetLimits();
+
+      const personScopedDemoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season&personId=marco",
+      });
+
+      assert.equal(personScopedDemoResponse.statusCode, 401);
 
       resetLimits();
 
@@ -265,6 +276,18 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         (invalidTokenDemoResponse.json() as { actions: unknown[] }).actions,
         [],
       );
+
+      resetLimits();
+
+      const invalidTokenPersonScopedDemoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season&personId=marco",
+        headers: {
+          authorization: "Bearer invalid",
+        },
+      });
+
+      assert.equal(invalidTokenPersonScopedDemoResponse.statusCode, 401);
 
       resetLimits();
 

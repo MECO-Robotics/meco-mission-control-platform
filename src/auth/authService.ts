@@ -347,8 +347,13 @@ function isPublicDemoBootstrapRequest(request: FastifyRequest) {
     return false;
   }
 
-  const seasonIds = new URLSearchParams(rawQuery).getAll("seasonId");
-  return seasonIds.length === 1 && seasonIds[0] === PUBLIC_DEMO_SEASON_ID;
+  const query = new URLSearchParams(rawQuery);
+  const seasonIds = query.getAll("seasonId");
+  return (
+    seasonIds.length === 1 &&
+    seasonIds[0] === PUBLIC_DEMO_SEASON_ID &&
+    !query.has("personId")
+  );
 }
 
 function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
