@@ -187,6 +187,22 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       resetLimits();
 
+      const invalidTokenDemoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season",
+        headers: {
+          authorization: "Bearer invalid",
+        },
+      });
+
+      assert.equal(invalidTokenDemoResponse.statusCode, 200);
+      assert.deepEqual(
+        (invalidTokenDemoResponse.json() as { actions: unknown[] }).actions,
+        [],
+      );
+
+      resetLimits();
+
       const broadResponse = await app.inject({
         method: "GET",
         url: "/api/bootstrap",

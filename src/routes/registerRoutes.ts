@@ -441,14 +441,14 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
-    const userKey =
-      isAuthEnabled() && (session?.isPublicDemo || !session)
-        ? "public-demo"
-        : getNavigationPreferenceUserKey(request);
+    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const userKey = isPublicDemoBootstrap
+      ? "public-demo"
+      : getNavigationPreferenceUserKey(request);
     const selectedBootstrap = buildBootstrapResponse(snapshot, selection);
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
       ...selectedBootstrap,
-      actions: session?.isPublicDemo ? [] : selectedBootstrap.actions,
+      actions: isPublicDemoBootstrap ? [] : selectedBootstrap.actions,
       favoriteViews: getFavoriteViews(userKey),
     });
 
