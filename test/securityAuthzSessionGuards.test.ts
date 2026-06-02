@@ -122,6 +122,48 @@ test("student sessions cannot reset global tutorial state", async () => {
   );
 });
 
+test("unsigned users can read only the demo season bootstrap", async () => {
+  await withIntegrationApp(
+    async ({ app, resetLimits }) => {
+      const demoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season",
+      });
+
+      assert.equal(demoResponse.statusCode, 200);
+      const demoBody = demoResponse.json() as {
+        projects: Array<{ seasonId: string }>;
+        seasons: Array<{ id: string }>;
+      };
+      assert.ok(demoBody.seasons.some((season) => season.id === "default-season"));
+      assert.ok(demoBody.projects.length > 0);
+      assert.equal(
+        demoBody.projects.every((project) => project.seasonId === "default-season"),
+        true,
+      );
+
+      resetLimits();
+
+      const broadResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap",
+      });
+
+      assert.equal(broadResponse.statusCode, 401);
+
+      resetLimits();
+
+      const otherSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=season-2030",
+      });
+
+      assert.equal(otherSeasonResponse.statusCode, 401);
+    },
+    { env: authEnv },
+  );
+});
+
 test("student sessions cannot delete task or subsystem workflow records", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {

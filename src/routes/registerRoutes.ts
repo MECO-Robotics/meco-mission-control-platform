@@ -225,6 +225,7 @@ const allowAuthEmailRouteRequest = createRequestLimitGuard({
   scope: "auth-email",
   ...requestLimitConfig.authEmail,
 });
+const PUBLIC_DEMO_SEASON_ID = "default-season";
 
 interface TutorialResetResponse {
   ok: boolean;
@@ -364,6 +365,39 @@ export async function registerRoutes(app: FastifyInstance) {
     return email || session?.accountId || "authenticated-user";
   };
 
+  const allowDemoBootstrapRequest = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    selection: ReturnType<typeof readBootstrapSelection>,
+  ) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return false;
+    }
+
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    if (!session) {
+      if (selection.seasonId === PUBLIC_DEMO_SEASON_ID) {
+        return true;
+      }
+
+      requireSession(request, reply);
+      return false;
+    }
+
+    if (session.role === "external") {
+      reply.code(403).send({
+        message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
   app.get("/health", async () => {
     return {
       status: "ok",
@@ -400,13 +434,16 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/bootstrap", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
+    const selection = readBootstrapSelection(request.query);
+    if (!allowDemoBootstrapRequest(request, reply, selection)) {
       return;
     }
 
     const snapshot = getSnapshot();
-    const selection = readBootstrapSelection(request.query);
-    const userKey = getNavigationPreferenceUserKey(request);
+    const userKey =
+      isAuthEnabled() && !getSessionFromRequest(request)
+        ? "public-demo"
+        : getNavigationPreferenceUserKey(request);
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
       ...buildBootstrapResponse(snapshot, selection),
       favoriteViews: getFavoriteViews(userKey),
