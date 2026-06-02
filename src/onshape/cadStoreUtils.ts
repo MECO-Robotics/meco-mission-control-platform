@@ -1,5 +1,7 @@
 ﻿import type { OnshapeRuntimeState } from "./cadStoreTypes";
 
+import { cloneJson } from "../shared/json";
+
 export function nowIso() {
   return new Date().toISOString();
 }
@@ -25,7 +27,7 @@ export function nextId(prefix: string, existingIds: Iterable<string>) {
 }
 
 export function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return cloneJson(value);
 }
 
 export function buildInitialState(): OnshapeRuntimeState {

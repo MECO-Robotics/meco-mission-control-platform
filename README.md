@@ -87,12 +87,12 @@ AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
+# AUTH_JWT_SECRET=
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 # Local SMTP sink for email-code testing.
 AUTH_EMAIL_SMTP_HOST=127.0.0.1
 AUTH_EMAIL_SMTP_PORT=1025
@@ -106,7 +106,7 @@ S3_SECRET_ACCESS_KEY=your-s3-secret-key
 S3_ENDPOINT=https://your-s3-endpoint.example
 S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
-S3_BUCKET=meco-pm
+S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
@@ -133,9 +133,9 @@ you can copy the sign-in code during local testing.
 
 When the server runs with auth configured outside production, it also exposes a
 development-only `/api/auth/dev-bypass` endpoint that the web app can use for a
-local access button. Send `{ "role": "student" }` or `{ "role": "mentor" }` to
-test both permission modes without an email. Production builds do not register
-that route.
+local access button. Send an empty request body; the endpoint always returns a
+local student session and rejects caller-selected roles. Production builds do
+not register that route.
 
 ## Production files
 
@@ -186,11 +186,11 @@ AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
+# AUTH_JWT_SECRET=
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -205,7 +205,7 @@ S3_SECRET_ACCESS_KEY=your-s3-secret-key
 S3_ENDPOINT=https://your-s3-endpoint.example
 S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
-S3_BUCKET=meco-pm
+S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
@@ -224,9 +224,8 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - The server issues its own signed app session token with `AUTH_JWT_SECRET`.
 - Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
-- Put mentor emails in `AUTH_MENTOR_EMAILS` as a comma-separated list. Hosted-domain emails not present in the roster or mentor list are treated as students for task management and QA approval.
-- Put email-to-subteam assignments in server env with `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` using `email=subteam;email=subteam,subteam`. Valid subteam IDs are `programming`, `mechanical`, `electrical`, `media-marketing`, `business`, and `scouting`.
-- When mobile saves `taskSubteamIds` through `PATCH /api/users/me/preferences`, the server also updates the live `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` map and writes that line back to the env file. Set `AUTH_MEMBER_SUBTEAMS_ENV_PATH` only if the env file is not `.env` locally or `.env.production` in production.
+- Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
+- User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
 - For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
 - If you use separate Google OAuth client IDs for local and production, set `GOOGLE_CLIENT_ID` to a comma-separated list and put the client ID you want the frontend to use first.

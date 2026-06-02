@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from "fastify";
 
 import { cadStepUploadConfig, resolveCadStepParserMode } from "../../config/env";
 import {
@@ -13,12 +13,17 @@ import { readStepImportPayload } from "./cadStepImportPayload";
 import type { RequireApiSession } from "./cadRouteTypes";
 
 export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
-  const stepUploadRouteOptions = { bodyLimit: cadStepUploadConfig.maxBytes };
+  const stepUploadRouteOptions = {
+    bodyLimit: cadStepUploadConfig.maxBytes,
+    onRequest(request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) {
+      if (!requireApiSession(request, reply)) {
+        return;
+      }
+      done();
+    },
+  };
 
   app.post("/api/cad/step-imports/debug-parse", stepUploadRouteOptions, async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
     try {
       const payload = await readStepImportPayload(request);
       const parserMode = resolveCadStepParserMode();
@@ -53,9 +58,6 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
   });
 
   app.post("/api/cad/step-imports", stepUploadRouteOptions, async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
     try {
       const payload = await readStepImportPayload(request);
       let parserMode: ReturnType<typeof resolveCadStepParserMode>;

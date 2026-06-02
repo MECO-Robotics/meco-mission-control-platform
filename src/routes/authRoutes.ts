@@ -14,7 +14,6 @@ import {
 import {
   authConfig as runtimeAuthConfig,
   env,
-  setMemberSubteamsForEmail,
 } from "../config/env";
 import {
   getUserPreferences,
@@ -39,7 +38,6 @@ function resolvePreferencesIdentity(request: FastifyRequest, reply: FastifyReply
   if (!isAuthEnabled()) {
     return {
       userKey: "local-development",
-      email: null,
     };
   }
 
@@ -50,7 +48,6 @@ function resolvePreferencesIdentity(request: FastifyRequest, reply: FastifyReply
 
   return {
     userKey: session.email,
-    email: session.email,
   };
 }
 
@@ -114,7 +111,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         });
       }
 
-      const user = buildDevelopmentSessionUser(parsed.data.role);
+      const user = buildDevelopmentSessionUser();
       const token = signSessionToken(user);
 
       return { token, user };
@@ -232,11 +229,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       });
     }
 
-    const preferences = updateUserPreferences(identity.userKey, parsed.data);
-    if (identity.email && parsed.data.taskSubteamIds) {
-      setMemberSubteamsForEmail(identity.email, preferences.taskSubteamIds);
-    }
-
-    return preferences;
+    return updateUserPreferences(identity.userKey, parsed.data);
   });
 }

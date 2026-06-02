@@ -11,6 +11,7 @@ import type {
   CadSnapshotMapping,
 } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
+import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { normalizeCadName } from "./cadUtils";
 
 type JsonValue = unknown;
@@ -225,6 +226,8 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       return item ? snapshotFromDb(item) : null;
     },
     async createAssemblyNodes(snapshotId, input) {
+      assertAcyclicAssemblyParents(input);
+
       const bySourceId = new Map<string, CadAssemblyNode>();
       for (const node of input) {
         const item = assemblyFromDb(
