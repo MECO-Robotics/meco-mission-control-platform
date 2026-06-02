@@ -60,6 +60,9 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 - `GET /api/tasks`: list tasks, with filters and pagination handled by route helpers.
 - `POST /api/tasks`: create a task. Requires mentor, lead, or admin when auth is enabled.
+- `POST /api/tasks/:taskId/claim`: claim a task for the signed-in student or lead. Optional `{ "start": true }` starts eligible unblocked work. Returns `409 task_already_claimed` when another owner claimed first.
+- `POST /api/tasks/:taskId/release`: release a task. Students can release their own task; leads, mentors, and admins can release any task.
+- `POST /api/tasks/:taskId/reassign`: assign or unassign a task owner. Requires lead, mentor, or admin when auth is enabled.
 - `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled.
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.

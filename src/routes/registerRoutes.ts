@@ -187,7 +187,9 @@ import {
   seasonSchema,
   subsystemPatchSchema,
   subsystemSchema,
+  taskClaimSchema,
   taskPatchSchema,
+  taskReassignSchema,
   taskSchema,
   taskBlockerPatchSchema,
   taskBlockerSchema,
@@ -279,6 +281,56 @@ export async function registerRoutes(app: FastifyInstance) {
 
     reply.code(403).send({ message });
     return false;
+  };
+
+  const getTaskActionMember = (request: Parameters<typeof requireSession>[0]) => {
+    const members = getMembers();
+
+    if (!isAuthEnabled()) {
+      return (
+        members.find((member) => member.role === "student" || member.role === "lead") ??
+        members[0] ??
+        null
+      );
+    }
+
+    const session = getSessionFromRequest(request);
+    const accountId = session?.accountId?.trim().toLowerCase();
+    const email = session?.email?.trim().toLowerCase();
+    const exactMatch = members.find((member) => {
+      return (
+        member.id.trim().toLowerCase() === accountId ||
+        member.email?.trim().toLowerCase() === email
+      );
+    });
+
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    return null;
+  };
+
+  const canManageTaskAssignment = (request: Parameters<typeof requireSession>[0]) =>
+    hasMentorPermission(request);
+
+  const buildTaskActionItem = (taskId: string) => {
+    const task = getTasks().find((candidate) => candidate.id === taskId);
+    return task
+      ? {
+          ...task,
+          isBlocked: (task.blockers ?? []).length > 0,
+          isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
+        }
+      : null;
+  };
+
+  const isTaskStartReady = (task: ReturnType<typeof getTasks>[number]) => {
+    return (
+      task.status !== "complete" &&
+      task.blockers.length === 0 &&
+      !isTaskWaitingOnDependencies(task, getSnapshot())
+    );
   };
 
   const isValidTaskDependencyTarget = (
@@ -1732,6 +1784,155 @@ export async function registerRoutes(app: FastifyInstance) {
       },
     });
   });
+
+  app.post<{ Body: unknown; Params: { taskId: string } }>(
+    "/api/tasks/:taskId/claim",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = taskClaimSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task claim payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
+        return reply.code(404).send({
+          message: "Task not found.",
+        });
+      }
+
+      const member = getTaskActionMember(request);
+      if (!member || (member.role !== "student" && member.role !== "lead")) {
+        return reply.code(403).send({
+          message: "Only roster students can claim tasks.",
+        });
+      }
+
+      if (currentTask.ownerId && currentTask.ownerId !== member.id) {
+        return reply.code(409).send({
+          code: "task_already_claimed",
+          message: "Task is already claimed.",
+          ownerId: currentTask.ownerId,
+          taskId: currentTask.id,
+        });
+      }
+
+      const updatedTask = updateTask(currentTask.id, {
+        ownerId: member.id,
+        assigneeIds: uniqueIds([...(currentTask.assigneeIds ?? []), member.id]),
+        status:
+          parsed.data.start && isTaskStartReady(currentTask)
+            ? "in-progress"
+            : currentTask.status,
+      });
+
+      return {
+        item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
+      };
+    },
+  );
+
+  app.post<{ Params: { taskId: string } }>(
+    "/api/tasks/:taskId/release",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
+        return reply.code(404).send({
+          message: "Task not found.",
+        });
+      }
+
+      const member = getTaskActionMember(request);
+      const canManage = canManageTaskAssignment(request);
+      if (!member && !canManage) {
+        return reply.code(403).send({
+          message: "Only roster members can release tasks.",
+        });
+      }
+
+      if (currentTask.ownerId !== member?.id && !canManage) {
+        return reply.code(403).send({
+          message: "Only the task owner or mentors can release this task.",
+        });
+      }
+
+      const updatedTask = updateTask(currentTask.id, {
+        ownerId: null,
+        assigneeIds: (currentTask.assigneeIds ?? []).filter(
+          (assigneeId) => assigneeId !== currentTask.ownerId,
+        ),
+      });
+
+      return {
+        item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
+      };
+    },
+  );
+
+  app.post<{ Body: unknown; Params: { taskId: string } }>(
+    "/api/tasks/:taskId/reassign",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can reassign tasks.")) {
+        return;
+      }
+
+      const parsed = taskReassignSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task reassign payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
+        return reply.code(404).send({
+          message: "Task not found.",
+        });
+      }
+
+      const nextOwner = parsed.data.ownerId
+        ? getMembers().find((member) => member.id === parsed.data.ownerId)
+        : null;
+      if (parsed.data.ownerId && (!nextOwner || (nextOwner.role !== "student" && nextOwner.role !== "lead"))) {
+        return reply.code(400).send({
+          message: "Task owner must be a student or lead.",
+        });
+      }
+
+      const existingAssigneeIds = uniqueIds(currentTask.assigneeIds ?? []);
+      const assigneeIdsWithoutPreviousOwner =
+        currentTask.ownerId && currentTask.ownerId !== parsed.data.ownerId
+          ? existingAssigneeIds.filter((assigneeId) => assigneeId !== currentTask.ownerId)
+          : existingAssigneeIds;
+      const nextAssigneeIds = parsed.data.ownerId
+        ? uniqueIds([...assigneeIdsWithoutPreviousOwner, parsed.data.ownerId])
+        : assigneeIdsWithoutPreviousOwner;
+
+      const updatedTask = updateTask(currentTask.id, {
+        ownerId: parsed.data.ownerId,
+        assigneeIds: nextAssigneeIds,
+      });
+
+      return {
+        item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
+      };
+    },
+  );
 
   app.patch<{ Body: unknown; Params: { taskId: string } }>(
     "/api/tasks/:taskId",
