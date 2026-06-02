@@ -11,6 +11,7 @@ import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
+const PUBLIC_DEMO_SEASON_ID = "default-season";
 
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
@@ -66,6 +67,7 @@ export interface SessionUser {
   hostedDomain: string;
   role: MemberRole;
   taskSubteamIds: string[];
+  isPublicDemo?: boolean;
 }
 
 interface SessionTokenOptions {
@@ -317,6 +319,41 @@ export function buildDevelopmentSessionUser(): SessionUser {
     role: "student",
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
+}
+
+function buildPublicDemoSessionUser(): SessionUser {
+  const email = `public.demo@${authConfig.hostedDomain}`;
+
+  return {
+    accountId: "public-demo",
+    authProvider: "email",
+    email,
+    name: "Public Demo",
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
+    role: "student",
+    taskSubteamIds: [],
+    isPublicDemo: true,
+  };
+}
+
+function isPublicDemoBootstrapRequest(request: FastifyRequest) {
+  if (request.method !== "GET") {
+    return false;
+  }
+
+  const [path = "", rawQuery = ""] = request.url.split("?", 2);
+  if (path !== "/api/bootstrap") {
+    return false;
+  }
+
+  const query = new URLSearchParams(rawQuery);
+  const seasonIds = query.getAll("seasonId");
+  return (
+    seasonIds.length === 1 &&
+    seasonIds[0] === PUBLIC_DEMO_SEASON_ID &&
+    !query.has("personId")
+  );
 }
 
 function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
@@ -624,6 +661,10 @@ export function readBearerToken(headerValue: string | undefined) {
 export function getSessionFromRequest(request: FastifyRequest) {
   const token = readBearerToken(request.headers.authorization);
   if (!token) {
+    if (authConfig.enabled && isPublicDemoBootstrapRequest(request)) {
+      return buildPublicDemoSessionUser();
+    }
+
     return null;
   }
 

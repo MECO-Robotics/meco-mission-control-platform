@@ -122,6 +122,274 @@ test("student sessions cannot reset global tutorial state", async () => {
   );
 });
 
+test("unsigned users can read only the demo season bootstrap", async () => {
+  await withIntegrationApp(
+    async ({ app, resetLimits }) => {
+      const { createMember, createTaskBlocker } = await import("../src/data/store");
+      const publicProbeMember = createMember({
+        name: "Public Demo Global Audit Probe",
+        email: "public-demo-audit-probe@mecorobotics.org",
+        photoUrl: "https://example.test/public-demo-audit-probe.png",
+        role: "admin",
+        plannedWeeklyAttendanceHours: 4,
+        plannedAttendanceDays: ["monday"],
+        plannedAttendanceNotes: "Private public demo probe availability.",
+      });
+      const staleReferenceMember = createMember({
+        name: "Public Demo Stale Member Reference",
+        email: "public-demo-stale-member-reference@mecorobotics.org",
+        role: "mentor",
+        seasonId: "season-2030",
+        activeSeasonIds: ["season-2030"],
+      });
+      const staleReferenceBlocker = createTaskBlocker({
+        blockedTaskId: "swerve-sensor-bundle",
+        blockerType: "external",
+        blockerId: null,
+        description: "Public demo stale member reference blocker.",
+        severity: "medium",
+        createdByMemberId: staleReferenceMember.id,
+      });
+
+      const demoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season",
+      });
+
+      assert.equal(demoResponse.statusCode, 200);
+      const demoBody = demoResponse.json() as {
+        actions: unknown[];
+        attendanceRecords: Array<{ date: string; memberId: string }>;
+        escalations: unknown[];
+        meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
+        members: Array<Record<string, unknown>>;
+        milestones: Array<{ seasonId?: string; projectIds: string[] }>;
+        manufacturingItems: Array<{ requestedById: string | null }>;
+        projects: Array<{ id: string; seasonId: string }>;
+        purchaseItems: Array<{ requestedById: string | null }>;
+        qaReports: Array<{ participantIds: string[] }>;
+        qaRequests: Array<{ mentorId: string; requestedById: string | null; taskId: string | null }>;
+        qaReviews: Array<{ participantIds: string[] }>;
+        reports: Array<{ createdByMemberId: string | null; participantIds?: string[] }>;
+        seasons: Array<{ id: string; startDate: string; endDate: string }>;
+        subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
+        taskBlockers: Array<{ createdByMemberId: string | null; description: string }>;
+        tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
+        workLogs: Array<{ participantIds: string[] }>;
+      };
+      assert.equal(demoBody.seasons.every((season) => season.id === "default-season"), true);
+      assert.ok(demoBody.projects.length > 0);
+      assert.equal(
+        demoBody.projects.every((project) => project.seasonId === "default-season"),
+        true,
+      );
+      const demoMemberIds = new Set(demoBody.members.map((member) => String(member.id)));
+      assert.equal(demoMemberIds.has(publicProbeMember.id), false);
+      assert.equal(
+        demoBody.members.every((member) => /^demo-member-\d+$/.test(String(member.id))),
+        true,
+      );
+      assert.equal(
+        demoBody.members.some((member) => String(member.id).includes("public-demo-global-audit-probe")),
+        false,
+      );
+      assert.equal(
+        demoBody.members.every((member) => /^Demo Member \d+$/.test(String(member.name))),
+        true,
+      );
+      assert.equal(
+        demoBody.members.some((member) => member.name === publicProbeMember.name),
+        false,
+      );
+      assert.equal(
+        demoBody.members.every(
+          (member) =>
+            !("email" in member) &&
+            !("role" in member) &&
+            !("elevated" in member) &&
+            !("photoUrl" in member) &&
+            !("plannedWeeklyAttendanceHours" in member) &&
+            !("plannedAttendanceDays" in member) &&
+            !("plannedAttendanceNotes" in member),
+        ),
+        true,
+      );
+      assert.equal(demoBody.escalations.length, 0);
+      const demoSeason = demoBody.seasons[0];
+      assert.ok(demoSeason);
+      assert.equal(
+        demoBody.attendanceRecords.every(
+          (record) =>
+            record.date >= demoSeason.startDate &&
+            record.date <= demoSeason.endDate,
+        ),
+        true,
+      );
+      const demoProjectIds = new Set(demoBody.projects.map((project) => project.id));
+      assert.equal(
+        demoBody.milestones.every(
+          (milestone) =>
+            milestone.seasonId === "default-season" ||
+            milestone.projectIds.some((projectId) => demoProjectIds.has(projectId)),
+        ),
+        true,
+      );
+      assert.equal(
+        demoBody.meetings.every(
+          (meeting) =>
+            meeting.seasonId === "default-season" ||
+            (meeting.projectIds ?? []).some((projectId) => demoProjectIds.has(projectId)),
+        ),
+        true,
+      );
+      assert.equal(demoBody.qaRequests.every((request) => request.taskId !== null), true);
+      const sanitizedStaleReferenceBlocker = demoBody.taskBlockers.find(
+        (blocker) => blocker.description === staleReferenceBlocker.description,
+      );
+      assert.ok(sanitizedStaleReferenceBlocker);
+      assert.equal(sanitizedStaleReferenceBlocker.createdByMemberId, null);
+      const memberReferences = [
+        ...demoBody.subsystems.flatMap((subsystem) => [
+          subsystem.responsibleEngineerId,
+          ...subsystem.mentorIds,
+        ]),
+        ...demoBody.reports.flatMap((report) => [
+          report.createdByMemberId,
+          ...(report.participantIds ?? []),
+        ]),
+        ...demoBody.tasks.flatMap((task) => [task.ownerId, task.mentorId, ...task.assigneeIds]),
+        ...demoBody.taskBlockers.map((blocker) => blocker.createdByMemberId),
+        ...demoBody.workLogs.flatMap((workLog) => workLog.participantIds),
+        ...demoBody.attendanceRecords.map((record) => record.memberId),
+        ...demoBody.manufacturingItems.map((item) => item.requestedById),
+        ...demoBody.purchaseItems.map((item) => item.requestedById),
+        ...demoBody.qaReports.flatMap((report) => report.participantIds),
+        ...demoBody.qaRequests.flatMap((request) => [request.mentorId, request.requestedById]),
+        ...demoBody.qaReviews.flatMap((review) => review.participantIds),
+      ].filter((memberId): memberId is string => typeof memberId === "string" && memberId.length > 0);
+      assert.ok(memberReferences.length > 0);
+      assert.equal(memberReferences.every((memberId) => demoMemberIds.has(memberId)), true);
+      assert.equal(memberReferences.includes(publicProbeMember.id), false);
+      assert.equal(memberReferences.includes(staleReferenceMember.id), false);
+      assert.equal(demoBody.actions.length, 0);
+
+      resetLimits();
+
+      const personScopedDemoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season&personId=marco",
+      });
+
+      assert.equal(personScopedDemoResponse.statusCode, 401);
+
+      resetLimits();
+
+      const invalidTokenDemoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season",
+        headers: {
+          authorization: "Bearer invalid",
+        },
+      });
+
+      assert.equal(invalidTokenDemoResponse.statusCode, 200);
+      assert.deepEqual(
+        (invalidTokenDemoResponse.json() as { actions: unknown[] }).actions,
+        [],
+      );
+
+      resetLimits();
+
+      const invalidTokenPersonScopedDemoResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season&personId=marco",
+        headers: {
+          authorization: "Bearer invalid",
+        },
+      });
+
+      assert.equal(invalidTokenPersonScopedDemoResponse.statusCode, 401);
+
+      resetLimits();
+
+      const broadResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap",
+      });
+
+      assert.equal(broadResponse.statusCode, 401);
+
+      resetLimits();
+
+      const otherSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=season-2030",
+      });
+
+      assert.equal(otherSeasonResponse.statusCode, 401);
+
+      resetLimits();
+
+      const duplicateSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season&seasonId=season-2030",
+      });
+
+      assert.equal(duplicateSeasonResponse.statusCode, 401);
+    },
+    { env: authEnv },
+  );
+});
+
+test("authenticated season bootstrap preserves escalations", async () => {
+  await withIntegrationApp(
+    async ({ app }) => {
+      const { createMember } = await import("../src/data/store");
+      const authenticatedProbeMember = createMember({
+        name: "Authenticated Bootstrap Probe",
+        email: "authenticated-bootstrap-probe@mecorobotics.org",
+        photoUrl: "https://example.test/authenticated-bootstrap-probe.png",
+        role: "admin",
+        plannedAttendanceNotes: "Private authenticated availability.",
+      });
+      const mentorToken = await signTestToken({
+        email: "mentor@mecorobotics.org",
+        role: "mentor",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+      });
+
+      assert.equal(response.statusCode, 200);
+      const body = response.json() as {
+        escalations: unknown[];
+        members: Array<Record<string, unknown>>;
+        seasons: Array<{ id: string }>;
+      };
+      assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
+      assert.ok(body.escalations.length > 0);
+      const authenticatedProbeRecord = body.members.find(
+        (member) => member.id === authenticatedProbeMember.id,
+      );
+      assert.ok(authenticatedProbeRecord);
+      assert.equal(authenticatedProbeRecord.name, authenticatedProbeMember.name);
+      assert.equal(authenticatedProbeRecord.email, authenticatedProbeMember.email);
+      assert.equal(authenticatedProbeRecord.role, "admin");
+      assert.equal(authenticatedProbeRecord.elevated, true);
+      assert.equal(
+        authenticatedProbeRecord.plannedAttendanceNotes,
+        authenticatedProbeMember.plannedAttendanceNotes,
+      );
+    },
+    { env: authEnv },
+  );
+});
+
 test("student sessions cannot delete task or subsystem workflow records", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
