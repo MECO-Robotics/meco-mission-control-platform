@@ -68,6 +68,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - `deploy/bootstrap-vps.sh` prepares a first-time Ubuntu VPS with Docker.
 - `.env.production.example` documents the runtime environment shape.
 - Production should deploy only from `main`, release tags, or an explicit release manifest.
+- `docs/platform-deployment-recovery.md` is the canonical runbook for production env, VPS deploy path, backup behavior, restore expectations, and rollback options.
 - Take VPS backups immediately before production deploys, including files, environment, and database dump.
 
 ## Documentation Maintenance
@@ -75,5 +76,6 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Update `docs/api-reference.md` when a route is added, removed, renamed, or changes auth behavior.
 - Update `docs/cad-step-mapping.md` when STEP parser behavior, CAD store selection, mapping review, diffing, or finalization changes.
 - Update `docs/onshape-integration.md` when OAuth, document references, sync levels, Onshape budgets, or Onshape route behavior changes.
+- Update `docs/platform-deployment-recovery.md` when production env, deploy, backup, restore, or rollback behavior changes.
 - Update this overview when top-level source layout, runtime assumptions, required environment variables, deployment workflow, or verification commands change.
 - Keep Word requirement/spec snapshots as historical source artifacts; do not use them as the only living docs for implemented behavior.
