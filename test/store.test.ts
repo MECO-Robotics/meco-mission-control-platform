@@ -466,6 +466,55 @@ test("createPartInstance merges duplicate part and mechanism quantities", () => 
   assert.equal(matchingPartInstances[0].quantity, 5);
 });
 
+test("createPartInstance keeps shared definitions separate by mechanism ownership", () => {
+  const sharedPartDefinition = createPartDefinition({
+    name: "Temporary Shared Hardware",
+    partNumber: "TMP-SHARED-000",
+    revision: "A",
+    type: "hardware",
+    source: "COTS",
+    materialId: "mat-onyx-filament",
+    description: "Temporary fixture for mechanism ownership coverage.",
+  });
+
+  const drivePartInstance = createPartInstance({
+    subsystemId: "drive",
+    mechanismId: "swerve-module",
+    partDefinitionId: sharedPartDefinition.id,
+    name: "Drive shared hardware",
+    quantity: 2,
+    trackIndividually: false,
+    status: "not ready",
+  });
+  const intakePartInstance = createPartInstance({
+    subsystemId: "manipulator",
+    mechanismId: "intake-roller",
+    partDefinitionId: sharedPartDefinition.id,
+    name: "Intake shared hardware",
+    quantity: 3,
+    trackIndividually: false,
+    status: "ready",
+  });
+
+  const matchingPartInstances = getSnapshot().partInstances.filter(
+    (partInstance) => partInstance.partDefinitionId === sharedPartDefinition.id,
+  );
+
+  assert.notEqual(drivePartInstance.id, intakePartInstance.id);
+  assert.equal(matchingPartInstances.length, 2);
+  assert.deepEqual(
+    matchingPartInstances.map((partInstance) => ({
+      mechanismId: partInstance.mechanismId,
+      quantity: partInstance.quantity,
+      subsystemId: partInstance.subsystemId,
+    })),
+    [
+      { mechanismId: "swerve-module", quantity: 2, subsystemId: "drive" },
+      { mechanismId: "intake-roller", quantity: 3, subsystemId: "manipulator" },
+    ],
+  );
+});
+
 test("updatePartInstance merges onto an existing part and retargets task references", () => {
   const temporaryPartDefinition = createPartDefinition({
     name: "Temporary Merge Part",
