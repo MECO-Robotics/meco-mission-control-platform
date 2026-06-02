@@ -125,7 +125,7 @@ test("student sessions cannot reset global tutorial state", async () => {
 test("unsigned users can read only the demo season bootstrap", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createMember } = await import("../src/data/store");
+      const { createMember, createTaskBlocker } = await import("../src/data/store");
       const publicProbeMember = createMember({
         name: "Public Demo Global Audit Probe",
         email: "public-demo-audit-probe@mecorobotics.org",
@@ -134,6 +134,21 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         plannedWeeklyAttendanceHours: 4,
         plannedAttendanceDays: ["monday"],
         plannedAttendanceNotes: "Private public demo probe availability.",
+      });
+      const staleReferenceMember = createMember({
+        name: "Public Demo Stale Member Reference",
+        email: "public-demo-stale-member-reference@mecorobotics.org",
+        role: "mentor",
+        seasonId: "season-2030",
+        activeSeasonIds: ["season-2030"],
+      });
+      const staleReferenceBlocker = createTaskBlocker({
+        blockedTaskId: "swerve-sensor-bundle",
+        blockerType: "external",
+        blockerId: null,
+        description: "Public demo stale member reference blocker.",
+        severity: "medium",
+        createdByMemberId: staleReferenceMember.id,
       });
 
       const demoResponse = await app.inject({
@@ -158,7 +173,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         reports: Array<{ createdByMemberId: string | null; participantIds?: string[] }>;
         seasons: Array<{ id: string; startDate: string; endDate: string }>;
         subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
-        taskBlockers: Array<{ createdByMemberId: string | null }>;
+        taskBlockers: Array<{ createdByMemberId: string | null; description: string }>;
         tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
         workLogs: Array<{ participantIds: string[] }>;
       };
@@ -228,6 +243,11 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         true,
       );
       assert.equal(demoBody.qaRequests.every((request) => request.taskId !== null), true);
+      const sanitizedStaleReferenceBlocker = demoBody.taskBlockers.find(
+        (blocker) => blocker.description === staleReferenceBlocker.description,
+      );
+      assert.ok(sanitizedStaleReferenceBlocker);
+      assert.equal(sanitizedStaleReferenceBlocker.createdByMemberId, null);
       const memberReferences = [
         ...demoBody.subsystems.flatMap((subsystem) => [
           subsystem.responsibleEngineerId,
@@ -250,6 +270,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       assert.ok(memberReferences.length > 0);
       assert.equal(memberReferences.every((memberId) => demoMemberIds.has(memberId)), true);
       assert.equal(memberReferences.includes(publicProbeMember.id), false);
+      assert.equal(memberReferences.includes(staleReferenceMember.id), false);
       assert.equal(demoBody.actions.length, 0);
 
       resetLimits();

@@ -236,16 +236,17 @@ function rewriteDemoMemberId(
     return memberId ?? null;
   }
 
-  return memberIdsByOriginalId.get(memberId) ?? memberId;
+  return memberIdsByOriginalId.get(memberId) ?? null;
 }
 
 function rewriteDemoMemberIds(
   memberIds: string[] | undefined,
   memberIdsByOriginalId: Map<string, string>,
 ) {
-  return (memberIds ?? []).map((memberId) =>
-    rewriteDemoMemberId(memberId, memberIdsByOriginalId),
-  );
+  return (memberIds ?? []).flatMap((memberId) => {
+    const demoMemberId = rewriteDemoMemberId(memberId, memberIdsByOriginalId);
+    return demoMemberId === null ? [] : [demoMemberId];
+  });
 }
 
 function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildBootstrapResponse>) {
