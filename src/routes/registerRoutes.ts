@@ -297,12 +297,10 @@ export async function registerRoutes(app: FastifyInstance) {
     const session = getSessionFromRequest(request);
     const accountId = session?.accountId?.trim().toLowerCase();
     const email = session?.email?.trim().toLowerCase();
-    const name = session?.name?.trim().toLowerCase();
     const exactMatch = members.find((member) => {
       return (
         member.id.trim().toLowerCase() === accountId ||
-        member.email?.trim().toLowerCase() === email ||
-        member.name.trim().toLowerCase() === name
+        member.email?.trim().toLowerCase() === email
       );
     });
 

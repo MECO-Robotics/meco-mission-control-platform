@@ -67,7 +67,7 @@ Confirm the target is accepting connections:
 
 ```bash
 docker compose -p meco-restore-drill --env-file .env.restore-drill -f docker-compose.prod.yml exec -T postgres \
-  pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+  sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 ## Restore Command

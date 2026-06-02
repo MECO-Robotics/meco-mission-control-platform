@@ -56,6 +56,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS = "60";
 
     const { buildApp } = await import("../src/app");
+    const { signSessionToken } = await import("../src/auth/authService");
     const app = await buildApp();
 
     try {
@@ -430,6 +431,30 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         role: "student",
       });
       assert.equal(localDevStudent.id, "local-dev-student");
+
+      const spoofedNameToken = signSessionToken({
+        accountId: "not-local-dev-student",
+        authProvider: "email",
+        email: "display-name-spoof@mecorobotics.org",
+        hostedDomain: "mecorobotics.org",
+        name: "Local Dev Student",
+        picture: null,
+        role: "student",
+        taskSubteamIds: [],
+      });
+
+      resetRequestLimits();
+
+      const spoofedNameClaimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${spoofedNameToken}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(spoofedNameClaimResponse.statusCode, 403);
 
       resetRequestLimits();
 
