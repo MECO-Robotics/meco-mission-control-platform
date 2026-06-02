@@ -67,6 +67,7 @@ export interface SessionUser {
   hostedDomain: string;
   role: MemberRole;
   taskSubteamIds: string[];
+  isPublicDemo?: boolean;
 }
 
 interface SessionTokenOptions {
@@ -332,6 +333,7 @@ function buildPublicDemoSessionUser(): SessionUser {
     hostedDomain: authConfig.hostedDomain,
     role: "student",
     taskSubteamIds: [],
+    isPublicDemo: true,
   };
 }
 
@@ -345,7 +347,8 @@ function isPublicDemoBootstrapRequest(request: FastifyRequest) {
     return false;
   }
 
-  return new URLSearchParams(rawQuery).get("seasonId") === PUBLIC_DEMO_SEASON_ID;
+  const seasonIds = new URLSearchParams(rawQuery).getAll("seasonId");
+  return seasonIds.length === 1 && seasonIds[0] === PUBLIC_DEMO_SEASON_ID;
 }
 
 function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {

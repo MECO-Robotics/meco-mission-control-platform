@@ -125,6 +125,13 @@ test("student sessions cannot reset global tutorial state", async () => {
 test("unsigned users can read only the demo season bootstrap", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
+      const { createMember } = await import("../src/data/store");
+      createMember({
+        name: "Public Demo Global Audit Probe",
+        email: "public-demo-audit-probe@mecorobotics.org",
+        role: "student",
+      });
+
       const demoResponse = await app.inject({
         method: "GET",
         url: "/api/bootstrap?seasonId=default-season",
@@ -132,6 +139,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       assert.equal(demoResponse.statusCode, 200);
       const demoBody = demoResponse.json() as {
+        actions: unknown[];
         attendanceRecords: Array<{ date: string }>;
         escalations: unknown[];
         meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
@@ -175,6 +183,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         true,
       );
       assert.equal(demoBody.qaRequests.every((request) => request.taskId !== null), true);
+      assert.equal(demoBody.actions.length, 0);
 
       resetLimits();
 
@@ -193,6 +202,15 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       });
 
       assert.equal(otherSeasonResponse.statusCode, 401);
+
+      resetLimits();
+
+      const duplicateSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season&seasonId=season-2030",
+      });
+
+      assert.equal(duplicateSeasonResponse.statusCode, 401);
     },
     { env: authEnv },
   );

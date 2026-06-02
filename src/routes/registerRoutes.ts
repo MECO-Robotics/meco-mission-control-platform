@@ -440,12 +440,15 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const snapshot = getSnapshot();
+    const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
     const userKey =
-      isAuthEnabled() && !getSessionFromRequest(request)
+      isAuthEnabled() && (session?.isPublicDemo || !session)
         ? "public-demo"
         : getNavigationPreferenceUserKey(request);
+    const selectedBootstrap = buildBootstrapResponse(snapshot, selection);
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
-      ...buildBootstrapResponse(snapshot, selection),
+      ...selectedBootstrap,
+      actions: session?.isPublicDemo ? [] : selectedBootstrap.actions,
       favoriteViews: getFavoriteViews(userKey),
     });
 
