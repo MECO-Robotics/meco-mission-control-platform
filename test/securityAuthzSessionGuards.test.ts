@@ -232,6 +232,34 @@ test("unsigned users can read only the demo season bootstrap", async () => {
   );
 });
 
+test("authenticated season bootstrap preserves escalations", async () => {
+  await withIntegrationApp(
+    async ({ app }) => {
+      const mentorToken = await signTestToken({
+        email: "mentor@mecorobotics.org",
+        role: "mentor",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/bootstrap?seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+      });
+
+      assert.equal(response.statusCode, 200);
+      const body = response.json() as {
+        escalations: unknown[];
+        seasons: Array<{ id: string }>;
+      };
+      assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
+      assert.ok(body.escalations.length > 0);
+    },
+    { env: authEnv },
+  );
+});
+
 test("student sessions cannot delete task or subsystem workflow records", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {

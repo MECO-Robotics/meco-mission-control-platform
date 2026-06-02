@@ -445,7 +445,9 @@ export async function registerRoutes(app: FastifyInstance) {
     const userKey = isPublicDemoBootstrap
       ? "public-demo"
       : getNavigationPreferenceUserKey(request);
-    const selectedBootstrap = buildBootstrapResponse(snapshot, selection);
+    const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
+      sanitizeEscalations: isPublicDemoBootstrap,
+    });
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
       ...selectedBootstrap,
       actions: isPublicDemoBootstrap ? [] : selectedBootstrap.actions,

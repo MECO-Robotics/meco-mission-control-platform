@@ -21,6 +21,10 @@ export interface BootstrapSelection {
   projectId: string | null;
 }
 
+export interface BootstrapResponseOptions {
+  sanitizeEscalations?: boolean;
+}
+
 export interface BootstrapReportRecord {
   id: string;
   reportType: "QA" | "MilestoneTest";
@@ -319,7 +323,11 @@ function isSeasonScopedByProjectLinks(args: {
   );
 }
 
-export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: BootstrapSelection) {
+export function buildBootstrapResponse(
+  snapshot: PlatformSnapshot,
+  selection: BootstrapSelection,
+  options: BootstrapResponseOptions = {},
+) {
   const selectedSeasonId = selection.seasonId;
   const selectedSeason = selectedSeasonId
     ? snapshot.seasons.find((season) => season.id === selectedSeasonId) ?? null
@@ -716,7 +724,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     })),
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
-    escalations: selectedSeasonId ? [] : snapshot.escalations,
+    escalations: options.sanitizeEscalations ? [] : snapshot.escalations,
     actions: scopedActions as AuditAction[],
   };
 }
