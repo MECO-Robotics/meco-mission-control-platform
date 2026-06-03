@@ -8,6 +8,7 @@ import {
   addGraphWarnings,
   addReferenceWarnings,
 } from "./cadImporterWarnings";
+import { recordCadImportAuditAction } from "./cadImportAudit";
 import { estimateCadImportCalls as estimateSyncCalls } from "./onshapeSyncPolicy";
 import type {
   CadGraphImportResult,
@@ -157,13 +158,15 @@ export async function runCadImport(args: {
   addReferenceWarnings(args.store, run.id, documentRef);
 
   if (args.syncLevel === "link_only") {
-    return completeRun({
+    const result = completeRun({
       store: args.store,
       runId: run.id,
       status: "completed",
       client: args.client,
       summary: { syncLevel: args.syncLevel, linkOnly: true },
     });
+    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    return result;
   }
 
   const reference = toReference(documentRef);
@@ -192,7 +195,7 @@ export async function runCadImport(args: {
       ? { metadata }
       : await importBomGraph({ store: args.store, runId: run.id, snapshot, bom });
 
-    return completeRun({
+    const result = completeRun({
       store: args.store,
       runId: run.id,
       status: "completed",
@@ -200,6 +203,8 @@ export async function runCadImport(args: {
       snapshotId: snapshot.id,
       summary: { metadata, raw },
     });
+    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    return result;
   } catch (error) {
     const isBudgetStop = error instanceof OnshapeCallBudgetExceededError || error instanceof OnshapeRateLimitError;
     const stoppedReason = error instanceof Error ? error.message : String(error);
@@ -212,7 +217,7 @@ export async function runCadImport(args: {
         stoppedReason,
       });
     }
-    return completeRun({
+    const result = completeRun({
       store: args.store,
       runId: run.id,
       status: isBudgetStop ? "partial" : "failed",
@@ -222,6 +227,8 @@ export async function runCadImport(args: {
       errorMessage: isBudgetStop ? null : stoppedReason,
       summary: { syncLevel: args.syncLevel },
     });
+    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    return result;
   }
 }
 

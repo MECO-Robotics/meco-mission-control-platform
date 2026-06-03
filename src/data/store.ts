@@ -1359,6 +1359,7 @@ export function recordAuditAction(args: {
   subsystemId?: string | null;
   actorMemberId?: string | null;
   memberIds?: Array<string | null | undefined>;
+  detailsJson?: Record<string, unknown>;
 }) {
   const entityLabel = resolveEntityLabel(args.entityLabel, args.entityId);
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
@@ -1379,6 +1380,7 @@ export function recordAuditAction(args: {
       changedFields,
     }),
     changedFields,
+    ...(args.detailsJson ? { detailsJson: args.detailsJson } : {}),
     projectId: projectIds[0] ?? null,
     ...(projectIds.length > 0 ? { projectIds } : {}),
     taskId: args.taskId ?? null,
