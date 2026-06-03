@@ -184,9 +184,17 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       return;
     }
 
-    const client = parsedBody.data.syncLevel === "link_only"
-      ? createNoopClient()
-      : await createConfiguredOnshapeCadClient(store, onshapeConfig);
+    let client: CadImportOnshapeClient;
+    try {
+      client = parsedBody.data.syncLevel === "link_only"
+        ? createNoopClient()
+        : await createConfiguredOnshapeCadClient(store, onshapeConfig);
+    } catch {
+      return reply.code(502).send({
+        message: "Onshape sync client could not be configured. Check the Onshape OAuth connection and try again.",
+      });
+    }
+
     const result = await runCadImport({
       store,
       documentRefId: documentRef.id,
