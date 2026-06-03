@@ -33,7 +33,7 @@ export const offseasonTaskDependencies = [
     taskId: "apriltag-field-calibration",
     kind: "task",
     refId: "spare-radio-bench-check",
-    requiredState: "waiting-for-qa",
+    requiredState: "complete",
     dependencyType: "soft",
     createdAt: "2026-06-05T09:05:00-04:00",
   },
