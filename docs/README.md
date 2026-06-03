@@ -8,6 +8,7 @@ Use this folder for living project documentation and historical requirements art
 - `backend-overview.md`: runtime architecture, source layout, data model, security posture, integrations, local workflow, deployment, and documentation maintenance.
 - `cad-step-mapping.md`: STEP import workflow, parser behavior, CAD persistence, mapping review, finalization, and current limits.
 - `onshape-integration.md`: Onshape OAuth, document references, sync levels, budgeting, permissions, route behavior, and known limitations.
+- `platform-api-contributor-guide.md`: contributor guide for route layout, Prisma schema workflow, validation commands, auth/session behavior, and bootstrap payload changes.
 - `platform-deployment-recovery.md`: production env, VPS deploy flow, backup behavior, restore expectations, and rollback options.
 
 ## Historical Artifacts
