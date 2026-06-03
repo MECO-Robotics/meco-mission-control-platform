@@ -2,7 +2,7 @@
 
 Mission Control treats Onshape as the CAD source of truth and stores local, auditable CAD snapshots for workflow use. Normal Mission Control page loads read local data only; Onshape API calls happen only during explicit sync actions.
 
-The accepted Onshape reference inputs, normalized CAD graph records, ID stability rules, rename behavior, removal behavior, and unsupported payload behavior are defined in `docs/onshape-import-contract.md`.
+The accepted Onshape reference inputs, normalized CAD graph records, ID stability rules, rename behavior, removal behavior, and unsupported payload behavior are defined in `docs/onshape/import-contract.md`.
 
 ## Credential Configuration
 

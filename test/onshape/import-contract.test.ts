@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { runCadImport } from "../src/onshape/cadImporter";
-import { normalizeOnshapeBom } from "../src/onshape/bom/normalizer";
-import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
+import { runCadImport } from "../../src/onshape/cadImporter";
+import { normalizeOnshapeBom } from "../../src/onshape/bom/normalizer";
+import { parseOnshapeUrl } from "../../src/onshape/onshapeUrlParser";
 import {
   createContractStore,
   createFakeClient,
@@ -15,7 +15,7 @@ import {
   parseReference,
   versionId,
   versionUrl,
-} from "./onshape/importContractFixtures";
+} from "./importContractFixtures";
 
 test("accepts only document references with workspace, version, or microversion identity", () => {
   const workspace = parseOnshapeUrl(`https://cad.onshape.com/documents/${documentId}/w/workspace123/e/${elementId}`);
