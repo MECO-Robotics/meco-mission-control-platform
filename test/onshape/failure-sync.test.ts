@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
-import { setOnshapeCadClientFactoryForTests } from "../src/onshape/onshapeClientFactory";
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { setTransportClientFactory, simpleBomPayload, versionUrl } from "./helpers/onshapeFailureModes";
+import { getOnshapeRuntimeStore } from "../../src/onshape/cadStore";
+import { setOnshapeCadClientFactoryForTests } from "../../src/onshape/onshapeClientFactory";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
+import { setTransportClientFactory, simpleBomPayload, versionUrl } from "../helpers/onshapeFailureModes";
 
 test("Onshape rate limits produce partial sync jobs and warning issues", async () => {
   let requestCount = 0;

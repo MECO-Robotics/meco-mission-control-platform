@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
-import { setOnshapeCadClientFactoryForTests } from "../src/onshape/onshapeClientFactory";
-import { setOnshapeOAuthTokenTransportForTests } from "../src/onshape/onshapeOAuth";
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { setTransportClientFactory, versionUrl } from "./helpers/onshapeFailureModes";
+import { getOnshapeRuntimeStore } from "../../src/onshape/cadStore";
+import { setOnshapeCadClientFactoryForTests } from "../../src/onshape/onshapeClientFactory";
+import { setOnshapeOAuthTokenTransportForTests } from "../../src/onshape/onshapeOAuth";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
+import { setTransportClientFactory, versionUrl } from "../helpers/onshapeFailureModes";
 
 const missingElementUrl =
   "https://cad.onshape.com/documents/0123456789abcdef01234567/v/222222222222222222222222";
