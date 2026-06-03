@@ -2,6 +2,7 @@ import type { NormalizedCadWarning, StepParseResult } from "../cadTypes";
 import { createFlatStepResult } from "./stepFlatResultParser";
 import type { StepParserInput } from "./stepParserTypes";
 import { createParserWarning } from "./stepParserShared";
+import type { StepEntity } from "./stepTextEntityParser";
 import { parseStepEntities, stepStringValue } from "./stepTextEntityParser";
 import { createStructuredStepResult } from "./stepTextStructuredResultParser";
 import type { StepAssemblyUsage, StepProductDefinition } from "./stepTextParserTypes";
@@ -12,6 +13,47 @@ const assemblyUsageEntityTypes = new Set([
   "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE",
   "PROMISSORY_USAGE_OCCURRENCE",
 ]);
+
+function stepNumberValue(arg: string) {
+  const value = arg.trim();
+  if (!value || value === "$" || value === "*" || value.startsWith("#")) {
+    return null;
+  }
+  const match = value.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function quantityFromMeasureEntity(entity: StepEntity | undefined) {
+  if (!entity) {
+    return null;
+  }
+  for (const arg of entity.args) {
+    const parsed = stepNumberValue(arg);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function assemblyUsageQuantity(entity: StepEntity, entitiesById: Map<string, StepEntity>) {
+  if (entity.type !== "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE") {
+    return 1;
+  }
+  for (let index = entity.args.length - 1; index >= 0; index -= 1) {
+    const arg = entity.args[index]?.trim() ?? "";
+    const referencedQuantity = arg.startsWith("#") ? quantityFromMeasureEntity(entitiesById.get(arg.toUpperCase())) : null;
+    const parsedQuantity = referencedQuantity ?? stepNumberValue(arg);
+    if (parsedQuantity !== null) {
+      return parsedQuantity;
+    }
+  }
+  return 1;
+}
 
 function collectProducts(
   entities: ReturnType<typeof parseStepEntities>,
@@ -63,6 +105,7 @@ function collectAssemblyUsages(args: {
   productDefinitions: Map<string, StepProductDefinition>;
 }) {
   const assemblyUsages: StepAssemblyUsage[] = [];
+  const entitiesById = new Map(args.entities.map((entity) => [entity.id, entity]));
   let partialReferenceCount = 0;
   let nextAssemblyUsageOccurrenceCount = 0;
   for (const entity of args.entities) {
@@ -83,6 +126,7 @@ function collectAssemblyUsages(args: {
       occurrenceName: stringArgs[1]?.trim() || stringArgs[0]?.trim() || "",
       parentProductDefinitionId: productDefinitionRefs[0]!,
       childProductDefinitionId: productDefinitionRefs[1]!,
+      quantity: assemblyUsageQuantity(entity, entitiesById),
     });
   }
   return { assemblyUsages, nextAssemblyUsageOccurrenceCount, partialReferenceCount };

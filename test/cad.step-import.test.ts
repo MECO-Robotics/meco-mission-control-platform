@@ -18,8 +18,10 @@ function stepEntityFixture(options?: {
   duplicateNames?: boolean;
   assemblyUsageEntityType?: string;
   includeOccurrenceRelationshipMetadata?: boolean;
+  quantifiedQuantity?: number;
 }) {
   const assemblyUsageEntityType = options?.assemblyUsageEntityType ?? "NEXT_ASSEMBLY_USAGE_OCCURRENCE";
+  const usageQuantityArg = assemblyUsageEntityType === "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE" ? ",#200" : "";
   const products = [
     "#1=PRODUCT('MAIN ASSEMBLY','', '', (#900));",
     "#2=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#1,.NOT_KNOWN.);",
@@ -63,29 +65,33 @@ function stepEntityFixture(options?: {
   const edges = options?.flat
     ? []
     : [
-        `#100=${assemblyUsageEntityType}('NAUO1','Shooter Assembly <1>','',#3,#6,$);`,
-        `#101=${assemblyUsageEntityType}('NAUO2','Flywheel Assembly <1>','',#6,#9,$);`,
-        `#102=${assemblyUsageEntityType}('NAUO3','Spacer <1>','',#9,#12,$);`,
+        `#100=${assemblyUsageEntityType}('NAUO1','Shooter Assembly <1>','',#3,#6,$${usageQuantityArg});`,
+        `#101=${assemblyUsageEntityType}('NAUO2','Flywheel Assembly <1>','',#6,#9,$${usageQuantityArg});`,
+        `#102=${assemblyUsageEntityType}('NAUO3','Spacer <1>','',#9,#12,$${usageQuantityArg});`,
         ...(options?.repeatedPart
-          ? [`#103=${assemblyUsageEntityType}('NAUO4','Spacer <2>','',#9,#12,$);`]
+          ? [`#103=${assemblyUsageEntityType}('NAUO4','Spacer <2>','',#9,#12,$${usageQuantityArg});`]
           : []),
         ...(options?.multipleTopLevel
           ? [
-              `#104=${assemblyUsageEntityType}('NAUO5','Drivetrain Assembly <1>','',#3,#15,$);`,
-              `#105=${assemblyUsageEntityType}('NAUO6','Conveyer Assembly <1>','',#3,#18,$);`,
-              `#107=${assemblyUsageEntityType}('NAUO8','Wheel <1>','',#15,#24,$);`,
-              `#108=${assemblyUsageEntityType}('NAUO9','Belt <1>','',#18,#27,$);`,
+              `#104=${assemblyUsageEntityType}('NAUO5','Drivetrain Assembly <1>','',#3,#15,$${usageQuantityArg});`,
+              `#105=${assemblyUsageEntityType}('NAUO6','Conveyer Assembly <1>','',#3,#18,$${usageQuantityArg});`,
+              `#107=${assemblyUsageEntityType}('NAUO8','Wheel <1>','',#15,#24,$${usageQuantityArg});`,
+              `#108=${assemblyUsageEntityType}('NAUO9','Belt <1>','',#18,#27,$${usageQuantityArg});`,
             ]
           : []),
         ...(options?.duplicateNames
-          ? [`#106=${assemblyUsageEntityType}('NAUO7','Spacer duplicate','',#9,#21,$);`]
+          ? [`#106=${assemblyUsageEntityType}('NAUO7','Spacer duplicate','',#9,#21,$${usageQuantityArg});`]
           : []),
         ...(options?.includeOccurrenceRelationshipMetadata
           ? ["#109=PRODUCT_DEFINITION_OCCURRENCE_RELATIONSHIP('REL1','metadata only',#12,#100);"]
           : []),
       ];
 
-  return ["ISO-10303-21;", "DATA;", ...products, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
+  const quantityEntities = assemblyUsageEntityType === "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE"
+    ? [`#200=MEASURE_WITH_UNIT(COUNT_MEASURE(${options?.quantifiedQuantity ?? 1}),$);`]
+    : [];
+
+  return ["ISO-10303-21;", "DATA;", ...products, ...quantityEntities, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
 }
 
 function uploadedClassStepFixture() {
@@ -528,6 +534,7 @@ test("STEP text parser accepts quantified assembly component usage edges", async
     fileText: stepEntityFixture({
       assemblyUsageEntityType: "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE",
       repeatedPart: true,
+      quantifiedQuantity: 3,
     }),
     originalFilename: "quantified-component-usage.step",
     importRunId: "import-test",
@@ -537,6 +544,7 @@ test("STEP text parser accepts quantified assembly component usage edges", async
   assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
   assert.equal(parsed.rawStats.assemblyUsageCount, 4);
   assert.equal(parsed.partInstances.length, 2);
+  assert.deepEqual(parsed.partInstances.map((instance) => instance.quantity), [27, 27]);
   assert.ok(!parsed.warnings.some((warning) => warning.code === "step_flattened_file"));
 });
 
