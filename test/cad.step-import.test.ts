@@ -16,7 +16,9 @@ function stepEntityFixture(options?: {
   repeatedPart?: boolean;
   flat?: boolean;
   duplicateNames?: boolean;
+  assemblyUsageEntityType?: string;
 }) {
+  const assemblyUsageEntityType = options?.assemblyUsageEntityType ?? "NEXT_ASSEMBLY_USAGE_OCCURRENCE";
   const products = [
     "#1=PRODUCT('MAIN ASSEMBLY','', '', (#900));",
     "#2=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#1,.NOT_KNOWN.);",
@@ -60,22 +62,22 @@ function stepEntityFixture(options?: {
   const edges = options?.flat
     ? []
     : [
-        "#100=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO1','Shooter Assembly <1>','',#3,#6,$);",
-        "#101=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO2','Flywheel Assembly <1>','',#6,#9,$);",
-        "#102=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO3','Spacer <1>','',#9,#12,$);",
+        `#100=${assemblyUsageEntityType}('NAUO1','Shooter Assembly <1>','',#3,#6,$);`,
+        `#101=${assemblyUsageEntityType}('NAUO2','Flywheel Assembly <1>','',#6,#9,$);`,
+        `#102=${assemblyUsageEntityType}('NAUO3','Spacer <1>','',#9,#12,$);`,
         ...(options?.repeatedPart
-          ? ["#103=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO4','Spacer <2>','',#9,#12,$);"]
+          ? [`#103=${assemblyUsageEntityType}('NAUO4','Spacer <2>','',#9,#12,$);`]
           : []),
         ...(options?.multipleTopLevel
           ? [
-              "#104=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO5','Drivetrain Assembly <1>','',#3,#15,$);",
-              "#105=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO6','Conveyer Assembly <1>','',#3,#18,$);",
-              "#107=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO8','Wheel <1>','',#15,#24,$);",
-              "#108=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO9','Belt <1>','',#18,#27,$);",
+              `#104=${assemblyUsageEntityType}('NAUO5','Drivetrain Assembly <1>','',#3,#15,$);`,
+              `#105=${assemblyUsageEntityType}('NAUO6','Conveyer Assembly <1>','',#3,#18,$);`,
+              `#107=${assemblyUsageEntityType}('NAUO8','Wheel <1>','',#15,#24,$);`,
+              `#108=${assemblyUsageEntityType}('NAUO9','Belt <1>','',#18,#27,$);`,
             ]
           : []),
         ...(options?.duplicateNames
-          ? ["#106=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO7','Spacer duplicate','',#9,#21,$);"]
+          ? [`#106=${assemblyUsageEntityType}('NAUO7','Spacer duplicate','',#9,#21,$);`]
           : []),
       ];
 
@@ -468,6 +470,33 @@ test("STEP text parser preserves multiple subsystem candidates and repeated part
   assert.equal(parsed.partDefinitions.length, 3);
   assert.equal(parsed.partInstances.length, 4);
   assert.notEqual(parsed.partInstances[0]?.sourceId, parsed.partInstances[1]?.sourceId);
+});
+
+test("STEP text parser accepts assembly component usage edges", async () => {
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText: stepEntityFixture({
+      assemblyUsageEntityType: "ASSEMBLY_COMPONENT_USAGE",
+      multipleTopLevel: true,
+      repeatedPart: true,
+    }),
+    originalFilename: "component-usage.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.rootName, "MAIN ASSEMBLY");
+  assert.deepEqual(
+    parsed.assemblyNodes.map((node) => [node.name, node.depth]),
+    [
+      ["MAIN ASSEMBLY", 0],
+      ["Shooter Assembly <1>", 1],
+      ["Flywheel Assembly <1>", 2],
+      ["Drivetrain Assembly <1>", 1],
+      ["Conveyer Assembly <1>", 1],
+    ],
+  );
+  assert.deepEqual(parsed.partDefinitions.map((part) => part.name).sort(), ["Belt", "Spacer", "Wheel"]);
+  assert.equal(parsed.partInstances.filter((instance) => instance.partDefinitionSourceId === "step-part-def:#12").length, 2);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 8);
 });
 
 test("STEP text parser extracts uploaded Onshape-style top-level assemblies and diagnostics", async () => {

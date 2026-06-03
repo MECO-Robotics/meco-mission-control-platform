@@ -6,6 +6,13 @@ import { parseStepEntities, stepStringValue } from "./stepTextEntityParser";
 import { createStructuredStepResult } from "./stepTextStructuredResultParser";
 import type { StepAssemblyUsage, StepProductDefinition } from "./stepTextParserTypes";
 
+const assemblyUsageEntityTypes = new Set([
+  "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
+  "ASSEMBLY_COMPONENT_USAGE",
+  "PRODUCT_DEFINITION_OCCURRENCE_RELATIONSHIP",
+  "PROMISSORY_USAGE_OCCURRENCE",
+]);
+
 function collectProducts(
   entities: ReturnType<typeof parseStepEntities>,
   products: Map<string, string>,
@@ -58,7 +65,7 @@ function collectAssemblyUsages(args: {
   const assemblyUsages: StepAssemblyUsage[] = [];
   let partialReferenceCount = 0;
   for (const entity of args.entities) {
-    if (entity.type !== "NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
+    if (!assemblyUsageEntityTypes.has(entity.type)) {
       continue;
     }
     const productDefinitionRefs = entity.refs.filter((ref) => args.productDefinitions.has(ref));
