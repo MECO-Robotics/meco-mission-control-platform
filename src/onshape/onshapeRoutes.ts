@@ -6,7 +6,8 @@ import { getMembers } from "../data/store";
 import { getOnshapeRuntimeStore } from "./cadStore";
 import { runCadImport } from "./cadImporter";
 import { createConfiguredOnshapeCadClient } from "./onshapeClientFactory";
-import { getOAuthStatus, registerOnshapeOAuthRoutes } from "./onshapeOAuthRoutes";
+import { getOAuthStatus } from "./onshapeOAuthHealth";
+import { registerOnshapeOAuthRoutes } from "./onshapeOAuthRoutes";
 import {
   onshapeDocumentRefSchema,
   onshapeImportEstimateQuerySchema,
