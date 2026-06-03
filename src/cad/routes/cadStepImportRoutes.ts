@@ -33,6 +33,8 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
         fileText: payload.fileText,
         originalFilename: payload.fileName,
         importRunId: "debug-parse",
+        parserMode,
+        runInWorker: true,
       });
       const parserUsedPlaceholder = stepParserUsedPlaceholder(parsed);
       const diagnostics = buildStepParserDiagnostics({
@@ -73,6 +75,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
         store: getCadStore(),
         parserClient: createStepParserClient({ mode: parserMode }),
         parserMode,
+        parseInWorker: true,
         allowPlaceholder: process.env.NODE_ENV === "test" && payload.allowPlaceholder === true,
         input: {
           fileText: payload.fileText,

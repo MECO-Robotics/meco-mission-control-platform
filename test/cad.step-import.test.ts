@@ -1474,6 +1474,24 @@ test("STEP import reports parser timeout as a safe user-readable error", async (
   }, { env: { CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
 });
 
+test("STEP route parsing times out built-in parser work off the request event loop", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "timeout.step",
+        fileText: uploadedClassStepFixture(),
+      },
+    });
+
+    assert.equal(response.statusCode, 408, response.body);
+    assert.match(response.body, /timed out/i);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text", CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
+});
+
 test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
