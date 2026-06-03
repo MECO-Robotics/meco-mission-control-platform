@@ -2,139 +2,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { runCadImport } from "../src/onshape/cadImporter";
-import { createOnshapeRuntimeStore, type OnshapeRuntimeStore } from "../src/onshape/cadStore";
 import { normalizeOnshapeBom } from "../src/onshape/bom/normalizer";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
-import type {
-  CadImportOnshapeClient,
-  OnshapeAssemblyBomResponse,
-  OnshapeDocumentMetadataResponse,
-  OnshapeReference,
-} from "../src/onshape/onshapeTypes";
-
-const documentId = "0123456789abcdef01234567";
-const versionId = "222222222222222222222222";
-const microversionId = "333333333333333333333333";
-const elementId = "111111111111111111111111";
-const versionUrl = `https://cad.onshape.com/documents/${documentId}/v/${versionId}/e/${elementId}?renderMode=0`;
-
-function createLinkedRef(store: OnshapeRuntimeStore, url = versionUrl) {
-  const parsed = parseOnshapeUrl(url);
-  assert.equal(parsed.ok, true);
-  return store.createDocumentRef({
-    label: "Robot master assembly",
-    originalUrl: url,
-    parsed,
-    createdBy: "test-user",
-  });
-}
-
-function parseReference(url: string): OnshapeReference {
-  const parsed = parseOnshapeUrl(url);
-  assert.equal(parsed.ok, true);
-  assert.ok(parsed.documentId);
-  return {
-    documentId: parsed.documentId,
-    workspaceId: parsed.workspaceId,
-    versionId: parsed.versionId,
-    microversionId: parsed.microversionId,
-    elementId: parsed.elementId,
-    originalUrl: parsed.originalUrl,
-    referenceType: parsed.referenceType,
-  };
-}
-
-function createFakeClient(bom: OnshapeAssemblyBomResponse): CadImportOnshapeClient {
-  let callsUsed = 0;
-  const metadata: OnshapeDocumentMetadataResponse = {
-    documentName: "2026 Robot",
-    elementName: "Master Assembly",
-    raw: { source: "contract-test" },
-  };
-  return {
-    getCallsUsed() {
-      return callsUsed;
-    },
-    async fetchDocumentMetadata() {
-      callsUsed += 1;
-      return metadata;
-    },
-    async fetchAssemblyBom() {
-      callsUsed += 1;
-      return bom;
-    },
-  };
-}
-
-function normalizedBom(names = {
-  subsystem: "Drive Subsystem",
-  mechanism: "Intake Mechanism",
-  part: "Drive rail",
-  instancePath: "/root/drive/rail-left",
-}): OnshapeAssemblyBomResponse {
-  return {
-    assemblyNodes: [
-      {
-        sourceId: "assembly:root",
-        documentId,
-        elementId,
-        instanceId: "root",
-        instancePath: "/root",
-        name: "2026 Robot",
-        inferredType: "master_assembly",
-      },
-      {
-        sourceId: "assembly:drive",
-        parentSourceId: "assembly:root",
-        documentId,
-        elementId: "drive-element",
-        instanceId: "drive",
-        instancePath: "/root/drive",
-        name: names.subsystem,
-        inferredType: "subsystem_candidate",
-      },
-      {
-        sourceId: "assembly:intake",
-        parentSourceId: "assembly:root",
-        documentId,
-        elementId: "intake-element",
-        instanceId: "intake",
-        instancePath: "/root/intake",
-        name: names.mechanism,
-        inferredType: "mechanism_candidate",
-      },
-    ],
-    partDefinitions: [
-      {
-        sourceId: "part:drive-rail-default",
-        documentId,
-        elementId: "drive-element",
-        partId: "drive-rail",
-        versionId,
-        name: names.part,
-        partNumber: "DRV-001",
-        material: "6061 aluminum",
-        configuration: "default",
-        missionControlExternalKey: "onshape:part:drive-rail:default",
-      },
-    ],
-    partInstances: [
-      {
-        sourceId: "instance:drive-rail-left",
-        partDefinitionSourceId: "part:drive-rail-default",
-        parentAssemblySourceId: "assembly:drive",
-        documentId,
-        elementId: "drive-element",
-        instanceId: "drive-rail-left",
-        partId: "drive-rail",
-        instancePath: names.instancePath,
-        quantity: 1,
-        configuration: "default",
-      },
-    ],
-    raw: { source: "contract-test" },
-  };
-}
+import {
+  createContractStore,
+  createFakeClient,
+  createLinkedRef,
+  documentId,
+  elementId,
+  microversionId,
+  normalizedBom,
+  parseReference,
+  versionId,
+  versionUrl,
+} from "./onshape/importContractFixtures";
 
 test("accepts only document references with workspace, version, or microversion identity", () => {
   const workspace = parseOnshapeUrl(`https://cad.onshape.com/documents/${documentId}/w/workspace123/e/${elementId}`);
@@ -157,7 +38,7 @@ test("accepts only document references with workspace, version, or microversion 
 });
 
 test("persists normalized subsystem, mechanism, part definition, and part instance records", async () => {
-  const store = createOnshapeRuntimeStore();
+  const store = createContractStore();
   const ref = createLinkedRef(store);
   const result = await runCadImport({
     store,
@@ -187,7 +68,7 @@ test("persists normalized subsystem, mechanism, part definition, and part instan
 });
 
 test("keeps record IDs stable across immutable-reference renames", async () => {
-  const store = createOnshapeRuntimeStore();
+  const store = createContractStore();
   const ref = createLinkedRef(store);
   const first = await runCadImport({
     store,
@@ -229,7 +110,7 @@ test("keeps record IDs stable across immutable-reference renames", async () => {
 });
 
 test("does not delete or deprecate omitted records during immutable re-import", async () => {
-  const store = createOnshapeRuntimeStore();
+  const store = createContractStore();
   const ref = createLinkedRef(store);
   const first = await runCadImport({
     store,
