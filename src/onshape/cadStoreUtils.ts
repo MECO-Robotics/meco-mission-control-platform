@@ -35,6 +35,7 @@ export function buildInitialState(): OnshapeRuntimeState {
   return {
     documentRefs: [],
     importRuns: [],
+    syncJobs: [],
     requestLogs: [],
     cacheEntries: [],
     snapshots: [],

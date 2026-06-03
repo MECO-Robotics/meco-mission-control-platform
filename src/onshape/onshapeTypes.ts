@@ -1,6 +1,7 @@
 ﻿export type OnshapeReferenceType = "workspace" | "version" | "microversion" | "unknown";
 export type SyncLevel = "link_only" | "shallow" | "bom" | "deep_release";
 export type CadImportStatus = "pending" | "running" | "completed" | "partial" | "failed" | "canceled";
+export type OnshapeSyncJobStatus = CadImportStatus;
 export type CadSnapshotSource =
   | "manual_snapshot"
   | "design_review"
@@ -166,6 +167,7 @@ export interface CadImportOnshapeClient {
 
 export interface CadGraphImportResult {
   importRunId: string;
+  syncJobId: string;
   snapshotId?: string;
   status: "completed" | "partial" | "failed";
   callsUsed: number;
@@ -215,6 +217,20 @@ export interface CadImportRun {
   stoppedReason: string | null;
   errorMessage: string | null;
   rawSummaryJson: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface OnshapeSyncJob {
+  id: string;
+  importRunId: string;
+  onshapeDocumentRefId: string;
+  status: OnshapeSyncJobStatus;
+  startedAt: string;
+  completedAt: string | null;
+  actor: string | null;
+  sourceReferenceJson: Record<string, unknown>;
+  summaryJson: Record<string, unknown>;
+  errorMessage: string | null;
   createdAt: string;
 }
 

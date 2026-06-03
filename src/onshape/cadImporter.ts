@@ -63,20 +63,36 @@ function completeRun(args: {
   summary?: Record<string, unknown>;
 }): CadGraphImportResult {
   const callsUsed = args.client.getCallsUsed();
+  const completedAt = new Date().toISOString();
   const rawSummaryJson = args.snapshotId
     ? { ...(args.summary ?? {}), snapshotId: args.snapshotId }
     : (args.summary ?? {});
   args.store.updateImportRun(args.runId, {
     status: args.status,
-    completedAt: new Date().toISOString(),
+    completedAt,
     callsUsed,
     stoppedReason: args.stoppedReason ?? null,
     errorMessage: args.errorMessage ?? null,
     rawSummaryJson,
   });
+  const syncJob = args.store.findSyncJobByImportRunId(args.runId);
+  if (syncJob) {
+    args.store.updateSyncJob(syncJob.id, {
+      status: args.status,
+      completedAt,
+      errorMessage: args.errorMessage ?? null,
+      summaryJson: {
+        ...rawSummaryJson,
+        callsUsed,
+        warningCount: args.store.listWarnings({ importRunId: args.runId }).length,
+        stoppedReason: args.stoppedReason ?? null,
+      },
+    });
+  }
 
   return {
     importRunId: args.runId,
+    syncJobId: syncJob?.id ?? "",
     snapshotId: args.snapshotId,
     status: args.status,
     callsUsed,
@@ -132,6 +148,11 @@ export async function runCadImport(args: {
     syncLevel: args.syncLevel,
     requestedBy: args.requestedBy,
     callsEstimated: estimateSyncCalls(args.syncLevel),
+  });
+  args.store.createSyncJob({
+    importRunId: run.id,
+    documentRef,
+    actor: args.requestedBy,
   });
   addReferenceWarnings(args.store, run.id, documentRef);
 
