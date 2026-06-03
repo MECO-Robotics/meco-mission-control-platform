@@ -75,12 +75,7 @@ function resolveOAuthCallbackSessionKey(request: FastifyRequest, reply: FastifyR
 }
 
 function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply: FastifyReply) {
-  if (!isAuthEnabled()) {
-    return true;
-  }
-
-  const session = getSessionFromRequest(request);
-  if (session?.role === "lead" || session?.role === "mentor" || session?.role === "admin") {
+  if (canManageOnshapeOAuthCredentials(request)) {
     return true;
   }
 
@@ -90,13 +85,26 @@ function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply:
   return false;
 }
 
+function canManageOnshapeOAuthCredentials(request: FastifyRequest) {
+  if (!isAuthEnabled()) {
+    return true;
+  }
+
+  const session = getSessionFromRequest(request);
+  return session?.role === "lead" || session?.role === "mentor" || session?.role === "admin";
+}
+
 export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
   app.get("/api/onshape/oauth/health", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
     }
 
-    return { item: getOAuthConnectionHealth(getOnshapeRuntimeStore()) };
+    return {
+      item: getOAuthConnectionHealth(getOnshapeRuntimeStore(), {
+        reconnectAvailable: canManageOnshapeOAuthCredentials(request),
+      }),
+    };
   });
 
   app.post("/api/onshape/oauth/authorization-url", async (request, reply) => {

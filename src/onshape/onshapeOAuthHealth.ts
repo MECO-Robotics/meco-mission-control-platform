@@ -6,6 +6,11 @@ import {
 } from "./onshapeOAuth";
 import type { OnshapeOAuthConnectionHealth, OnshapeOAuthTokenSet } from "./onshapeTypes";
 
+interface OAuthConnectionHealthOptions {
+  nowMs?: number;
+  reconnectAvailable?: boolean;
+}
+
 function getOAuthConfig() {
   return {
     clientId: onshapeConfig.oauthClientId,
@@ -53,7 +58,7 @@ function buildTokenMetadata(tokenSet: OnshapeOAuthTokenSet | null) {
 
 export function getOAuthConnectionHealth(
   store: ReturnType<typeof getOnshapeRuntimeStore>,
-  nowMs = Date.now(),
+  options: OAuthConnectionHealthOptions = {},
 ): OnshapeOAuthConnectionHealth {
   const tokenSet = store.getOAuthTokenSet();
   const tokenMetadata = buildTokenMetadata(tokenSet);
@@ -61,8 +66,9 @@ export function getOAuthConnectionHealth(
   const refreshAvailable =
     tokenMetadata.hasRefreshToken && isOnshapeOAuthRefreshConfigured(getOAuthConfig());
   const connectionState = tokenMetadata.hasToken
-    ? readExpiryState(tokenMetadata.tokenExpiresAt, nowMs)
+    ? readExpiryState(tokenMetadata.tokenExpiresAt, options.nowMs ?? Date.now())
     : "disconnected";
+  const reconnectAvailable = options.reconnectAvailable ?? clientConfigured;
 
   return {
     clientConfigured,
@@ -79,7 +85,7 @@ export function getOAuthConnectionHealth(
       type: "start_oauth",
       method: "POST",
       url: "/api/onshape/oauth/authorization-url",
-      available: clientConfigured,
+      available: reconnectAvailable,
     },
   };
 }
