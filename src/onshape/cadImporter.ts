@@ -8,6 +8,7 @@ import {
   addGraphWarnings,
   addReferenceWarnings,
 } from "./cadImporterWarnings";
+import { recordCadImportAuditAction } from "./cadImportAudit";
 import { estimateCadImportCalls as estimateSyncCalls } from "./onshapeSyncPolicy";
 import type {
   CadGraphImportResult,
@@ -50,6 +51,14 @@ function buildPolicy(store: OnshapeRuntimeStore, syncLevel: SyncLevel): RequestP
 function metadataLabel(metadata: OnshapeDocumentMetadataResponse | null, fallback: string) {
   const label = [metadata?.documentName, metadata?.elementName].filter(Boolean).join(" - ");
   return label || fallback;
+}
+
+function countSnapshotGraph(store: OnshapeRuntimeStore, snapshotId: string) {
+  return {
+    assemblyNodes: store.listAssemblyNodes(snapshotId).length,
+    partDefinitions: store.listPartDefinitions(snapshotId).length,
+    partInstances: store.listPartInstances(snapshotId).length,
+  };
 }
 
 function completeRun(args: {
@@ -157,13 +166,15 @@ export async function runCadImport(args: {
   addReferenceWarnings(args.store, run.id, documentRef);
 
   if (args.syncLevel === "link_only") {
-    return completeRun({
+    const result = completeRun({
       store: args.store,
       runId: run.id,
       status: "completed",
       client: args.client,
       summary: { syncLevel: args.syncLevel, linkOnly: true },
     });
+    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    return result;
   }
 
   const reference = toReference(documentRef);
@@ -188,18 +199,35 @@ export async function runCadImport(args: {
       notes: args.syncLevel === "deep_release" ? "Deep release sync requested." : null,
     });
 
+    const beforeGraphCounts = countSnapshotGraph(args.store, snapshot.id);
     const raw = bom === null
       ? { metadata }
       : await importBomGraph({ store: args.store, runId: run.id, snapshot, bom });
+    const afterGraphCounts = countSnapshotGraph(args.store, snapshot.id);
+    const createdObjectCount =
+      Math.max(0, afterGraphCounts.assemblyNodes - beforeGraphCounts.assemblyNodes) +
+      Math.max(0, afterGraphCounts.partDefinitions - beforeGraphCounts.partDefinitions) +
+      Math.max(0, afterGraphCounts.partInstances - beforeGraphCounts.partInstances);
 
-    return completeRun({
+    const result = completeRun({
       store: args.store,
       runId: run.id,
       status: "completed",
       client: args.client,
       snapshotId: snapshot.id,
-      summary: { metadata, raw },
+      summary: {
+        metadata,
+        raw,
+        objectChangeCounts: {
+          ...afterGraphCounts,
+          created: createdObjectCount,
+          updated: 0,
+          deprecated: 0,
+        },
+      },
     });
+    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    return result;
   } catch (error) {
     const isBudgetStop = error instanceof OnshapeCallBudgetExceededError || error instanceof OnshapeRateLimitError;
     const stoppedReason = error instanceof Error ? error.message : String(error);
@@ -212,7 +240,7 @@ export async function runCadImport(args: {
         stoppedReason,
       });
     }
-    return completeRun({
+    const result = completeRun({
       store: args.store,
       runId: run.id,
       status: isBudgetStop ? "partial" : "failed",
@@ -222,6 +250,8 @@ export async function runCadImport(args: {
       errorMessage: isBudgetStop ? null : stoppedReason,
       summary: { syncLevel: args.syncLevel },
     });
+    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    return result;
   }
 }
 
