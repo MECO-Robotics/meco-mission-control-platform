@@ -59,10 +59,23 @@ export interface OnshapeOAuthTokenSet {
 export interface OnshapeOAuthStatus {
   clientConfigured: boolean;
   connected: boolean;
+  connectionState: "connected" | "disconnected" | "expired";
   authorizationUrlAvailable: boolean;
   scopes: string[];
   tokenExpiresAt: string | null;
   credentialSource: "runtime" | "env" | "none";
+}
+
+export interface OnshapeOAuthConnectionHealth extends OnshapeOAuthStatus {
+  tokenReceivedAt: string | null;
+  hasRefreshToken: boolean;
+  refreshAvailable: boolean;
+  reconnectAction: {
+    type: "start_oauth";
+    method: "POST";
+    url: "/api/onshape/oauth/authorization-url";
+    available: boolean;
+  };
 }
 
 export interface OnshapeTransportResponse {

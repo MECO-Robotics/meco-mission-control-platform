@@ -11,6 +11,7 @@ import {
   isOnshapeOAuthRefreshConfigured,
   refreshOnshapeOAuthToken,
 } from "./onshapeOAuth";
+import type { OnshapeOAuthConnectionHealth, OnshapeOAuthTokenSet } from "./onshapeTypes";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 
@@ -90,19 +91,94 @@ function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply:
 }
 
 export function getOAuthStatus(store: ReturnType<typeof getOnshapeRuntimeStore>) {
-  const tokenSet = store.getOAuthTokenSet();
-  const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
+  const health = getOAuthConnectionHealth(store);
   return {
-    clientConfigured: isOnshapeOAuthClientConfigured(getOAuthConfig()),
-    connected: Boolean(tokenSet || envConnected),
-    authorizationUrlAvailable: isOnshapeOAuthClientConfigured(getOAuthConfig()),
+    clientConfigured: health.clientConfigured,
+    connected: health.connected,
+    connectionState: health.connectionState,
+    authorizationUrlAvailable: health.authorizationUrlAvailable,
+    scopes: health.scopes,
+    tokenExpiresAt: health.tokenExpiresAt,
+    credentialSource: health.credentialSource,
+  };
+}
+
+function readExpiryState(expiresAt: string | null, nowMs: number) {
+  if (!expiresAt) {
+    return "connected";
+  }
+
+  const expiresAtMs = Date.parse(expiresAt);
+  if (Number.isNaN(expiresAtMs)) {
+    return "expired";
+  }
+
+  return expiresAtMs <= nowMs ? "expired" : "connected";
+}
+
+function buildTokenMetadata(tokenSet: OnshapeOAuthTokenSet | null) {
+  const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
+  if (tokenSet) {
+    return {
+      credentialSource: "runtime" as const,
+      tokenExpiresAt: tokenSet.expiresAt,
+      tokenReceivedAt: tokenSet.receivedAt,
+      hasRefreshToken: Boolean(tokenSet.refreshToken),
+      hasToken: true,
+    };
+  }
+
+  return {
+    credentialSource: envConnected ? "env" as const : "none" as const,
+    tokenExpiresAt: onshapeConfig.oauthTokenExpiresAt ?? null,
+    tokenReceivedAt: null,
+    hasRefreshToken: Boolean(onshapeConfig.oauthRefreshToken),
+    hasToken: envConnected,
+  };
+}
+
+export function getOAuthConnectionHealth(
+  store: ReturnType<typeof getOnshapeRuntimeStore>,
+  nowMs = Date.now(),
+): OnshapeOAuthConnectionHealth {
+  const tokenSet = store.getOAuthTokenSet();
+  const tokenMetadata = buildTokenMetadata(tokenSet);
+  const clientConfigured = isOnshapeOAuthClientConfigured(getOAuthConfig());
+  const refreshAvailable =
+    tokenMetadata.hasRefreshToken && isOnshapeOAuthRefreshConfigured(getOAuthConfig());
+  const connectionState = tokenMetadata.hasToken
+    ? readExpiryState(tokenMetadata.tokenExpiresAt, nowMs)
+    : "disconnected";
+
+  return {
+    clientConfigured,
+    connected: connectionState === "connected",
+    connectionState,
+    authorizationUrlAvailable: clientConfigured,
     scopes: onshapeConfig.oauthScopes,
-    tokenExpiresAt: tokenSet?.expiresAt ?? onshapeConfig.oauthTokenExpiresAt ?? null,
-    credentialSource: tokenSet ? "runtime" : (envConnected ? "env" : "none"),
+    tokenExpiresAt: tokenMetadata.tokenExpiresAt,
+    tokenReceivedAt: tokenMetadata.tokenReceivedAt,
+    credentialSource: tokenMetadata.credentialSource,
+    hasRefreshToken: tokenMetadata.hasRefreshToken,
+    refreshAvailable,
+    reconnectAction: {
+      type: "start_oauth",
+      method: "POST",
+      url: "/api/onshape/oauth/authorization-url",
+      available: clientConfigured,
+    },
   };
 }
 
 export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+  app.get("/api/onshape/oauth/health", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+
+    return { item: getOAuthConnectionHealth(getOnshapeRuntimeStore()) };
+  });
+
   app.post("/api/onshape/oauth/authorization-url", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
