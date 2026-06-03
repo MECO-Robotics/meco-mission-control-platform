@@ -523,6 +523,23 @@ test("STEP text parser ignores occurrence relationship metadata as assembly edge
   assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_partial"));
 });
 
+test("STEP text parser accepts quantified assembly component usage edges", async () => {
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText: stepEntityFixture({
+      assemblyUsageEntityType: "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE",
+      repeatedPart: true,
+    }),
+    originalFilename: "quantified-component-usage.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.rootName, "MAIN ASSEMBLY");
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 4);
+  assert.equal(parsed.partInstances.length, 2);
+  assert.ok(!parsed.warnings.some((warning) => warning.code === "step_flattened_file"));
+});
+
 test("STEP text parser extracts uploaded Onshape-style top-level assemblies and diagnostics", async () => {
   const fileText = uploadedClassStepFixture();
   const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({

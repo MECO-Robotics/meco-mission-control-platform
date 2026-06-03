@@ -9,6 +9,7 @@ import type { StepAssemblyUsage, StepProductDefinition } from "./stepTextParserT
 const assemblyUsageEntityTypes = new Set([
   "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
   "ASSEMBLY_COMPONENT_USAGE",
+  "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE",
   "PROMISSORY_USAGE_OCCURRENCE",
 ]);
 
