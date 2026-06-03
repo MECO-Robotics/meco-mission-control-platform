@@ -102,7 +102,8 @@ export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSessi
 
     return {
       item: getOAuthConnectionHealth(getOnshapeRuntimeStore(), {
-        reconnectAvailable: canManageOnshapeOAuthCredentials(request),
+        reconnectAvailable:
+          canManageOnshapeOAuthCredentials(request) && isOnshapeOAuthClientConfigured(getOAuthConfig()),
       }),
     };
   });
