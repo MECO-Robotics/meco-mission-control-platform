@@ -37,6 +37,24 @@ export const offseasonManufacturingItems = [
       inHouse: true,
       batchLabel: "DRV-42",
     },
+    {
+      id: "apriltag-stand-base-cut",
+      title: "AprilTag stand base cut",
+      subsystemId: "vision",
+      requestedById: "ethan",
+      process: "cnc",
+      dueDate: "2026-06-14",
+      material: "1/8 polycarbonate and aluminum angle",
+      materialId: "mat-apriltag-stand-kit",
+      partDefinitionId: "pd-apriltag-stand-kit",
+      partInstanceId: "pi-apriltag-stand-kit",
+      partInstanceIds: ["pi-apriltag-stand-kit"],
+      quantity: 6,
+      status: "requested",
+      mentorReviewed: false,
+      inHouse: true,
+      batchLabel: "VIS-18",
+    },
   ] satisfies PlatformSnapshot["manufacturingItems"];
 
 export const offseasonPurchaseItems = [
@@ -66,6 +84,45 @@ export const offseasonPurchaseItems = [
       approvedByMentor: true,
       status: "purchased",
     },
+    {
+      id: "radio-poe-spare-order",
+      title: "Spare radio PoE injector order",
+      subsystemId: "controls",
+      requestedById: "jamal",
+      partDefinitionId: "pd-spare-radio-kit",
+      quantity: 2,
+      vendor: "Vivid Hosting",
+      linkLabel: "vivid-hosting.net/frc-radio-poe",
+      estimatedCost: 70,
+      approvedByMentor: true,
+      status: "shipped",
+    },
+    {
+      id: "apriltag-stand-hardware",
+      title: "AprilTag stand hardware",
+      subsystemId: "vision",
+      requestedById: "ethan",
+      partDefinitionId: "pd-apriltag-stand-kit",
+      quantity: 1,
+      vendor: "AndyMark",
+      linkLabel: "andymark.com/apriltag-field-hardware",
+      estimatedCost: 138,
+      approvedByMentor: true,
+      status: "approved",
+    },
+    {
+      id: "media-sd-card-restock",
+      title: "Media SD card restock",
+      subsystemId: "media-production",
+      requestedById: "zoe",
+      partDefinitionId: null,
+      quantity: 4,
+      vendor: "B&H",
+      linkLabel: "bhphotovideo.com/sd-cards",
+      estimatedCost: 64,
+      approvedByMentor: false,
+      status: "requested",
+    },
   ] satisfies PlatformSnapshot["purchaseItems"];
 
 export const offseasonQaReviews = [
@@ -91,6 +148,17 @@ export const offseasonQaReviews = [
       notes: "Clean import contract and realistic rubric examples for the training pass.",
       reviewedAt: "2026-05-30T09:50:00-04:00",
     },
+    {
+      id: "qa-review-spare-radio-bench",
+      subjectId: "spare-radio-bench-check",
+      subjectType: "task",
+      subjectTitle: "Bench-check spare radios",
+      participantIds: ["jamal", "riley"],
+      result: "minor-fix",
+      mentorApproved: false,
+      notes: "Firmware image and labels passed. One PoE injector needs a retest after the replacement order arrives.",
+      reviewedAt: "2026-06-04T20:10:00-04:00",
+    },
   ] satisfies PlatformSnapshot["qaReviews"];
 
 export const offseasonEscalations = [
@@ -105,5 +173,11 @@ export const offseasonEscalations = [
       detail:
         "The controls team needs final CTRE and REV tool versions before they can freeze the practice laptop image.",
       severity: "medium",
+    },
+    {
+      title: "Portable field calibration depends on stand hardware",
+      detail:
+        "AprilTag calibration cannot run at full field spacing until replacement stand bases and hardware arrive.",
+      severity: "high",
     },
   ] satisfies PlatformSnapshot["escalations"];

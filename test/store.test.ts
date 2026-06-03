@@ -214,6 +214,174 @@ test("tutorial season seed includes milestone events", () => {
   assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-training-showcase-mar-21"));
 });
 
+test("offseason FRC sample data has internally consistent references", () => {
+  const snapshot = getSnapshot();
+  const ids = {
+    artifacts: new Set(snapshot.artifacts.map((item) => item.id)),
+    manufacturing: new Set(snapshot.manufacturingItems.map((item) => item.id)),
+    materials: new Set(snapshot.materials.map((item) => item.id)),
+    mechanisms: new Set(snapshot.mechanisms.map((item) => item.id)),
+    members: new Set(snapshot.members.map((item) => item.id)),
+    milestones: new Set(snapshot.milestones.map((item) => item.id)),
+    partDefinitions: new Set(snapshot.partDefinitions.map((item) => item.id)),
+    partInstances: new Set(snapshot.partInstances.map((item) => item.id)),
+    projects: new Set(snapshot.projects.map((item) => item.id)),
+    purchases: new Set(snapshot.purchaseItems.map((item) => item.id)),
+    qaFindings: new Set(snapshot.qaFindings.map((item) => item.id)),
+    qaReports: new Set(snapshot.qaReports.map((item) => item.id)),
+    subsystems: new Set(snapshot.subsystems.map((item) => item.id)),
+    tasks: new Set(snapshot.tasks.map((item) => item.id)),
+    testFindings: new Set(snapshot.testFindings.map((item) => item.id)),
+    testResults: new Set(snapshot.testResults.map((item) => item.id)),
+    workstreams: new Set(snapshot.workstreams.map((item) => item.id)),
+  };
+
+  const expectId = (set: Set<string>, id: string | null | undefined, label: string) => {
+    if (id) {
+      assert.ok(set.has(id), `${label} references missing id ${id}`);
+    }
+  };
+
+  for (const task of snapshot.tasks) {
+    expectId(ids.projects, task.projectId, `task ${task.id} projectId`);
+    expectId(ids.workstreams, task.workstreamId, `task ${task.id} workstreamId`);
+    expectId(ids.subsystems, task.subsystemId, `task ${task.id} subsystemId`);
+    expectId(ids.mechanisms, task.mechanismId, `task ${task.id} mechanismId`);
+    expectId(ids.partInstances, task.partInstanceId, `task ${task.id} partInstanceId`);
+    expectId(ids.artifacts, task.artifactId, `task ${task.id} artifactId`);
+    expectId(ids.milestones, task.targetMilestoneId, `task ${task.id} targetMilestoneId`);
+    expectId(ids.members, task.ownerId, `task ${task.id} ownerId`);
+    expectId(ids.members, task.mentorId, `task ${task.id} mentorId`);
+    task.assigneeIds.forEach((id) => expectId(ids.members, id, `task ${task.id} assigneeIds`));
+    task.dependencyIds.forEach((id) => expectId(ids.tasks, id, `task ${task.id} dependencyIds`));
+    task.linkedManufacturingIds.forEach((id) =>
+      expectId(ids.manufacturing, id, `task ${task.id} linkedManufacturingIds`),
+    );
+    task.linkedPurchaseIds.forEach((id) =>
+      expectId(ids.purchases, id, `task ${task.id} linkedPurchaseIds`),
+    );
+  }
+
+  for (const manufacturingItem of snapshot.manufacturingItems) {
+    expectId(ids.subsystems, manufacturingItem.subsystemId, `manufacturing ${manufacturingItem.id} subsystemId`);
+    expectId(ids.members, manufacturingItem.requestedById, `manufacturing ${manufacturingItem.id} requestedById`);
+    expectId(ids.materials, manufacturingItem.materialId, `manufacturing ${manufacturingItem.id} materialId`);
+    expectId(ids.partDefinitions, manufacturingItem.partDefinitionId, `manufacturing ${manufacturingItem.id} partDefinitionId`);
+    expectId(ids.partInstances, manufacturingItem.partInstanceId, `manufacturing ${manufacturingItem.id} partInstanceId`);
+    manufacturingItem.partInstanceIds.forEach((id) =>
+      expectId(ids.partInstances, id, `manufacturing ${manufacturingItem.id} partInstanceIds`),
+    );
+  }
+
+  for (const purchaseItem of snapshot.purchaseItems) {
+    expectId(ids.subsystems, purchaseItem.subsystemId, `purchase ${purchaseItem.id} subsystemId`);
+    expectId(ids.members, purchaseItem.requestedById, `purchase ${purchaseItem.id} requestedById`);
+    expectId(ids.partDefinitions, purchaseItem.partDefinitionId, `purchase ${purchaseItem.id} partDefinitionId`);
+  }
+
+  for (const partDefinition of snapshot.partDefinitions) {
+    expectId(ids.materials, partDefinition.materialId, `part definition ${partDefinition.id} materialId`);
+  }
+
+  for (const partInstance of snapshot.partInstances) {
+    expectId(ids.subsystems, partInstance.subsystemId, `part instance ${partInstance.id} subsystemId`);
+    expectId(ids.mechanisms, partInstance.mechanismId, `part instance ${partInstance.id} mechanismId`);
+    expectId(ids.partDefinitions, partInstance.partDefinitionId, `part instance ${partInstance.id} partDefinitionId`);
+  }
+
+  for (const milestone of snapshot.milestones) {
+    milestone.projectIds.forEach((id) => expectId(ids.projects, id, `milestone ${milestone.id} projectIds`));
+  }
+
+  for (const meeting of snapshot.meetings) {
+    meeting.projectIds?.forEach((id) => expectId(ids.projects, id, `meeting ${meeting.id} projectIds`));
+  }
+
+  for (const attendanceRecord of snapshot.attendanceRecords) {
+    expectId(ids.members, attendanceRecord.memberId, `attendance record ${attendanceRecord.id} memberId`);
+  }
+
+  for (const workLog of snapshot.workLogs) {
+    expectId(ids.tasks, workLog.taskId, `work log ${workLog.id} taskId`);
+    workLog.participantIds.forEach((id) => expectId(ids.members, id, `work log ${workLog.id} participantIds`));
+  }
+
+  for (const qaReport of snapshot.qaReports) {
+    expectId(ids.tasks, qaReport.taskId, `qa report ${qaReport.id} taskId`);
+    qaReport.participantIds.forEach((id) => expectId(ids.members, id, `qa report ${qaReport.id} participantIds`));
+  }
+
+  for (const testResult of snapshot.testResults) {
+    expectId(ids.milestones, testResult.milestoneId, `test result ${testResult.id} milestoneId`);
+  }
+
+  for (const taskDependency of snapshot.taskDependencies) {
+    expectId(ids.tasks, taskDependency.taskId, `task dependency ${taskDependency.id} taskId`);
+    if (taskDependency.kind === "task") {
+      expectId(ids.tasks, taskDependency.refId, `task dependency ${taskDependency.id} refId`);
+    } else if (taskDependency.kind === "milestone") {
+      expectId(ids.milestones, taskDependency.refId, `task dependency ${taskDependency.id} refId`);
+    } else {
+      expectId(ids.partInstances, taskDependency.refId, `task dependency ${taskDependency.id} refId`);
+    }
+  }
+
+  for (const taskBlocker of snapshot.taskBlockers) {
+    expectId(ids.tasks, taskBlocker.blockedTaskId, `task blocker ${taskBlocker.id} blockedTaskId`);
+    expectId(ids.members, taskBlocker.createdByMemberId, `task blocker ${taskBlocker.id} createdByMemberId`);
+  }
+
+  for (const qaFinding of snapshot.qaFindings) {
+    expectId(ids.qaReports, qaFinding.qaReportId, `qa finding ${qaFinding.id} qaReportId`);
+    expectId(ids.tasks, qaFinding.taskId, `qa finding ${qaFinding.id} taskId`);
+    expectId(ids.projects, qaFinding.projectId, `qa finding ${qaFinding.id} projectId`);
+    expectId(ids.workstreams, qaFinding.workstreamId, `qa finding ${qaFinding.id} workstreamId`);
+    expectId(ids.subsystems, qaFinding.subsystemId, `qa finding ${qaFinding.id} subsystemId`);
+    expectId(ids.mechanisms, qaFinding.mechanismId, `qa finding ${qaFinding.id} mechanismId`);
+    expectId(ids.partInstances, qaFinding.partInstanceId, `qa finding ${qaFinding.id} partInstanceId`);
+    expectId(ids.artifacts, qaFinding.artifactId, `qa finding ${qaFinding.id} artifactId`);
+  }
+
+  for (const testFinding of snapshot.testFindings) {
+    expectId(ids.testResults, testFinding.testResultId, `test finding ${testFinding.id} testResultId`);
+    expectId(ids.milestones, testFinding.milestoneId, `test finding ${testFinding.id} milestoneId`);
+    expectId(ids.tasks, testFinding.taskId, `test finding ${testFinding.id} taskId`);
+    expectId(ids.projects, testFinding.projectId, `test finding ${testFinding.id} projectId`);
+    expectId(ids.workstreams, testFinding.workstreamId, `test finding ${testFinding.id} workstreamId`);
+    expectId(ids.subsystems, testFinding.subsystemId, `test finding ${testFinding.id} subsystemId`);
+    expectId(ids.mechanisms, testFinding.mechanismId, `test finding ${testFinding.id} mechanismId`);
+    expectId(ids.partInstances, testFinding.partInstanceId, `test finding ${testFinding.id} partInstanceId`);
+    expectId(ids.artifacts, testFinding.artifactId, `test finding ${testFinding.id} artifactId`);
+  }
+
+  for (const designIteration of snapshot.designIterations) {
+    const findingIds = designIteration.sourceType === "qa" ? ids.qaFindings : ids.testFindings;
+    expectId(findingIds, designIteration.findingId, `design iteration ${designIteration.id} findingId`);
+    expectId(ids.projects, designIteration.projectId, `design iteration ${designIteration.id} projectId`);
+    expectId(ids.workstreams, designIteration.workstreamId, `design iteration ${designIteration.id} workstreamId`);
+    expectId(ids.subsystems, designIteration.subsystemId, `design iteration ${designIteration.id} subsystemId`);
+    expectId(ids.mechanisms, designIteration.mechanismId, `design iteration ${designIteration.id} mechanismId`);
+    expectId(ids.partInstances, designIteration.partInstanceId, `design iteration ${designIteration.id} partInstanceId`);
+    expectId(ids.artifacts, designIteration.artifactId, `design iteration ${designIteration.id} artifactId`);
+    expectId(ids.tasks, designIteration.taskId, `design iteration ${designIteration.id} taskId`);
+  }
+
+  for (const risk of snapshot.risks) {
+    const sourceSet = risk.sourceType === "qa-report" ? ids.qaReports : ids.testResults;
+    expectId(sourceSet, risk.sourceId, `risk ${risk.id} sourceId`);
+    if (risk.attachmentType === "project") {
+      expectId(ids.projects, risk.attachmentId, `risk ${risk.id} attachmentId`);
+    } else if (risk.attachmentType === "workstream") {
+      expectId(ids.workstreams, risk.attachmentId, `risk ${risk.id} attachmentId`);
+    } else if (risk.attachmentType === "mechanism") {
+      expectId(ids.mechanisms, risk.attachmentId, `risk ${risk.id} attachmentId`);
+    } else {
+      expectId(ids.partInstances, risk.attachmentId, `risk ${risk.id} attachmentId`);
+    }
+    expectId(ids.tasks, risk.mitigationTaskId, `risk ${risk.id} mitigationTaskId`);
+  }
+});
+
 test("createMember generates unique slugs for repeated names", () => {
   const first = createMember({
     name: "Ava Chen",
