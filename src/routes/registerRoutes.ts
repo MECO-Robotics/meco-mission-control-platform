@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, type FastifyRequest } from "fastify";
 import { requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
@@ -414,6 +414,21 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return null;
   };
+
+  const readAuditRequestId = (request: FastifyRequest) => {
+    const requestId = request.id;
+    return typeof requestId === "string" && requestId.trim().length > 0
+      ? requestId
+      : null;
+  };
+
+  const buildTaskAuditContext = (
+    request: FastifyRequest,
+    actorMemberId?: string | null,
+  ) => ({
+    actorMemberId: actorMemberId ?? getTaskActionMember(request)?.id ?? null,
+    requestId: readAuditRequestId(request),
+  });
 
   const canManageTaskAssignment = (request: Parameters<typeof requireSession>[0]) =>
     hasMentorPermission(request);
@@ -1982,7 +1997,7 @@ export async function registerRoutes(app: FastifyInstance) {
           parsed.data.start && isTaskStartReady(currentTask)
             ? "in-progress"
             : currentTask.status,
-      });
+      }, buildTaskAuditContext(request, member.id));
 
       return {
         item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
@@ -2023,7 +2038,7 @@ export async function registerRoutes(app: FastifyInstance) {
         assigneeIds: (currentTask.assigneeIds ?? []).filter(
           (assigneeId) => assigneeId !== currentTask.ownerId,
         ),
-      });
+      }, buildTaskAuditContext(request, member?.id ?? null));
 
       return {
         item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
@@ -2078,7 +2093,7 @@ export async function registerRoutes(app: FastifyInstance) {
       const updatedTask = updateTask(currentTask.id, {
         ownerId: parsed.data.ownerId,
         assigneeIds: nextAssigneeIds,
-      });
+      }, buildTaskAuditContext(request));
 
       return {
         item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
@@ -2168,7 +2183,7 @@ export async function registerRoutes(app: FastifyInstance) {
         partInstanceIds: nextTaskShape.partInstanceIds,
         artifactId: nextTaskShape.artifactId,
         artifactIds: nextTaskShape.artifactIds,
-      });
+      }, buildTaskAuditContext(request));
       return {
         item: updatedTask
           ? {

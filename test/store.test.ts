@@ -21,6 +21,7 @@ import {
   removeMember,
   removePartDefinition,
   removeSubsystem,
+  recordAuditAction,
   resetStore,
   updateSubsystem,
   updatePartDefinition,
@@ -390,9 +391,15 @@ test("updateTask patches an existing task in place", () => {
 
 test("task updates append an audit action entry", () => {
   const initialActionCount = getSnapshot().actions?.length ?? 0;
+  const originalTask = getSnapshot().tasks.find((task) => task.id === "intake-guard");
+  assert.ok(originalTask);
 
   const updatedTask = updateTask("intake-guard", {
     status: "complete",
+    actualHours: 7,
+  }, {
+    actorMemberId: "jordan",
+    requestId: "req-audit-task-update",
   });
 
   assert.ok(updatedTask);
@@ -407,7 +414,43 @@ test("task updates append an audit action entry", () => {
   assert.equal(lastAction.projectId, updatedTask.projectId);
   assert.equal(lastAction.subsystemId, updatedTask.subsystemId);
   assert.equal(lastAction.entityLabel, updatedTask.title);
+  assert.equal(lastAction.actorMemberId, "jordan");
+  assert.equal(lastAction.requestId, "req-audit-task-update");
+  assert.ok(lastAction.changedFields.includes("actualHours"));
   assert.ok(lastAction.changedFields.includes("status"));
+  assert.equal(lastAction.beforeJson?.status, "in-progress");
+  assert.equal(lastAction.afterJson?.status, "complete");
+  assert.equal(lastAction.beforeJson?.actualHours, originalTask.actualHours);
+  assert.equal(lastAction.afterJson?.actualHours, 7);
+});
+
+test("audit summaries redact sensitive before and after fields", () => {
+  recordAuditAction({
+    operation: "update",
+    entityType: "integration-secret",
+    entityId: "integration-secret-1",
+    changedFields: ["apiToken", "name"],
+    beforeJson: {
+      apiToken: "old-token",
+      name: "Practice API",
+    },
+    afterJson: {
+      apiToken: "new-token",
+      name: "Practice API v2",
+    },
+    actorMemberId: "jordan",
+    requestId: "req-redaction-check",
+  });
+
+  const lastAction = getSnapshot().actions?.at(-1);
+  assert.ok(lastAction);
+  assert.deepEqual(lastAction.changedFields, ["apiToken", "name"]);
+  assert.equal(lastAction.actorMemberId, "jordan");
+  assert.equal(lastAction.requestId, "req-redaction-check");
+  assert.equal(lastAction.beforeJson?.apiToken, "[redacted]");
+  assert.equal(lastAction.afterJson?.apiToken, "[redacted]");
+  assert.equal(lastAction.beforeJson?.name, "Practice API");
+  assert.equal(lastAction.afterJson?.name, "Practice API v2");
 });
 
 test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {

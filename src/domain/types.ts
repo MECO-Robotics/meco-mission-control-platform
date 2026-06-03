@@ -124,7 +124,10 @@ export interface AuditAction {
   entityLabel: string;
   message: string;
   changedFields: string[];
+  beforeJson?: Record<string, unknown>;
+  afterJson?: Record<string, unknown>;
   detailsJson?: Record<string, unknown>;
+  requestId: string | null;
   projectId: string | null;
   projectIds?: string[];
   taskId: string | null;
