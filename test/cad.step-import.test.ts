@@ -4,7 +4,9 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { runStepImport } from "../src/cad/cadImportService";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
+import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const execFileAsync = promisify(execFile);
@@ -380,6 +382,7 @@ function multipartStepPayload(input: {
   label: string;
   fileBuffer: Buffer;
   fileFirst?: boolean;
+  fileContentType?: string;
   projectId?: string;
   seasonId?: string;
   requestedBy?: string;
@@ -406,7 +409,7 @@ function multipartStepPayload(input: {
   const appendFile = () => {
     append(`--${input.boundary}\r\n`);
     append(`Content-Disposition: form-data; name="file"; filename="${input.fileName}"\r\n`);
-    append("Content-Type: model/step\r\n\r\n");
+    append(`Content-Type: ${input.fileContentType ?? "model/step"}\r\n\r\n`);
     chunks.push(input.fileBuffer);
     append("\r\n");
   };
@@ -1379,6 +1382,116 @@ test("authenticated STEP uploads still accept JSON payloads", async () => {
   assert.equal(result.stderr, "");
 });
 
+test("STEP upload validation rejects unsafe extensions, MIME types, and malformed content", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const badExtensionResponse = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      payload: {
+        fileName: "robot.exe",
+        fileText: uploadedClassStepFixture(),
+        label: "bad-extension",
+      },
+    });
+    assert.equal(badExtensionResponse.statusCode, 400, badExtensionResponse.body);
+    assert.match(badExtensionResponse.body, /must use a \.step or \.stp file/i);
+    resetLimits();
+
+    const malformedResponse = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "robot.step",
+        fileText: "this is not a STEP exchange file",
+      },
+    });
+    assert.equal(malformedResponse.statusCode, 422, malformedResponse.body);
+    assert.match(malformedResponse.body, /could not be read/i);
+    assert.doesNotMatch(malformedResponse.body, /this is not a STEP/);
+    resetLimits();
+
+    const boundary = "meco-step-upload-bad-mime-boundary";
+    const body = multipartStepPayload({
+      boundary,
+      fileName: "robot.step",
+      label: "bad-mime",
+      fileBuffer: Buffer.from(uploadedClassStepFixture(), "utf8"),
+      fileContentType: "application/x-msdownload",
+    });
+    const badMimeResponse = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      payload: body,
+    });
+    assert.equal(badMimeResponse.statusCode, 400, badMimeResponse.body);
+    assert.match(badMimeResponse.body, /STEP file MIME type/i);
+  });
+});
+
+test("STEP upload validation enforces configured file size limit", () => {
+  assert.throws(
+    () =>
+      assertValidStepUpload({
+        fileName: "robot.step",
+        fileText: "ISO-10303-21;\nDATA;\nENDSEC;\nEND-ISO-10303-21;",
+        maxBytes: 16,
+      }),
+    /larger than the/,
+  );
+});
+
+test("STEP import reports parser timeout as a safe user-readable error", async () => {
+  await withIntegrationApp(async () => {
+    resetCadRuntimeStore();
+    const { getCadStore } = await import("../src/cad/cadStoreFactory");
+
+    await assert.rejects(
+      runStepImport({
+        store: getCadStore(),
+        parserClient: {
+          parseStepFile: () => new Promise(() => {}),
+        },
+        parserMode: "step_text",
+        input: {
+          fileText: uploadedClassStepFixture(),
+          originalFilename: "timeout.step",
+          label: "timeout",
+        },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /timed out/i);
+        assert.doesNotMatch(error.message, /Promise|setTimeout|stack/i);
+        return true;
+      },
+    );
+  }, { env: { CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
+});
+
+test("STEP route parsing times out built-in parser work off the request event loop", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "timeout.step",
+        fileText: uploadedClassStepFixture(),
+      },
+    });
+
+    assert.equal(response.statusCode, 408, response.body);
+    assert.match(response.body, /timed out/i);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text", CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
+});
+
 test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1388,7 +1501,10 @@ test("multipart STEP uploads accept files larger than the old 25 MiB cap", async
       boundary,
       fileName: "large-master.step",
       label: "large-master",
-      fileBuffer: Buffer.alloc((25 * 1024 * 1024) + 1024, " "),
+      fileBuffer: Buffer.from(
+        `ISO-10303-21;\nDATA;\n${" ".repeat((25 * 1024 * 1024) + 1024)}\nENDSEC;\nEND-ISO-10303-21;`,
+        "utf8",
+      ),
     });
 
     const response = await app.inject({

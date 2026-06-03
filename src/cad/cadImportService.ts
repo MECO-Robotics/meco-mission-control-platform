@@ -10,16 +10,11 @@ import type {
 import { applyMappingRules } from "./cadMappingEngine";
 import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { hashText } from "./cadUtils";
+import { CadImportError } from "./errors/cadImportErrors";
+import { parseStepFileWithTimeout } from "./parsing/stepParserRunner";
 
-export class CadImportError extends Error {
-  constructor(
-    message: string,
-    readonly statusCode = 400,
-  ) {
-    super(message);
-    this.name = "CadImportError";
-  }
-}
+export { CadImportError } from "./errors/cadImportErrors";
+export { parseStepFileWithTimeout } from "./parsing/stepParserRunner";
 
 export interface StepImportInput {
   fileText: string;
@@ -29,13 +24,6 @@ export interface StepImportInput {
   seasonId?: string | null;
   requestedBy?: string | null;
   uploadedFileId?: string | null;
-}
-
-function assertStepFilename(filename: string) {
-  const normalized = filename.trim().toLowerCase();
-  if (!normalized.endsWith(".step") && !normalized.endsWith(".stp")) {
-    throw new CadImportError("STEP imports require a .step or .stp file.");
-  }
 }
 
 async function appendWarnings(args: {
@@ -56,6 +44,13 @@ async function appendWarnings(args: {
       sourceId: warning.sourceId ?? null,
       metadataJson: warning.metadata ?? {},
     });
+  }
+}
+
+function assertStepFilename(filename: string) {
+  const normalized = filename.trim().toLowerCase();
+  if (!normalized.endsWith(".step") && !normalized.endsWith(".stp")) {
+    throw new CadImportError("STEP uploads must use a .step or .stp file.");
   }
 }
 
@@ -101,6 +96,7 @@ export async function runStepImport(args: {
   parserClient: StepParserClient;
   parserMode?: StepParserMode;
   allowPlaceholder?: boolean;
+  parseInWorker?: boolean;
   input: StepImportInput;
 }) {
   const filename = args.input.originalFilename.trim();
@@ -128,10 +124,13 @@ export async function runStepImport(args: {
   await args.store.updateImportRun(importRun.id, { status: "PARSING", parseStartedAt });
 
   try {
-    const parsed = await args.parserClient.parseStepFile({
+    const parsed = await parseStepFileWithTimeout({
+      parserClient: args.parserClient,
       fileText: args.input.fileText,
       originalFilename: filename,
       importRunId: importRun.id,
+      parserMode: args.parserMode,
+      runInWorker: args.parseInWorker,
     });
     const configuredParserMode = args.parserMode ?? "custom";
     const placeholderUsed = stepParserUsedPlaceholder(parsed);
@@ -252,6 +251,7 @@ export async function runStepImport(args: {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const statusCode = error instanceof CadImportError ? error.statusCode : 422;
     await args.store.appendWarning({
       importRunId: importRun.id,
       snapshotId: null,
@@ -268,6 +268,6 @@ export async function runStepImport(args: {
       errorMessage: message,
       parseCompletedAt: new Date().toISOString(),
     });
-    throw new CadImportError(failedRun?.errorMessage ?? message, 422);
+    throw new CadImportError(failedRun?.errorMessage ?? message, statusCode);
   }
 }
