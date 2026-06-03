@@ -42,7 +42,7 @@ export const offseasonTaskDependencies = [
     taskId: "scrimmage-drive-coach-cards",
     kind: "task",
     refId: "scouting-schema-normalization",
-    requiredState: "waiting-for-qa",
+    requiredState: "complete",
     dependencyType: "hard",
     createdAt: "2026-06-04T08:15:00-04:00",
   },
