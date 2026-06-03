@@ -63,9 +63,13 @@ function collectAssemblyUsages(args: {
 }) {
   const assemblyUsages: StepAssemblyUsage[] = [];
   let partialReferenceCount = 0;
+  let nextAssemblyUsageOccurrenceCount = 0;
   for (const entity of args.entities) {
     if (!assemblyUsageEntityTypes.has(entity.type)) {
       continue;
+    }
+    if (entity.type === "NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
+      nextAssemblyUsageOccurrenceCount += 1;
     }
     const productDefinitionRefs = entity.refs.filter((ref) => args.productDefinitions.has(ref));
     if (productDefinitionRefs.length < 2) {
@@ -80,7 +84,7 @@ function collectAssemblyUsages(args: {
       childProductDefinitionId: productDefinitionRefs[1]!,
     });
   }
-  return { assemblyUsages, partialReferenceCount };
+  return { assemblyUsages, nextAssemblyUsageOccurrenceCount, partialReferenceCount };
 }
 
 function buildAssemblyGraph(assemblyUsages: StepAssemblyUsage[]) {
@@ -146,7 +150,7 @@ export function parseStepTextAssemblyGraph(input: StepParserInput): StepParseRes
     productCount: products.size,
     productDefinitionFormationCount: formationToProductId.size,
     productDefinitionCount: productDefinitions.size,
-    nextAssemblyUsageOccurrenceCount: assemblyUsages.length,
+    nextAssemblyUsageOccurrenceCount: collectedUsages.nextAssemblyUsageOccurrenceCount,
     assemblyUsageCount: assemblyUsages.length,
   });
 

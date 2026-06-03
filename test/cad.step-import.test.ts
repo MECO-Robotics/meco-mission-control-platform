@@ -453,6 +453,8 @@ test("STEP text parser extracts an Onshape-style assembly graph", async () => {
   assert.equal(parsed.partDefinitions[0]?.name, "Spacer");
   assert.equal(parsed.partInstances.length, 1);
   assert.equal(parsed.partInstances[0]?.parentAssemblySourceId, "step-asm-occ:#101");
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 3);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 3);
 });
 
 test("STEP text parser preserves multiple subsystem candidates and repeated part instances", async () => {
@@ -500,6 +502,7 @@ test("STEP text parser accepts assembly component usage edges", async () => {
   );
   assert.deepEqual(parsed.partDefinitions.map((part) => part.name).sort(), ["Belt", "Spacer", "Wheel"]);
   assert.equal(parsed.partInstances.filter((instance) => instance.partDefinitionSourceId === "step-part-def:#12").length, 2);
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
   assert.equal(parsed.rawStats.assemblyUsageCount, 8);
 });
 
@@ -515,6 +518,7 @@ test("STEP text parser ignores occurrence relationship metadata as assembly edge
   });
 
   assert.equal(parsed.rawStats.assemblyUsageCount, 4);
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
   assert.equal(parsed.partInstances.length, 2);
   assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_partial"));
 });
