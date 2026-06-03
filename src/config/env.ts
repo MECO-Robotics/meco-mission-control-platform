@@ -93,6 +93,7 @@ const envSchema = z.object({
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
   CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
+  CAD_STEP_PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
@@ -330,6 +331,7 @@ export const cadStepUploadConfig = {
 
 export const cadStepParserConfig = {
   mode: env.CAD_STEP_PARSER_MODE,
+  timeoutMs: env.CAD_STEP_PARSER_TIMEOUT_MS,
 } as const;
 
 export function resolveCadStepParserMode() {
@@ -341,4 +343,15 @@ export function resolveCadStepParserMode() {
     return requestedMode as (typeof cadStepParserModes)[number];
   }
   return cadStepParserConfig.mode;
+}
+
+export function resolveCadStepParserTimeoutMs() {
+  const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
+  if (requestedTimeout) {
+    const parsed = Number(requestedTimeout);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return cadStepParserConfig.timeoutMs;
 }

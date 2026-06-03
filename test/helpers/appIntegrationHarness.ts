@@ -49,6 +49,7 @@ const APP_ENV_KEYS = [
   "CAD_STORE_DRIVER",
   "CAD_STEP_UPLOAD_MAX_BYTES",
   "CAD_STEP_PARSER_MODE",
+  "CAD_STEP_PARSER_TIMEOUT_MS",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -117,6 +118,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.CAD_STORE_DRIVER = "runtime";
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
   delete process.env.CAD_STEP_PARSER_MODE;
+  delete process.env.CAD_STEP_PARSER_TIMEOUT_MS;
 
   for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
     if (value === undefined) {

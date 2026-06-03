@@ -11,6 +11,8 @@ import { applyMappingRules } from "./cadMappingEngine";
 import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { hashText } from "./cadUtils";
 
+const defaultStepParserTimeoutMs = 30_000;
+
 export class CadImportError extends Error {
   constructor(
     message: string,
@@ -31,13 +33,6 @@ export interface StepImportInput {
   uploadedFileId?: string | null;
 }
 
-function assertStepFilename(filename: string) {
-  const normalized = filename.trim().toLowerCase();
-  if (!normalized.endsWith(".step") && !normalized.endsWith(".stp")) {
-    throw new CadImportError("STEP imports require a .step or .stp file.");
-  }
-}
-
 async function appendWarnings(args: {
   store: CadStore;
   importRunId: string;
@@ -56,6 +51,52 @@ async function appendWarnings(args: {
       sourceId: warning.sourceId ?? null,
       metadataJson: warning.metadata ?? {},
     });
+  }
+}
+
+function assertStepFilename(filename: string) {
+  const normalized = filename.trim().toLowerCase();
+  if (!normalized.endsWith(".step") && !normalized.endsWith(".stp")) {
+    throw new CadImportError("STEP uploads must use a .step or .stp file.");
+  }
+}
+
+function resolveStepParserTimeoutMs() {
+  const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
+  if (requestedTimeout) {
+    const parsed = Number(requestedTimeout);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return defaultStepParserTimeoutMs;
+}
+
+export async function parseStepFileWithTimeout(args: {
+  parserClient: StepParserClient;
+  fileText: string;
+  originalFilename: string;
+  importRunId: string;
+}) {
+  const timeoutMs = resolveStepParserTimeoutMs();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      args.parserClient.parseStepFile({
+        fileText: args.fileText,
+        originalFilename: args.originalFilename,
+        importRunId: args.importRunId,
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new CadImportError("STEP parsing timed out. Export a smaller STEP file and try again.", 408));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 }
 
@@ -128,7 +169,8 @@ export async function runStepImport(args: {
   await args.store.updateImportRun(importRun.id, { status: "PARSING", parseStartedAt });
 
   try {
-    const parsed = await args.parserClient.parseStepFile({
+    const parsed = await parseStepFileWithTimeout({
+      parserClient: args.parserClient,
       fileText: args.input.fileText,
       originalFilename: filename,
       importRunId: importRun.id,
@@ -252,6 +294,7 @@ export async function runStepImport(args: {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const statusCode = error instanceof CadImportError ? error.statusCode : 422;
     await args.store.appendWarning({
       importRunId: importRun.id,
       snapshotId: null,
@@ -268,6 +311,6 @@ export async function runStepImport(args: {
       errorMessage: message,
       parseCompletedAt: new Date().toISOString(),
     });
-    throw new CadImportError(failedRun?.errorMessage ?? message, 422);
+    throw new CadImportError(failedRun?.errorMessage ?? message, statusCode);
   }
 }
