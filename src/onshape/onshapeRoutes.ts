@@ -68,6 +68,21 @@ function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyRep
   return false;
 }
 
+function resolveImportActor(request: FastifyRequest, requestedBy: string | null | undefined) {
+  if (!isAuthEnabled()) {
+    return requestedBy ?? null;
+  }
+
+  const session = getSessionFromRequest(request);
+  const accountId = session?.accountId?.trim().toLowerCase();
+  const email = session?.email?.trim().toLowerCase();
+  const member = getMembers().find((candidate) =>
+    candidate.id.trim().toLowerCase() === accountId ||
+    candidate.email?.trim().toLowerCase() === email);
+
+  return member?.id ?? session?.accountId ?? session?.email ?? null;
+}
+
 export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
   registerOnshapeOAuthRoutes(app, requireApiSession);
   registerOnshapeSyncJobRoutes(app, requireApiSession);
@@ -176,7 +191,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       store,
       documentRefId: documentRef.id,
       syncLevel: parsedBody.data.syncLevel,
-      requestedBy: parsedBody.data.requestedBy ?? null,
+      requestedBy: resolveImportActor(request, parsedBody.data.requestedBy),
       client,
     });
 

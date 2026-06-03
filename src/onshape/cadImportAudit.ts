@@ -21,9 +21,6 @@ export function recordCadImportAuditAction(args: {
   result: CadGraphImportResult;
   actorMemberId?: string | null;
 }) {
-  const importRun = args.store.findImportRun(args.result.importRunId);
-  const syncJob = args.store.findSyncJob(args.result.syncJobId);
-  const summary = syncJob?.summaryJson ?? importRun?.rawSummaryJson ?? {};
   const sourceReference = {
     documentId: args.documentRef.documentId,
     workspaceId: args.documentRef.workspaceId,
@@ -61,7 +58,6 @@ export function recordCadImportAuditAction(args: {
       },
       warningCount: args.result.warningCount,
       callsUsed: args.result.callsUsed,
-      summary,
     },
   });
 }
