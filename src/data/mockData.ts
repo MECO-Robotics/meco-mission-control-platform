@@ -1955,7 +1955,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-outreach-milestones",
       subsystemId: "outreach",
       mechanismId: "demo-kiosk",
-      partInstanceId: "pi-demo-kiosk-signage-kit",
+      partInstanceId: "pi-demo-kiosk-signage",
       artifactId: "artifact-stem-night-run-of-show",
       title: "Outreach kiosk signage copy is too dense",
       detail:
@@ -1976,7 +1976,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-controls",
       subsystemId: "vision",
       mechanismId: "limelight-mount",
-      partInstanceId: "pi-limelight-mount-plate",
+      partInstanceId: "pi-limelight-mount",
       artifactId: null,
       title: "Vision confidence drop near field corners",
       detail:
@@ -2031,7 +2031,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-outreach-milestones",
       subsystemId: "outreach",
       mechanismId: "demo-kiosk",
-      partInstanceId: "pi-demo-kiosk-signage-kit",
+      partInstanceId: "pi-demo-kiosk-signage",
       artifactId: "artifact-stem-night-run-of-show",
       taskId: "outreach-script-rehearsal",
       notes: "Simplify entrance signage and align copy with run-of-show callouts.",

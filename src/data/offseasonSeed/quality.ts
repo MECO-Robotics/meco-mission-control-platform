@@ -19,6 +19,15 @@ export const offseasonQaReports = [
       notes: "Normalized export includes every scrimmage row and matches the strategy dashboard import contract.",
       reviewedAt: "2026-05-30T09:50:00-04:00",
     },
+    {
+      id: "qa-spare-radio-bench-check",
+      taskId: "spare-radio-bench-check",
+      participantIds: ["jamal", "riley"],
+      result: "minor-fix",
+      mentorApproved: false,
+      notes: "Both radios boot and connect. Retest one PoE injector after shipped spare arrives.",
+      reviewedAt: "2026-06-04T20:10:00-04:00",
+    },
   ] satisfies PlatformSnapshot["qaReports"];
 
 export const offseasonTestResults = [
@@ -43,6 +52,17 @@ export const offseasonTestResults = [
         "Rubric language still needs training examples for rookie scouts",
       ],
     },
+    {
+      id: "test-field-calibration-night",
+      milestoneId: "field-calibration-night-jun-20",
+      title: "Portable field localization dry run",
+      status: "blocked",
+      findings: [
+        "AprilTag stands are short two bases",
+        "Radio bench checklist found one PoE injector that needs replacement",
+        "Auto replay suite can still run against half-field logs",
+      ],
+    },
   ] satisfies PlatformSnapshot["testResults"];
 
 export const offseasonQaFindings = [
@@ -62,6 +82,23 @@ export const offseasonQaFindings = [
       status: "open",
       createdAt: "2026-05-30T11:45:00-04:00",
       updatedAt: "2026-05-30T11:45:00-04:00",
+    },
+    {
+      id: "finding-radio-poe-retest",
+      qaReportId: "qa-spare-radio-bench-check",
+      taskId: "spare-radio-bench-check",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-controls",
+      subsystemId: "controls",
+      mechanismId: "spare-radio-bench",
+      partInstanceId: "pi-spare-radio-kit",
+      artifactId: "artifact-radio-bench-checklist",
+      title: "PoE injector needs replacement retest",
+      detail: "One injector browned out during the second boot cycle and should be swapped before the scrimmage loadout.",
+      severity: "medium",
+      status: "open",
+      createdAt: "2026-06-04T20:15:00-04:00",
+      updatedAt: "2026-06-04T20:15:00-04:00",
     },
   ] satisfies PlatformSnapshot["qaFindings"];
 
@@ -84,6 +121,24 @@ export const offseasonTestFindings = [
       createdAt: "2026-05-30T12:00:00-04:00",
       updatedAt: "2026-05-30T12:00:00-04:00",
     },
+    {
+      id: "finding-field-calibration-stands-short",
+      testResultId: "test-field-calibration-night",
+      milestoneId: "field-calibration-night-jun-20",
+      taskId: "apriltag-field-calibration",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-controls",
+      subsystemId: "vision",
+      mechanismId: "field-calibration-kit",
+      partInstanceId: "pi-apriltag-stand-kit",
+      artifactId: "artifact-drive-log-template-may",
+      title: "Portable field calibration lacks full tag stands",
+      detail: "The team can run half-field checks, but full-field localization is blocked until the stand hardware arrives.",
+      severity: "high",
+      status: "open",
+      createdAt: "2026-06-05T18:20:00-04:00",
+      updatedAt: "2026-06-05T18:20:00-04:00",
+    },
   ] satisfies PlatformSnapshot["testFindings"];
 
 export const offseasonDesignIterations = [
@@ -102,6 +157,22 @@ export const offseasonDesignIterations = [
       status: "in-progress",
       createdAt: "2026-05-30T12:05:00-04:00",
       updatedAt: "2026-05-30T12:05:00-04:00",
+    },
+    {
+      id: "iteration-field-calibration-fixture",
+      sourceType: "test",
+      findingId: "finding-field-calibration-stands-short",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-controls",
+      subsystemId: "vision",
+      mechanismId: "field-calibration-kit",
+      partInstanceId: "pi-apriltag-stand-kit",
+      artifactId: "artifact-drive-log-template-may",
+      taskId: "apriltag-field-calibration",
+      notes: "Add weighted bases and a setup photo checklist before running the full localization dry run.",
+      status: "planned",
+      createdAt: "2026-06-05T18:25:00-04:00",
+      updatedAt: "2026-06-05T18:25:00-04:00",
     },
   ] satisfies PlatformSnapshot["designIterations"];
 
@@ -127,5 +198,27 @@ export const offseasonRisks = [
       attachmentType: "mechanism",
       attachmentId: "driver-station-replay",
       mitigationTaskId: "driver-station-image-refresh",
+    },
+    {
+      id: "risk-field-calibration-hardware",
+      title: "Field calibration may be reduced to half-field scope",
+      detail: "Missing AprilTag stand bases could prevent full-field autonomous replay validation before the calibration night.",
+      severity: "high",
+      sourceType: "test-result",
+      sourceId: "test-field-calibration-night",
+      attachmentType: "mechanism",
+      attachmentId: "field-calibration-kit",
+      mitigationTaskId: "apriltag-field-calibration",
+    },
+    {
+      id: "risk-radio-spare-depth",
+      title: "Radio spare kit has one unverified PoE injector",
+      detail: "One injector needs a replacement retest, leaving only one fully verified spare radio kit for the scrimmage.",
+      severity: "medium",
+      sourceType: "qa-report",
+      sourceId: "qa-spare-radio-bench-check",
+      attachmentType: "part-instance",
+      attachmentId: "pi-spare-radio-kit",
+      mitigationTaskId: "spare-radio-bench-check",
     },
   ] satisfies PlatformSnapshot["risks"];

@@ -41,6 +41,30 @@ export const offseasonWorkLogs = [
       participantIds: ["sofia", "diego"],
       notes: "Drafted station rotation and reset-crew assignments for the June training night.",
     },
+    {
+      id: "log-32",
+      taskId: "spare-radio-bench-check",
+      date: "2026-06-03",
+      hours: 2,
+      participantIds: ["jamal", "ethan"],
+      notes: "Imaged both spare radios, verified DHCP handoff, and found one suspect PoE injector.",
+    },
+    {
+      id: "log-33",
+      taskId: "scrimmage-drive-coach-cards",
+      date: "2026-06-04",
+      hours: 2,
+      participantIds: ["mika", "noah", "riley"],
+      notes: "Converted scouting cleanup notes into first-pass drive-team cards for scrimmage objectives.",
+    },
+    {
+      id: "log-34",
+      taskId: "sponsor-open-house-media-package",
+      date: "2026-06-05",
+      hours: 1.25,
+      participantIds: ["zoe", "marco"],
+      notes: "Mapped sponsor-safe shot list against demo loop beats and student speaker availability.",
+    },
   ] satisfies PlatformSnapshot["workLogs"];
 
 export const offseasonMeetings = [
@@ -76,6 +100,38 @@ export const offseasonMeetings = [
       rsvpsMaybe: 5,
       openSignIns: 4,
     },
+    {
+      id: "field-calibration-prep",
+      title: "Field calibration prep",
+      meetingType: "build",
+      seasonId: "default-season",
+      projectIds: ["project-robot-2026", "project-training-2026"],
+      startDateTime: "2026-06-10T18:00:00-04:00",
+      endDateTime: "2026-06-10T20:00:00-04:00",
+      location: "Practice field",
+      description: "Lay out portable field marks, tag stand work, auto replay ownership, and QA evidence needs.",
+      date: "2026-06-10",
+      time: "6:00 PM",
+      rsvpsYes: 14,
+      rsvpsMaybe: 4,
+      openSignIns: 3,
+    },
+    {
+      id: "open-house-content-review",
+      title: "Open-house content review",
+      meetingType: "outreach",
+      seasonId: "default-season",
+      projectIds: ["project-outreach-2026", "project-media-2026"],
+      startDateTime: "2026-06-18T19:00:00-04:00",
+      endDateTime: "2026-06-18T20:00:00-04:00",
+      location: "Shop conference room",
+      description: "Review demo loop, sponsor media shot list, speaking roles, and consent-safe capture plan.",
+      date: "2026-06-18",
+      time: "7:00 PM",
+      rsvpsYes: 11,
+      rsvpsMaybe: 6,
+      openSignIns: 2,
+    },
   ] satisfies PlatformSnapshot["meetings"];
 
 export const offseasonAttendanceRecords = [
@@ -84,4 +140,7 @@ export const offseasonAttendanceRecords = [
     { id: "att-16", memberId: "noah", date: "2026-05-29", totalHours: 2.25 },
     { id: "att-17", memberId: "ethan", date: "2026-05-30", totalHours: 1.5 },
     { id: "att-18", memberId: "sofia", date: "2026-05-30", totalHours: 1 },
+    { id: "att-19", memberId: "jamal", date: "2026-06-03", totalHours: 2 },
+    { id: "att-20", memberId: "mika", date: "2026-06-04", totalHours: 2 },
+    { id: "att-21", memberId: "zoe", date: "2026-06-05", totalHours: 1.25 },
   ] satisfies PlatformSnapshot["attendanceRecords"];
