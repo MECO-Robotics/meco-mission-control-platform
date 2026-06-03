@@ -70,6 +70,41 @@ npm run build
 npm run smoke:test
 ```
 
+## Repository labels
+
+Use the shared Mission Control label vocabulary when filing or triaging issues.
+Every issue should have at least one area label, one type label, and one
+priority label. Add a workflow label when the issue is blocked or waiting on
+design input.
+
+Area labels:
+
+- `area:platform` - platform API, persistence, auth, deployment, or backend operations.
+- `area:docs` - repository documentation, runbooks, checklists, or contributor guidance.
+- `area:backend` - API contracts, route behavior, service logic, or server integrations.
+- `area:data` - seed data, fallback data, bootstrap records, or data integrity.
+- `area:qa` - test coverage, smoke checks, validation workflows, or release verification.
+
+Type labels:
+
+- `type:bug` - incorrect behavior or regression.
+- `type:feature` - new user-facing behavior or workflow.
+- `type:tech-debt` - cleanup, refactor, dependency, or maintainability work.
+- `type:docs` - documentation-only work.
+- `type:test` - test-only or validation-only work.
+
+Priority labels:
+
+- `priority:p0` - production-blocking or release-blocking.
+- `priority:p1` - high-impact work needed soon.
+- `priority:p2` - normal backlog priority.
+- `priority:p3` - low-priority polish or follow-up.
+
+Workflow labels:
+
+- `blocked` - cannot proceed until an external dependency is resolved.
+- `needs-design` - needs UI, content, or workflow design input before implementation.
+
 ## Local env example
 
 Use this shape for a local `.env` file when the web app is running on Vite's
