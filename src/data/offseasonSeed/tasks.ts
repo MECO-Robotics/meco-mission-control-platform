@@ -259,7 +259,7 @@ export const offseasonTasks = [
       dueDate: "2026-06-19",
       priority: "critical",
       status: "not-started",
-      dependencyIds: ["auto-replay-suite", "spare-radio-bench-check"],
+      dependencyIds: ["auto-replay-suite"],
       blockers: ["Practice field tag stands are short two bases until the purchase lands."],
       linkedManufacturingIds: ["apriltag-stand-base-cut"],
       linkedPurchaseIds: ["apriltag-stand-hardware"],
