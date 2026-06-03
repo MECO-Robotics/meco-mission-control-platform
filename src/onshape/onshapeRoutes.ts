@@ -6,7 +6,7 @@ import { getMembers } from "../data/store";
 import { getOnshapeRuntimeStore } from "./cadStore";
 import { runCadImport } from "./cadImporter";
 import { createConfiguredOnshapeCadClient } from "./onshapeClientFactory";
-import { getOAuthStatus } from "./onshapeOAuthHealth";
+import { getOnshapeOverview } from "./onshapeOverview";
 import { registerOnshapeOAuthRoutes } from "./onshapeOAuthRoutes";
 import {
   onshapeDocumentRefSchema,
@@ -15,6 +15,7 @@ import {
   onshapeListQuerySchema,
 } from "./onshapeRouteSchemas";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "./onshapeSyncPolicy";
+import { registerOnshapeSyncJobRoutes } from "./onshapeSyncJobRoutes";
 import { parseOnshapeUrl } from "./onshapeUrlParser";
 import type { CadImportOnshapeClient } from "./onshapeTypes";
 
@@ -67,40 +68,16 @@ function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyRep
   return false;
 }
 
-function getOverview() {
-  const store = getOnshapeRuntimeStore();
-  const snapshots = store.listSnapshots();
-  const latestSnapshot = snapshots[0] ?? null;
-  return {
-    connection: {
-      authMode: "oauth",
-      baseUrl: onshapeConfig.baseUrl,
-      configured: onshapeConfig.enabled,
-      credentialReference: onshapeConfig.credentialReference,
-      oauth: getOAuthStatus(store),
-      lastError: null,
-    },
-    documentRefs: store.listDocumentRefs(),
-    importRuns: store.listImportRuns(),
-    snapshots,
-    latestSnapshot,
-    assemblyNodes: latestSnapshot ? store.listAssemblyNodes(latestSnapshot.id) : [],
-    partDefinitions: latestSnapshot ? store.listPartDefinitions(latestSnapshot.id) : [],
-    partInstances: latestSnapshot ? store.listPartInstances(latestSnapshot.id) : [],
-    warnings: store.listWarnings(),
-    budget: store.getBudget(),
-  };
-}
-
 export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
   registerOnshapeOAuthRoutes(app, requireApiSession);
+  registerOnshapeSyncJobRoutes(app, requireApiSession);
 
   app.get("/api/onshape/overview", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
     }
 
-    return getOverview();
+    return getOnshapeOverview();
   });
 
   app.get("/api/onshape/document-refs", async (request, reply) => {
@@ -276,15 +253,6 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       partDefinitions: snapshotId ? store.listPartDefinitions(snapshotId) : [],
       partInstances: snapshotId ? store.listPartInstances(snapshotId) : [],
     };
-  });
-
-  app.get("/api/onshape/warnings", async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
-
-    const query = readListQuery(request.query);
-    return { items: getOnshapeRuntimeStore().listWarnings({ snapshotId: query.snapshotId }) };
   });
 
   app.get("/api/onshape/budget", async (request, reply) => {
