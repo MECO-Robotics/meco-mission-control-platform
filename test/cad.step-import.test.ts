@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
 import { runStepImport } from "../src/cad/cadImportService";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
-import { assertValidStepUpload } from "../src/cad/stepUploadValidation";
+import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const execFileAsync = promisify(execFile);

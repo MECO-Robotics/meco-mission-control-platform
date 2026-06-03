@@ -3,7 +3,7 @@ import type { FastifyRequest } from "fastify";
 import { cadStepUploadConfig } from "../../config/env";
 import { CadImportError } from "../cadImportService";
 import { cadStepImportJsonSchema } from "../cadRouteSchemas";
-import { assertValidStepUpload, formatStepUploadLimit } from "../stepUploadValidation";
+import { assertValidStepUpload, formatStepUploadLimit } from "../validation/stepUploadValidation";
 
 const maxStepUploadBytes = cadStepUploadConfig.maxBytes;
 

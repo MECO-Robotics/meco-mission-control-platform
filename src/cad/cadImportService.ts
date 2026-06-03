@@ -10,10 +10,10 @@ import type {
 import { applyMappingRules } from "./cadMappingEngine";
 import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { hashText } from "./cadUtils";
-import { CadImportError } from "./cadImportErrors";
+import { CadImportError } from "./errors/cadImportErrors";
 import { parseStepFileWithTimeout } from "./parsing/stepParserRunner";
 
-export { CadImportError } from "./cadImportErrors";
+export { CadImportError } from "./errors/cadImportErrors";
 export { parseStepFileWithTimeout } from "./parsing/stepParserRunner";
 
 export interface StepImportInput {

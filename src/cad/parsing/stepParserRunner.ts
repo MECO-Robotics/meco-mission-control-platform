@@ -2,7 +2,7 @@ import { fork } from "child_process";
 import { dirname, extname, join } from "path";
 
 import type { StepParseResult } from "../cadTypes";
-import { CadImportError } from "../cadImportErrors";
+import { CadImportError } from "../errors/cadImportErrors";
 import type { StepParserClient, StepParserMode } from "./stepParserTypes";
 
 const defaultStepParserTimeoutMs = 30_000;

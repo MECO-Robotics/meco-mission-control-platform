@@ -1,4 +1,4 @@
-import { CadImportError } from "./cadImportService";
+import { CadImportError } from "../cadImportService";
 
 const defaultStepUploadMaxBytes = 250 * 1024 * 1024;
 const acceptedStepExtensions = [".step", ".stp"] as const;
