@@ -136,6 +136,26 @@ test("Onshape import success records a scoped audit action in bootstrap activity
 
       resetLimits();
 
+      const secondImportResponse = await app.inject({
+        method: "POST",
+        url: "/api/onshape/import-runs",
+        payload: { documentRefId: refId, syncLevel: "bom", requestedBy: "ava" },
+      });
+      assert.equal(secondImportResponse.statusCode, 201);
+      const secondResult = secondImportResponse.json().result as { syncJobId: string };
+      const secondAuditAction = (getSnapshot().actions ?? []).find((action) => action.entityId === secondResult.syncJobId);
+      assert.ok(secondAuditAction);
+      assert.deepEqual(secondAuditAction.detailsJson?.objectCounts, {
+        assemblyNodes: 1,
+        partDefinitions: 1,
+        partInstances: 1,
+        created: 0,
+        updated: 0,
+        deprecated: 0,
+      });
+
+      resetLimits();
+
       const bootstrapResponse = await app.inject({
         method: "GET",
         url: "/api/bootstrap?projectId=project-robot-2026",

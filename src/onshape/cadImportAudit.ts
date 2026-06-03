@@ -15,12 +15,28 @@ function buildChangedFields(result: CadGraphImportResult) {
   ].filter((field): field is string => Boolean(field));
 }
 
+function readObjectCounts(value: unknown, result: CadGraphImportResult) {
+  const counts = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const readNumber = (key: string, fallback: number) =>
+    typeof counts[key] === "number" ? counts[key] : fallback;
+
+  return {
+    assemblyNodes: readNumber("assemblyNodes", result.assemblyNodeCount),
+    partDefinitions: readNumber("partDefinitions", result.partDefinitionCount),
+    partInstances: readNumber("partInstances", result.partInstanceCount),
+    created: readNumber("created", 0),
+    updated: readNumber("updated", 0),
+    deprecated: readNumber("deprecated", 0),
+  };
+}
+
 export function recordCadImportAuditAction(args: {
   store: OnshapeRuntimeStore;
   documentRef: OnshapeDocumentRef;
   result: CadGraphImportResult;
   actorMemberId?: string | null;
 }) {
+  const importRun = args.store.findImportRun(args.result.importRunId);
   const sourceReference = {
     documentId: args.documentRef.documentId,
     workspaceId: args.documentRef.workspaceId,
@@ -48,14 +64,7 @@ export function recordCadImportAuditAction(args: {
       failureStatus: args.result.status === "failed" ? args.result.stoppedReason ?? "failed" : null,
       actor: args.actorMemberId ?? null,
       sourceReference,
-      objectCounts: {
-        assemblyNodes: args.result.assemblyNodeCount,
-        partDefinitions: args.result.partDefinitionCount,
-        partInstances: args.result.partInstanceCount,
-        created: args.result.assemblyNodeCount + args.result.partDefinitionCount + args.result.partInstanceCount,
-        updated: 0,
-        deprecated: 0,
-      },
+      objectCounts: readObjectCounts(importRun?.rawSummaryJson.objectChangeCounts, args.result),
       warningCount: args.result.warningCount,
       callsUsed: args.result.callsUsed,
     },

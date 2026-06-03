@@ -53,6 +53,14 @@ function metadataLabel(metadata: OnshapeDocumentMetadataResponse | null, fallbac
   return label || fallback;
 }
 
+function countSnapshotGraph(store: OnshapeRuntimeStore, snapshotId: string) {
+  return {
+    assemblyNodes: store.listAssemblyNodes(snapshotId).length,
+    partDefinitions: store.listPartDefinitions(snapshotId).length,
+    partInstances: store.listPartInstances(snapshotId).length,
+  };
+}
+
 function completeRun(args: {
   store: OnshapeRuntimeStore;
   runId: string;
@@ -191,9 +199,15 @@ export async function runCadImport(args: {
       notes: args.syncLevel === "deep_release" ? "Deep release sync requested." : null,
     });
 
+    const beforeGraphCounts = countSnapshotGraph(args.store, snapshot.id);
     const raw = bom === null
       ? { metadata }
       : await importBomGraph({ store: args.store, runId: run.id, snapshot, bom });
+    const afterGraphCounts = countSnapshotGraph(args.store, snapshot.id);
+    const createdObjectCount =
+      Math.max(0, afterGraphCounts.assemblyNodes - beforeGraphCounts.assemblyNodes) +
+      Math.max(0, afterGraphCounts.partDefinitions - beforeGraphCounts.partDefinitions) +
+      Math.max(0, afterGraphCounts.partInstances - beforeGraphCounts.partInstances);
 
     const result = completeRun({
       store: args.store,
@@ -201,7 +215,16 @@ export async function runCadImport(args: {
       status: "completed",
       client: args.client,
       snapshotId: snapshot.id,
-      summary: { metadata, raw },
+      summary: {
+        metadata,
+        raw,
+        objectChangeCounts: {
+          ...afterGraphCounts,
+          created: createdObjectCount,
+          updated: 0,
+          deprecated: 0,
+        },
+      },
     });
     recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
     return result;
