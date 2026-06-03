@@ -134,6 +134,16 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
 
       resetLimits();
 
+      const studentHealthResponse = await app.inject({
+        method: "GET",
+        url: "/api/onshape/oauth/health",
+        headers: studentHeaders,
+      });
+      assert.equal(studentHealthResponse.statusCode, 200);
+      assert.equal(studentHealthResponse.json().item.reconnectAction.available, false);
+
+      resetLimits();
+
       const allowedAuthorizationResponse = await app.inject({
         method: "POST",
         url: "/api/onshape/oauth/authorization-url",
@@ -141,6 +151,16 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
       });
       assert.equal(allowedAuthorizationResponse.statusCode, 200);
       assert.equal(typeof allowedAuthorizationResponse.json().authorizationUrl, "string");
+
+      resetLimits();
+
+      const mentorHealthResponse = await app.inject({
+        method: "GET",
+        url: "/api/onshape/oauth/health",
+        headers: mentorHeaders,
+      });
+      assert.equal(mentorHealthResponse.statusCode, 200);
+      assert.equal(mentorHealthResponse.json().item.reconnectAction.available, true);
     },
     {
       env: {
