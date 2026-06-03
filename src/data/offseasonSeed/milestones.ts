@@ -35,7 +35,7 @@ export const offseasonMilestones = [
       isExternal: true,
       description: "Offseason scrimmage used to validate reliability, field reset flow, and scouting handoffs.",
       status: "blocked",
-      projectIds: ["project-robot-2026", "project-training-2026", "project-operations-2026"],
+      projectIds: ["project-robot-2026", "project-training-2026", "project-operations-2026", "project-strategy-2026"],
     },
     {
       id: "sponsor-open-house-jun-27",
