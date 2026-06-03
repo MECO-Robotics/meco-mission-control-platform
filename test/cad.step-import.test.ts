@@ -17,6 +17,7 @@ function stepEntityFixture(options?: {
   flat?: boolean;
   duplicateNames?: boolean;
   assemblyUsageEntityType?: string;
+  includeOccurrenceRelationshipMetadata?: boolean;
 }) {
   const assemblyUsageEntityType = options?.assemblyUsageEntityType ?? "NEXT_ASSEMBLY_USAGE_OCCURRENCE";
   const products = [
@@ -78,6 +79,9 @@ function stepEntityFixture(options?: {
           : []),
         ...(options?.duplicateNames
           ? [`#106=${assemblyUsageEntityType}('NAUO7','Spacer duplicate','',#9,#21,$);`]
+          : []),
+        ...(options?.includeOccurrenceRelationshipMetadata
+          ? ["#109=PRODUCT_DEFINITION_OCCURRENCE_RELATIONSHIP('REL1','metadata only',#12,#100);"]
           : []),
       ];
 
@@ -497,6 +501,22 @@ test("STEP text parser accepts assembly component usage edges", async () => {
   assert.deepEqual(parsed.partDefinitions.map((part) => part.name).sort(), ["Belt", "Spacer", "Wheel"]);
   assert.equal(parsed.partInstances.filter((instance) => instance.partDefinitionSourceId === "step-part-def:#12").length, 2);
   assert.equal(parsed.rawStats.assemblyUsageCount, 8);
+});
+
+test("STEP text parser ignores occurrence relationship metadata as assembly edges", async () => {
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText: stepEntityFixture({
+      assemblyUsageEntityType: "ASSEMBLY_COMPONENT_USAGE",
+      includeOccurrenceRelationshipMetadata: true,
+      repeatedPart: true,
+    }),
+    originalFilename: "component-usage-metadata.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.rawStats.assemblyUsageCount, 4);
+  assert.equal(parsed.partInstances.length, 2);
+  assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_partial"));
 });
 
 test("STEP text parser extracts uploaded Onshape-style top-level assemblies and diagnostics", async () => {
