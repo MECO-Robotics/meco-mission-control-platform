@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
+import { recordAuditAction } from "../../data/store";
 import { buildCadSnapshotDiff } from "../cadDiffService";
 import { applyHierarchyReviewDecisions } from "../cadHierarchyApplyService";
 import { validateCadHierarchyForFinalize } from "../cadHierarchyValidationService";
@@ -70,13 +71,25 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
         issues: hierarchyIssues,
       });
     }
-    const item = await store.updateSnapshot(snapshot.id, {
-      status: "finalized",
+    const finalized = await store.finalizeSnapshot(snapshot.id, {
       finalizedAt: new Date().toISOString(),
       finalizedBy: parsed.data.finalizedBy ?? null,
     });
-    const importRun = item ? await store.updateImportRun(item.importRunId, { status: "FINALIZED" }) : null;
-    return { item, importRun, warnings: hierarchyIssues };
+    if (!finalized) {
+      return reply.code(404).send({ message: "CAD snapshot was not found." });
+    }
+
+    recordAuditAction({
+      operation: "update",
+      entityType: "cad_snapshot",
+      entityId: finalized.snapshot.id,
+      entityLabel: finalized.snapshot.label,
+      changedFields: ["finalizedAt", "finalizedBy", "status"],
+      projectId: finalized.snapshot.projectId,
+      actorMemberId: parsed.data.finalizedBy ?? null,
+    });
+
+    return { item: finalized.snapshot, importRun: finalized.importRun, warnings: hierarchyIssues };
   });
 
   app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/diff", async (request, reply) => {

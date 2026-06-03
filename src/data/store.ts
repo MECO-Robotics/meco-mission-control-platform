@@ -1347,7 +1347,7 @@ function collectProvidedFields(input: Record<string, unknown>) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function recordAuditAction(args: {
+export function recordAuditAction(args: {
   operation: AuditActionOperation;
   entityType: string;
   entityId: string;
