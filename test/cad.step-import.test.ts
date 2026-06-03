@@ -3,10 +3,11 @@ import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { resetCadRuntimeStore, setCadRuntimeStoreFinalizeFailureForTest } from "../src/cad/cadStore";
 import { runStepImport } from "../src/cad/cadImportService";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
+import { getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const execFileAsync = promisify(execFile);
@@ -1228,6 +1229,7 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
 test("STEP debug parse endpoint returns parser diagnostics without creating a snapshot", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
+    const initialActionCount = getSnapshot().actions?.length ?? 0;
 
     const response = await app.inject({
       method: "POST",
@@ -1265,6 +1267,7 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
     const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
     assert.equal(snapshotsResponse.statusCode, 200);
     assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+    assert.equal(getSnapshot().actions?.length ?? 0, initialActionCount);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
@@ -1791,8 +1794,11 @@ test("snapshot diff matches unchanged mappings by stable source identity", async
 test("finalize is blocked while required mappings need review", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
+    const initialActionCount = getSnapshot().actions?.length ?? 0;
 
     const result = await uploadStep(app, "iteration-1", cadFixture());
+    const postUploadActionCount = getSnapshot().actions?.length ?? 0;
+    assert.equal(postUploadActionCount, initialActionCount);
     resetLimits();
     const blocked = await app.inject({
       method: "POST",
@@ -1815,6 +1821,14 @@ test("finalize is blocked while required mappings need review", async () => {
     assert.equal(forcedBody.item.status, "finalized");
     assert.equal(forcedBody.item.finalizedBy, "mentor@example.com");
     assert.equal(forcedBody.importRun?.status, "FINALIZED");
+    const actions = getSnapshot().actions ?? [];
+    assert.equal(actions.length, postUploadActionCount + 1);
+    const lastAction = actions[actions.length - 1];
+    assert.equal(lastAction?.entityType, "cad_snapshot");
+    assert.equal(lastAction?.entityId, result.snapshot.id);
+    assert.equal(lastAction?.operation, "update");
+    assert.equal(lastAction?.actorMemberId, "mentor@example.com");
+    assert.deepEqual(lastAction?.changedFields, ["finalizedAt", "finalizedBy", "status"]);
     resetLimits();
 
     const importRunResponse = await app.inject({
@@ -1823,5 +1837,48 @@ test("finalize is blocked while required mappings need review", async () => {
     });
     assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
     assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, "FINALIZED");
+  });
+});
+
+test("failed STEP finalization leaves snapshot, import run, and audit unchanged", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "rollback-finalize", cadFixture());
+    const actionCountBeforeFinalize = getSnapshot().actions?.length ?? 0;
+    resetLimits();
+
+    setCadRuntimeStoreFinalizeFailureForTest(new Error("simulated finalize persistence failure"));
+
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: `/api/cad/snapshots/${result.snapshot.id}/finalize`,
+        payload: { allowUnresolved: true, finalizedBy: "mentor@example.com" },
+      });
+      assert.equal(failed.statusCode, 500, failed.body);
+      assert.equal(getSnapshot().actions?.length ?? 0, actionCountBeforeFinalize);
+    } finally {
+      setCadRuntimeStoreFinalizeFailureForTest(null);
+    }
+    resetLimits();
+
+    const snapshotResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}`,
+    });
+    assert.equal(snapshotResponse.statusCode, 200, snapshotResponse.body);
+    const snapshotBody = snapshotResponse.json() as { item: { status: string; finalizedAt: string | null; finalizedBy: string | null } };
+    assert.equal(snapshotBody.item.status, result.snapshot.status);
+    assert.equal(snapshotBody.item.finalizedAt, null);
+    assert.equal(snapshotBody.item.finalizedBy, null);
+    resetLimits();
+
+    const importRunResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/import-runs/${result.importRun.id}`,
+    });
+    assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
+    assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, result.importRun.status);
   });
 });
