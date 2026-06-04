@@ -13,6 +13,7 @@ import {
   microversionId,
   normalizedBom,
   parseReference,
+  sharedOwnershipBom,
   versionId,
   versionUrl,
 } from "./importContractFixtures";
@@ -65,6 +66,80 @@ test("persists normalized subsystem, mechanism, part definition, and part instan
   assert.equal(part?.missionControlExternalKey, "onshape:part:drive-rail:default");
   assert.equal(instance?.cadPartDefinitionId, part?.id);
   assert.equal(instance?.parentAssemblyNodeId, subsystem?.id);
+});
+
+test("keeps repeated COTS instances owned by parent assemblies and one shared definition", async () => {
+  const store = createContractStore();
+  const ref = createLinkedRef(store);
+  const result = await runCadImport({
+    store,
+    documentRefId: ref.id,
+    syncLevel: "bom",
+    requestedBy: "test-user",
+    client: createFakeClient(sharedOwnershipBom()),
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.assemblyNodeCount, 3);
+  assert.equal(result.partDefinitionCount, 1);
+  assert.equal(result.partInstanceCount, 2);
+
+  const drive = store.listAssemblyNodes(result.snapshotId).find((node) => node.sourceId === "assembly:drive");
+  const intake = store.listAssemblyNodes(result.snapshotId).find((node) => node.sourceId === "assembly:intake");
+  const definition = store.listPartDefinitions(result.snapshotId)[0];
+  const instances = store.listPartInstances(result.snapshotId).sort((left, right) =>
+    left.sourceId.localeCompare(right.sourceId),
+  );
+
+  assert.equal(definition.missionControlExternalKey, "cots:bolt:10-32-bhcs-0.5");
+  assert.equal(definition.customPropertiesJson.vendor, "AndyMark");
+  assert.equal(instances[0].cadPartDefinitionId, definition.id);
+  assert.equal(instances[1].cadPartDefinitionId, definition.id);
+  assert.equal(instances[0].parentAssemblyNodeId, drive?.id);
+  assert.equal(instances[0].quantity, 4);
+  assert.equal(instances[0].metadataJson.usage, "gearbox-cover");
+  assert.equal(instances[1].parentAssemblyNodeId, intake?.id);
+  assert.equal(instances[1].quantity, 6);
+  assert.equal(instances[1].metadataJson.usage, "roller-bracket");
+});
+
+test("matches manually maintained part definitions by external ownership key", async () => {
+  const store = createContractStore();
+  const ref = createLinkedRef(store);
+  const first = await runCadImport({
+    store,
+    documentRefId: ref.id,
+    syncLevel: "bom",
+    requestedBy: "test-user",
+    client: createFakeClient(sharedOwnershipBom()),
+  });
+  const initialDefinition = store.listPartDefinitions(first.snapshotId)[0];
+  const revisedBom = sharedOwnershipBom();
+
+  await runCadImport({
+    store,
+    documentRefId: ref.id,
+    syncLevel: "bom",
+    requestedBy: "test-user",
+    client: createFakeClient({
+      ...revisedBom,
+      partDefinitions: [
+        {
+          ...revisedBom.partDefinitions[0],
+          sourceId: "manual:cots-fastener-10-32",
+          name: "10-32 button head screw",
+          partNumber: "AM-10-32-BHCS-050",
+        },
+      ],
+    }),
+  });
+
+  const updatedDefinitions = store.listPartDefinitions(first.snapshotId);
+  assert.equal(updatedDefinitions.length, 1);
+  assert.equal(updatedDefinitions[0].id, initialDefinition.id);
+  assert.equal(updatedDefinitions[0].sourceId, "manual:cots-fastener-10-32");
+  assert.equal(updatedDefinitions[0].name, "10-32 button head screw");
+  assert.equal(updatedDefinitions[0].partNumber, "AM-10-32-BHCS-050");
 });
 
 test("keeps record IDs stable across immutable-reference renames", async () => {
