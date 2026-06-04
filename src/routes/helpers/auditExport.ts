@@ -63,7 +63,21 @@ function actionMatchesSeason(
     return projectsById.get(action.entityId)?.seasonId === seasonId;
   }
 
-  return false;
+  const entitySeasonByType = new Map<string, Map<string, string | undefined>>([
+    ["meeting", new Map(snapshot.meetings.map((meeting) => [meeting.id, meeting.seasonId]))],
+    ["milestone", new Map(snapshot.milestones.map((milestone) => [milestone.id, milestone.seasonId]))],
+    ["part-definition", new Map(snapshot.partDefinitions.map((part) => [part.id, part.seasonId]))],
+    ["member", new Map(snapshot.members.map((member) => [member.id, member.seasonId]))],
+  ]);
+
+  if (entitySeasonByType.get(action.entityType)?.get(action.entityId) === seasonId) {
+    return true;
+  }
+
+  const memberSeasons = entitySeasonByType.get("member");
+  return [...(action.memberIds ?? []), action.actorMemberId].some(
+    (memberId) => memberId && memberSeasons?.get(memberId) === seasonId,
+  );
 }
 
 export function filterAuditActions(
@@ -105,7 +119,8 @@ function csvValue(value: unknown) {
     return "";
   }
 
-  const text = String(value);
+  const rawText = String(value);
+  const text = /^[=+\-@]/.test(rawText) ? `'${rawText}` : rawText;
   if (!/[",\r\n]/.test(text)) {
     return text;
   }

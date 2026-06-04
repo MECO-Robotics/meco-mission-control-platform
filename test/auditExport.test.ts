@@ -101,6 +101,17 @@ test("audit export filters by entity type project season and date range", async 
         actorMemberId: "maya",
         requestId: "req-audit-export-risk",
       });
+      recordAuditAction({
+        operation: "update",
+        entityType: "member",
+        entityId: "maya",
+        entityLabel: "Maya Ortiz",
+        changedFields: ["role"],
+        afterJson: { role: "admin" },
+        actorMemberId: "maya",
+        memberIds: ["maya"],
+        requestId: "req-audit-export-member",
+      });
 
       const targetAction = getSnapshot().actions?.find(
         (action) => action.requestId === "req-audit-export-task",
@@ -140,6 +151,22 @@ test("audit export filters by entity type project season and date range", async 
 
       assert.equal(emptyDateResponse.statusCode, 200);
       assert.equal(emptyDateResponse.json().count, 0);
+
+      resetLimits();
+
+      const memberSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=member&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(memberSeasonResponse.statusCode, 200);
+      assert.deepEqual(
+        memberSeasonResponse.json().items.map((item: { requestId: string }) => item.requestId),
+        ["req-audit-export-member"],
+      );
     },
     { env: authEnv },
   );
@@ -158,7 +185,7 @@ test("audit export supports csv format", async () => {
         operation: "update",
         entityType: "task",
         entityId: "audit-export-csv-task",
-        entityLabel: "Audit Export, CSV Task",
+        entityLabel: "=Audit Export, CSV Task",
         changedFields: ["status"],
         afterJson: { status: "complete" },
         projectId: "project-robot-2026",
@@ -178,7 +205,7 @@ test("audit export supports csv format", async () => {
       assert.match(response.headers["content-disposition"] as string, /meco-audit-actions\.csv/);
       assert.match(response.body, /^id,timestamp,operation,entityType/m);
       assert.match(response.body, /req-audit-export-csv/);
-      assert.match(response.body, /"Audit Export, CSV Task"/);
+      assert.match(response.body, /"'=Audit Export, CSV Task"/);
     },
     { env: authEnv },
   );
