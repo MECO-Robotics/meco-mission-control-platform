@@ -27,6 +27,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - The main app state starts from `src/data/mockData.ts` and is reset during app creation.
 - Core platform reads and writes go through `src/data/store.ts`.
 - Per-user preferences are stored outside git in `data/user-preferences.json`.
+- Audit history retention, archive/delete behavior, and admin export expectations are defined in `docs/audit-retention-policy.md`.
 - Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - Prisma schema lives in `prisma/schema.prisma` and includes core planning/manufacturing entities plus CAD import tables.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
@@ -74,6 +75,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 ## Documentation Maintenance
 
 - Update `docs/api-reference.md` when a route is added, removed, renamed, or changes auth behavior.
+- Update `docs/audit-retention-policy.md` when audit retention periods, privacy expectations, archive/delete behavior, or admin access rules change.
 - Update `docs/cad-step-mapping.md` when STEP parser behavior, CAD store selection, mapping review, diffing, or finalization changes.
 - Update `docs/onshape-integration.md` when OAuth, document references, sync levels, Onshape budgets, or Onshape route behavior changes.
 - Update `docs/platform-deployment-recovery.md` when production env, deploy, backup, restore, or rollback behavior changes.
