@@ -45,6 +45,15 @@ function getRelatedProjectIds(action: AuditAction, snapshot: PlatformSnapshot) {
   const subsystemsById = new Map(
     snapshot.subsystems.map((subsystem) => [subsystem.id, subsystem] as const),
   );
+  const workstreamsById = new Map(
+    snapshot.workstreams.map((workstream) => [workstream.id, workstream] as const),
+  );
+  const mechanismsById = new Map(
+    snapshot.mechanisms.map((mechanism) => [mechanism.id, mechanism] as const),
+  );
+  const partInstancesById = new Map(
+    snapshot.partInstances.map((partInstance) => [partInstance.id, partInstance] as const),
+  );
   const tasksById = new Map(snapshot.tasks.map((task) => [task.id, task] as const));
 
   if (action.entityType === "project") {
@@ -55,6 +64,29 @@ function getRelatedProjectIds(action: AuditAction, snapshot: PlatformSnapshot) {
   }
   if (action.entityType === "task") {
     addIfPresent(projectIds, tasksById.get(action.entityId)?.projectId);
+  }
+  if (action.entityType === "risk") {
+    const risk = snapshot.risks.find((candidate) => candidate.id === action.entityId);
+    if (risk?.attachmentType === "project") {
+      addIfPresent(projectIds, risk.attachmentId);
+    }
+    if (risk?.attachmentType === "workstream") {
+      addIfPresent(projectIds, workstreamsById.get(risk.attachmentId)?.projectId);
+    }
+    if (risk?.attachmentType === "mechanism") {
+      const mechanism = mechanismsById.get(risk.attachmentId);
+      addIfPresent(
+        projectIds,
+        mechanism ? subsystemsById.get(mechanism.subsystemId)?.projectId : null,
+      );
+    }
+    if (risk?.attachmentType === "part-instance") {
+      const partInstance = partInstancesById.get(risk.attachmentId);
+      addIfPresent(
+        projectIds,
+        partInstance ? subsystemsById.get(partInstance.subsystemId)?.projectId : null,
+      );
+    }
   }
   addIfPresent(
     projectIds,
@@ -91,24 +123,56 @@ function actionMatchesSeason(
     }
   }
 
-  const entitySeasonByType = new Map<string, Map<string, string | undefined>>([
-    ["meeting", new Map(snapshot.meetings.map((meeting) => [meeting.id, meeting.seasonId]))],
-    ["milestone", new Map(snapshot.milestones.map((milestone) => [milestone.id, milestone.seasonId]))],
-    ["part-definition", new Map(snapshot.partDefinitions.map((part) => [part.id, part.seasonId]))],
-    ["member", new Map(snapshot.members.map((member) => [member.id, member.seasonId]))],
+  const entitySeasonsByType = new Map<string, Map<string, Set<string>>>([
+    [
+      "meeting",
+      new Map(
+        snapshot.meetings.map((meeting) => [
+          meeting.id,
+          new Set([meeting.seasonId].filter((value): value is string => Boolean(value))),
+        ]),
+      ),
+    ],
+    [
+      "milestone",
+      new Map(
+        snapshot.milestones.map((milestone) => [
+          milestone.id,
+          new Set([milestone.seasonId].filter((value): value is string => Boolean(value))),
+        ]),
+      ),
+    ],
+    [
+      "part-definition",
+      new Map(
+        snapshot.partDefinitions.map((part) => [
+          part.id,
+          new Set([part.seasonId, ...(part.activeSeasonIds ?? [])]),
+        ]),
+      ),
+    ],
+    [
+      "member",
+      new Map(
+        snapshot.members.map((member) => [
+          member.id,
+          new Set([member.seasonId, ...(member.activeSeasonIds ?? [])]),
+        ]),
+      ),
+    ],
   ]);
 
-  if (entitySeasonByType.get(action.entityType)?.get(action.entityId) === seasonId) {
+  if (entitySeasonsByType.get(action.entityType)?.get(action.entityId)?.has(seasonId)) {
     return true;
   }
 
-  const memberSeasons = entitySeasonByType.get("member");
+  const memberSeasons = entitySeasonsByType.get("member");
   if (action.entityType !== "member") {
     return false;
   }
 
   return [action.entityId, ...(action.memberIds ?? [])].some(
-    (memberId) => memberId && memberSeasons?.get(memberId) === seasonId,
+    (memberId) => memberId && memberSeasons?.get(memberId)?.has(seasonId),
   );
 }
 

@@ -72,7 +72,15 @@ test("audit export requires an admin session", async () => {
 test("audit export filters by entity type project season and date range", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createSeason, getSnapshot, recordAuditAction } = require("../src/data/store") as typeof import("../src/data/store");
+      const {
+        createPartDefinition,
+        createRisk,
+        createSeason,
+        getSnapshot,
+        recordAuditAction,
+        updateMember,
+        updatePartDefinition,
+      } = require("../src/data/store") as typeof import("../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",
@@ -126,6 +134,30 @@ test("audit export filters by entity type project season and date range", async 
         subsystemId: robotSubsystem.id,
         actorMemberId: "maya",
         requestId: "req-audit-export-mechanism",
+      });
+      const robotWorkstream = getSnapshot().workstreams.find(
+        (workstream) => workstream.projectId === "project-robot-2026",
+      );
+      assert.ok(robotWorkstream);
+      const workstreamRisk = createRisk({
+        title: "Audit Export Workstream Risk",
+        detail: "Risk attached through a project workstream.",
+        severity: "medium",
+        sourceType: "qa-report",
+        sourceId: "qa-report-audit-export",
+        attachmentType: "workstream",
+        attachmentId: robotWorkstream.id,
+        mitigationTaskId: null,
+      });
+      recordAuditAction({
+        operation: "update",
+        entityType: "risk",
+        entityId: workstreamRisk.id,
+        entityLabel: workstreamRisk.title,
+        changedFields: ["severity"],
+        afterJson: { severity: "high" },
+        actorMemberId: "maya",
+        requestId: "req-audit-export-workstream-risk",
       });
 
       const targetAction = getSnapshot().actions?.find(
@@ -215,11 +247,90 @@ test("audit export filters by entity type project season and date range", async 
         ["req-audit-export-mechanism"],
       );
 
+      resetLimits();
+
+      const workstreamRiskProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=risk&projectId=project-robot-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(workstreamRiskProjectResponse.statusCode, 200);
+      assert.ok(
+        workstreamRiskProjectResponse
+          .json()
+          .items.some(
+            (item: { requestId: string | null }) =>
+              item.requestId === "req-audit-export-workstream-risk",
+          ),
+      );
+
+      resetLimits();
+
+      const workstreamRiskSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=risk&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(workstreamRiskSeasonResponse.statusCode, 200);
+      assert.ok(
+        workstreamRiskSeasonResponse
+          .json()
+          .items.some(
+            (item: { requestId: string | null }) =>
+              item.requestId === "req-audit-export-workstream-risk",
+          ),
+      );
+
       const futureSeason = createSeason({
         name: "Audit Export Future Season",
         type: "season",
         startDate: "2030-01-01",
         endDate: "2030-12-31",
+      });
+      const updatedMaya = updateMember("maya", {
+        activeSeasonIds: ["default-season", futureSeason.id],
+      });
+      assert.ok(updatedMaya);
+      recordAuditAction({
+        operation: "update",
+        entityType: "member",
+        entityId: "maya",
+        entityLabel: "Maya Ortiz",
+        changedFields: ["activeSeasonIds"],
+        afterJson: { activeSeasonIds: ["default-season", futureSeason.id] },
+        actorMemberId: "maya",
+        memberIds: ["maya"],
+        requestId: "req-audit-export-future-member",
+      });
+      const sharedPartDefinition = createPartDefinition({
+        name: "Audit Export Shared Part",
+        partNumber: "AUD-EXP-001",
+        revision: "A",
+        type: "custom",
+        source: "Onshape",
+        materialId: "mat-onyx-filament",
+        description: "Shared across audit export seasons.",
+        seasonId: "default-season",
+      });
+      const updatedPartDefinition = updatePartDefinition(sharedPartDefinition.id, {
+        activeSeasonIds: ["default-season", futureSeason.id],
+      });
+      assert.ok(updatedPartDefinition);
+      recordAuditAction({
+        operation: "update",
+        entityType: "part-definition",
+        entityId: sharedPartDefinition.id,
+        entityLabel: sharedPartDefinition.name,
+        changedFields: ["activeSeasonIds"],
+        afterJson: { activeSeasonIds: ["default-season", futureSeason.id] },
+        actorMemberId: "maya",
+        requestId: "req-audit-export-future-part-definition",
       });
       const futureProject = getSnapshot().projects.find(
         (project) => project.seasonId === futureSeason.id && project.projectType === "robot",
@@ -265,6 +376,48 @@ test("audit export filters by entity type project season and date range", async 
         futureSeasonCadResponse.json().items.map((item: { requestId: string }) => item.requestId),
         ["req-audit-export-future-cad"],
       );
+
+      resetLimits();
+
+      const futureSeasonMemberResponse = await app.inject({
+        method: "GET",
+        url: `/api/audit/export?entityType=member&seasonId=${encodeURIComponent(futureSeason.id)}`,
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(futureSeasonMemberResponse.statusCode, 200);
+      assert.ok(
+        futureSeasonMemberResponse
+          .json()
+          .items.some(
+            (item: { requestId: string | null }) =>
+              item.requestId === "req-audit-export-future-member",
+          ),
+      );
+
+      resetLimits();
+
+      const futureSeasonPartDefinitionResponse = await app.inject({
+        method: "GET",
+        url:
+          "/api/audit/export?entityType=part-definition" +
+          `&seasonId=${encodeURIComponent(futureSeason.id)}`,
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(futureSeasonPartDefinitionResponse.statusCode, 200);
+      assert.ok(
+        futureSeasonPartDefinitionResponse
+          .json()
+          .items.some(
+            (item: { requestId: string | null }) =>
+              item.requestId === "req-audit-export-future-part-definition",
+          ),
+      );
     },
     { env: authEnv },
   );
@@ -303,7 +456,7 @@ test("audit export supports csv format", async () => {
       assert.match(response.headers["content-disposition"] as string, /meco-audit-actions\.csv/);
       assert.match(response.body, /^id,timestamp,operation,entityType/m);
       assert.match(response.body, /req-audit-export-csv/);
-      assert.match(response.body, /"'\t=Audit Export, CSV Task"/);
+      assert.match(response.body, /"'=Audit Export, CSV Task"/);
     },
     { env: authEnv },
   );
