@@ -131,15 +131,23 @@ test("matches manually maintained part definitions by external ownership key", a
           partNumber: "AM-10-32-BHCS-050",
         },
       ],
+      partInstances: revisedBom.partInstances.map((instance) => ({
+        ...instance,
+        partDefinitionSourceId: "manual:cots-fastener-10-32",
+      })),
     }),
   });
 
   const updatedDefinitions = store.listPartDefinitions(first.snapshotId);
+  const updatedInstances = store.listPartInstances(first.snapshotId);
   assert.equal(updatedDefinitions.length, 1);
   assert.equal(updatedDefinitions[0].id, initialDefinition.id);
   assert.equal(updatedDefinitions[0].sourceId, "manual:cots-fastener-10-32");
   assert.equal(updatedDefinitions[0].name, "10-32 button head screw");
   assert.equal(updatedDefinitions[0].partNumber, "AM-10-32-BHCS-050");
+  assert.equal(updatedInstances.length, 2);
+  assert.equal(updatedInstances[0].cadPartDefinitionId, initialDefinition.id);
+  assert.equal(updatedInstances[1].cadPartDefinitionId, initialDefinition.id);
 });
 
 test("keeps record IDs stable across immutable-reference renames", async () => {
