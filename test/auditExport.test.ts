@@ -112,6 +112,21 @@ test("audit export filters by entity type project season and date range", async 
         memberIds: ["maya"],
         requestId: "req-audit-export-member",
       });
+      const robotSubsystem = getSnapshot().subsystems.find(
+        (subsystem) => subsystem.projectId === "project-robot-2026",
+      );
+      assert.ok(robotSubsystem);
+      recordAuditAction({
+        operation: "update",
+        entityType: "mechanism",
+        entityId: "audit-export-mechanism",
+        entityLabel: "Audit Export Mechanism",
+        changedFields: ["iteration"],
+        afterJson: { iteration: 2 },
+        subsystemId: robotSubsystem.id,
+        actorMemberId: "maya",
+        requestId: "req-audit-export-mechanism",
+      });
 
       const targetAction = getSnapshot().actions?.find(
         (action) => action.requestId === "req-audit-export-task",
@@ -166,6 +181,22 @@ test("audit export filters by entity type project season and date range", async 
       assert.deepEqual(
         memberSeasonResponse.json().items.map((item: { requestId: string }) => item.requestId),
         ["req-audit-export-member"],
+      );
+
+      resetLimits();
+
+      const subsystemProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=mechanism&projectId=project-robot-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(subsystemProjectResponse.statusCode, 200);
+      assert.deepEqual(
+        subsystemProjectResponse.json().items.map((item: { requestId: string }) => item.requestId),
+        ["req-audit-export-mechanism"],
       );
     },
     { env: authEnv },

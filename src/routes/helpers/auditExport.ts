@@ -34,10 +34,21 @@ function getActionProjectIds(action: AuditAction) {
   );
 }
 
-function actionMatchesProject(action: AuditAction, projectId: string) {
+function actionMatchesProject(
+  action: AuditAction,
+  projectId: string,
+  snapshot: PlatformSnapshot,
+) {
+  const subsystemProjectId = action.subsystemId
+    ? snapshot.subsystems.find((subsystem) => subsystem.id === action.subsystemId)?.projectId
+    : null;
+
   return (
     getActionProjectIds(action).has(projectId) ||
-    (action.entityType === "project" && action.entityId === projectId)
+    (action.entityType === "project" && action.entityId === projectId) ||
+    (action.entityType === "subsystem" &&
+      snapshot.subsystems.find((subsystem) => subsystem.id === action.entityId)?.projectId === projectId) ||
+    subsystemProjectId === projectId
   );
 }
 
@@ -89,7 +100,7 @@ export function filterAuditActions(
       if (filters.entityType && action.entityType !== filters.entityType) {
         return false;
       }
-      if (filters.projectId && !actionMatchesProject(action, filters.projectId)) {
+      if (filters.projectId && !actionMatchesProject(action, filters.projectId, snapshot)) {
         return false;
       }
       if (filters.seasonId && !actionMatchesSeason(action, filters.seasonId, snapshot)) {
