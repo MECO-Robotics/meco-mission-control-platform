@@ -217,7 +217,7 @@ test("audit export filters by entity type project season and date range", async 
 
       const futureSeason = createSeason({
         name: "Audit Export Future Season",
-        type: "competition",
+        type: "season",
         startDate: "2030-01-01",
         endDate: "2030-12-31",
       });
