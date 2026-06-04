@@ -43,6 +43,31 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - API, auth, and email-auth requests use separate per-IP rate limit budgets.
 - API responses get no-store cache headers, content sniffing protection, frame denial, referrer policy, permissions policy, and production HSTS.
 
+## Audit Retention
+
+Mission Control audit history is a safety and accountability record for team operations. It should remain available long enough to support season reviews, incident follow-up, and mentor oversight while avoiding indefinite retention of student activity records.
+
+- Keep audit history for active seasons and for seven years after the season end date.
+- If a season has no configured end date, measure the seven-year retention window from the last day of that calendar year.
+- Keep audit history tied to an open safety, financial, compliance, or conduct review until that review is closed, even if the normal retention window has elapsed.
+- Review retained audit history at least once per year before the next competition season begins.
+- Treat audit history as student activity data when it contains member names, emails, task ownership, work logs, QA decisions, or roster changes.
+- Do not export audit history to public channels, training data, or shared documents unless student identifiers are removed or the export is limited to approved mentors/admins.
+- Prefer redacted summaries for retrospectives and public season reports.
+- Delete or anonymize audit records after the retention window unless a documented review hold still applies.
+- Do not store authentication secrets, OAuth tokens, email codes, or raw private media in audit details. Audit details should reference the affected entity and summarized field changes only.
+- Archived seasons keep audit history read-only for review; archive operations must not silently drop audit history that is still inside the retention window.
+- Deletion after the retention window should remove or anonymize member-identifying audit fields, including actor, member, email, and free-text details that identify a student.
+- Deletion should preserve aggregate counts only when they no longer identify individual students.
+- Backup retention should not intentionally extend audit history beyond this policy. Expired records may remain in immutable backups until those backups age out under the deployment recovery policy.
+- The current bootstrap payload includes scoped audit actions for authenticated, non-external users, so audit details must remain minimal and non-sensitive.
+- Bulk export, retention override, archive, and deletion tools are admin-only operations.
+- Admins should record the reason for retention overrides, review holds, and manual deletions.
+- Exported audit files should include the export timestamp, requesting admin, filters, and redaction mode.
+- New audit routes should enforce role checks before returning audit data and should support season/project, entity type, date range, and redaction filters where relevant.
+- Retention jobs should run in dry-run mode before deletion and report the seasons, date ranges, and record counts affected.
+- Tests for retention or export behavior should cover role restrictions, date boundaries, review holds, and redaction of student-identifying fields.
+
 ## Integrations
 
 - S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured. Media buckets are derived per project team as `<S3_BUCKET_PREFIX>-<teamId>`; legacy `S3_BUCKET` is still accepted as the prefix.
@@ -77,5 +102,5 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Update `docs/cad-step-mapping.md` when STEP parser behavior, CAD store selection, mapping review, diffing, or finalization changes.
 - Update `docs/onshape-integration.md` when OAuth, document references, sync levels, Onshape budgets, or Onshape route behavior changes.
 - Update `docs/platform-deployment-recovery.md` when production env, deploy, backup, restore, or rollback behavior changes.
-- Update this overview when top-level source layout, runtime assumptions, required environment variables, deployment workflow, or verification commands change.
+- Update this overview when top-level source layout, runtime assumptions, required environment variables, deployment workflow, audit retention policy, or verification commands change.
 - Keep Word requirement/spec snapshots as historical source artifacts; do not use them as the only living docs for implemented behavior.

@@ -28,7 +28,7 @@ Use this folder for living project documentation and historical requirements art
 ## Update Rules
 
 - Update `api-reference.md` when a route, method, auth requirement, or major response shape changes.
-- Update `backend-overview.md` when source layout, runtime assumptions, environment requirements, deployment workflow, or verification commands change.
+- Update `backend-overview.md` when source layout, runtime assumptions, environment requirements, deployment workflow, audit retention policy, or verification commands change.
 - Update `cad-step-mapping.md` when STEP parser modes, CAD store behavior, mapping rules, hierarchy review, diffing, or finalization changes.
 - Update `onshape-integration.md` when Onshape OAuth, reference parsing, sync levels, request budgeting, permissions, or route behavior changes.
 - Update `platform-deployment-recovery.md` when production env requirements, deploy workflow behavior, VPS paths, backup retention, restore procedure, or rollback options change.
