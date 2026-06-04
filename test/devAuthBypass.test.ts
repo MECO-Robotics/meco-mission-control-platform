@@ -119,8 +119,29 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         },
       });
 
-      assert.equal(roleBypassResponse.statusCode, 400);
-      assert.match(roleBypassResponse.json().message, /invalid/i);
+      assert.equal(roleBypassResponse.statusCode, 200);
+      const roleBypassBody = roleBypassResponse.json() as {
+        token: string;
+        user: {
+          accountId: string;
+          authProvider: string;
+          email: string;
+          hostedDomain: string;
+          name: string;
+          picture: string | null;
+          role: string;
+          taskSubteamIds: string[];
+        };
+      };
+      assert.equal(roleBypassBody.user.accountId, "local-dev-mentor");
+      assert.equal(roleBypassBody.user.authProvider, "email");
+      assert.equal(roleBypassBody.user.email, "dev.mentor@mecorobotics.org");
+      assert.equal(roleBypassBody.user.name, "Local Dev Mentor");
+      assert.equal(roleBypassBody.user.hostedDomain, "mecorobotics.org");
+      assert.equal(roleBypassBody.user.picture, null);
+      assert.equal(roleBypassBody.user.role, "mentor");
+      assert.deepEqual(roleBypassBody.user.taskSubteamIds, []);
+      assert.ok(roleBypassBody.token.length > 0);
 
       resetRequestLimits();
 

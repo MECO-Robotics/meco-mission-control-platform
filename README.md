@@ -168,9 +168,9 @@ you can copy the sign-in code during local testing.
 
 When the server runs with auth configured outside production, it also exposes a
 development-only `/api/auth/dev-bypass` endpoint that the web app can use for a
-local access button. Send an empty request body; the endpoint always returns a
-local student session and rejects caller-selected roles. Production builds do
-not register that route.
+local access button. Send either an empty request body for the default local
+student session or `{ "role": "student" | "mentor" }` to test a specific local
+role. Production builds do not register that route.
 
 ## Production files
 
