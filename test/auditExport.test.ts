@@ -232,7 +232,7 @@ test("audit export supports csv format", async () => {
         operation: "update",
         entityType: "task",
         entityId: "audit-export-csv-task",
-        entityLabel: "=Audit Export, CSV Task",
+        entityLabel: "\t=Audit Export, CSV Task",
         changedFields: ["status"],
         afterJson: { status: "complete" },
         projectId: "project-robot-2026",
@@ -252,7 +252,7 @@ test("audit export supports csv format", async () => {
       assert.match(response.headers["content-disposition"] as string, /meco-audit-actions\.csv/);
       assert.match(response.body, /^id,timestamp,operation,entityType/m);
       assert.match(response.body, /req-audit-export-csv/);
-      assert.match(response.body, /"'=Audit Export, CSV Task"/);
+      assert.match(response.body, /"'\t=Audit Export, CSV Task"/);
     },
     { env: authEnv },
   );

@@ -148,7 +148,7 @@ function csvValue(value: unknown) {
   }
 
   const rawText = String(value);
-  const text = /^[=+\-@]/.test(rawText) ? `'${rawText}` : rawText;
+  const text = /^[=+\-@\t\r\n]/.test(rawText) ? `'${rawText}` : rawText;
   if (!/[",\r\n]/.test(text)) {
     return text;
   }
