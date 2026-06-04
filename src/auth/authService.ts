@@ -74,6 +74,8 @@ interface SessionTokenOptions {
   deviceId?: string | null;
 }
 
+type DevelopmentSessionRole = Extract<MemberRole, "student" | "mentor">;
+
 export interface EmailCodeDelivery {
   sentTo: string;
   expiresInMinutes: number;
@@ -302,21 +304,22 @@ function buildEmailSessionUser(email: string): SessionUser {
   };
 }
 
-function isDevelopmentSessionRole(role: MemberRole | undefined): role is "student" | "mentor" {
+function isDevelopmentSessionRole(role: MemberRole | undefined): role is DevelopmentSessionRole {
   return role === "student" || role === "mentor";
 }
 
-export function buildDevelopmentSessionUser(): SessionUser {
-  const email = `dev.student@${authConfig.hostedDomain}`;
+export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "student"): SessionUser {
+  const email = `dev.${role}@${authConfig.hostedDomain}`;
+  const displayRole = role === "mentor" ? "Mentor" : "Student";
 
   return {
-    accountId: "local-dev-student",
+    accountId: `local-dev-${role}`,
     authProvider: "email",
     email,
-    name: "Local Dev Student",
+    name: `Local Dev ${displayRole}`,
     picture: null,
     hostedDomain: authConfig.hostedDomain,
-    role: "student",
+    role,
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
 }
