@@ -186,6 +186,21 @@ export const userPreferencesPatchSchema = z.object({
   themeMode: z.enum(["light", "dark"]).nullable().optional(),
 });
 
+export const auditExportQuerySchema = z.object({
+  format: z.enum(["json", "csv"]).default("json"),
+  seasonId: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1).optional(),
+  entityType: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+}).strict().refine(
+  (query) => !query.from || !query.to || Date.parse(query.from) <= Date.parse(query.to),
+  {
+    message: "from must be on or before to.",
+    path: ["from"],
+  },
+);
+
 export const reportSchema = z.object({
   reportType: z.enum(["QA", "MilestoneTest"]),
   projectId: z.string().trim().min(1),
