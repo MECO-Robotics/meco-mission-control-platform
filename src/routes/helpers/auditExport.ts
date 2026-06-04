@@ -103,7 +103,11 @@ function actionMatchesSeason(
   }
 
   const memberSeasons = entitySeasonByType.get("member");
-  return [...(action.memberIds ?? []), action.actorMemberId].some(
+  if (action.entityType !== "member") {
+    return false;
+  }
+
+  return [action.entityId, ...(action.memberIds ?? [])].some(
     (memberId) => memberId && memberSeasons?.get(memberId) === seasonId,
   );
 }

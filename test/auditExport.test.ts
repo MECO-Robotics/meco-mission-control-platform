@@ -72,7 +72,7 @@ test("audit export requires an admin session", async () => {
 test("audit export filters by entity type project season and date range", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { getSnapshot, recordAuditAction } = require("../src/data/store") as typeof import("../src/data/store");
+      const { createSeason, getSnapshot, recordAuditAction } = require("../src/data/store") as typeof import("../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",
@@ -213,6 +213,57 @@ test("audit export filters by entity type project season and date range", async 
       assert.deepEqual(
         subsystemSeasonResponse.json().items.map((item: { requestId: string }) => item.requestId),
         ["req-audit-export-mechanism"],
+      );
+
+      const futureSeason = createSeason({
+        name: "Audit Export Future Season",
+        type: "competition",
+        startDate: "2030-01-01",
+        endDate: "2030-12-31",
+      });
+      const futureProject = getSnapshot().projects.find(
+        (project) => project.seasonId === futureSeason.id && project.projectType === "robot",
+      );
+      assert.ok(futureProject);
+      recordAuditAction({
+        operation: "update",
+        entityType: "cad",
+        entityId: "audit-export-future-cad",
+        entityLabel: "Audit Export Future CAD",
+        changedFields: ["status"],
+        afterJson: { status: "synced" },
+        projectId: futureProject.id,
+        actorMemberId: "maya",
+        requestId: "req-audit-export-future-cad",
+      });
+
+      resetLimits();
+
+      const defaultSeasonCadResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=cad&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(defaultSeasonCadResponse.statusCode, 200);
+      assert.equal(defaultSeasonCadResponse.json().count, 0);
+
+      resetLimits();
+
+      const futureSeasonCadResponse = await app.inject({
+        method: "GET",
+        url: `/api/audit/export?entityType=cad&seasonId=${encodeURIComponent(futureSeason.id)}`,
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(futureSeasonCadResponse.statusCode, 200);
+      assert.deepEqual(
+        futureSeasonCadResponse.json().items.map((item: { requestId: string }) => item.requestId),
+        ["req-audit-export-future-cad"],
       );
     },
     { env: authEnv },
