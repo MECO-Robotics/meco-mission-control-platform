@@ -136,3 +136,90 @@ export function normalizedBom(names = {
     raw: { source: "contract-test" },
   };
 }
+
+export function sharedOwnershipBom(): OnshapeAssemblyBomResponse {
+  return {
+    assemblyNodes: [
+      {
+        sourceId: "assembly:root",
+        documentId,
+        elementId,
+        instanceId: "root",
+        instancePath: "/root",
+        name: "2026 Robot",
+        inferredType: "master_assembly",
+      },
+      {
+        sourceId: "assembly:drive",
+        parentSourceId: "assembly:root",
+        documentId,
+        elementId: "drive-element",
+        instanceId: "drive",
+        instancePath: "/root/drive",
+        name: "Drive Subsystem",
+        inferredType: "subsystem_candidate",
+      },
+      {
+        sourceId: "assembly:intake",
+        parentSourceId: "assembly:root",
+        documentId,
+        elementId: "intake-element",
+        instanceId: "intake",
+        instancePath: "/root/intake",
+        name: "Intake Mechanism",
+        inferredType: "mechanism_candidate",
+      },
+    ],
+    partDefinitions: [
+      {
+        sourceId: "part:bolt-10-32",
+        documentId,
+        elementId: "shared-hardware",
+        partId: "bolt-10-32",
+        versionId,
+        name: "10-32 button head bolt",
+        partNumber: "COTS-10-32-BHCS",
+        material: "alloy steel",
+        configuration: "0.5in",
+        missionControlExternalKey: "cots:bolt:10-32-bhcs-0.5",
+        customProperties: {
+          vendor: "AndyMark",
+          ownership: "cots",
+        },
+      },
+    ],
+    partInstances: [
+      {
+        sourceId: "instance:drive-bolt-pack",
+        partDefinitionSourceId: "part:bolt-10-32",
+        parentAssemblySourceId: "assembly:drive",
+        documentId,
+        elementId: "drive-element",
+        instanceId: "drive-bolt-pack",
+        partId: "bolt-10-32",
+        instancePath: "/root/drive/bolt-pack",
+        quantity: 4,
+        configuration: "0.5in",
+        metadata: {
+          usage: "gearbox-cover",
+        },
+      },
+      {
+        sourceId: "instance:intake-bolt-pack",
+        partDefinitionSourceId: "part:bolt-10-32",
+        parentAssemblySourceId: "assembly:intake",
+        documentId,
+        elementId: "intake-element",
+        instanceId: "intake-bolt-pack",
+        partId: "bolt-10-32",
+        instancePath: "/root/intake/bolt-pack",
+        quantity: 6,
+        configuration: "0.5in",
+        metadata: {
+          usage: "roller-bracket",
+        },
+      },
+    ],
+    raw: { source: "contract-test" },
+  };
+}
