@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { createMember, resetStore, type MemberInput } from "../../src/data/store";
+import { resetUserPreferencesStoreForTests } from "../../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../../src/security/requestLimits";
 
 const INTEGRATION_ENV_MODULES = [
@@ -176,8 +177,9 @@ export async function withIntegrationApp(
     configureEnv(options?.env);
     resetIntegrationEnvModuleCache();
     resetStore();
+    resetUserPreferencesStoreForTests();
 
-    const { buildApp } = await import("../../src/app");
+    const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp();
     for (const member of options?.members ?? []) {
       createMember(member);
@@ -189,6 +191,7 @@ export async function withIntegrationApp(
     } finally {
       await app.close();
       resetRequestLimits();
+      resetUserPreferencesStoreForTests();
     }
   } finally {
     restoreEnv(envSnapshot);
