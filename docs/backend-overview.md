@@ -47,8 +47,8 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 Mission Control audit history is a safety and accountability record for team operations. It should remain available long enough to support season reviews, incident follow-up, and mentor oversight while avoiding indefinite retention of student activity records.
 
-- Keep audit history for active seasons and for seven years after the season end date.
-- If a season has no configured end date, measure the seven-year retention window from the last day of that calendar year.
+- Keep audit history for active seasons and for three years after the season end date.
+- If a season has no configured end date, measure the three-year retention window from the last day of that calendar year.
 - Keep audit history tied to an open safety, financial, compliance, or conduct review until that review is closed, even if the normal retention window has elapsed.
 - Review retained audit history at least once per year before the next competition season begins.
 - Treat audit history as student activity data when it contains member names, emails, task ownership, work logs, QA decisions, or roster changes.

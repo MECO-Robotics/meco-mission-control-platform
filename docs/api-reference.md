@@ -34,6 +34,36 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `GET /api/metrics`: workflow and delivery metrics.
 - `GET /api/roster/insights`: roster participation and contribution insights.
 
+### Audit History Retention
+
+Audit actions are operational history for create, update, and delete activity exposed through
+`/api/bootstrap` as `actions`. They support accountability, troubleshooting, and scoped activity
+review; they are not a permanent archive of student activity. This policy is designed to align with
+FTC COPPA guidance that children's personal information should be retained only as long as needed
+and deleted with reasonable safeguards:
+https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions
+
+Retention policy:
+
+- Retain audit actions for 3 years after the end of the season in which the action occurred.
+- After the retention window, delete the audit action or anonymize actor/member references,
+  free-text labels, and messages. Keep only aggregate, non-identifying metrics when needed.
+- Treat student audit references as personal data and likely minor data. Audit messages should
+  avoid sensitive free text, private notes, unnecessary contact details, photos, or precise
+  personal details.
+- Honor verified parent/guardian or admin privacy requests through deletion or anonymization
+  unless a documented safety, legal, or operational reason requires temporary retention.
+- Archive hides a domain record from normal active views but does not shorten audit retention.
+- Delete removes the domain record from normal lists while the audit action remains as a minimal
+  tombstone until retention expires. Deleted-record audit entries must not require the deleted
+  entity to still exist for scoped history display.
+- `/api/bootstrap` returns scoped audit actions to authenticated, non-external users alongside the
+  rest of the scoped workspace payload. Audit messages therefore must stay minimal and
+  non-sensitive. Broad audit browsing is limited to leads, mentors, admins, or other explicitly
+  authorized users with a legitimate operational need. Bulk export, retention override, archive,
+  and manual deletion tools are admin-only operations for maintenance, privacy requests, incident
+  review, and compliance review, not general browsing.
+
 ## Tutorial Session
 
 - `POST /api/tutorial/session/start`: starts an interactive tutorial session from the baseline state.
