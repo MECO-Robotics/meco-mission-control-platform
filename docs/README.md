@@ -5,7 +5,6 @@ Use this folder for living project documentation and historical requirements art
 ## Living Docs
 
 - `api-reference.md`: current backend route surface, response conventions, auth notes, and integration endpoints.
-- `audit-retention-policy.md`: audit history retention period, minors/privacy handling, archive/delete behavior, and admin access expectations.
 - `backend-overview.md`: runtime architecture, source layout, data model, security posture, integrations, local workflow, deployment, and documentation maintenance.
 - `cad-step-mapping.md`: STEP import workflow, parser behavior, CAD persistence, mapping review, finalization, and current limits.
 - `onshape-integration.md`: Onshape OAuth, document references, sync levels, budgeting, permissions, route behavior, and known limitations.
@@ -29,8 +28,7 @@ Use this folder for living project documentation and historical requirements art
 ## Update Rules
 
 - Update `api-reference.md` when a route, method, auth requirement, or major response shape changes.
-- Update `audit-retention-policy.md` when audit retention periods, privacy expectations, archive/delete behavior, or admin access rules change.
-- Update `backend-overview.md` when source layout, runtime assumptions, environment requirements, deployment workflow, or verification commands change.
+- Update `backend-overview.md` when source layout, runtime assumptions, environment requirements, deployment workflow, audit retention policy, or verification commands change.
 - Update `cad-step-mapping.md` when STEP parser modes, CAD store behavior, mapping rules, hierarchy review, diffing, or finalization changes.
 - Update `onshape-integration.md` when Onshape OAuth, reference parsing, sync levels, request budgeting, permissions, or route behavior changes.
 - Update `platform-deployment-recovery.md` when production env requirements, deploy workflow behavior, VPS paths, backup retention, restore procedure, or rollback options change.
