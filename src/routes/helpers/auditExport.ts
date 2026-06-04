@@ -34,22 +34,43 @@ function getActionProjectIds(action: AuditAction) {
   );
 }
 
+function addIfPresent(values: Set<string>, value: string | null | undefined) {
+  if (value) {
+    values.add(value);
+  }
+}
+
+function getRelatedProjectIds(action: AuditAction, snapshot: PlatformSnapshot) {
+  const projectIds = getActionProjectIds(action);
+  const subsystemsById = new Map(
+    snapshot.subsystems.map((subsystem) => [subsystem.id, subsystem] as const),
+  );
+  const tasksById = new Map(snapshot.tasks.map((task) => [task.id, task] as const));
+
+  if (action.entityType === "project") {
+    addIfPresent(projectIds, action.entityId);
+  }
+  if (action.entityType === "subsystem") {
+    addIfPresent(projectIds, subsystemsById.get(action.entityId)?.projectId);
+  }
+  if (action.entityType === "task") {
+    addIfPresent(projectIds, tasksById.get(action.entityId)?.projectId);
+  }
+  addIfPresent(
+    projectIds,
+    action.subsystemId ? subsystemsById.get(action.subsystemId)?.projectId : null,
+  );
+  addIfPresent(projectIds, action.taskId ? tasksById.get(action.taskId)?.projectId : null);
+
+  return projectIds;
+}
+
 function actionMatchesProject(
   action: AuditAction,
   projectId: string,
   snapshot: PlatformSnapshot,
 ) {
-  const subsystemProjectId = action.subsystemId
-    ? snapshot.subsystems.find((subsystem) => subsystem.id === action.subsystemId)?.projectId
-    : null;
-
-  return (
-    getActionProjectIds(action).has(projectId) ||
-    (action.entityType === "project" && action.entityId === projectId) ||
-    (action.entityType === "subsystem" &&
-      snapshot.subsystems.find((subsystem) => subsystem.id === action.entityId)?.projectId === projectId) ||
-    subsystemProjectId === projectId
-  );
+  return getRelatedProjectIds(action, snapshot).has(projectId);
 }
 
 function actionMatchesSeason(
@@ -64,14 +85,10 @@ function actionMatchesSeason(
   const projectsById = new Map(
     snapshot.projects.map((project) => [project.id, project] as const),
   );
-  for (const projectId of getActionProjectIds(action)) {
+  for (const projectId of getRelatedProjectIds(action, snapshot)) {
     if (projectsById.get(projectId)?.seasonId === seasonId) {
       return true;
     }
-  }
-
-  if (action.entityType === "project") {
-    return projectsById.get(action.entityId)?.seasonId === seasonId;
   }
 
   const entitySeasonByType = new Map<string, Map<string, string | undefined>>([

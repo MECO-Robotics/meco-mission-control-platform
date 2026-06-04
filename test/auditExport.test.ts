@@ -198,6 +198,22 @@ test("audit export filters by entity type project season and date range", async 
         subsystemProjectResponse.json().items.map((item: { requestId: string }) => item.requestId),
         ["req-audit-export-mechanism"],
       );
+
+      resetLimits();
+
+      const subsystemSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=mechanism&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(subsystemSeasonResponse.statusCode, 200);
+      assert.deepEqual(
+        subsystemSeasonResponse.json().items.map((item: { requestId: string }) => item.requestId),
+        ["req-audit-export-mechanism"],
+      );
     },
     { env: authEnv },
   );
