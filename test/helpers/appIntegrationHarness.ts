@@ -10,7 +10,6 @@ const INTEGRATION_ENV_MODULES = [
   "../../src/cad/routes/cadStepImportPayload",
   "../../src/cad/routes/cadStepImportRoutes",
   "../../src/config/env",
-  "../../src/onshape/onshapeClientFactory",
   "../../src/onshape/onshapeOAuthHealth",
   "../../src/onshape/onshapeOAuthRoutes",
   "../../src/onshape/onshapeOverview",
