@@ -81,6 +81,7 @@ test("audit export filters by entity type project season and date range", async 
         recordAuditAction,
         removeMember,
         removePartDefinition,
+        removeRisk,
         updateMember,
         updatePartDefinition,
       } = require("../src/data/store") as typeof import("../src/data/store");
@@ -287,6 +288,49 @@ test("audit export filters by entity type project season and date range", async 
           .items.some(
             (item: { requestId: string | null }) =>
               item.requestId === "req-audit-export-workstream-risk",
+          ),
+      );
+
+      const removedWorkstreamRisk = removeRisk(workstreamRisk.id);
+      assert.ok(removedWorkstreamRisk);
+
+      resetLimits();
+
+      const deletedWorkstreamRiskProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=risk&projectId=project-robot-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(deletedWorkstreamRiskProjectResponse.statusCode, 200);
+      assert.ok(
+        deletedWorkstreamRiskProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === workstreamRisk.id && item.operation === "delete",
+          ),
+      );
+
+      resetLimits();
+
+      const deletedWorkstreamRiskSeasonResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=risk&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(deletedWorkstreamRiskSeasonResponse.statusCode, 200);
+      assert.ok(
+        deletedWorkstreamRiskSeasonResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === workstreamRisk.id && item.operation === "delete",
           ),
       );
 

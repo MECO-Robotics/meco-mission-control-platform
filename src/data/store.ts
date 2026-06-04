@@ -2021,6 +2021,48 @@ export function getRisks() {
   return currentSnapshot.risks;
 }
 
+function getRiskProjectIds(risk: Risk) {
+  const projectIds: Array<string | null | undefined> = [];
+
+  if (risk.attachmentType === "project") {
+    projectIds.push(risk.attachmentId);
+  }
+
+  if (risk.attachmentType === "workstream") {
+    const workstream = currentSnapshot.workstreams.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    projectIds.push(workstream?.projectId);
+  }
+
+  if (risk.attachmentType === "mechanism") {
+    const mechanism = currentSnapshot.mechanisms.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    const subsystem = currentSnapshot.subsystems.find(
+      (candidate) => candidate.id === mechanism?.subsystemId,
+    );
+    projectIds.push(subsystem?.projectId);
+  }
+
+  if (risk.attachmentType === "part-instance") {
+    const partInstance = currentSnapshot.partInstances.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    const subsystem = currentSnapshot.subsystems.find(
+      (candidate) => candidate.id === partInstance?.subsystemId,
+    );
+    projectIds.push(subsystem?.projectId);
+  }
+
+  const mitigationTask = currentSnapshot.tasks.find(
+    (candidate) => candidate.id === risk.mitigationTaskId,
+  );
+  projectIds.push(mitigationTask?.projectId);
+
+  return uniqueIds(projectIds);
+}
+
 export function createRisk(input: RiskInput) {
   const riskIds = new Set(currentSnapshot.risks.map((risk) => risk.id));
   const risk: Risk = {
@@ -2045,7 +2087,7 @@ export function createRisk(input: RiskInput) {
     entityType: "risk",
     entityId: risk.id,
     entityLabel: risk.title,
-    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    projectIds: getRiskProjectIds(risk),
     taskId: risk.mitigationTaskId,
   });
 
@@ -2083,8 +2125,7 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
       entityType: "risk",
       entityId: savedRisk.id,
       entityLabel: savedRisk.title,
-      projectId:
-        savedRisk.attachmentType === "project" ? savedRisk.attachmentId : null,
+      projectIds: getRiskProjectIds(savedRisk),
       taskId: savedRisk.mitigationTaskId,
       changedFields: collectChangedFields(
         previousRisk,
@@ -2101,6 +2142,7 @@ export function removeRisk(riskId: string) {
   if (!risk) {
     return null;
   }
+  const projectIds = getRiskProjectIds(risk);
 
   currentSnapshot = {
     ...currentSnapshot,
@@ -2112,8 +2154,13 @@ export function removeRisk(riskId: string) {
     entityType: "risk",
     entityId: risk.id,
     entityLabel: risk.title,
-    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    projectIds,
     taskId: risk.mitigationTaskId,
+    detailsJson: {
+      attachmentType: risk.attachmentType,
+      attachmentId: risk.attachmentId,
+      projectIds,
+    },
   });
 
   return risk;
