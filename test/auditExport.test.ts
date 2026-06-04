@@ -5,7 +5,7 @@ import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 import type { MemberRole } from "../src/domain/types";
 
 const authEnv = {
-  AUTH_JWT_SECRET: "test-audit-export-secret-123456",
+  AUTH_JWT_SECRET: "test-audit-export-secret-1234567",
   GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
   AUTH_MENTOR_EMAILS: "mentor@mecorobotics.org",
 } as const;
