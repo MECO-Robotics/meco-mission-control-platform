@@ -23,6 +23,25 @@ function addIfPresent(values: Set<string>, value: string | null | undefined) {
   }
 }
 
+function readActionSeasonIds(action: AuditAction) {
+  const seasonIds = new Set<string>();
+  const detailSeasonId = action.detailsJson?.seasonId;
+  if (typeof detailSeasonId === "string") {
+    seasonIds.add(detailSeasonId);
+  }
+
+  const detailActiveSeasonIds = action.detailsJson?.activeSeasonIds;
+  if (Array.isArray(detailActiveSeasonIds)) {
+    for (const seasonId of detailActiveSeasonIds) {
+      if (typeof seasonId === "string") {
+        seasonIds.add(seasonId);
+      }
+    }
+  }
+
+  return seasonIds;
+}
+
 function getRelatedProjectIds(action: AuditAction, snapshot: PlatformSnapshot) {
   const projectIds = getActionProjectIds(action);
   const subsystemsById = new Map(
@@ -146,6 +165,9 @@ function actionMatchesSeason(
   ]);
 
   if (entitySeasonsByType.get(action.entityType)?.get(action.entityId)?.has(seasonId)) {
+    return true;
+  }
+  if (readActionSeasonIds(action).has(seasonId)) {
     return true;
   }
 

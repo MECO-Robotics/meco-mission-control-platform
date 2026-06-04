@@ -73,11 +73,14 @@ test("audit export filters by entity type project season and date range", async 
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
       const {
+        createMember,
         createPartDefinition,
         createRisk,
         createSeason,
         getSnapshot,
         recordAuditAction,
+        removeMember,
+        removePartDefinition,
         updateMember,
         updatePartDefinition,
       } = require("../src/data/store") as typeof import("../src/data/store");
@@ -332,6 +335,31 @@ test("audit export filters by entity type project season and date range", async 
         actorMemberId: "maya",
         requestId: "req-audit-export-future-part-definition",
       });
+      const deletedMember = createMember({
+        name: "Audit Export Delete Member",
+        role: "student",
+        seasonId: "default-season",
+      });
+      const updatedDeletedMember = updateMember(deletedMember.id, {
+        activeSeasonIds: ["default-season", futureSeason.id],
+      });
+      assert.ok(updatedDeletedMember);
+      assert.ok(removeMember(deletedMember.id));
+      const deletedPartDefinition = createPartDefinition({
+        name: "Audit Export Deleted Part",
+        partNumber: "AUD-EXP-DEL",
+        revision: "A",
+        type: "custom",
+        source: "Onshape",
+        materialId: "mat-onyx-filament",
+        description: "Deleted after being active in another season.",
+        seasonId: "default-season",
+      });
+      const updatedDeletedPartDefinition = updatePartDefinition(deletedPartDefinition.id, {
+        activeSeasonIds: ["default-season", futureSeason.id],
+      });
+      assert.ok(updatedDeletedPartDefinition);
+      assert.ok(removePartDefinition(deletedPartDefinition.id));
       const futureProject = getSnapshot().projects.find(
         (project) => project.seasonId === futureSeason.id && project.projectType === "robot",
       );
@@ -396,6 +424,14 @@ test("audit export filters by entity type project season and date range", async 
               item.requestId === "req-audit-export-future-member",
           ),
       );
+      assert.ok(
+        futureSeasonMemberResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === deletedMember.id && item.operation === "delete",
+          ),
+      );
 
       resetLimits();
 
@@ -416,6 +452,14 @@ test("audit export filters by entity type project season and date range", async 
           .items.some(
             (item: { requestId: string | null }) =>
               item.requestId === "req-audit-export-future-part-definition",
+          ),
+      );
+      assert.ok(
+        futureSeasonPartDefinitionResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === deletedPartDefinition.id && item.operation === "delete",
           ),
       );
     },

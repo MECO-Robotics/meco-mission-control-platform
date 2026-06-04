@@ -2771,6 +2771,10 @@ export function removePartDefinition(partDefinitionId: string) {
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
+    detailsJson: {
+      seasonId: partDefinition.seasonId,
+      activeSeasonIds: partDefinition.activeSeasonIds ?? [],
+    },
   });
 
   return partDefinition;
@@ -4646,6 +4650,10 @@ export function removeMember(memberId: string) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
+    detailsJson: {
+      seasonId: member.seasonId,
+      activeSeasonIds: member.activeSeasonIds ?? [],
+    },
   });
 
   return member;
