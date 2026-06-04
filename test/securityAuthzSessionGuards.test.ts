@@ -18,7 +18,7 @@ async function signTestToken(args: {
   hostedDomain?: string;
   accountId?: string;
 }) {
-  const { signSessionToken } = await import("../src/auth/authService");
+  const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
 
   return signSessionToken({
     accountId: args.accountId ?? args.email,
@@ -40,7 +40,7 @@ test("external roster sessions cannot access broad platform API routes", async (
         role: "external",
         hostedDomain: "sponsor.example",
       });
-      const { verifySessionToken } = await import("../src/auth/authService");
+      const { verifySessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
       const externalSession = verifySessionToken(externalToken);
 
       assert.equal(externalSession.role, "external");
@@ -442,7 +442,7 @@ test("google sessions for hosted-domain emails require the hosted-domain claim",
         role: "student",
         hostedDomain: "gmail.com",
       });
-      const { AuthError, verifySessionToken } = await import("../src/auth/authService");
+      const { AuthError, verifySessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
 
       assert.throws(
         () => verifySessionToken(forgedHostedDomainToken),
@@ -478,7 +478,7 @@ test("legacy google sessions without hosted-domain proof are rejected", async ()
           subject: "student@mecorobotics.org",
         },
       );
-      const { AuthError, verifySessionToken } = await import("../src/auth/authService");
+      const { AuthError, verifySessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
 
       assert.throws(
         () => verifySessionToken(legacyToken),
