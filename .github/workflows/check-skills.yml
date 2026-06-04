@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - staging
+      - "staging/**"
       - development
   workflow_dispatch:
 
@@ -31,7 +33,7 @@ jobs:
           done
 
   check-skills-trusted:
-    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development') }}
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/staging/') || github.ref == 'refs/heads/development') }}
     runs-on: ubuntu-latest
     env:
       SKILLS_REPO: ${{ vars.SKILLS_REPO || secrets.SKILLS_REPO || 'https://github.com/MECO-Robotics/mission-control-skills.git' }}
