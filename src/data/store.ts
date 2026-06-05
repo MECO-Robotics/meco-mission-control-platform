@@ -2021,6 +2021,11 @@ export function getRisks() {
   return currentSnapshot.risks;
 }
 
+function getSubsystemProjectId(subsystemId: string | null | undefined) {
+  return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId)
+    ?.projectId;
+}
+
 function getRiskProjectIds(risk: Risk) {
   const projectIds: Array<string | null | undefined> = [];
 
@@ -2853,6 +2858,7 @@ export function createMechanism(input: MechanismInput) {
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
+    projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
   });
 
@@ -2904,6 +2910,7 @@ export function createPartInstance(input: PartInstanceInput) {
     entityType: "part-instance",
     entityId: savedPartInstance.id,
     entityLabel: savedPartInstance.name,
+    projectId: getSubsystemProjectId(savedPartInstance.subsystemId),
     subsystemId: savedPartInstance.subsystemId,
   });
 
@@ -2969,6 +2976,7 @@ export function updatePartInstance(
       entityType: "part-instance",
       entityId: savedPartInstance.id,
       entityLabel: savedPartInstance.name,
+      projectId: getSubsystemProjectId(savedPartInstance.subsystemId),
       subsystemId: savedPartInstance.subsystemId,
       changedFields: updatedPartInstance
         ? collectChangedFields(
@@ -3019,6 +3027,7 @@ export function removePartInstance(partInstanceId: string) {
     entityType: "part-instance",
     entityId: partInstance.id,
     entityLabel: partInstance.name,
+    projectId: getSubsystemProjectId(partInstance.subsystemId),
     subsystemId: partInstance.subsystemId,
   });
 
@@ -3092,6 +3101,7 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       entityType: "mechanism",
       entityId: savedMechanism.id,
       entityLabel: savedMechanism.name,
+      projectId: getSubsystemProjectId(savedMechanism.subsystemId),
       subsystemId: savedMechanism.subsystemId,
       changedFields: collectChangedFields(
         currentMechanism,
@@ -3145,6 +3155,7 @@ export function removeMechanism(mechanismId: string) {
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
+    projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
   });
 
