@@ -71,7 +71,7 @@ export function normalizePmCadProvenance<T extends Partial<PmCadProvenance> & { 
   );
   return {
     ...input,
-    cadSource: input.cadSource ?? cadSourceFromImportSource(cadImportSource),
+    cadSource: cadSourceFromImportSource(cadImportSource),
     cadImportSource,
     cadEditedAfterImport: input.cadEditedAfterImport ?? false,
     cadSourceLabel: input.cadSourceLabel ?? cadSourceLabelFromImportSource(cadImportSource),

@@ -180,5 +180,28 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         },
       },
     );
+
+    resetLimits();
+    const manualRoundTripResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/subsystems/${subsystem.id}`,
+      payload: {
+        cadSource: "step",
+        cadImportSource: "MANUAL",
+      },
+    });
+    assert.equal(manualRoundTripResponse.statusCode, 200);
+    assert.deepEqual(
+      {
+        cadSource: manualRoundTripResponse.json().item.cadSource,
+        cadImportSource: manualRoundTripResponse.json().item.cadImportSource,
+        cadEditedAfterImport: manualRoundTripResponse.json().item.cadEditedAfterImport,
+      },
+      {
+        cadSource: "manual",
+        cadImportSource: "MANUAL",
+        cadEditedAfterImport: false,
+      },
+    );
   });
 });
