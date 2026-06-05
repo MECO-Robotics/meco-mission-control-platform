@@ -2026,6 +2026,16 @@ function getSubsystemProjectId(subsystemId: string | null | undefined) {
     ?.projectId;
 }
 
+function getSeasonAuditDetails(record: {
+  seasonId: string;
+  activeSeasonIds?: string[];
+}) {
+  return {
+    seasonId: record.seasonId,
+    activeSeasonIds: record.activeSeasonIds ?? [],
+  };
+}
+
 function getRiskProjectIds(risk: Risk) {
   const projectIds: Array<string | null | undefined> = [];
 
@@ -2701,6 +2711,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
+    detailsJson: getSeasonAuditDetails(partDefinition),
   });
 
   return partDefinition;
@@ -2751,6 +2762,7 @@ export function updatePartDefinition(
       entityType: "part-definition",
       entityId: savedPartDefinition.id,
       entityLabel: savedPartDefinition.name,
+      detailsJson: getSeasonAuditDetails(savedPartDefinition),
       changedFields: collectChangedFields(
         previousPartDefinition,
         savedPartDefinition,
@@ -2823,10 +2835,7 @@ export function removePartDefinition(partDefinitionId: string) {
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
-    detailsJson: {
-      seasonId: partDefinition.seasonId,
-      activeSeasonIds: partDefinition.activeSeasonIds ?? [],
-    },
+    detailsJson: getSeasonAuditDetails(partDefinition),
   });
 
   return partDefinition;
@@ -4570,6 +4579,7 @@ export function createMember(input: MemberInput) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
+    detailsJson: getSeasonAuditDetails(member),
   });
 
   return member;
@@ -4635,6 +4645,7 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
       entityLabel: savedMember.name,
       actorMemberId: savedMember.id,
       memberIds: [savedMember.id],
+      detailsJson: getSeasonAuditDetails(savedMember),
       changedFields: collectChangedFields(
         previousMember,
         savedMember,
@@ -4708,10 +4719,7 @@ export function removeMember(memberId: string) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
-    detailsJson: {
-      seasonId: member.seasonId,
-      activeSeasonIds: member.activeSeasonIds ?? [],
-    },
+    detailsJson: getSeasonAuditDetails(member),
   });
 
   return member;

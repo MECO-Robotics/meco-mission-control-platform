@@ -169,6 +169,14 @@ test("audit export retains deleted entities for active season filters", async ()
               item.entityId === deletedMember.id && item.operation === "delete",
           ),
       );
+      assert.ok(
+        futureSeasonMemberResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === deletedMember.id && item.operation === "update",
+          ),
+      );
 
       resetLimits();
 
@@ -197,6 +205,14 @@ test("audit export retains deleted entities for active season filters", async ()
           .items.some(
             (item: { entityId: string; operation: string }) =>
               item.entityId === deletedPartDefinition.id && item.operation === "delete",
+          ),
+      );
+      assert.ok(
+        futureSeasonPartDefinitionResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === deletedPartDefinition.id && item.operation === "update",
           ),
       );
     },
