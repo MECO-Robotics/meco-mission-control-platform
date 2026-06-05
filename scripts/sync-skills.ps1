@@ -6,6 +6,12 @@ $SkillsRepo = if ([string]::IsNullOrWhiteSpace($env:SKILLS_REPO)) {
     $env:SKILLS_REPO
 }
 
+$SkillsRef = if ([string]::IsNullOrWhiteSpace($env:SKILLS_REF)) {
+    ""
+} else {
+    $env:SKILLS_REF
+}
+
 $TmpDir = ".tmp-skills-sync"
 
 function Fail {
@@ -35,17 +41,28 @@ try {
     }
 
     Write-Host "Syncing skills from: $SkillsRepo"
+    if (-not [string]::IsNullOrWhiteSpace($SkillsRef)) {
+        Write-Host "Using skills ref: $SkillsRef"
+    }
 
     Remove-Tmp
 
-    & git clone --depth 1 $SkillsRepo $TmpDir
+    & git clone $SkillsRepo $TmpDir
     if ($LASTEXITCODE -ne 0) {
         Fail "failed to clone shared skills repo: $SkillsRepo"
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($SkillsRef)) {
+        & git -C $TmpDir checkout --quiet $SkillsRef
+        if ($LASTEXITCODE -ne 0) {
+            Fail "failed to checkout SKILLS_REF '$SkillsRef' from shared skills repo."
+        }
+    }
+
     $SharedSkills = Join-Path $TmpDir "skills"
     if (-not (Test-Path -LiteralPath $SharedSkills -PathType Container)) {
-        Fail "shared repo does not contain a skills/ directory."
+        $RefLabel = if ([string]::IsNullOrWhiteSpace($SkillsRef)) { "default branch" } else { $SkillsRef }
+        Fail "shared repo ref '$RefLabel' does not contain a skills/ directory."
     }
 
     if (Test-Path -LiteralPath "skills") {

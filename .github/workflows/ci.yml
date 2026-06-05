@@ -33,7 +33,6 @@ on:
       - "deploy/**"
       - "docs/**"
       - "scripts/**"
-      - "skills/**"
       - "src/**"
       - "test/**"
       - "tsconfig.json"
