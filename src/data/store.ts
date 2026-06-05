@@ -2989,7 +2989,10 @@ export function updatePartInstance(
       entityType: "part-instance",
       entityId: savedPartInstance.id,
       entityLabel: savedPartInstance.name,
-      projectId: getSubsystemProjectId(savedPartInstance.subsystemId),
+      projectIds: uniqueIds([
+        getSubsystemProjectId(currentPartInstance.subsystemId),
+        getSubsystemProjectId(savedPartInstance.subsystemId),
+      ]),
       subsystemId: savedPartInstance.subsystemId,
       changedFields: updatedPartInstance
         ? collectChangedFields(
@@ -3114,7 +3117,10 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       entityType: "mechanism",
       entityId: savedMechanism.id,
       entityLabel: savedMechanism.name,
-      projectId: getSubsystemProjectId(savedMechanism.subsystemId),
+      projectIds: uniqueIds([
+        getSubsystemProjectId(currentMechanism.subsystemId),
+        getSubsystemProjectId(savedMechanism.subsystemId),
+      ]),
       subsystemId: savedMechanism.subsystemId,
       changedFields: collectChangedFields(
         currentMechanism,

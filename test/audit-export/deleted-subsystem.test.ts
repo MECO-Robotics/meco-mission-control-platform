@@ -13,6 +13,8 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         createPartInstance,
         createSubsystem,
         removeSubsystem,
+        updateMechanism,
+        updatePartInstance,
       } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
@@ -88,6 +90,114 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         partInstanceSeasonResponse
           .json()
           .items.some((item: { entityId: string }) => item.entityId === partInstance.id),
+      );
+
+      const movedMechanism = createMechanism({
+        subsystemId: "drive",
+        name: "Audit Export Moved Mechanism",
+        description: "Mechanism audit row should keep old and new project scope.",
+      });
+      assert.ok(updateMechanism(movedMechanism.id, { subsystemId: "operations" }));
+
+      resetLimits();
+
+      const oldMechanismProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=mechanism&projectId=project-robot-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(oldMechanismProjectResponse.statusCode, 200);
+      assert.ok(
+        oldMechanismProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === movedMechanism.id && item.operation === "update",
+          ),
+      );
+
+      resetLimits();
+
+      const newMechanismProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=mechanism&projectId=project-operations-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(newMechanismProjectResponse.statusCode, 200);
+      assert.ok(
+        newMechanismProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === movedMechanism.id && item.operation === "update",
+          ),
+      );
+
+      const movedPartDefinition = createPartDefinition({
+        name: "Audit Export Moved Part",
+        partNumber: "AUD-EXP-MOVE",
+        revision: "A",
+        type: "custom",
+        source: "Onshape",
+        materialId: "mat-onyx-filament",
+        description: "Part definition for moved part instance audit coverage.",
+        seasonId: "default-season",
+      });
+      const movedPartInstance = createPartInstance({
+        subsystemId: "drive",
+        mechanismId: null,
+        partDefinitionId: movedPartDefinition.id,
+        name: "Audit Export Moved Part Instance",
+        quantity: 1,
+        trackIndividually: false,
+        status: "not ready",
+      });
+      assert.ok(updatePartInstance(movedPartInstance.id, { subsystemId: "operations" }));
+
+      resetLimits();
+
+      const oldPartProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=part-instance&projectId=project-robot-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(oldPartProjectResponse.statusCode, 200);
+      assert.ok(
+        oldPartProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === movedPartInstance.id && item.operation === "update",
+          ),
+      );
+
+      resetLimits();
+
+      const newPartProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=part-instance&projectId=project-operations-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(newPartProjectResponse.statusCode, 200);
+      assert.ok(
+        newPartProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === movedPartInstance.id && item.operation === "update",
+          ),
       );
     },
     { env: authEnv },
