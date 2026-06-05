@@ -155,7 +155,9 @@ import {
 } from "../contracts/bootstrap";
 import { buildRosterInsights } from "./helpers/rosterInsights";
 import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
+import { filterAuditActions, formatAuditActionsCsv } from "./helpers/auditExport";
 import {
+  auditExportQuerySchema,
   artifactPatchSchema,
   artifactSchema,
   favoriteNavigationViewIdSchema,
@@ -387,6 +389,24 @@ export async function registerRoutes(app: FastifyInstance) {
     return false;
   };
 
+  const requireAdminPermission = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    message: string,
+  ) => {
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    if (session?.role === "admin") {
+      return true;
+    }
+
+    reply.code(403).send({ message });
+    return false;
+  };
+
   const getTaskActionMember = (request: Parameters<typeof requireSession>[0]) => {
     const members = getMembers();
 
@@ -587,6 +607,40 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return bootstrapPayload.data;
+  });
+
+  app.get("/api/audit/export", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    if (!requireAdminPermission(request, reply, "Only admins can export audit history.")) {
+      return;
+    }
+
+    const parsed = auditExportQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Audit export query is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const { format, ...filters } = parsed.data;
+    const actions = filterAuditActions(getSnapshot(), filters);
+
+    if (format === "csv") {
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", "attachment; filename=\"meco-audit-actions.csv\"")
+        .send(formatAuditActionsCsv(actions));
+    }
+
+    return {
+      items: actions,
+      count: actions.length,
+      filters,
+    };
   });
 
   app.patch<{ Body: unknown; Params: { viewId: string } }>(
