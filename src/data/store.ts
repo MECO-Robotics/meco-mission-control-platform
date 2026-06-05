@@ -2026,13 +2026,20 @@ function getSubsystemProjectId(subsystemId: string | null | undefined) {
     ?.projectId;
 }
 
-function getSeasonAuditDetails(record: {
+function getSeasonAuditDetails(...records: Array<{
   seasonId?: string | null;
   activeSeasonIds?: string[];
-}) {
+}>) {
+  const seasonIds = uniqueIds(
+    records.flatMap((record) => [
+      record.seasonId,
+      ...(record.activeSeasonIds ?? []),
+    ]),
+  );
+  const latestRecord = records[records.length - 1];
   return {
-    ...(typeof record.seasonId === "string" ? { seasonId: record.seasonId } : {}),
-    activeSeasonIds: record.activeSeasonIds ?? [],
+    ...(typeof latestRecord?.seasonId === "string" ? { seasonId: latestRecord.seasonId } : {}),
+    activeSeasonIds: seasonIds,
   };
 }
 
@@ -2766,7 +2773,7 @@ export function updatePartDefinition(
       entityType: "part-definition",
       entityId: savedPartDefinition.id,
       entityLabel: savedPartDefinition.name,
-      detailsJson: getSeasonAuditDetails(savedPartDefinition),
+      detailsJson: getSeasonAuditDetails(previousPartDefinition, savedPartDefinition),
       changedFields: collectChangedFields(
         previousPartDefinition,
         savedPartDefinition,
@@ -4661,7 +4668,7 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
       entityLabel: savedMember.name,
       actorMemberId: savedMember.id,
       memberIds: [savedMember.id],
-      detailsJson: getSeasonAuditDetails(savedMember),
+      detailsJson: getSeasonAuditDetails(previousMember, savedMember),
       changedFields: collectChangedFields(
         previousMember,
         savedMember,
