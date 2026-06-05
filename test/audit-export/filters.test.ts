@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./auditExport.helpers";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
+import { authEnv, signTestToken } from "./helpers";
 
 test("audit export filters by entity type project season and date range", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createRisk, getSnapshot, recordAuditAction } = require("../src/data/store") as typeof import("../src/data/store");
+      const { createRisk, getSnapshot, recordAuditAction } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",

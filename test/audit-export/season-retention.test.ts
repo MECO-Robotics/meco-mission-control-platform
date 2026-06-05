@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./auditExport.helpers";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
+import { authEnv, signTestToken } from "./helpers";
 
 test("audit export retains deleted entities for active season filters", async () => {
   await withIntegrationApp(
@@ -17,7 +17,7 @@ test("audit export retains deleted entities for active season filters", async ()
         removePartDefinition,
         updateMember,
         updatePartDefinition,
-      } = require("../src/data/store") as typeof import("../src/data/store");
+      } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",

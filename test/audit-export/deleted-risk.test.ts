@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { authEnv, signTestToken } from "./auditExport.helpers";
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { authEnv, signTestToken } from "./helpers";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
 
 test("audit export preserves workstream risk scope after deletion", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createRisk, getSnapshot, removeRisk } = require("../src/data/store") as typeof import("../src/data/store");
+      const { createRisk, getSnapshot, removeRisk } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",

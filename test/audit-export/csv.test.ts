@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./auditExport.helpers";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
+import { authEnv, signTestToken } from "./helpers";
 
 test("audit export supports csv format", async () => {
   await withIntegrationApp(
     async ({ app }) => {
-      const { recordAuditAction } = require("../src/data/store") as typeof import("../src/data/store");
+      const { recordAuditAction } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",

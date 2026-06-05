@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { authEnv, signTestToken } from "./auditExport.helpers";
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { authEnv, signTestToken } from "./helpers";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
 
 test("audit export preserves subsystem-owned rows after subsystem deletion", async () => {
   await withIntegrationApp(
@@ -13,7 +13,7 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         createPartInstance,
         createSubsystem,
         removeSubsystem,
-      } = require("../src/data/store") as typeof import("../src/data/store");
+      } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",

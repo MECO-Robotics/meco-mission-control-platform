@@ -1,4 +1,4 @@
-import type { MemberRole } from "../src/domain/types";
+import type { MemberRole } from "../../src/domain/types";
 
 export const authEnv = {
   AUTH_JWT_SECRET: "test-audit-export-secret-1234567",
@@ -11,7 +11,7 @@ export async function signTestToken(args: {
   role: MemberRole;
   hostedDomain?: string;
 }) {
-  const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
+  const { signSessionToken } = require("../../src/auth/authService") as typeof import("../../src/auth/authService");
 
   return signSessionToken({
     accountId: args.email,

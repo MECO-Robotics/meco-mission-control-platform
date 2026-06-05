@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./auditExport.helpers";
+import { withIntegrationApp } from "../helpers/appIntegrationHarness";
+import { authEnv, signTestToken } from "./helpers";
 
 test("audit export requires an admin session", async () => {
   await withIntegrationApp(
