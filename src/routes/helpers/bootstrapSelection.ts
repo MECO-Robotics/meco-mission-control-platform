@@ -4,6 +4,9 @@ import type {
   MilestoneRequirement,
   Member,
   PlatformSnapshot,
+  PmCadImportSource,
+  PmCadProvenance,
+  PmCadSource,
   QaFinding,
   QaReport,
   QaRequest,
@@ -303,6 +306,79 @@ function parseDateMs(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function cadImportSourceFromText(value: string | null | undefined): PmCadImportSource {
+  const normalized = value?.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_") ?? "";
+  if (normalized === "STEP" || normalized === "STEP_UPLOAD" || normalized === "STP") {
+    return "STEP_UPLOAD";
+  }
+  if (
+    normalized === "ONSHAPE" ||
+    normalized === "ONSHAPE_API" ||
+    normalized === "ONSHAPE_BOM" ||
+    normalized === "ONSHAPE_BOM_CSV"
+  ) {
+    return normalized === "ONSHAPE_BOM_CSV" ? "ONSHAPE_BOM_CSV" : "ONSHAPE_API";
+  }
+  if (normalized === "MANUAL_BOM_CSV") {
+    return "MANUAL_BOM_CSV";
+  }
+  return "MANUAL";
+}
+
+function normalizeCadImportSource(
+  value: string | null | undefined,
+  fallbackValue: string | null | undefined,
+): PmCadImportSource {
+  const normalized = value?.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_") ?? "";
+  if (
+    normalized === "MANUAL" ||
+    normalized === "STEP_UPLOAD" ||
+    normalized === "ONSHAPE_API" ||
+    normalized === "ONSHAPE_BOM_CSV" ||
+    normalized === "MANUAL_BOM_CSV"
+  ) {
+    return normalized;
+  }
+  return cadImportSourceFromText(fallbackValue ?? value);
+}
+
+function cadSourceFromImportSource(cadImportSource: PmCadImportSource): PmCadSource {
+  if (cadImportSource === "STEP_UPLOAD") {
+    return "step";
+  }
+  if (cadImportSource === "ONSHAPE_API" || cadImportSource === "ONSHAPE_BOM_CSV") {
+    return "onshape";
+  }
+  return "manual";
+}
+
+function cadSourceLabelFromImportSource(cadImportSource: PmCadImportSource) {
+  if (cadImportSource === "STEP_UPLOAD") {
+    return "STEP";
+  }
+  if (cadImportSource === "ONSHAPE_API" || cadImportSource === "ONSHAPE_BOM_CSV") {
+    return "Onshape";
+  }
+  return "Manual";
+}
+
+function withCadProvenance<T extends Partial<PmCadProvenance> & { source?: string }>(
+  item: T,
+) {
+  const cadImportSource = normalizeCadImportSource(
+    item.cadImportSource,
+    item.source ?? item.cadSource,
+  );
+  return {
+    ...item,
+    cadSource: item.cadSource ?? cadSourceFromImportSource(cadImportSource),
+    cadImportSource,
+    cadEditedAfterImport: item.cadEditedAfterImport ?? false,
+    cadSourceLabel: item.cadSourceLabel ?? cadSourceLabelFromImportSource(cadImportSource),
+    cadUpdatedAt: item.cadUpdatedAt ?? null,
+  };
+}
+
 function isSeasonScopedByProjectLinks(args: {
   selectedSeasonId: string | null;
   recordSeasonId?: string;
@@ -351,27 +427,29 @@ export function buildBootstrapResponse(
     activeProjectIds.has(workstream.projectId),
   );
   const scopedWorkstreamIds = new Set(scopedWorkstreams.map((workstream) => workstream.id));
-  const scopedSubsystems = snapshot.subsystems.filter((subsystem) =>
-    activeProjectIds.has(subsystem.projectId),
-  );
+  const scopedSubsystems = snapshot.subsystems
+    .filter((subsystem) => activeProjectIds.has(subsystem.projectId))
+    .map(withCadProvenance);
   const scopedSubsystemIds = new Set(scopedSubsystems.map((subsystem) => subsystem.id));
-  const scopedPartDefinitions = selectedSeasonId
+  const scopedPartDefinitions = (selectedSeasonId
     ? snapshot.partDefinitions.filter((partDefinition) =>
         isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
       )
-    : snapshot.partDefinitions;
-  const scopedMechanisms = snapshot.mechanisms.filter((mechanism) =>
-    scopedSubsystemIds.has(mechanism.subsystemId),
-  );
+    : snapshot.partDefinitions).map(withCadProvenance);
+  const scopedMechanisms = snapshot.mechanisms
+    .filter((mechanism) => scopedSubsystemIds.has(mechanism.subsystemId))
+    .map(withCadProvenance);
   const scopedMechanismIds = new Set(scopedMechanisms.map((mechanism) => mechanism.id));
   const scopedArtifacts = snapshot.artifacts.filter((artifact) =>
     activeProjectIds.has(artifact.projectId),
   );
-  const scopedPartInstances = snapshot.partInstances.filter(
-    (partInstance) =>
-      scopedSubsystemIds.has(partInstance.subsystemId) &&
-      (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
-  );
+  const scopedPartInstances = snapshot.partInstances
+    .filter(
+      (partInstance) =>
+        scopedSubsystemIds.has(partInstance.subsystemId) &&
+        (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
+    )
+    .map(withCadProvenance);
   const scopedPartInstanceIds = new Set(
     scopedPartInstances.map((partInstance) => partInstance.id),
   );

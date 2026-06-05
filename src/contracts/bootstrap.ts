@@ -4,6 +4,24 @@ export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap"
 export const BOOTSTRAP_CONTRACT_VERSION = 1;
 
 const bootstrapCollectionSchema = z.array(z.record(z.string(), z.unknown()));
+const pmCadSourceValues = ["manual", "step", "onshape"] as const;
+const pmCadImportSourceValues = [
+  "MANUAL",
+  "STEP_UPLOAD",
+  "ONSHAPE_API",
+  "ONSHAPE_BOM_CSV",
+  "MANUAL_BOM_CSV",
+] as const;
+const pmCadProvenanceRecordSchema = z
+  .object({
+    cadSource: z.enum(pmCadSourceValues),
+    cadImportSource: z.enum(pmCadImportSourceValues),
+    cadEditedAfterImport: z.boolean(),
+    cadSourceLabel: z.string().optional(),
+    cadUpdatedAt: z.string().nullable().optional(),
+  })
+  .passthrough();
+const pmCadProvenanceCollectionSchema = z.array(pmCadProvenanceRecordSchema);
 
 export const bootstrapPayloadSchema = z
   .object({
@@ -11,13 +29,13 @@ export const bootstrapPayloadSchema = z
     projects: bootstrapCollectionSchema,
     workstreams: bootstrapCollectionSchema,
     members: bootstrapCollectionSchema,
-    subsystems: bootstrapCollectionSchema,
+    subsystems: pmCadProvenanceCollectionSchema,
     disciplines: bootstrapCollectionSchema,
-    mechanisms: bootstrapCollectionSchema,
+    mechanisms: pmCadProvenanceCollectionSchema,
     materials: bootstrapCollectionSchema,
     artifacts: bootstrapCollectionSchema,
-    partDefinitions: bootstrapCollectionSchema,
-    partInstances: bootstrapCollectionSchema,
+    partDefinitions: pmCadProvenanceCollectionSchema,
+    partInstances: pmCadProvenanceCollectionSchema,
     milestones: bootstrapCollectionSchema,
     milestoneRequirements: bootstrapCollectionSchema,
     reports: bootstrapCollectionSchema,
@@ -47,6 +65,33 @@ const bootstrapCollectionSchemaJson = {
   items: {
     type: "object",
     additionalProperties: true,
+  },
+};
+const pmCadProvenanceCollectionSchemaJson = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: true,
+    required: ["cadSource", "cadImportSource", "cadEditedAfterImport"],
+    properties: {
+      cadSource: {
+        type: "string",
+        enum: pmCadSourceValues,
+      },
+      cadImportSource: {
+        type: "string",
+        enum: pmCadImportSourceValues,
+      },
+      cadEditedAfterImport: {
+        type: "boolean",
+      },
+      cadSourceLabel: {
+        type: "string",
+      },
+      cadUpdatedAt: {
+        type: ["string", "null"],
+      },
+    },
   },
 };
 
@@ -96,13 +141,13 @@ export const bootstrapContractDocument = {
     projects: bootstrapCollectionSchemaJson,
     workstreams: bootstrapCollectionSchemaJson,
     members: bootstrapCollectionSchemaJson,
-    subsystems: bootstrapCollectionSchemaJson,
+    subsystems: pmCadProvenanceCollectionSchemaJson,
     disciplines: bootstrapCollectionSchemaJson,
-    mechanisms: bootstrapCollectionSchemaJson,
+    mechanisms: pmCadProvenanceCollectionSchemaJson,
     materials: bootstrapCollectionSchemaJson,
     artifacts: bootstrapCollectionSchemaJson,
-    partDefinitions: bootstrapCollectionSchemaJson,
-    partInstances: bootstrapCollectionSchemaJson,
+    partDefinitions: pmCadProvenanceCollectionSchemaJson,
+    partInstances: pmCadProvenanceCollectionSchemaJson,
     milestones: bootstrapCollectionSchemaJson,
     milestoneRequirements: bootstrapCollectionSchemaJson,
     reports: bootstrapCollectionSchemaJson,

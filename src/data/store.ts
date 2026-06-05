@@ -18,6 +18,9 @@ import type {
   PartDefinition,
   PartInstance,
   PlatformSnapshot,
+  PmCadImportSource,
+  PmCadProvenance,
+  PmCadSource,
   Project,
   PurchaseItem,
   Report,
@@ -549,12 +552,30 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
     projects: normalizedProjects,
+    subsystems: clonedSnapshot.subsystems.map((subsystem) => ({
+      ...subsystem,
+      ...normalizeCadProvenance(subsystem),
+    })),
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
     ),
+    mechanisms: clonedSnapshot.mechanisms.map((mechanism) => ({
+      ...mechanism,
+      ...normalizeCadProvenance(mechanism),
+    })),
     partDefinitions: clonedSnapshot.partDefinitions.map((partDefinition) =>
-      normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
+      normalizePartDefinitionSeasonMembership(
+        {
+          ...partDefinition,
+          ...normalizeCadProvenance(partDefinition),
+        },
+        fallbackSeasonId,
+      ),
     ),
+    partInstances: clonedSnapshot.partInstances.map((partInstance) => ({
+      ...partInstance,
+      ...normalizeCadProvenance(partInstance),
+    })),
     milestones: normalizedMilestones,
     milestoneRequirements: normalizedMilestoneRequirements,
     qaRequests: clonedSnapshot.qaRequests ?? [],
@@ -600,6 +621,93 @@ function normalizeWorkspaceColor(color: string | undefined) {
 
   const trimmedColor = color.trim();
   return /^#[0-9A-Fa-f]{6}$/.test(trimmedColor) ? trimmedColor : undefined;
+}
+
+function cadImportSourceFromText(value: string | null | undefined): PmCadImportSource {
+  const normalized = value?.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_") ?? "";
+  if (normalized === "STEP" || normalized === "STEP_UPLOAD" || normalized === "STP") {
+    return "STEP_UPLOAD";
+  }
+  if (
+    normalized === "ONSHAPE" ||
+    normalized === "ONSHAPE_API" ||
+    normalized === "ONSHAPE_BOM" ||
+    normalized === "ONSHAPE_BOM_CSV"
+  ) {
+    return normalized === "ONSHAPE_BOM_CSV" ? "ONSHAPE_BOM_CSV" : "ONSHAPE_API";
+  }
+  if (normalized === "MANUAL_BOM_CSV") {
+    return "MANUAL_BOM_CSV";
+  }
+  return "MANUAL";
+}
+
+function normalizeCadImportSource(
+  value: string | null | undefined,
+  fallbackValue: string | null | undefined,
+): PmCadImportSource {
+  const normalized = value?.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_") ?? "";
+  if (
+    normalized === "MANUAL" ||
+    normalized === "STEP_UPLOAD" ||
+    normalized === "ONSHAPE_API" ||
+    normalized === "ONSHAPE_BOM_CSV" ||
+    normalized === "MANUAL_BOM_CSV"
+  ) {
+    return normalized;
+  }
+  return cadImportSourceFromText(fallbackValue ?? value);
+}
+
+function cadSourceFromImportSource(cadImportSource: PmCadImportSource): PmCadSource {
+  if (cadImportSource === "STEP_UPLOAD") {
+    return "step";
+  }
+  if (cadImportSource === "ONSHAPE_API" || cadImportSource === "ONSHAPE_BOM_CSV") {
+    return "onshape";
+  }
+  return "manual";
+}
+
+function cadSourceLabelFromImportSource(cadImportSource: PmCadImportSource) {
+  if (cadImportSource === "STEP_UPLOAD") {
+    return "STEP";
+  }
+  if (cadImportSource === "ONSHAPE_API" || cadImportSource === "ONSHAPE_BOM_CSV") {
+    return "Onshape";
+  }
+  return "Manual";
+}
+
+function normalizeCadProvenance(
+  input: Partial<PmCadProvenance> & { source?: string },
+): PmCadProvenance {
+  const cadImportSource = normalizeCadImportSource(
+    input.cadImportSource,
+    input.source ?? input.cadSource,
+  );
+  return {
+    cadImportSource,
+    cadSource: input.cadSource ?? cadSourceFromImportSource(cadImportSource),
+    cadEditedAfterImport: input.cadEditedAfterImport ?? false,
+    cadSourceLabel: input.cadSourceLabel ?? cadSourceLabelFromImportSource(cadImportSource),
+    cadUpdatedAt: input.cadUpdatedAt ?? null,
+  };
+}
+
+function markCadEditedAfterImport<T extends PmCadProvenance>(
+  current: T,
+  input: Partial<PmCadProvenance>,
+) {
+  if (input.cadEditedAfterImport !== undefined) {
+    return input.cadEditedAfterImport;
+  }
+  if (input.cadImportSource !== undefined || input.cadSource !== undefined) {
+    return false;
+  }
+  return current.cadImportSource !== "MANUAL" && current.cadImportSource !== "MANUAL_BOM_CSV"
+    ? true
+    : current.cadEditedAfterImport;
 }
 
 function toSlug(value: string) {
@@ -2412,6 +2520,7 @@ export function createSubsystem(input: SubsystemInput) {
   const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
   const subsystem: Subsystem = {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
+    ...normalizeCadProvenance(input),
     projectId: input.projectId,
     name: input.name,
     serialAlias: normalizeSubsystemSerialAlias(input.serialAlias),
@@ -2494,6 +2603,11 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        ...normalizeCadProvenance({
+          ...subsystem,
+          ...input,
+          cadEditedAfterImport: markCadEditedAfterImport(subsystem, input),
+        }),
         serialAlias: nextSerialAlias,
         color: nextColor,
         iteration:
@@ -2697,6 +2811,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
   );
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
+    ...normalizeCadProvenance(input),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     name: input.name,
@@ -2752,6 +2867,11 @@ export function updatePartDefinition(
       updatedPartDefinition = {
         ...partDefinition,
         ...input,
+        ...normalizeCadProvenance({
+          ...partDefinition,
+          ...input,
+          cadEditedAfterImport: markCadEditedAfterImport(partDefinition, input),
+        }),
         seasonId,
         activeSeasonIds,
         iteration:
@@ -2856,6 +2976,7 @@ export function createMechanism(input: MechanismInput) {
   const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
   const mechanism: Mechanism = {
     id: uniqueId(toSlug(input.name) || "mechanism", mechanismIds),
+    ...normalizeCadProvenance(input),
     subsystemId: input.subsystemId,
     name: input.name,
     description: input.description,
@@ -2905,6 +3026,7 @@ export function createPartInstance(input: PartInstanceInput) {
   );
   const partInstance: PartInstance = {
     id: uniqueId(toSlug(input.name) || "part-instance", partInstanceIds),
+    ...normalizeCadProvenance(input),
     subsystemId: input.subsystemId,
     mechanismId: input.mechanismId,
     partDefinitionId: input.partDefinitionId,
@@ -2968,6 +3090,11 @@ export function updatePartInstance(
       updatedPartInstance = {
         ...partInstance,
         ...input,
+        ...normalizeCadProvenance({
+          ...partInstance,
+          ...input,
+          cadEditedAfterImport: markCadEditedAfterImport(partInstance, input),
+        }),
         subsystemId: nextSubsystemId,
         mechanismId: nextMechanismId,
         status:
@@ -3079,6 +3206,11 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       updatedMechanism = {
         ...mechanism,
         ...input,
+        ...normalizeCadProvenance({
+          ...mechanism,
+          ...input,
+          cadEditedAfterImport: markCadEditedAfterImport(mechanism, input),
+        }),
         googleSheetsUrl:
           input.googleSheetsUrl === undefined
             ? mechanism.googleSheetsUrl ?? ""

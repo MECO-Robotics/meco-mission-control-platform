@@ -8,6 +8,7 @@ import type {
   MaterialCategory,
   Member,
   PartInstance,
+  PmCadProvenance,
   Project,
   QaResult,
   ReportType,
@@ -23,6 +24,8 @@ import type {
   TaskStatus,
   TestResultStatus,
 } from "../domain/types";
+
+export type PmCadProvenanceInput = Partial<PmCadProvenance>;
 
 export interface TaskInput {
   projectId: string;
@@ -171,7 +174,7 @@ export interface WorkstreamInput {
   isArchived?: boolean;
 }
 
-export interface SubsystemInput {
+export interface SubsystemInput extends PmCadProvenanceInput {
   projectId: string;
   name: string;
   serialAlias?: string;
@@ -186,7 +189,7 @@ export interface SubsystemInput {
   risks: string[];
 }
 
-export interface MechanismInput {
+export interface MechanismInput extends PmCadProvenanceInput {
   subsystemId: string;
   name: string;
   description: string;
@@ -196,7 +199,7 @@ export interface MechanismInput {
   isArchived?: boolean;
 }
 
-export interface PartDefinitionInput {
+export interface PartDefinitionInput extends PmCadProvenanceInput {
   seasonId?: string;
   activeSeasonIds?: string[];
   name: string;
@@ -212,7 +215,7 @@ export interface PartDefinitionInput {
   photoUrl?: string;
 }
 
-export interface PartInstanceInput {
+export interface PartInstanceInput extends PmCadProvenanceInput {
   subsystemId: string;
   mechanismId: string | null;
   partDefinitionId: string;

@@ -376,6 +376,21 @@ export const riskSchema = z.object({
 export const riskPatchSchema = riskSchema.partial();
 
 export const iterationSchema = z.coerce.number().int().min(1).default(1);
+const pmCadSourceSchema = z.enum(["manual", "step", "onshape"]);
+const pmCadImportSourceSchema = z.enum([
+  "MANUAL",
+  "STEP_UPLOAD",
+  "ONSHAPE_API",
+  "ONSHAPE_BOM_CSV",
+  "MANUAL_BOM_CSV",
+]);
+const pmCadProvenanceSchema = {
+  cadSource: pmCadSourceSchema.optional(),
+  cadImportSource: pmCadImportSourceSchema.optional(),
+  cadEditedAfterImport: z.boolean().optional(),
+  cadSourceLabel: z.string().trim().min(1).optional(),
+  cadUpdatedAt: z.string().datetime({ offset: true }).nullable().optional(),
+};
 
 export const workstreamSchema = z.object({
   projectId: z.string().trim().min(1),
@@ -388,6 +403,7 @@ export const workstreamSchema = z.object({
 export const workstreamPatchSchema = workstreamSchema.partial();
 
 export const subsystemSchema = z.object({
+  ...pmCadProvenanceSchema,
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
   serialAlias: z
@@ -410,6 +426,7 @@ export const subsystemSchema = z.object({
 export const subsystemPatchSchema = subsystemSchema.partial();
 
 export const mechanismSchema = z.object({
+  ...pmCadProvenanceSchema,
   subsystemId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
@@ -422,6 +439,7 @@ export const mechanismSchema = z.object({
 export const mechanismPatchSchema = mechanismSchema.partial();
 
 export const partDefinitionSchema = z.object({
+  ...pmCadProvenanceSchema,
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2),
@@ -439,6 +457,7 @@ export const partDefinitionSchema = z.object({
 });
 
 export const partDefinitionPatchSchema = z.object({
+  ...pmCadProvenanceSchema,
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2).optional(),
@@ -455,6 +474,7 @@ export const partDefinitionPatchSchema = z.object({
 });
 
 export const partInstanceSchema = z.object({
+  ...pmCadProvenanceSchema,
   subsystemId: z.string().trim().min(1),
   mechanismId: z.string().trim().min(1).nullable().optional(),
   partDefinitionId: z.string().trim().min(1),
