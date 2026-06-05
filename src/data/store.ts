@@ -3311,6 +3311,7 @@ export function createMilestone(input: MilestoneInput) {
     entityId: milestone.id,
     entityLabel: milestone.title,
     projectIds: milestone.projectIds,
+    detailsJson: getSeasonAuditDetails(milestone),
   });
 
   return milestone;
@@ -3885,6 +3886,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       entityId: updatedMilestone.id,
       entityLabel: updatedMilestone.title,
       projectIds: updatedMilestone.projectIds,
+      detailsJson: getSeasonAuditDetails(updatedMilestone),
       changedFields: collectChangedFields(
         currentMilestone,
         updatedMilestone,
@@ -3924,6 +3926,7 @@ export function removeMilestone(milestoneId: string) {
     entityId: milestone.id,
     entityLabel: milestone.title,
     projectIds: milestone.projectIds,
+    detailsJson: getSeasonAuditDetails(milestone),
   });
 
   return milestone;
@@ -3970,6 +3973,7 @@ export function createMeeting(input: MeetingInput) {
     entityId: meeting.id,
     entityLabel: meeting.title,
     projectIds: meeting.projectIds,
+    detailsJson: getSeasonAuditDetails(meeting),
   });
 
   return meeting;
@@ -4024,6 +4028,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
     entityId: updatedMeeting.id,
     entityLabel: updatedMeeting.title,
     projectIds: updatedMeeting.projectIds,
+    detailsJson: getSeasonAuditDetails(updatedMeeting),
     changedFields: collectChangedFields(currentMeeting, updatedMeeting),
   });
 
@@ -4047,6 +4052,7 @@ export function removeMeeting(meetingId: string) {
     entityId: meeting.id,
     entityLabel: meeting.title,
     projectIds: meeting.projectIds ?? [],
+    detailsJson: getSeasonAuditDetails(meeting),
   });
 
   return meeting;

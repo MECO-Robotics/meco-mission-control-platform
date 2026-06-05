@@ -8,12 +8,16 @@ test("audit export retains deleted entities for active season filters", async ()
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
       const {
+        createMeeting,
         createMember,
+        createMilestone,
         createPartDefinition,
         createSeason,
         getSnapshot,
         recordAuditAction,
+        removeMeeting,
         removeMember,
+        removeMilestone,
         removePartDefinition,
         updateMember,
         updatePartDefinition,
@@ -96,6 +100,31 @@ test("audit export retains deleted entities for active season filters", async ()
       });
       assert.ok(updatedDeletedPartDefinition);
       assert.ok(removePartDefinition(deletedPartDefinition.id));
+
+      const deletedMilestone = createMilestone({
+        title: "Audit Export Season-Only Milestone",
+        type: "deadline",
+        startDateTime: "2030-02-01T09:00:00-05:00",
+        endDateTime: null,
+        isExternal: false,
+        description: "Projectless milestone retained by season scope.",
+        projectIds: [],
+      });
+      assert.equal(deletedMilestone.seasonId, "default-season");
+      assert.ok(removeMilestone(deletedMilestone.id));
+
+      const deletedMeeting = createMeeting({
+        title: "Audit Export Season-Only Meeting",
+        meetingType: "general",
+        seasonId: "default-season",
+        projectIds: [],
+        startDateTime: "2030-02-02T18:00:00-05:00",
+        endDateTime: null,
+        location: "Shop",
+        description: "Projectless meeting retained by season scope.",
+      });
+      assert.equal(deletedMeeting.seasonId, "default-season");
+      assert.ok(removeMeeting(deletedMeeting.id));
 
       const futureProject = getSnapshot().projects.find(
         (project) => project.seasonId === futureSeason.id && project.projectType === "robot",
@@ -213,6 +242,46 @@ test("audit export retains deleted entities for active season filters", async ()
           .items.some(
             (item: { entityId: string; operation: string }) =>
               item.entityId === deletedPartDefinition.id && item.operation === "update",
+          ),
+      );
+
+      resetLimits();
+
+      const defaultSeasonMilestoneResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=milestone&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(defaultSeasonMilestoneResponse.statusCode, 200);
+      assert.ok(
+        defaultSeasonMilestoneResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === deletedMilestone.id && item.operation === "delete",
+          ),
+      );
+
+      resetLimits();
+
+      const defaultSeasonMeetingResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=meeting&seasonId=default-season",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(defaultSeasonMeetingResponse.statusCode, 200);
+      assert.ok(
+        defaultSeasonMeetingResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === deletedMeeting.id && item.operation === "delete",
           ),
       );
     },
