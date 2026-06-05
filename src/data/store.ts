@@ -3903,7 +3903,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       entityId: updatedMilestone.id,
       entityLabel: updatedMilestone.title,
       projectIds: updatedMilestone.projectIds,
-      detailsJson: getSeasonAuditDetails(updatedMilestone),
+      detailsJson: getSeasonAuditDetails(currentMilestone, updatedMilestone),
       changedFields: collectChangedFields(
         currentMilestone,
         updatedMilestone,
@@ -4045,7 +4045,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
     entityId: updatedMeeting.id,
     entityLabel: updatedMeeting.title,
     projectIds: updatedMeeting.projectIds,
-    detailsJson: getSeasonAuditDetails(updatedMeeting),
+    detailsJson: getSeasonAuditDetails(currentMeeting, updatedMeeting),
     changedFields: collectChangedFields(currentMeeting, updatedMeeting),
   });
 
