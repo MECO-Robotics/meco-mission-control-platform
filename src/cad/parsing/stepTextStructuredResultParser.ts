@@ -70,6 +70,7 @@ function addAssemblyChildren(args: {
   assemblyNodes: NormalizedCadAssemblyNode[];
   partInstances: NormalizedCadPartInstance[];
   createPartDefinition: (productDefinitionId: string) => NormalizedCadPartDefinition;
+  quantityMultiplier: number;
 }) {
   const childEdges = args.childrenByParent.get(args.productDefinitionId) ?? [];
   const siblingNameCounts = new Map<string, number>();
@@ -86,9 +87,10 @@ function addAssemblyChildren(args: {
     const pathSegment = (siblingNameCounts.get(normalizedDisplayName) ?? 0) > 1 ? `${displayName} (${edge.id})` : displayName;
     const instancePath = `${args.instancePath}/${pathSegment}`;
     const childHasChildren = (args.childrenByParent.get(edge.childProductDefinitionId) ?? []).length > 0;
+    const quantity = args.quantityMultiplier * edge.quantity;
 
     if (childHasChildren) {
-      addNestedAssembly({ ...args, edge, childProductDefinition, displayName, pathSegment, instancePath });
+      addNestedAssembly({ ...args, edge, childProductDefinition, displayName, pathSegment, instancePath, quantity });
       continue;
     }
     const partDefinition = args.createPartDefinition(edge.childProductDefinitionId);
@@ -97,12 +99,13 @@ function addAssemblyChildren(args: {
       partDefinitionSourceId: partDefinition.sourceId,
       parentAssemblySourceId: args.assemblySourceId,
       instancePath,
-      quantity: 1,
+      quantity,
       stableSignature: partInstanceSignature({ sourceId: `step-part-inst:${edge.id}`, instancePath }),
       metadata: {
         nauoId: edge.id,
         parentProductDefinitionId: edge.parentProductDefinitionId,
         childProductDefinitionId: edge.childProductDefinitionId,
+        usageQuantity: edge.quantity,
         duplicateSiblingPathSegment: pathSegment !== displayName,
       },
     });
@@ -115,6 +118,7 @@ function addNestedAssembly(args: Parameters<typeof addAssemblyChildren>[0] & {
   displayName: string;
   pathSegment: string;
   instancePath: string;
+  quantity: number;
 }) {
   const sourceId = `step-asm-occ:${args.edge.id}`;
   args.assemblyNodes.push({
@@ -130,6 +134,7 @@ function addNestedAssembly(args: Parameters<typeof addAssemblyChildren>[0] & {
       parentProductDefinitionId: args.edge.parentProductDefinitionId,
       childProductDefinitionId: args.edge.childProductDefinitionId,
       productId: args.childProductDefinition?.productId ?? null,
+      usageQuantity: args.edge.quantity,
       duplicateSiblingPathSegment: args.pathSegment !== args.displayName,
     },
   });
@@ -150,6 +155,7 @@ function addNestedAssembly(args: Parameters<typeof addAssemblyChildren>[0] & {
     assemblySourceId: sourceId,
     depth: args.depth + 1,
     visitedProductDefinitionIds: new Set([...args.visitedProductDefinitionIds, args.edge.childProductDefinitionId]),
+    quantityMultiplier: args.quantity,
   });
 }
 
@@ -202,6 +208,7 @@ export function createStructuredStepResult(args: {
       assemblyNodes,
       partInstances,
       createPartDefinition,
+      quantityMultiplier: 1,
     });
   }
 

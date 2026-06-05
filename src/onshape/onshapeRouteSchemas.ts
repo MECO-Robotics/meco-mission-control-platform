@@ -19,6 +19,10 @@ export const onshapeImportRunSchema = z.object({
 export const onshapeListQuerySchema = z.object({
   documentRefId: z.string().trim().min(1).optional(),
   snapshotId: z.string().trim().min(1).optional(),
+  importRunId: z.string().trim().min(1).optional(),
+  syncJobId: z.string().trim().min(1).optional(),
+  status: z.enum(["pending", "running", "completed", "partial", "failed", "canceled"]).optional(),
+  severity: z.enum(["info", "warning", "error"]).optional(),
 });
 
 export const onshapeImportEstimateQuerySchema = z.object({

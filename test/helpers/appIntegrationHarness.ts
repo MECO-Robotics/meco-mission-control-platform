@@ -1,7 +1,27 @@
 import type { FastifyInstance } from "fastify";
 
-import { resetStore } from "../../src/data/store";
+import { createMember, resetStore, type MemberInput } from "../../src/data/store";
+import { resetUserPreferencesStoreForTests } from "../../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../../src/security/requestLimits";
+
+const INTEGRATION_ENV_MODULES = [
+  "../../src/app",
+  "../../src/auth/authService",
+  "../../src/cad/cadStoreFactory",
+  "../../src/cad/routes/cadStepImportPayload",
+  "../../src/cad/routes/cadStepImportRoutes",
+  "../../src/config/env",
+  "../../src/onshape/onshapeOAuthHealth",
+  "../../src/onshape/onshapeOAuthRoutes",
+  "../../src/onshape/onshapeOverview",
+  "../../src/onshape/onshapeRoutes",
+  "../../src/routes/authRoutes",
+  "../../src/routes/registerRoutes",
+  "../../src/routes/routeSchemas",
+  "../../src/slack/client",
+  "../../src/slack/homeService",
+  "../../src/storage/mediaUploadService",
+] as const;
 
 const APP_ENV_KEYS = [
   "NODE_ENV",
@@ -11,6 +31,7 @@ const APP_ENV_KEYS = [
   "AUTH_EMAIL_SMTP_HOST",
   "AUTH_EMAIL_FROM",
   "AUTH_MENTOR_EMAILS",
+  "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
   "API_RATE_LIMIT_MAX_REQUESTS",
   "API_RATE_LIMIT_WINDOW_SECONDS",
@@ -23,6 +44,7 @@ const APP_ENV_KEYS = [
   "S3_ENDPOINT",
   "S3_PUBLIC_BASE_URL",
   "S3_REGION",
+  "S3_BUCKET_PREFIX",
   "S3_BUCKET",
   "S3_PRESIGN_TTL_SECONDS",
   "SLACK_BOT_TOKEN",
@@ -47,6 +69,7 @@ const APP_ENV_KEYS = [
   "CAD_STORE_DRIVER",
   "CAD_STEP_UPLOAD_MAX_BYTES",
   "CAD_STEP_PARSER_MODE",
+  "CAD_STEP_PARSER_TIMEOUT_MS",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -78,6 +101,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   delete process.env.AUTH_EMAIL_SMTP_HOST;
   delete process.env.AUTH_EMAIL_FROM;
   delete process.env.AUTH_MENTOR_EMAILS;
+  delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
   process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
   process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -89,6 +113,7 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.S3_ENDPOINT = "https://s3.example.test";
   process.env.S3_PUBLIC_BASE_URL = "https://cdn.example.test";
   process.env.S3_REGION = "us-test-1";
+  process.env.S3_BUCKET_PREFIX = "meco-pm";
   process.env.S3_BUCKET = "meco-pm";
   process.env.S3_PRESIGN_TTL_SECONDS = "300";
   delete process.env.SLACK_BOT_TOKEN;
@@ -113,12 +138,25 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.CAD_STORE_DRIVER = "runtime";
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
   delete process.env.CAD_STEP_PARSER_MODE;
+  delete process.env.CAD_STEP_PARSER_TIMEOUT_MS;
 
   for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
     if (value === undefined) {
       delete process.env[key];
     } else {
       process.env[key] = value;
+    }
+  }
+}
+
+function resetIntegrationEnvModuleCache() {
+  for (const modulePath of INTEGRATION_ENV_MODULES) {
+    try {
+      delete require.cache[require.resolve(modulePath)];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND") {
+        throw error;
+      }
     }
   }
 }
@@ -130,16 +168,22 @@ export async function withIntegrationApp(
   }) => Promise<void>,
   options?: {
     env?: Partial<Record<AppEnvKey, string | undefined>>;
+    members?: MemberInput[];
   },
 ) {
   const envSnapshot = saveEnv();
 
   try {
     configureEnv(options?.env);
+    resetIntegrationEnvModuleCache();
     resetStore();
+    resetUserPreferencesStoreForTests();
 
-    const { buildApp } = await import("../../src/app");
+    const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp();
+    for (const member of options?.members ?? []) {
+      createMember(member);
+    }
 
     try {
       resetRequestLimits();
@@ -147,8 +191,10 @@ export async function withIntegrationApp(
     } finally {
       await app.close();
       resetRequestLimits();
+      resetUserPreferencesStoreForTests();
     }
   } finally {
     restoreEnv(envSnapshot);
+    resetIntegrationEnvModuleCache();
   }
 }

@@ -1,6 +1,3 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { z } from "zod";
 
 import {
@@ -11,6 +8,12 @@ import {
   pickFirstNumber,
   pickFirstString,
 } from "./envHelpers";
+
+const optionalJwtSecret = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim().length === 0 ? undefined : value,
+  z.string().min(32).optional(),
+);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -25,7 +28,7 @@ const envSchema = z.object({
   AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ALLOWED_HOSTED_DOMAIN: z.string().min(1).default("mecorobotics.org"),
-  AUTH_JWT_SECRET: z.string().min(32).optional(),
+  AUTH_JWT_SECRET: optionalJwtSecret,
   AUTH_TOKEN_TTL: z.string().min(2).default("12h"),
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
@@ -60,12 +63,12 @@ const envSchema = z.object({
   AUTH_DEVICE_TOKEN_TTL: z.string().min(2).default("3650d"),
   AUTH_MENTOR_EMAILS: z.string().min(1).optional(),
   AUTH_MEMBER_SUBTEAMS_BY_EMAIL: z.string().min(1).optional(),
-  AUTH_MEMBER_SUBTEAMS_ENV_PATH: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_PUBLIC_BASE_URL: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).optional(),
+  S3_BUCKET_PREFIX: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
@@ -90,9 +93,14 @@ const envSchema = z.object({
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
   CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
+  CAD_STEP_PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
+const sampleJwtSecrets = new Set([
+  "replace-with-a-long-random-secret",
+  "replace-with-a-long-random-secret-123456",
+]);
 
 export const env = envSchema.parse(process.env);
 
@@ -146,6 +154,7 @@ const resolvedEmailFrom = pickFirstString(
 );
 const s3Endpoint = normalizeUrl(env.S3_ENDPOINT);
 const s3PublicBaseUrl = normalizeUrl(env.S3_PUBLIC_BASE_URL) ?? s3Endpoint;
+const s3BucketPrefix = env.S3_BUCKET_PREFIX;
 export const emailSmtpConfig = {
   host: resolvedEmailSmtpHost,
   port: resolvedEmailSmtpPort,
@@ -188,68 +197,6 @@ function parseMemberSubteamsByEmail(value: string | undefined) {
   }, {});
 }
 
-function serializeMemberSubteamsByEmail(mapping: Record<string, string[]>) {
-  return Object.entries(mapping)
-    .sort(([leftEmail], [rightEmail]) => leftEmail.localeCompare(rightEmail))
-    .map(([email, subteams]) => `${email}=${subteams.join(",")}`)
-    .join(";");
-}
-
-function resolveMemberSubteamsEnvPath() {
-  if (env.AUTH_MEMBER_SUBTEAMS_ENV_PATH) {
-    return env.AUTH_MEMBER_SUBTEAMS_ENV_PATH;
-  }
-
-  if (env.NODE_ENV === "production") {
-    return join(process.cwd(), ".env.production");
-  }
-
-  return join(process.cwd(), ".env");
-}
-
-function updateEnvFileValue(path: string, key: string, value: string) {
-  const line = `${key}=${value}`;
-  if (!existsSync(path)) {
-    writeFileSync(path, `${line}\n`, "utf8");
-    return;
-  }
-
-  const content = readFileSync(path, "utf8");
-  const lines = content.split(/\r?\n/);
-  const keyPattern = new RegExp(`^\\s*${key}=`);
-  const index = lines.findIndex((candidate) => keyPattern.test(candidate));
-
-  if (index >= 0) {
-    lines[index] = line;
-  } else {
-    if (lines.length > 0 && lines[lines.length - 1] !== "") {
-      lines.push("");
-    }
-    lines.push(line);
-  }
-
-  writeFileSync(path, `${lines.join("\n").replace(/\n*$/, "")}\n`, "utf8");
-}
-
-function removeEnvFileValue(path: string, key: string) {
-  if (!existsSync(path)) {
-    return;
-  }
-
-  const content = readFileSync(path, "utf8");
-  const keyPattern = new RegExp(`^\\s*${key}=`);
-  const lines = content.split(/\r?\n/).filter((candidate) => !keyPattern.test(candidate));
-  const nextContent = lines.join("\n").replace(/\n*$/, "");
-  writeFileSync(path, nextContent ? `${nextContent}\n` : "", "utf8");
-}
-
-function normalizeMemberSubteams(email: string, subteams: string[]) {
-  return {
-    email: email.trim().toLowerCase(),
-    subteams: subteams.filter((subteam) => taskSubteamIds.has(subteam)),
-  };
-}
-
 export const authConfig = {
   enabled: Boolean(
     env.AUTH_JWT_SECRET &&
@@ -260,46 +207,14 @@ export const authConfig = {
   hostedDomain: env.GOOGLE_ALLOWED_HOSTED_DOMAIN.toLowerCase(),
   tokenTtl: env.AUTH_TOKEN_TTL,
   deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
-  memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   mentorEmails: new Set(parseCsv(env.AUTH_MENTOR_EMAILS).map((email) => email.toLowerCase())),
+  memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   emailEnabled: hasEmailDeliveryConfig,
   emailCodeTtlMinutes: env.AUTH_EMAIL_CODE_TTL_MINUTES,
   emailCodeLength: env.AUTH_EMAIL_CODE_LENGTH,
   emailCodeResendCooldownSeconds: env.AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS,
   emailMaxVerifyAttempts: env.AUTH_EMAIL_MAX_VERIFY_ATTEMPTS,
 };
-
-export function setMemberSubteamsForEmail(email: string, subteams: string[]) {
-  const normalized = normalizeMemberSubteams(email, subteams);
-  if (!normalized.email) {
-    return authConfig.memberSubteamsByEmail;
-  }
-
-  if (normalized.subteams.length === 0) {
-    const { [normalized.email]: _removed, ...remaining } = authConfig.memberSubteamsByEmail;
-    authConfig.memberSubteamsByEmail = remaining;
-  } else {
-    authConfig.memberSubteamsByEmail = {
-      ...authConfig.memberSubteamsByEmail,
-      [normalized.email]: normalized.subteams,
-    };
-  }
-
-  const serialized = serializeMemberSubteamsByEmail(authConfig.memberSubteamsByEmail);
-  if (serialized) {
-    process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL = serialized;
-    updateEnvFileValue(
-      resolveMemberSubteamsEnvPath(),
-      "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
-      serialized,
-    );
-  } else {
-    delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
-    removeEnvFileValue(resolveMemberSubteamsEnvPath(), "AUTH_MEMBER_SUBTEAMS_BY_EMAIL");
-  }
-
-  return authConfig.memberSubteamsByEmail;
-}
 
 export const corsConfig = {
   origins: corsOrigins,
@@ -309,6 +224,12 @@ export const corsConfig = {
 function assertProductionSecurityConfig() {
   if (env.NODE_ENV !== "production") {
     return;
+  }
+
+  if (env.AUTH_JWT_SECRET && sampleJwtSecrets.has(env.AUTH_JWT_SECRET)) {
+    throw new Error(
+      "Production deployments must replace the sample AUTH_JWT_SECRET with a generated secret.",
+    );
   }
 
   if (!authConfig.enabled) {
@@ -353,7 +274,7 @@ export const mediaUploadConfig = {
       env.S3_SECRET_ACCESS_KEY &&
       env.S3_ENDPOINT &&
       env.S3_REGION &&
-      env.S3_BUCKET,
+      (s3BucketPrefix || env.S3_BUCKET),
   ),
   accessKeyId: env.S3_ACCESS_KEY_ID,
   secretAccessKey: env.S3_SECRET_ACCESS_KEY,
@@ -361,6 +282,7 @@ export const mediaUploadConfig = {
   publicBaseUrl: s3PublicBaseUrl,
   region: env.S3_REGION,
   bucket: env.S3_BUCKET,
+  bucketPrefix: s3BucketPrefix,
   presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
 } as const;
 
@@ -409,6 +331,7 @@ export const cadStepUploadConfig = {
 
 export const cadStepParserConfig = {
   mode: env.CAD_STEP_PARSER_MODE,
+  timeoutMs: env.CAD_STEP_PARSER_TIMEOUT_MS,
 } as const;
 
 export function resolveCadStepParserMode() {
@@ -420,4 +343,15 @@ export function resolveCadStepParserMode() {
     return requestedMode as (typeof cadStepParserModes)[number];
   }
   return cadStepParserConfig.mode;
+}
+
+export function resolveCadStepParserTimeoutMs() {
+  const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
+  if (requestedTimeout) {
+    const parsed = Number(requestedTimeout);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return cadStepParserConfig.timeoutMs;
 }

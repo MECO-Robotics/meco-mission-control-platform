@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import type {
   CadAssemblyNode,
@@ -11,6 +11,7 @@ import type {
   CadSnapshotMapping,
 } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
+import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { normalizeCadName } from "./cadUtils";
 
 type JsonValue = unknown;
@@ -208,6 +209,34 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       const item = await prisma.cadSnapshot.update({ where: { id }, data: patch as any }).catch(() => null);
       return item ? snapshotFromDb(item) : null;
     },
+    async finalizeSnapshot(id, input) {
+      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const existingSnapshot = await tx.cadSnapshot.findUnique({ where: { id } });
+        if (!existingSnapshot) {
+          return null;
+        }
+
+        const [snapshot, importRun] = await Promise.all([
+          tx.cadSnapshot.update({
+            where: { id },
+            data: {
+              status: "finalized",
+              finalizedAt: input.finalizedAt,
+              finalizedBy: input.finalizedBy,
+            },
+          }),
+          tx.cadImportRun.update({
+            where: { id: existingSnapshot.importRunId },
+            data: { status: "FINALIZED" },
+          }),
+        ]);
+
+        return {
+          snapshot: snapshotFromDb(snapshot),
+          importRun: importRunFromDb(importRun),
+        };
+      });
+    },
     async listSnapshots(filter) {
       const items = await prisma.cadSnapshot.findMany({
         where: {
@@ -225,6 +254,8 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       return item ? snapshotFromDb(item) : null;
     },
     async createAssemblyNodes(snapshotId, input) {
+      assertAcyclicAssemblyParents(input);
+
       const bySourceId = new Map<string, CadAssemblyNode>();
       for (const node of input) {
         const item = assemblyFromDb(

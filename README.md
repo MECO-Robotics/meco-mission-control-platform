@@ -70,6 +70,41 @@ npm run build
 npm run smoke:test
 ```
 
+## Repository labels
+
+Use the shared Mission Control label vocabulary when filing or triaging issues.
+Every issue should have at least one area label, one type label, and one
+priority label. Add a workflow label when the issue is blocked or waiting on
+design input.
+
+Area labels:
+
+- `area:platform` - platform API, persistence, auth, deployment, or backend operations.
+- `area:docs` - repository documentation, runbooks, checklists, or contributor guidance.
+- `area:backend` - API contracts, route behavior, service logic, or server integrations.
+- `area:data` - seed data, fallback data, bootstrap records, or data integrity.
+- `area:qa` - test coverage, smoke checks, validation workflows, or release verification.
+
+Type labels:
+
+- `type:bug` - incorrect behavior or regression.
+- `type:feature` - new user-facing behavior or workflow.
+- `type:tech-debt` - cleanup, refactor, dependency, or maintainability work.
+- `type:docs` - documentation-only work.
+- `type:test` - test-only or validation-only work.
+
+Priority labels:
+
+- `priority:p0` - production-blocking or release-blocking.
+- `priority:p1` - high-impact work needed soon.
+- `priority:p2` - normal backlog priority.
+- `priority:p3` - low-priority polish or follow-up.
+
+Workflow labels:
+
+- `blocked` - cannot proceed until an external dependency is resolved.
+- `needs-design` - needs UI, content, or workflow design input before implementation.
+
 ## Local env example
 
 Use this shape for a local `.env` file when the web app is running on Vite's
@@ -87,12 +122,12 @@ AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
+# AUTH_JWT_SECRET=
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 # Local SMTP sink for email-code testing.
 AUTH_EMAIL_SMTP_HOST=127.0.0.1
 AUTH_EMAIL_SMTP_PORT=1025
@@ -106,7 +141,7 @@ S3_SECRET_ACCESS_KEY=your-s3-secret-key
 S3_ENDPOINT=https://your-s3-endpoint.example
 S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
-S3_BUCKET=meco-pm
+S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
@@ -133,9 +168,9 @@ you can copy the sign-in code during local testing.
 
 When the server runs with auth configured outside production, it also exposes a
 development-only `/api/auth/dev-bypass` endpoint that the web app can use for a
-local access button. Send `{ "role": "student" }` or `{ "role": "mentor" }` to
-test both permission modes without an email. Production builds do not register
-that route.
+local access button. Send either an empty request body for the default local
+student session or `{ "role": "student" | "mentor" }` to test a specific local
+role. Production builds do not register that route.
 
 ## Production files
 
@@ -143,7 +178,9 @@ that route.
 - `.env.production`: runtime environment file on the VPS
 - `.github/workflows/deploy-vps.yml`: CI + deployment workflow
 - `deploy/bootstrap-vps.sh`: first-time Docker bootstrap for Ubuntu
+- `docs/platform-deployment-recovery.md`: production env, VPS deploy path, backups, restore expectations, and rollback options
 - `docs/production-smoke-test-checklist.md`: production smoke-test checklist
+- `docs/backup-restore-drill.md`: backup command, disposable restore target, restore verification, and failure handling
 
 ## First-time VPS setup
 
@@ -186,11 +223,11 @@ AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
+# AUTH_JWT_SECRET=
 AUTH_TOKEN_TTL=12h
 AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -205,7 +242,7 @@ S3_SECRET_ACCESS_KEY=your-s3-secret-key
 S3_ENDPOINT=https://your-s3-endpoint.example
 S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
-S3_BUCKET=meco-pm
+S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
@@ -224,9 +261,8 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - The server issues its own signed app session token with `AUTH_JWT_SECRET`.
 - Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
-- Put mentor emails in `AUTH_MENTOR_EMAILS` as a comma-separated list. Hosted-domain emails not present in the roster or mentor list are treated as students for task management and QA approval.
-- Put email-to-subteam assignments in server env with `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` using `email=subteam;email=subteam,subteam`. Valid subteam IDs are `programming`, `mechanical`, `electrical`, `media-marketing`, `business`, and `scouting`.
-- When mobile saves `taskSubteamIds` through `PATCH /api/users/me/preferences`, the server also updates the live `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` map and writes that line back to the env file. Set `AUTH_MEMBER_SUBTEAMS_ENV_PATH` only if the env file is not `.env` locally or `.env.production` in production.
+- Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
+- User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
 - For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
 - If you use separate Google OAuth client IDs for local and production, set `GOOGLE_CLIENT_ID` to a comma-separated list and put the client ID you want the frontend to use first.
@@ -263,6 +299,10 @@ When `RESEND_API_KEY` is present and no explicit `AUTH_EMAIL_SMTP_HOST` is confi
 
 ## Deployment behavior
 
+Use `docs/platform-deployment-recovery.md` as the canonical operator runbook for
+production env, VPS deploy path, backups, restore expectations, and rollback
+options.
+
 On every push to `main`, GitHub Actions will:
 
 1. install dependencies
@@ -272,7 +312,14 @@ On every push to `main`, GitHub Actions will:
 5. sync the repo to `/opt/pm-server`
 6. write `.env.production`
 7. run `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`
+8. check `/health` on the VPS
 
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
+
+Backups are created before production deploys under `/opt/pm-backups/server`.
+The deployment and recovery runbook documents what is backed up, how restore
+should be handled, and which rollback option to choose during an incident.
+Use `docs/backup-restore-drill.md` to prove a dump can be restored into a
+disposable local target before relying on it during an incident.

@@ -1,4 +1,5 @@
 import { snapshot as initialSnapshot } from "./mockData";
+import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import type {
   AuditAction,
   AuditActionOperation,
@@ -119,6 +120,15 @@ export interface TaskMilestoneMatch {
   matchedRequirementIds: string[];
   isLegacyLink: boolean;
 }
+
+export interface AuditMutationContext {
+  actorMemberId?: string | null;
+  requestId?: string | null;
+}
+
+const REDACTED_AUDIT_VALUE = "[redacted]";
+const SENSITIVE_AUDIT_FIELD_PATTERN =
+  /(password|passcode|secret|token|credential|authorization|authHeader|cookie|session|privateKey|apiKey)/i;
 
 function parseIterationCondition(conditionValue: string) {
   const normalized = conditionValue.trim().toLowerCase();
@@ -470,7 +480,11 @@ function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnaps
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
-  const projectsById = new Map(clonedSnapshot.projects.map((project) => [project.id, project] as const));
+  const normalizedProjects = clonedSnapshot.projects.map((project) => ({
+    ...project,
+    teamId: normalizeProjectTeamId(project.teamId),
+  }));
+  const projectsById = new Map(normalizedProjects.map((project) => [project.id, project] as const));
 
   const normalizeMilestoneSeasonId = (milestone: Milestone) => {
     if (milestone.seasonId) {
@@ -534,6 +548,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
   const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
+    projects: normalizedProjects,
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
     ),
@@ -557,6 +572,16 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
 let interactiveTutorialSnapshot: PlatformSnapshot | null = null;
+
+function normalizeProjectTeamId(teamId: string | null | undefined) {
+  const normalized = teamId?.trim();
+  return normalized ? normalized : DEFAULT_PROJECT_TEAM_ID;
+}
+
+function getDefaultProjectTeamId(snapshot: Pick<PlatformSnapshot, "projects">) {
+  const firstTeamId = snapshot.projects.find((project) => project.teamId?.trim())?.teamId;
+  return normalizeProjectTeamId(firstTeamId);
+}
 
 function isElevatedMemberRole(role: Member["role"]): boolean {
   return role === "lead" || role === "admin";
@@ -1331,18 +1356,78 @@ function collectProvidedFields(input: Record<string, unknown>) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function recordAuditAction(args: {
+function isSensitiveAuditField(fieldName: string) {
+  return SENSITIVE_AUDIT_FIELD_PATTERN.test(fieldName);
+}
+
+function summarizeAuditValue(fieldName: string, value: unknown): unknown {
+  if (isSensitiveAuditField(fieldName)) {
+    return REDACTED_AUDIT_VALUE;
+  }
+
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (typeof value === "string") {
+    return value.length > 120 ? `${value.slice(0, 117)}...` : value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: "array",
+      count: value.length,
+      values: value
+        .slice(0, 10)
+        .map((item) => summarizeAuditValue(fieldName, item)),
+    };
+  }
+
+  if (typeof value === "object") {
+    return {
+      type: "object",
+      keys: Object.keys(value as Record<string, unknown>).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    };
+  }
+
+  return String(value);
+}
+
+function buildAuditSummary(
+  record: object,
+  changedFields: string[],
+) {
+  const auditRecord = record as Record<string, unknown>;
+  return Object.fromEntries(
+    changedFields.map((fieldName) => [
+      fieldName,
+      summarizeAuditValue(fieldName, auditRecord[fieldName]),
+    ]),
+  );
+}
+
+export function recordAuditAction(args: {
   operation: AuditActionOperation;
   entityType: string;
   entityId: string;
   entityLabel?: string | null;
   changedFields?: string[];
+  beforeJson?: object;
+  afterJson?: object;
   projectId?: string | null;
   projectIds?: Array<string | null | undefined>;
   taskId?: string | null;
   subsystemId?: string | null;
   actorMemberId?: string | null;
+  requestId?: string | null;
   memberIds?: Array<string | null | undefined>;
+  detailsJson?: Record<string, unknown>;
 }) {
   const entityLabel = resolveEntityLabel(args.entityLabel, args.entityId);
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
@@ -1363,6 +1448,10 @@ function recordAuditAction(args: {
       changedFields,
     }),
     changedFields,
+    ...(args.beforeJson ? { beforeJson: buildAuditSummary(args.beforeJson, changedFields) } : {}),
+    ...(args.afterJson ? { afterJson: buildAuditSummary(args.afterJson, changedFields) } : {}),
+    ...(args.detailsJson ? { detailsJson: args.detailsJson } : {}),
+    requestId: args.requestId ?? null,
     projectId: projectIds[0] ?? null,
     ...(projectIds.length > 0 ? { projectIds } : {}),
     taskId: args.taskId ?? null,
@@ -1511,12 +1600,14 @@ export function createSeason(input: SeasonInput) {
   };
 
   const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
+  const teamId = getDefaultProjectTeamId(currentSnapshot);
   const projects: Project[] = DEFAULT_SEASON_PROJECTS.map((template) => {
     const projectId = uniqueId(`${seasonId}-${template.key}`, projectIds);
     projectIds.add(projectId);
 
     return {
       id: projectId,
+      teamId,
       seasonId: season.id,
       name: template.name,
       projectType: template.projectType,
@@ -1565,8 +1656,10 @@ export function getProjects() {
 export function createProject(input: ProjectInput) {
   const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
   const season = currentSnapshot.seasons.find((candidate) => candidate.id === input.seasonId);
+  const teamId = normalizeProjectTeamId(input.teamId ?? getDefaultProjectTeamId(currentSnapshot));
   const project: Project = {
     id: uniqueId(toSlug(`${input.seasonId}-${input.name}`) || "project", projectIds),
+    teamId,
     seasonId: input.seasonId,
     name: input.name,
     projectType: input.projectType,
@@ -1928,6 +2021,70 @@ export function getRisks() {
   return currentSnapshot.risks;
 }
 
+function getSubsystemProjectId(subsystemId: string | null | undefined) {
+  return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId)
+    ?.projectId;
+}
+
+function getSeasonAuditDetails(...records: Array<{
+  seasonId?: string | null;
+  activeSeasonIds?: string[];
+}>) {
+  const seasonIds = uniqueIds(
+    records.flatMap((record) => [
+      record.seasonId,
+      ...(record.activeSeasonIds ?? []),
+    ]),
+  );
+  const latestRecord = records[records.length - 1];
+  return {
+    ...(typeof latestRecord?.seasonId === "string" ? { seasonId: latestRecord.seasonId } : {}),
+    activeSeasonIds: seasonIds,
+  };
+}
+
+function getRiskProjectIds(risk: Risk) {
+  const projectIds: Array<string | null | undefined> = [];
+
+  if (risk.attachmentType === "project") {
+    projectIds.push(risk.attachmentId);
+  }
+
+  if (risk.attachmentType === "workstream") {
+    const workstream = currentSnapshot.workstreams.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    projectIds.push(workstream?.projectId);
+  }
+
+  if (risk.attachmentType === "mechanism") {
+    const mechanism = currentSnapshot.mechanisms.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    const subsystem = currentSnapshot.subsystems.find(
+      (candidate) => candidate.id === mechanism?.subsystemId,
+    );
+    projectIds.push(subsystem?.projectId);
+  }
+
+  if (risk.attachmentType === "part-instance") {
+    const partInstance = currentSnapshot.partInstances.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    const subsystem = currentSnapshot.subsystems.find(
+      (candidate) => candidate.id === partInstance?.subsystemId,
+    );
+    projectIds.push(subsystem?.projectId);
+  }
+
+  const mitigationTask = currentSnapshot.tasks.find(
+    (candidate) => candidate.id === risk.mitigationTaskId,
+  );
+  projectIds.push(mitigationTask?.projectId);
+
+  return uniqueIds(projectIds);
+}
+
 export function createRisk(input: RiskInput) {
   const riskIds = new Set(currentSnapshot.risks.map((risk) => risk.id));
   const risk: Risk = {
@@ -1952,7 +2109,7 @@ export function createRisk(input: RiskInput) {
     entityType: "risk",
     entityId: risk.id,
     entityLabel: risk.title,
-    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    projectIds: getRiskProjectIds(risk),
     taskId: risk.mitigationTaskId,
   });
 
@@ -1985,13 +2142,16 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
 
   const savedRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
   if (previousRisk && savedRisk) {
+    const projectIds = uniqueIds([
+      ...getRiskProjectIds(previousRisk),
+      ...getRiskProjectIds(savedRisk),
+    ]);
     recordAuditAction({
       operation: "update",
       entityType: "risk",
       entityId: savedRisk.id,
       entityLabel: savedRisk.title,
-      projectId:
-        savedRisk.attachmentType === "project" ? savedRisk.attachmentId : null,
+      projectIds,
       taskId: savedRisk.mitigationTaskId,
       changedFields: collectChangedFields(
         previousRisk,
@@ -2008,6 +2168,7 @@ export function removeRisk(riskId: string) {
   if (!risk) {
     return null;
   }
+  const projectIds = getRiskProjectIds(risk);
 
   currentSnapshot = {
     ...currentSnapshot,
@@ -2019,8 +2180,13 @@ export function removeRisk(riskId: string) {
     entityType: "risk",
     entityId: risk.id,
     entityLabel: risk.title,
-    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    projectIds,
     taskId: risk.mitigationTaskId,
+    detailsJson: {
+      attachmentType: risk.attachmentType,
+      attachmentId: risk.attachmentId,
+      projectIds,
+    },
   });
 
   return risk;
@@ -2556,6 +2722,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
+    detailsJson: getSeasonAuditDetails(partDefinition),
   });
 
   return partDefinition;
@@ -2606,6 +2773,7 @@ export function updatePartDefinition(
       entityType: "part-definition",
       entityId: savedPartDefinition.id,
       entityLabel: savedPartDefinition.name,
+      detailsJson: getSeasonAuditDetails(previousPartDefinition, savedPartDefinition),
       changedFields: collectChangedFields(
         previousPartDefinition,
         savedPartDefinition,
@@ -2678,6 +2846,7 @@ export function removePartDefinition(partDefinitionId: string) {
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
+    detailsJson: getSeasonAuditDetails(partDefinition),
   });
 
   return partDefinition;
@@ -2709,6 +2878,7 @@ export function createMechanism(input: MechanismInput) {
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
+    projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
   });
 
@@ -2760,6 +2930,7 @@ export function createPartInstance(input: PartInstanceInput) {
     entityType: "part-instance",
     entityId: savedPartInstance.id,
     entityLabel: savedPartInstance.name,
+    projectId: getSubsystemProjectId(savedPartInstance.subsystemId),
     subsystemId: savedPartInstance.subsystemId,
   });
 
@@ -2825,6 +2996,10 @@ export function updatePartInstance(
       entityType: "part-instance",
       entityId: savedPartInstance.id,
       entityLabel: savedPartInstance.name,
+      projectIds: uniqueIds([
+        getSubsystemProjectId(currentPartInstance.subsystemId),
+        getSubsystemProjectId(savedPartInstance.subsystemId),
+      ]),
       subsystemId: savedPartInstance.subsystemId,
       changedFields: updatedPartInstance
         ? collectChangedFields(
@@ -2875,6 +3050,7 @@ export function removePartInstance(partInstanceId: string) {
     entityType: "part-instance",
     entityId: partInstance.id,
     entityLabel: partInstance.name,
+    projectId: getSubsystemProjectId(partInstance.subsystemId),
     subsystemId: partInstance.subsystemId,
   });
 
@@ -2948,6 +3124,10 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       entityType: "mechanism",
       entityId: savedMechanism.id,
       entityLabel: savedMechanism.name,
+      projectIds: uniqueIds([
+        getSubsystemProjectId(currentMechanism.subsystemId),
+        getSubsystemProjectId(savedMechanism.subsystemId),
+      ]),
       subsystemId: savedMechanism.subsystemId,
       changedFields: collectChangedFields(
         currentMechanism,
@@ -3001,6 +3181,7 @@ export function removeMechanism(mechanismId: string) {
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
+    projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
   });
 
@@ -3147,6 +3328,7 @@ export function createMilestone(input: MilestoneInput) {
     entityId: milestone.id,
     entityLabel: milestone.title,
     projectIds: milestone.projectIds,
+    detailsJson: getSeasonAuditDetails(milestone),
   });
 
   return milestone;
@@ -3721,6 +3903,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       entityId: updatedMilestone.id,
       entityLabel: updatedMilestone.title,
       projectIds: updatedMilestone.projectIds,
+      detailsJson: getSeasonAuditDetails(currentMilestone, updatedMilestone),
       changedFields: collectChangedFields(
         currentMilestone,
         updatedMilestone,
@@ -3760,6 +3943,7 @@ export function removeMilestone(milestoneId: string) {
     entityId: milestone.id,
     entityLabel: milestone.title,
     projectIds: milestone.projectIds,
+    detailsJson: getSeasonAuditDetails(milestone),
   });
 
   return milestone;
@@ -3806,6 +3990,7 @@ export function createMeeting(input: MeetingInput) {
     entityId: meeting.id,
     entityLabel: meeting.title,
     projectIds: meeting.projectIds,
+    detailsJson: getSeasonAuditDetails(meeting),
   });
 
   return meeting;
@@ -3860,6 +4045,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
     entityId: updatedMeeting.id,
     entityLabel: updatedMeeting.title,
     projectIds: updatedMeeting.projectIds,
+    detailsJson: getSeasonAuditDetails(currentMeeting, updatedMeeting),
     changedFields: collectChangedFields(currentMeeting, updatedMeeting),
   });
 
@@ -3883,6 +4069,7 @@ export function removeMeeting(meetingId: string) {
     entityId: meeting.id,
     entityLabel: meeting.title,
     projectIds: meeting.projectIds ?? [],
+    detailsJson: getSeasonAuditDetails(meeting),
   });
 
   return meeting;
@@ -3991,7 +4178,11 @@ export function removeWorkLog(workLogId: string) {
   return workLog;
 }
 
-export function updateTask(taskId: string, input: Partial<TaskInput>): Task | null {
+export function updateTask(
+  taskId: string,
+  input: Partial<TaskInput>,
+  auditContext: AuditMutationContext = {},
+): Task | null {
   const currentTask = currentSnapshot.tasks.find((task) => task.id === taskId);
   if (!currentTask) {
     return null;
@@ -4053,11 +4244,14 @@ export function updateTask(taskId: string, input: Partial<TaskInput>): Task | nu
     subsystemId: savedTask.subsystemId,
     taskId: savedTask.id,
     memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
-    actorMemberId: savedTask.ownerId,
+    actorMemberId: auditContext.actorMemberId ?? savedTask.ownerId,
+    requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       currentTask,
       savedTask,
     ),
+    beforeJson: currentTask,
+    afterJson: savedTask,
   });
 
   return savedTask;
@@ -4408,6 +4602,7 @@ export function createMember(input: MemberInput) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
+    detailsJson: getSeasonAuditDetails(member),
   });
 
   return member;
@@ -4473,6 +4668,7 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
       entityLabel: savedMember.name,
       actorMemberId: savedMember.id,
       memberIds: [savedMember.id],
+      detailsJson: getSeasonAuditDetails(previousMember, savedMember),
       changedFields: collectChangedFields(
         previousMember,
         savedMember,
@@ -4546,6 +4742,7 @@ export function removeMember(memberId: string) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
+    detailsJson: getSeasonAuditDetails(member),
   });
 
   return member;

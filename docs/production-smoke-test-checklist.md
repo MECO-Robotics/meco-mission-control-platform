@@ -51,6 +51,8 @@ curl -i "${PLATFORM_API_BASE_URL}/api/auth/config"
 
 ## 3) DB reachability (production-impacting evidence)
 
+Backup restore is covered by `docs/backup-restore-drill.md`. Production smoke checks only prove the live database is reachable; future release-bound PRs should also prove that a recent dump restores into a disposable or local target.
+
 Run at least one of:
 
 1. API-path check with a token:
@@ -131,6 +133,9 @@ curl -i "${PLATFORM_API_BASE_URL}/api/bootstrap"
 - Expected for non-production/dev-only auth bypass: `HTTP 200`
 
 ## 6) Rollback / escalation
+
+Use `docs/platform-deployment-recovery.md` for detailed rollback and restore
+commands.
 
 - On first failed check:
   1. stop the deploy step and freeze any front-end release cutover

@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, type FastifyRequest } from "fastify";
 import { requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
@@ -115,6 +115,7 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
+import type { Member } from "../domain/types";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
   filterManufacturingItemsForPerson,
@@ -154,7 +155,9 @@ import {
 } from "../contracts/bootstrap";
 import { buildRosterInsights } from "./helpers/rosterInsights";
 import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
+import { filterAuditActions, formatAuditActionsCsv } from "./helpers/auditExport";
 import {
+  auditExportQuerySchema,
   artifactPatchSchema,
   artifactSchema,
   favoriteNavigationViewIdSchema,
@@ -187,7 +190,9 @@ import {
   seasonSchema,
   subsystemPatchSchema,
   subsystemSchema,
+  taskClaimSchema,
   taskPatchSchema,
+  taskReassignSchema,
   taskSchema,
   taskBlockerPatchSchema,
   taskBlockerSchema,
@@ -223,6 +228,109 @@ const allowAuthEmailRouteRequest = createRequestLimitGuard({
   scope: "auth-email",
   ...requestLimitConfig.authEmail,
 });
+const PUBLIC_DEMO_SEASON_ID = "default-season";
+
+function rewriteDemoMemberId(
+  memberId: string | null | undefined,
+  memberIdsByOriginalId: Map<string, string>,
+) {
+  if (!memberId) {
+    return memberId ?? null;
+  }
+
+  return memberIdsByOriginalId.get(memberId) ?? null;
+}
+
+function rewriteDemoMemberIds(
+  memberIds: string[] | undefined,
+  memberIdsByOriginalId: Map<string, string>,
+) {
+  return (memberIds ?? []).flatMap((memberId) => {
+    const demoMemberId = rewriteDemoMemberId(memberId, memberIdsByOriginalId);
+    return demoMemberId === null ? [] : [demoMemberId];
+  });
+}
+
+function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildBootstrapResponse>) {
+  const memberIdsByOriginalId = new Map(
+    selectedBootstrap.members.map((member, memberIndex) => [
+      member.id,
+      `demo-member-${memberIndex + 1}`,
+    ]),
+  );
+
+  const members = selectedBootstrap.members.map((member, memberIndex) => ({
+    id: rewriteDemoMemberId(member.id, memberIdsByOriginalId),
+    name: `Demo Member ${memberIndex + 1}`,
+    seasonId: member.seasonId,
+    activeSeasonIds: member.activeSeasonIds,
+    ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
+  }));
+
+  return {
+    ...selectedBootstrap,
+    members,
+    subsystems: selectedBootstrap.subsystems.map((subsystem) => ({
+      ...subsystem,
+      responsibleEngineerId: rewriteDemoMemberId(
+        subsystem.responsibleEngineerId,
+        memberIdsByOriginalId,
+      ),
+      mentorIds: rewriteDemoMemberIds(subsystem.mentorIds, memberIdsByOriginalId),
+    })),
+    reports: selectedBootstrap.reports.map((report) => ({
+      ...report,
+      createdByMemberId: rewriteDemoMemberId(report.createdByMemberId, memberIdsByOriginalId),
+      participantIds:
+        report.participantIds === undefined
+          ? report.participantIds
+          : rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
+    })),
+    tasks: selectedBootstrap.tasks.map((task) => ({
+      ...task,
+      ownerId: rewriteDemoMemberId(task.ownerId, memberIdsByOriginalId),
+      assigneeIds: rewriteDemoMemberIds(task.assigneeIds, memberIdsByOriginalId),
+      mentorId: rewriteDemoMemberId(task.mentorId, memberIdsByOriginalId),
+    })),
+    taskBlockers: selectedBootstrap.taskBlockers.map((blocker) => ({
+      ...blocker,
+      createdByMemberId: rewriteDemoMemberId(
+        blocker.createdByMemberId,
+        memberIdsByOriginalId,
+      ),
+    })),
+    workLogs: selectedBootstrap.workLogs.map((workLog) => ({
+      ...workLog,
+      participantIds: rewriteDemoMemberIds(workLog.participantIds, memberIdsByOriginalId),
+    })),
+    attendanceRecords: selectedBootstrap.attendanceRecords.map((record) => ({
+      ...record,
+      memberId: rewriteDemoMemberId(record.memberId, memberIdsByOriginalId),
+    })),
+    manufacturingItems: selectedBootstrap.manufacturingItems.map((item) => ({
+      ...item,
+      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+    })),
+    purchaseItems: selectedBootstrap.purchaseItems.map((item) => ({
+      ...item,
+      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+    })),
+    qaReports: selectedBootstrap.qaReports.map((report) => ({
+      ...report,
+      participantIds: rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
+    })),
+    qaRequests: selectedBootstrap.qaRequests.map((request) => ({
+      ...request,
+      mentorId: rewriteDemoMemberId(request.mentorId, memberIdsByOriginalId),
+      requestedById: rewriteDemoMemberId(request.requestedById, memberIdsByOriginalId),
+    })),
+    qaReviews: selectedBootstrap.qaReviews.map((review) => ({
+      ...review,
+      participantIds: rewriteDemoMemberIds(review.participantIds, memberIdsByOriginalId),
+    })),
+    actions: [],
+  };
+}
 
 interface TutorialResetResponse {
   ok: boolean;
@@ -244,7 +352,19 @@ export async function registerRoutes(app: FastifyInstance) {
       return true;
     }
 
-    return Boolean(requireSession(request, reply));
+    const session = requireSession(request, reply);
+    if (!session) {
+      return false;
+    }
+
+    if (session.role === "external") {
+      reply.code(403).send({
+        message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    return true;
   };
 
   const hasMentorPermission = (request: Parameters<typeof requireSession>[0]) => {
@@ -267,6 +387,89 @@ export async function registerRoutes(app: FastifyInstance) {
 
     reply.code(403).send({ message });
     return false;
+  };
+
+  const requireAdminPermission = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    message: string,
+  ) => {
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    if (session?.role === "admin") {
+      return true;
+    }
+
+    reply.code(403).send({ message });
+    return false;
+  };
+
+  const getTaskActionMember = (request: Parameters<typeof requireSession>[0]) => {
+    const members = getMembers();
+
+    if (!isAuthEnabled()) {
+      return (
+        members.find((member) => member.role === "student" || member.role === "lead") ??
+        members[0] ??
+        null
+      );
+    }
+
+    const session = getSessionFromRequest(request);
+    const accountId = session?.accountId?.trim().toLowerCase();
+    const email = session?.email?.trim().toLowerCase();
+    const exactMatch = members.find((member) => {
+      return (
+        member.id.trim().toLowerCase() === accountId ||
+        member.email?.trim().toLowerCase() === email
+      );
+    });
+
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    return null;
+  };
+
+  const readAuditRequestId = (request: FastifyRequest) => {
+    const requestId = request.id;
+    return typeof requestId === "string" && requestId.trim().length > 0
+      ? requestId
+      : null;
+  };
+
+  const buildTaskAuditContext = (
+    request: FastifyRequest,
+    actorMemberId?: string | null,
+  ) => ({
+    actorMemberId: actorMemberId ?? getTaskActionMember(request)?.id ?? null,
+    requestId: readAuditRequestId(request),
+  });
+
+  const canManageTaskAssignment = (request: Parameters<typeof requireSession>[0]) =>
+    hasMentorPermission(request);
+
+  const buildTaskActionItem = (taskId: string) => {
+    const task = getTasks().find((candidate) => candidate.id === taskId);
+    return task
+      ? {
+          ...task,
+          isBlocked: (task.blockers ?? []).length > 0,
+          isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
+        }
+      : null;
+  };
+
+  const isTaskStartReady = (task: ReturnType<typeof getTasks>[number]) => {
+    return (
+      task.status !== "complete" &&
+      task.blockers.length === 0 &&
+      !isTaskWaitingOnDependencies(task, getSnapshot())
+    );
   };
 
   const isValidTaskDependencyTarget = (
@@ -298,6 +501,44 @@ export async function registerRoutes(app: FastifyInstance) {
     const session = getSessionFromRequest(request);
     const email = session?.email?.trim().toLowerCase();
     return email || session?.accountId || "authenticated-user";
+  };
+
+  const allowDemoBootstrapRequest = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    selection: ReturnType<typeof readBootstrapSelection>,
+  ) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return false;
+    }
+
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    if (selection.personId !== null && (!session || session.isPublicDemo)) {
+      requireSession(request, reply);
+      return false;
+    }
+
+    if (!session) {
+      if (selection.seasonId === PUBLIC_DEMO_SEASON_ID) {
+        return true;
+      }
+
+      requireSession(request, reply);
+      return false;
+    }
+
+    if (session.role === "external") {
+      reply.code(403).send({
+        message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    return true;
   };
 
   app.get("/health", async () => {
@@ -336,15 +577,25 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/bootstrap", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
+    const selection = readBootstrapSelection(request.query);
+    if (!allowDemoBootstrapRequest(request, reply, selection)) {
       return;
     }
 
     const snapshot = getSnapshot();
-    const selection = readBootstrapSelection(request.query);
-    const userKey = getNavigationPreferenceUserKey(request);
+    const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
+    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const userKey = isPublicDemoBootstrap
+      ? "public-demo"
+      : getNavigationPreferenceUserKey(request);
+    const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
+      sanitizeEscalations: isPublicDemoBootstrap,
+    });
+    const responseBootstrap = isPublicDemoBootstrap
+      ? sanitizePublicDemoBootstrap(selectedBootstrap)
+      : selectedBootstrap;
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
-      ...buildBootstrapResponse(snapshot, selection),
+      ...responseBootstrap,
       favoriteViews: getFavoriteViews(userKey),
     });
 
@@ -356,6 +607,40 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return bootstrapPayload.data;
+  });
+
+  app.get("/api/audit/export", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    if (!requireAdminPermission(request, reply, "Only admins can export audit history.")) {
+      return;
+    }
+
+    const parsed = auditExportQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Audit export query is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const { format, ...filters } = parsed.data;
+    const actions = filterAuditActions(getSnapshot(), filters);
+
+    if (format === "csv") {
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", "attachment; filename=\"meco-audit-actions.csv\"")
+        .send(formatAuditActionsCsv(actions));
+    }
+
+    return {
+      items: actions,
+      count: actions.length,
+      filters,
+    };
   });
 
   app.patch<{ Body: unknown; Params: { viewId: string } }>(
@@ -392,6 +677,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    if (!requireMentorPermission(request, reply, "Only mentors can start global tutorial sessions.")) {
+      return;
+    }
+
     startInteractiveTutorialSession();
     return {
       ok: true,
@@ -402,6 +691,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post<{ Body: unknown }>("/api/tutorial/session/reset", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    if (!requireMentorPermission(request, reply, "Only mentors can reset global tutorial sessions.")) {
       return;
     }
 
@@ -1480,14 +1773,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findProject(parsed.data.projectId)) {
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
       return reply.code(400).send({
         message: "The selected project does not exist.",
       });
     }
 
     try {
-      return await presignImageUpload(parsed.data);
+      return await presignImageUpload({ ...parsed.data, teamId: project.teamId });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({
@@ -1515,14 +1809,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findProject(parsed.data.projectId)) {
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
       return reply.code(400).send({
         message: "The selected project does not exist.",
       });
     }
 
     try {
-      return await presignVideoUpload(parsed.data);
+      return await presignVideoUpload({ ...parsed.data, teamId: project.teamId });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({
@@ -1711,6 +2006,155 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
+  app.post<{ Body: unknown; Params: { taskId: string } }>(
+    "/api/tasks/:taskId/claim",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = taskClaimSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task claim payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
+        return reply.code(404).send({
+          message: "Task not found.",
+        });
+      }
+
+      const member = getTaskActionMember(request);
+      if (!member || (member.role !== "student" && member.role !== "lead")) {
+        return reply.code(403).send({
+          message: "Only roster students can claim tasks.",
+        });
+      }
+
+      if (currentTask.ownerId && currentTask.ownerId !== member.id) {
+        return reply.code(409).send({
+          code: "task_already_claimed",
+          message: "Task is already claimed.",
+          ownerId: currentTask.ownerId,
+          taskId: currentTask.id,
+        });
+      }
+
+      const updatedTask = updateTask(currentTask.id, {
+        ownerId: member.id,
+        assigneeIds: uniqueIds([...(currentTask.assigneeIds ?? []), member.id]),
+        status:
+          parsed.data.start && isTaskStartReady(currentTask)
+            ? "in-progress"
+            : currentTask.status,
+      }, buildTaskAuditContext(request, member.id));
+
+      return {
+        item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
+      };
+    },
+  );
+
+  app.post<{ Params: { taskId: string } }>(
+    "/api/tasks/:taskId/release",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
+        return reply.code(404).send({
+          message: "Task not found.",
+        });
+      }
+
+      const member = getTaskActionMember(request);
+      const canManage = canManageTaskAssignment(request);
+      if (!member && !canManage) {
+        return reply.code(403).send({
+          message: "Only roster members can release tasks.",
+        });
+      }
+
+      if (currentTask.ownerId !== member?.id && !canManage) {
+        return reply.code(403).send({
+          message: "Only the task owner or mentors can release this task.",
+        });
+      }
+
+      const updatedTask = updateTask(currentTask.id, {
+        ownerId: null,
+        assigneeIds: (currentTask.assigneeIds ?? []).filter(
+          (assigneeId) => assigneeId !== currentTask.ownerId,
+        ),
+      }, buildTaskAuditContext(request, member?.id ?? null));
+
+      return {
+        item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
+      };
+    },
+  );
+
+  app.post<{ Body: unknown; Params: { taskId: string } }>(
+    "/api/tasks/:taskId/reassign",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can reassign tasks.")) {
+        return;
+      }
+
+      const parsed = taskReassignSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task reassign payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
+        return reply.code(404).send({
+          message: "Task not found.",
+        });
+      }
+
+      const nextOwner = parsed.data.ownerId
+        ? getMembers().find((member) => member.id === parsed.data.ownerId)
+        : null;
+      if (parsed.data.ownerId && (!nextOwner || (nextOwner.role !== "student" && nextOwner.role !== "lead"))) {
+        return reply.code(400).send({
+          message: "Task owner must be a student or lead.",
+        });
+      }
+
+      const existingAssigneeIds = uniqueIds(currentTask.assigneeIds ?? []);
+      const assigneeIdsWithoutPreviousOwner =
+        currentTask.ownerId && currentTask.ownerId !== parsed.data.ownerId
+          ? existingAssigneeIds.filter((assigneeId) => assigneeId !== currentTask.ownerId)
+          : existingAssigneeIds;
+      const nextAssigneeIds = parsed.data.ownerId
+        ? uniqueIds([...assigneeIdsWithoutPreviousOwner, parsed.data.ownerId])
+        : assigneeIdsWithoutPreviousOwner;
+
+      const updatedTask = updateTask(currentTask.id, {
+        ownerId: parsed.data.ownerId,
+        assigneeIds: nextAssigneeIds,
+      }, buildTaskAuditContext(request));
+
+      return {
+        item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
+      };
+    },
+  );
+
   app.patch<{ Body: unknown; Params: { taskId: string } }>(
     "/api/tasks/:taskId",
     async (request, reply) => {
@@ -1793,7 +2237,7 @@ export async function registerRoutes(app: FastifyInstance) {
         partInstanceIds: nextTaskShape.partInstanceIds,
         artifactId: nextTaskShape.artifactId,
         artifactIds: nextTaskShape.artifactIds,
-      });
+      }, buildTaskAuditContext(request));
       return {
         item: updatedTask
           ? {
@@ -2380,6 +2824,10 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/subsystems/:subsystemId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireMentorPermission(request, reply, "Only mentors can delete subsystems.")) {
         return;
       }
 
