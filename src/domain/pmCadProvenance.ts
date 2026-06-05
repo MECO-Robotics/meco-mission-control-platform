@@ -19,11 +19,12 @@ export function cadImportSourceFromText(value: string | null | undefined): PmCad
   }
   if (
     normalized === "ONSHAPE" ||
-    normalized === "ONSHAPE_API" ||
-    normalized === "ONSHAPE_BOM" ||
-    normalized === "ONSHAPE_BOM_CSV"
+    normalized === "ONSHAPE_API"
   ) {
-    return normalized === "ONSHAPE_BOM_CSV" ? "ONSHAPE_BOM_CSV" : "ONSHAPE_API";
+    return "ONSHAPE_API";
+  }
+  if (normalized === "ONSHAPE_BOM" || normalized === "ONSHAPE_BOM_CSV") {
+    return "ONSHAPE_BOM_CSV";
   }
   if (normalized === "MANUAL_BOM_CSV") {
     return "MANUAL_BOM_CSV";
@@ -74,9 +75,13 @@ export function normalizePmCadProvenance<T extends Partial<PmCadProvenance> & { 
     cadSource: cadSourceFromImportSource(cadImportSource),
     cadImportSource,
     cadEditedAfterImport: input.cadEditedAfterImport ?? false,
-    cadSourceLabel: input.cadSourceLabel ?? cadSourceLabelFromImportSource(cadImportSource),
+    cadSourceLabel: cadSourceLabelFromImportSource(cadImportSource),
     cadUpdatedAt: input.cadUpdatedAt ?? null,
   };
+}
+
+export function isManualPmCadImportSource(cadImportSource: PmCadImportSource) {
+  return cadImportSource === "MANUAL" || cadImportSource === "MANUAL_BOM_CSV";
 }
 
 export function markPmCadEditedAfterImport(

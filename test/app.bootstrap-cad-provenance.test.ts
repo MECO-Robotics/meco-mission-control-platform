@@ -103,6 +103,32 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
     const partDefinition = partDefinitionResponse.json().item as ProvenanceRecord;
 
     resetLimits();
+    const onshapeBomPartDefinitionResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-definitions",
+      payload: {
+        name: "Onshape BOM Imported Plate",
+        partNumber: "BOM-096",
+        revision: "A",
+        type: "custom",
+        source: "Onshape BOM",
+        materialId: null,
+        description: "Part definition created from Onshape BOM source text.",
+      },
+    });
+    assert.equal(onshapeBomPartDefinitionResponse.statusCode, 201);
+    assert.deepEqual(
+      {
+        cadSource: onshapeBomPartDefinitionResponse.json().item.cadSource,
+        cadImportSource: onshapeBomPartDefinitionResponse.json().item.cadImportSource,
+      },
+      {
+        cadSource: "onshape",
+        cadImportSource: "ONSHAPE_BOM_CSV",
+      },
+    );
+
+    resetLimits();
     const partInstanceResponse = await app.inject({
       method: "POST",
       url: "/api/part-instances",
@@ -118,7 +144,28 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       },
     });
     assert.equal(partInstanceResponse.statusCode, 201);
-    const partInstance = partInstanceResponse.json().item as ProvenanceRecord;
+    const stepPartInstance = partInstanceResponse.json().item as ProvenanceRecord;
+
+    resetLimits();
+    const mergedPartInstanceResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-instances",
+      payload: {
+        subsystemId: subsystem.id,
+        mechanismId: mechanism.id,
+        partDefinitionId: partDefinition.id,
+        name: "STEP Imported Plate Instance",
+        quantity: 1,
+        trackIndividually: true,
+        status: "qa",
+        cadImportSource: "ONSHAPE_API",
+      },
+    });
+    assert.equal(mergedPartInstanceResponse.statusCode, 201);
+    const partInstance = mergedPartInstanceResponse.json().item as ProvenanceRecord;
+    assert.equal(partInstance.id, stepPartInstance.id);
+    assert.equal(partInstance.cadSource, "onshape");
+    assert.equal(partInstance.cadImportSource, "ONSHAPE_API");
 
     resetLimits();
     const editedPartInstanceResponse = await app.inject({
@@ -174,8 +221,8 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         },
         partInstance: {
           ...finalBody.partInstances.find((item) => item.id === partInstance.id),
-          cadSource: "step",
-          cadImportSource: "STEP_UPLOAD",
+          cadSource: "onshape",
+          cadImportSource: "ONSHAPE_API",
           cadEditedAfterImport: true,
         },
       },
@@ -196,11 +243,13 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         cadSource: manualRoundTripResponse.json().item.cadSource,
         cadImportSource: manualRoundTripResponse.json().item.cadImportSource,
         cadEditedAfterImport: manualRoundTripResponse.json().item.cadEditedAfterImport,
+        cadSourceLabel: manualRoundTripResponse.json().item.cadSourceLabel,
       },
       {
         cadSource: "manual",
         cadImportSource: "MANUAL",
         cadEditedAfterImport: false,
+        cadSourceLabel: "Manual",
       },
     );
   });

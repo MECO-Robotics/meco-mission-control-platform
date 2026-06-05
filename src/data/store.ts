@@ -41,6 +41,7 @@ import {
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
 import {
+  isManualPmCadImportSource,
   markPmCadEditedAfterImport,
   normalizePmCadProvenance,
 } from "../domain/pmCadProvenance";
@@ -766,6 +767,18 @@ function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
     const existingPartInstance = partInstanceByKey.get(mergeKey);
 
     if (existingPartInstance) {
+      const existingProvenance = normalizePmCadProvenance(existingPartInstance);
+      const incomingProvenance = normalizePmCadProvenance(normalizedPartInstance);
+      if (
+        isManualPmCadImportSource(existingProvenance.cadImportSource) ||
+        !isManualPmCadImportSource(incomingProvenance.cadImportSource)
+      ) {
+        existingPartInstance.cadSource = incomingProvenance.cadSource;
+        existingPartInstance.cadImportSource = incomingProvenance.cadImportSource;
+        existingPartInstance.cadEditedAfterImport = incomingProvenance.cadEditedAfterImport;
+        existingPartInstance.cadSourceLabel = incomingProvenance.cadSourceLabel;
+        existingPartInstance.cadUpdatedAt = incomingProvenance.cadUpdatedAt;
+      }
       existingPartInstance.quantity += normalizedPartInstance.quantity;
       remappedPartInstanceIds.set(normalizedPartInstance.id, existingPartInstance.id);
       continue;
