@@ -7,7 +7,12 @@ import { withIntegrationApp } from "../helpers/appIntegrationHarness";
 test("audit export preserves workstream risk scope after deletion", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createRisk, getSnapshot, removeRisk } = require("../../src/data/store") as typeof import("../../src/data/store");
+      const {
+        createRisk,
+        getSnapshot,
+        removeRisk,
+        updateRisk,
+      } = require("../../src/data/store") as typeof import("../../src/data/store");
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",
@@ -67,6 +72,63 @@ test("audit export preserves workstream risk scope after deletion", async () => 
           .items.some(
             (item: { entityId: string; operation: string }) =>
               item.entityId === workstreamRisk.id && item.operation === "delete",
+          ),
+      );
+
+      const movedRisk = createRisk({
+        title: "Audit Export Moved Project Risk",
+        detail: "Risk moved between project attachments.",
+        severity: "medium",
+        sourceType: "qa-report",
+        sourceId: "qa-report-audit-export-move",
+        attachmentType: "project",
+        attachmentId: "project-robot-2026",
+        mitigationTaskId: null,
+      });
+      assert.ok(
+        updateRisk(movedRisk.id, {
+          attachmentType: "project",
+          attachmentId: "project-operations-2026",
+        }),
+      );
+
+      resetLimits();
+
+      const oldProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=risk&projectId=project-robot-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(oldProjectResponse.statusCode, 200);
+      assert.ok(
+        oldProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === movedRisk.id && item.operation === "update",
+          ),
+      );
+
+      resetLimits();
+
+      const newProjectResponse = await app.inject({
+        method: "GET",
+        url: "/api/audit/export?entityType=risk&projectId=project-operations-2026",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      });
+
+      assert.equal(newProjectResponse.statusCode, 200);
+      assert.ok(
+        newProjectResponse
+          .json()
+          .items.some(
+            (item: { entityId: string; operation: string }) =>
+              item.entityId === movedRisk.id && item.operation === "update",
           ),
       );
     },

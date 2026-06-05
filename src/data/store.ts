@@ -2027,11 +2027,11 @@ function getSubsystemProjectId(subsystemId: string | null | undefined) {
 }
 
 function getSeasonAuditDetails(record: {
-  seasonId: string;
+  seasonId?: string | null;
   activeSeasonIds?: string[];
 }) {
   return {
-    seasonId: record.seasonId,
+    ...(typeof record.seasonId === "string" ? { seasonId: record.seasonId } : {}),
     activeSeasonIds: record.activeSeasonIds ?? [],
   };
 }
@@ -2135,12 +2135,16 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
 
   const savedRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
   if (previousRisk && savedRisk) {
+    const projectIds = uniqueIds([
+      ...getRiskProjectIds(previousRisk),
+      ...getRiskProjectIds(savedRisk),
+    ]);
     recordAuditAction({
       operation: "update",
       entityType: "risk",
       entityId: savedRisk.id,
       entityLabel: savedRisk.title,
-      projectIds: getRiskProjectIds(savedRisk),
+      projectIds,
       taskId: savedRisk.mitigationTaskId,
       changedFields: collectChangedFields(
         previousRisk,
