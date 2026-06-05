@@ -125,6 +125,8 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       method: "PATCH",
       url: `/api/part-instances/${partInstance.id}`,
       payload: {
+        cadSource: partInstance.cadSource,
+        cadImportSource: partInstance.cadImportSource,
         status: "ready",
       },
     });
