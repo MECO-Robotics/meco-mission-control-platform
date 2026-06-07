@@ -70,6 +70,23 @@ function withPartDefinitionSeasonMembership(
   };
 }
 
+function normalizeMemberSeasonMembership<
+  T extends { seasonId?: string | null; activeSeasonIds?: Array<string | null | undefined> | null },
+>(
+  member: T,
+  fallbackSeasonId: string,
+): Omit<T, "seasonId" | "activeSeasonIds"> & {
+  seasonId: string;
+  activeSeasonIds: string[];
+} {
+  const seasonId = member.seasonId ?? fallbackSeasonId;
+  return {
+    ...member,
+    seasonId,
+    activeSeasonIds: uniqueIds([...(member.activeSeasonIds ?? []), seasonId]),
+  };
+}
+
 function normalizeTaskTargets(task: SeedTask): Task {
   return {
     ...task,
@@ -2845,6 +2862,9 @@ const combinedSnapshotSeed: typeof snapshotSeed = {
 
 export const snapshot: PlatformSnapshot = {
   ...combinedSnapshotSeed,
+  members: combinedSnapshotSeed.members.map((member) =>
+    normalizeMemberSeasonMembership(member, combinedSnapshotSeed.seasons[0]?.id ?? "default-season"),
+  ),
   taskDependencies: [
     {
       id: "dep-media-social-rollout-task",

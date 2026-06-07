@@ -62,8 +62,10 @@ Retention policy:
   non-sensitive. Broad audit browsing is limited to leads, mentors, admins, or other explicitly
   authorized users with a legitimate operational need. Bulk export, retention override, archive,
   and manual deletion tools are admin-only operations for maintenance, privacy requests, incident
-  review, and compliance review, not general browsing. Student-facing views must not expose broad
-  audit history for other members.
+  review, and compliance review, not general browsing.
+- `GET /api/audit/export`: admin-only audit action export. Supports `format=json|csv`,
+  `seasonId`, `projectId`, `entityType`, `from`, and `to` query filters. Date filters use ISO
+  datetimes and are inclusive.
 
 ## Tutorial Session
 
