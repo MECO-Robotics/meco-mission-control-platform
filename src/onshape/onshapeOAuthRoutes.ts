@@ -11,6 +11,7 @@ import {
   isOnshapeOAuthRefreshConfigured,
   refreshOnshapeOAuthToken,
 } from "./onshapeOAuth";
+import { getOAuthConnectionHealth } from "./onshapeOAuthHealth";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 
@@ -74,12 +75,7 @@ function resolveOAuthCallbackSessionKey(request: FastifyRequest, reply: FastifyR
 }
 
 function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply: FastifyReply) {
-  if (!isAuthEnabled()) {
-    return true;
-  }
-
-  const session = getSessionFromRequest(request);
-  if (session?.role === "lead" || session?.role === "mentor" || session?.role === "admin") {
+  if (canManageOnshapeOAuthCredentials(request)) {
     return true;
   }
 
@@ -89,20 +85,29 @@ function requireOnshapeOAuthCredentialPermission(request: FastifyRequest, reply:
   return false;
 }
 
-export function getOAuthStatus(store: ReturnType<typeof getOnshapeRuntimeStore>) {
-  const tokenSet = store.getOAuthTokenSet();
-  const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
-  return {
-    clientConfigured: isOnshapeOAuthClientConfigured(getOAuthConfig()),
-    connected: Boolean(tokenSet || envConnected),
-    authorizationUrlAvailable: isOnshapeOAuthClientConfigured(getOAuthConfig()),
-    scopes: onshapeConfig.oauthScopes,
-    tokenExpiresAt: tokenSet?.expiresAt ?? onshapeConfig.oauthTokenExpiresAt ?? null,
-    credentialSource: tokenSet ? "runtime" : (envConnected ? "env" : "none"),
-  };
+function canManageOnshapeOAuthCredentials(request: FastifyRequest) {
+  if (!isAuthEnabled()) {
+    return true;
+  }
+
+  const session = getSessionFromRequest(request);
+  return session?.role === "lead" || session?.role === "mentor" || session?.role === "admin";
 }
 
 export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+  app.get("/api/onshape/oauth/health", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+
+    return {
+      item: getOAuthConnectionHealth(getOnshapeRuntimeStore(), {
+        reconnectAvailable:
+          canManageOnshapeOAuthCredentials(request) && isOnshapeOAuthClientConfigured(getOAuthConfig()),
+      }),
+    };
+  });
+
   app.post("/api/onshape/oauth/authorization-url", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;

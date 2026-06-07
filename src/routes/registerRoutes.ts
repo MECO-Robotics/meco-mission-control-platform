@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, type FastifyRequest } from "fastify";
 import { requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
@@ -115,6 +115,7 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
+import type { Member } from "../domain/types";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
   filterManufacturingItemsForPerson,
@@ -225,6 +226,109 @@ const allowAuthEmailRouteRequest = createRequestLimitGuard({
   scope: "auth-email",
   ...requestLimitConfig.authEmail,
 });
+const PUBLIC_DEMO_SEASON_ID = "default-season";
+
+function rewriteDemoMemberId(
+  memberId: string | null | undefined,
+  memberIdsByOriginalId: Map<string, string>,
+) {
+  if (!memberId) {
+    return memberId ?? null;
+  }
+
+  return memberIdsByOriginalId.get(memberId) ?? null;
+}
+
+function rewriteDemoMemberIds(
+  memberIds: string[] | undefined,
+  memberIdsByOriginalId: Map<string, string>,
+) {
+  return (memberIds ?? []).flatMap((memberId) => {
+    const demoMemberId = rewriteDemoMemberId(memberId, memberIdsByOriginalId);
+    return demoMemberId === null ? [] : [demoMemberId];
+  });
+}
+
+function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildBootstrapResponse>) {
+  const memberIdsByOriginalId = new Map(
+    selectedBootstrap.members.map((member, memberIndex) => [
+      member.id,
+      `demo-member-${memberIndex + 1}`,
+    ]),
+  );
+
+  const members = selectedBootstrap.members.map((member, memberIndex) => ({
+    id: rewriteDemoMemberId(member.id, memberIdsByOriginalId),
+    name: `Demo Member ${memberIndex + 1}`,
+    seasonId: member.seasonId,
+    activeSeasonIds: member.activeSeasonIds,
+    ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
+  }));
+
+  return {
+    ...selectedBootstrap,
+    members,
+    subsystems: selectedBootstrap.subsystems.map((subsystem) => ({
+      ...subsystem,
+      responsibleEngineerId: rewriteDemoMemberId(
+        subsystem.responsibleEngineerId,
+        memberIdsByOriginalId,
+      ),
+      mentorIds: rewriteDemoMemberIds(subsystem.mentorIds, memberIdsByOriginalId),
+    })),
+    reports: selectedBootstrap.reports.map((report) => ({
+      ...report,
+      createdByMemberId: rewriteDemoMemberId(report.createdByMemberId, memberIdsByOriginalId),
+      participantIds:
+        report.participantIds === undefined
+          ? report.participantIds
+          : rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
+    })),
+    tasks: selectedBootstrap.tasks.map((task) => ({
+      ...task,
+      ownerId: rewriteDemoMemberId(task.ownerId, memberIdsByOriginalId),
+      assigneeIds: rewriteDemoMemberIds(task.assigneeIds, memberIdsByOriginalId),
+      mentorId: rewriteDemoMemberId(task.mentorId, memberIdsByOriginalId),
+    })),
+    taskBlockers: selectedBootstrap.taskBlockers.map((blocker) => ({
+      ...blocker,
+      createdByMemberId: rewriteDemoMemberId(
+        blocker.createdByMemberId,
+        memberIdsByOriginalId,
+      ),
+    })),
+    workLogs: selectedBootstrap.workLogs.map((workLog) => ({
+      ...workLog,
+      participantIds: rewriteDemoMemberIds(workLog.participantIds, memberIdsByOriginalId),
+    })),
+    attendanceRecords: selectedBootstrap.attendanceRecords.map((record) => ({
+      ...record,
+      memberId: rewriteDemoMemberId(record.memberId, memberIdsByOriginalId),
+    })),
+    manufacturingItems: selectedBootstrap.manufacturingItems.map((item) => ({
+      ...item,
+      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+    })),
+    purchaseItems: selectedBootstrap.purchaseItems.map((item) => ({
+      ...item,
+      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+    })),
+    qaReports: selectedBootstrap.qaReports.map((report) => ({
+      ...report,
+      participantIds: rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
+    })),
+    qaRequests: selectedBootstrap.qaRequests.map((request) => ({
+      ...request,
+      mentorId: rewriteDemoMemberId(request.mentorId, memberIdsByOriginalId),
+      requestedById: rewriteDemoMemberId(request.requestedById, memberIdsByOriginalId),
+    })),
+    qaReviews: selectedBootstrap.qaReviews.map((review) => ({
+      ...review,
+      participantIds: rewriteDemoMemberIds(review.participantIds, memberIdsByOriginalId),
+    })),
+    actions: [],
+  };
+}
 
 interface TutorialResetResponse {
   ok: boolean;
@@ -311,6 +415,21 @@ export async function registerRoutes(app: FastifyInstance) {
     return null;
   };
 
+  const readAuditRequestId = (request: FastifyRequest) => {
+    const requestId = request.id;
+    return typeof requestId === "string" && requestId.trim().length > 0
+      ? requestId
+      : null;
+  };
+
+  const buildTaskAuditContext = (
+    request: FastifyRequest,
+    actorMemberId?: string | null,
+  ) => ({
+    actorMemberId: actorMemberId ?? getTaskActionMember(request)?.id ?? null,
+    requestId: readAuditRequestId(request),
+  });
+
   const canManageTaskAssignment = (request: Parameters<typeof requireSession>[0]) =>
     hasMentorPermission(request);
 
@@ -364,6 +483,44 @@ export async function registerRoutes(app: FastifyInstance) {
     return email || session?.accountId || "authenticated-user";
   };
 
+  const allowDemoBootstrapRequest = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    selection: ReturnType<typeof readBootstrapSelection>,
+  ) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return false;
+    }
+
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    const session = getSessionFromRequest(request);
+    if (selection.personId !== null && (!session || session.isPublicDemo)) {
+      requireSession(request, reply);
+      return false;
+    }
+
+    if (!session) {
+      if (selection.seasonId === PUBLIC_DEMO_SEASON_ID) {
+        return true;
+      }
+
+      requireSession(request, reply);
+      return false;
+    }
+
+    if (session.role === "external") {
+      reply.code(403).send({
+        message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
   app.get("/health", async () => {
     return {
       status: "ok",
@@ -400,15 +557,25 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/bootstrap", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
+    const selection = readBootstrapSelection(request.query);
+    if (!allowDemoBootstrapRequest(request, reply, selection)) {
       return;
     }
 
     const snapshot = getSnapshot();
-    const selection = readBootstrapSelection(request.query);
-    const userKey = getNavigationPreferenceUserKey(request);
+    const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
+    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const userKey = isPublicDemoBootstrap
+      ? "public-demo"
+      : getNavigationPreferenceUserKey(request);
+    const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
+      sanitizeEscalations: isPublicDemoBootstrap,
+    });
+    const responseBootstrap = isPublicDemoBootstrap
+      ? sanitizePublicDemoBootstrap(selectedBootstrap)
+      : selectedBootstrap;
     const bootstrapPayload = bootstrapPayloadSchema.safeParse({
-      ...buildBootstrapResponse(snapshot, selection),
+      ...responseBootstrap,
       favoriteViews: getFavoriteViews(userKey),
     });
 
@@ -1830,7 +1997,7 @@ export async function registerRoutes(app: FastifyInstance) {
           parsed.data.start && isTaskStartReady(currentTask)
             ? "in-progress"
             : currentTask.status,
-      });
+      }, buildTaskAuditContext(request, member.id));
 
       return {
         item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
@@ -1871,7 +2038,7 @@ export async function registerRoutes(app: FastifyInstance) {
         assigneeIds: (currentTask.assigneeIds ?? []).filter(
           (assigneeId) => assigneeId !== currentTask.ownerId,
         ),
-      });
+      }, buildTaskAuditContext(request, member?.id ?? null));
 
       return {
         item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
@@ -1926,7 +2093,7 @@ export async function registerRoutes(app: FastifyInstance) {
       const updatedTask = updateTask(currentTask.id, {
         ownerId: parsed.data.ownerId,
         assigneeIds: nextAssigneeIds,
-      });
+      }, buildTaskAuditContext(request));
 
       return {
         item: updatedTask ? buildTaskActionItem(updatedTask.id) : updatedTask,
@@ -2016,7 +2183,7 @@ export async function registerRoutes(app: FastifyInstance) {
         partInstanceIds: nextTaskShape.partInstanceIds,
         artifactId: nextTaskShape.artifactId,
         artifactIds: nextTaskShape.artifactIds,
-      });
+      }, buildTaskAuditContext(request));
       return {
         item: updatedTask
           ? {

@@ -1,5 +1,11 @@
 import type { PlatformSnapshot } from "../../domain/types";
-import type { SeedMechanism, SeedPartDefinition } from "../seedTypes";
+import type { SeedMechanism } from "../seedTypes";
+
+export {
+  offseasonArtifacts,
+  offseasonPartDefinitions,
+  offseasonPartInstances,
+} from "./inventoryRecords";
 
 export const offseasonMembers = [
     {
@@ -25,6 +31,30 @@ export const offseasonMembers = [
       plannedWeeklyAttendanceHours: 5,
       plannedAttendanceDays: ["wednesday", "saturday"],
       plannedAttendanceNotes: "Mentor QA rotation for summer scrimmage readiness.",
+    },
+    {
+      id: "jamal",
+      name: "Jamal Reed",
+      email: "jamal.reed@mecorobotics.org",
+      role: "student",
+      elevated: false,
+      disciplineId: "electrical",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 6,
+      plannedAttendanceDays: ["monday", "wednesday", "saturday"],
+      plannedAttendanceNotes: "Electrical spare-radio bench testing and event power checks.",
+    },
+    {
+      id: "mika",
+      name: "Mika Tanaka",
+      email: "mika.tanaka@mecorobotics.org",
+      role: "lead",
+      elevated: true,
+      disciplineId: "strategy",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 5,
+      plannedAttendanceDays: ["thursday", "saturday"],
+      plannedAttendanceNotes: "Drive-team strategy cards and scouting data review owner.",
     },
   ] satisfies PlatformSnapshot["members"];
 
@@ -53,6 +83,18 @@ export const offseasonMechanisms = [
       name: "Event Data Review",
       description: "Post-event scouting normalization, rubric checks, and strategy handoff.",
     },
+    {
+      id: "field-calibration-kit",
+      subsystemId: "vision",
+      name: "Field Calibration Kit",
+      description: "Portable AprilTag and tape-mark setup for offseason localization checks.",
+    },
+    {
+      id: "spare-radio-bench",
+      subsystemId: "controls",
+      name: "Spare Radio Bench",
+      description: "Bench setup for imaging radios, checking Ethernet leads, and labeling spares.",
+    },
 ] satisfies SeedMechanism[];
 
 export const offseasonMaterials = [
@@ -78,121 +120,26 @@ export const offseasonMaterials = [
       vendor: "REV Robotics",
       notes: "Low-current sensor and accessory connector standard for the offseason robot.",
     },
+    {
+      id: "mat-radio-poe-injector",
+      name: "Radio PoE Injector",
+      category: "electronics",
+      unit: "each",
+      onHandQuantity: 2,
+      reorderPoint: 3,
+      location: "Controls spares drawer",
+      vendor: "Vivid Hosting",
+      notes: "Practice and event spare for radio bench checks and field-side recovery.",
+    },
+    {
+      id: "mat-apriltag-stand-kit",
+      name: "AprilTag Stand Kit",
+      category: "hardware",
+      unit: "kit",
+      onHandQuantity: 1,
+      reorderPoint: 2,
+      location: "Practice field crate",
+      vendor: "AndyMark",
+      notes: "Portable offseason field calibration kit for vision and autonomous replay checks.",
+    },
   ] satisfies PlatformSnapshot["materials"];
-
-export const offseasonArtifacts = [
-    {
-      id: "artifact-summer-scrimmage-runbook",
-      projectId: "project-operations-2026",
-      workstreamId: "workstream-operations-logistics",
-      kind: "document",
-      title: "Summer Scrimmage Runbook",
-      summary: "Load-in, inspection, pit roles, battery rotation, and field reset plan for June scrimmage.",
-      status: "in-review",
-      link: "https://example.org/meco/summer-scrimmage-runbook-2026",
-      isArchived: false,
-      updatedAt: "2026-05-29T18:40:00-04:00",
-    },
-    {
-      id: "artifact-drive-log-template-may",
-      projectId: "project-robot-2026",
-      workstreamId: "workstream-controls",
-      kind: "document",
-      title: "Driver Practice Log Template",
-      summary: "Structured log template for practice cycles, auto replay notes, and reliability findings.",
-      status: "published",
-      link: "https://example.org/meco/driver-practice-log-template",
-      isArchived: false,
-      updatedAt: "2026-05-28T20:15:00-04:00",
-    },
-    {
-      id: "artifact-scouting-normalization-guide",
-      projectId: "project-training-2026",
-      workstreamId: "workstream-scouting-data",
-      kind: "document",
-      title: "Scouting Data Normalization Guide",
-      summary: "Rules for cleaning tablet exports before strategy review and pick-list updates.",
-      status: "in-review",
-      link: "https://example.org/meco/scouting-normalization-guide",
-      isArchived: false,
-      updatedAt: "2026-05-30T09:25:00-04:00",
-    },
-    {
-      id: "artifact-open-house-demo-loop",
-      projectId: "project-outreach-2026",
-      workstreamId: "workstream-outreach-content",
-      kind: "document",
-      title: "Open House Demo Loop",
-      summary: "Sponsor-facing runbook with driver cues, student talking points, and photo-safe reset moments.",
-      status: "in-review",
-      link: "https://example.org/meco/open-house-demo-loop-2026",
-      isArchived: false,
-      updatedAt: "2026-06-05T16:35:00-04:00",
-    },
-  ] satisfies PlatformSnapshot["artifacts"];
-
-export const offseasonPartDefinitions = [
-    {
-      id: "pd-swerve-wheel-service-kit",
-      name: "Swerve Wheel Service Kit",
-      partNumber: "DRV-330",
-      revision: "A",
-      type: "service kit",
-      source: "WCP",
-      materialId: "mat-traction-wheel-set",
-      description: "Practice-wear wheel, tread, and fastener bundle for module service work.",
-    },
-    {
-      id: "pd-battery-cart-harness",
-      name: "Battery Cart Harness",
-      partNumber: "OPS-305",
-      revision: "B",
-      type: "custom",
-      source: "In-house wiring",
-      materialId: "mat-anderson-pack",
-      description: "Service harness used for battery checkout, charger labeling, and event readiness.",
-    },
-    {
-      id: "pd-driver-station-image",
-      name: "Driver Station Image",
-      partNumber: "CTL-410",
-      revision: "C",
-      type: "software artifact",
-      source: "Team repository",
-      materialId: null,
-      description: "Pinned driver station configuration image with logging tools and controller profiles.",
-    },
-  ] satisfies SeedPartDefinition[];
-
-export const offseasonPartInstances = [
-    {
-      id: "pi-swerve-wheel-service-kit",
-      subsystemId: "drive",
-      mechanismId: "swerve-service-cart",
-      partDefinitionId: "pd-swerve-wheel-service-kit",
-      name: "Offseason swerve wheel service kit",
-      quantity: 4,
-      trackIndividually: false,
-      status: "qa",
-    },
-    {
-      id: "pi-battery-cart-harness",
-      subsystemId: "pit-readiness",
-      mechanismId: "battery-checkout",
-      partDefinitionId: "pd-battery-cart-harness",
-      name: "Battery checkout cart harness",
-      quantity: 1,
-      trackIndividually: true,
-      status: "ready",
-    },
-    {
-      id: "pi-driver-station-image",
-      subsystemId: "controls",
-      mechanismId: "driver-station-replay",
-      partDefinitionId: "pd-driver-station-image",
-      name: "Driver station laptop image",
-      quantity: 2,
-      trackIndividually: true,
-      status: "blocked",
-    },
-  ] satisfies PlatformSnapshot["partInstances"];

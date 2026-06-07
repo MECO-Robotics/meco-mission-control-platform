@@ -93,6 +93,7 @@ const envSchema = z.object({
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
   CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
+  CAD_STEP_PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
@@ -153,7 +154,7 @@ const resolvedEmailFrom = pickFirstString(
 );
 const s3Endpoint = normalizeUrl(env.S3_ENDPOINT);
 const s3PublicBaseUrl = normalizeUrl(env.S3_PUBLIC_BASE_URL) ?? s3Endpoint;
-const s3BucketPrefix = env.S3_BUCKET_PREFIX ?? env.S3_BUCKET;
+const s3BucketPrefix = env.S3_BUCKET_PREFIX;
 export const emailSmtpConfig = {
   host: resolvedEmailSmtpHost,
   port: resolvedEmailSmtpPort,
@@ -273,13 +274,14 @@ export const mediaUploadConfig = {
       env.S3_SECRET_ACCESS_KEY &&
       env.S3_ENDPOINT &&
       env.S3_REGION &&
-      s3BucketPrefix,
+      (s3BucketPrefix || env.S3_BUCKET),
   ),
   accessKeyId: env.S3_ACCESS_KEY_ID,
   secretAccessKey: env.S3_SECRET_ACCESS_KEY,
   endpoint: s3Endpoint,
   publicBaseUrl: s3PublicBaseUrl,
   region: env.S3_REGION,
+  bucket: env.S3_BUCKET,
   bucketPrefix: s3BucketPrefix,
   presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
 } as const;
@@ -329,6 +331,7 @@ export const cadStepUploadConfig = {
 
 export const cadStepParserConfig = {
   mode: env.CAD_STEP_PARSER_MODE,
+  timeoutMs: env.CAD_STEP_PARSER_TIMEOUT_MS,
 } as const;
 
 export function resolveCadStepParserMode() {
@@ -340,4 +343,15 @@ export function resolveCadStepParserMode() {
     return requestedMode as (typeof cadStepParserModes)[number];
   }
   return cadStepParserConfig.mode;
+}
+
+export function resolveCadStepParserTimeoutMs() {
+  const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
+  if (requestedTimeout) {
+    const parsed = Number(requestedTimeout);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return cadStepParserConfig.timeoutMs;
 }

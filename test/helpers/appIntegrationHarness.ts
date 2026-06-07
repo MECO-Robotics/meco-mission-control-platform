@@ -1,7 +1,27 @@
 import type { FastifyInstance } from "fastify";
 
 import { createMember, resetStore, type MemberInput } from "../../src/data/store";
+import { resetUserPreferencesStoreForTests } from "../../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../../src/security/requestLimits";
+
+const INTEGRATION_ENV_MODULES = [
+  "../../src/app",
+  "../../src/auth/authService",
+  "../../src/cad/cadStoreFactory",
+  "../../src/cad/routes/cadStepImportPayload",
+  "../../src/cad/routes/cadStepImportRoutes",
+  "../../src/config/env",
+  "../../src/onshape/onshapeOAuthHealth",
+  "../../src/onshape/onshapeOAuthRoutes",
+  "../../src/onshape/onshapeOverview",
+  "../../src/onshape/onshapeRoutes",
+  "../../src/routes/authRoutes",
+  "../../src/routes/registerRoutes",
+  "../../src/routes/routeSchemas",
+  "../../src/slack/client",
+  "../../src/slack/homeService",
+  "../../src/storage/mediaUploadService",
+] as const;
 
 const APP_ENV_KEYS = [
   "NODE_ENV",
@@ -49,6 +69,7 @@ const APP_ENV_KEYS = [
   "CAD_STORE_DRIVER",
   "CAD_STEP_UPLOAD_MAX_BYTES",
   "CAD_STEP_PARSER_MODE",
+  "CAD_STEP_PARSER_TIMEOUT_MS",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -117,12 +138,25 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.CAD_STORE_DRIVER = "runtime";
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
   delete process.env.CAD_STEP_PARSER_MODE;
+  delete process.env.CAD_STEP_PARSER_TIMEOUT_MS;
 
   for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
     if (value === undefined) {
       delete process.env[key];
     } else {
       process.env[key] = value;
+    }
+  }
+}
+
+function resetIntegrationEnvModuleCache() {
+  for (const modulePath of INTEGRATION_ENV_MODULES) {
+    try {
+      delete require.cache[require.resolve(modulePath)];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND") {
+        throw error;
+      }
     }
   }
 }
@@ -141,9 +175,11 @@ export async function withIntegrationApp(
 
   try {
     configureEnv(options?.env);
+    resetIntegrationEnvModuleCache();
     resetStore();
+    resetUserPreferencesStoreForTests();
 
-    const { buildApp } = await import("../../src/app");
+    const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp();
     for (const member of options?.members ?? []) {
       createMember(member);
@@ -155,8 +191,10 @@ export async function withIntegrationApp(
     } finally {
       await app.close();
       resetRequestLimits();
+      resetUserPreferencesStoreForTests();
     }
   } finally {
     restoreEnv(envSnapshot);
+    resetIntegrationEnvModuleCache();
   }
 }

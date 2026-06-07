@@ -11,6 +11,7 @@ import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
+const PUBLIC_DEMO_SEASON_ID = "default-season";
 
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
@@ -66,11 +67,14 @@ export interface SessionUser {
   hostedDomain: string;
   role: MemberRole;
   taskSubteamIds: string[];
+  isPublicDemo?: boolean;
 }
 
 interface SessionTokenOptions {
   deviceId?: string | null;
 }
+
+type DevelopmentSessionRole = Extract<MemberRole, "student" | "mentor">;
 
 export interface EmailCodeDelivery {
   sentTo: string;
@@ -300,23 +304,59 @@ function buildEmailSessionUser(email: string): SessionUser {
   };
 }
 
-function isDevelopmentSessionRole(role: MemberRole | undefined): role is "student" | "mentor" {
+function isDevelopmentSessionRole(role: MemberRole | undefined): role is DevelopmentSessionRole {
   return role === "student" || role === "mentor";
 }
 
-export function buildDevelopmentSessionUser(): SessionUser {
-  const email = `dev.student@${authConfig.hostedDomain}`;
+export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "student"): SessionUser {
+  const email = `dev.${role}@${authConfig.hostedDomain}`;
+  const displayRole = role === "mentor" ? "Mentor" : "Student";
 
   return {
-    accountId: "local-dev-student",
+    accountId: `local-dev-${role}`,
     authProvider: "email",
     email,
-    name: "Local Dev Student",
+    name: `Local Dev ${displayRole}`,
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
+    role,
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+  };
+}
+
+function buildPublicDemoSessionUser(): SessionUser {
+  const email = `public.demo@${authConfig.hostedDomain}`;
+
+  return {
+    accountId: "public-demo",
+    authProvider: "email",
+    email,
+    name: "Public Demo",
     picture: null,
     hostedDomain: authConfig.hostedDomain,
     role: "student",
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: [],
+    isPublicDemo: true,
   };
+}
+
+function isPublicDemoBootstrapRequest(request: FastifyRequest) {
+  if (request.method !== "GET") {
+    return false;
+  }
+
+  const [path = "", rawQuery = ""] = request.url.split("?", 2);
+  if (path !== "/api/bootstrap") {
+    return false;
+  }
+
+  const query = new URLSearchParams(rawQuery);
+  const seasonIds = query.getAll("seasonId");
+  return (
+    seasonIds.length === 1 &&
+    seasonIds[0] === PUBLIC_DEMO_SEASON_ID &&
+    !query.has("personId")
+  );
 }
 
 function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
@@ -624,6 +664,10 @@ export function readBearerToken(headerValue: string | undefined) {
 export function getSessionFromRequest(request: FastifyRequest) {
   const token = readBearerToken(request.headers.authorization);
   if (!token) {
+    if (authConfig.enabled && isPublicDemoBootstrapRequest(request)) {
+      return buildPublicDemoSessionUser();
+    }
+
     return null;
   }
 

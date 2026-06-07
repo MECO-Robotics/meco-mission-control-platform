@@ -121,6 +121,15 @@ export interface TaskMilestoneMatch {
   isLegacyLink: boolean;
 }
 
+export interface AuditMutationContext {
+  actorMemberId?: string | null;
+  requestId?: string | null;
+}
+
+const REDACTED_AUDIT_VALUE = "[redacted]";
+const SENSITIVE_AUDIT_FIELD_PATTERN =
+  /(password|passcode|secret|token|credential|authorization|authHeader|cookie|session|privateKey|apiKey)/i;
+
 function parseIterationCondition(conditionValue: string) {
   const normalized = conditionValue.trim().toLowerCase();
   const match = normalized.match(/^iteration\s*(?:([<>]=?|==|=)\s*)?(\d+)$/);
@@ -1347,18 +1356,78 @@ function collectProvidedFields(input: Record<string, unknown>) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function recordAuditAction(args: {
+function isSensitiveAuditField(fieldName: string) {
+  return SENSITIVE_AUDIT_FIELD_PATTERN.test(fieldName);
+}
+
+function summarizeAuditValue(fieldName: string, value: unknown): unknown {
+  if (isSensitiveAuditField(fieldName)) {
+    return REDACTED_AUDIT_VALUE;
+  }
+
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (typeof value === "string") {
+    return value.length > 120 ? `${value.slice(0, 117)}...` : value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: "array",
+      count: value.length,
+      values: value
+        .slice(0, 10)
+        .map((item) => summarizeAuditValue(fieldName, item)),
+    };
+  }
+
+  if (typeof value === "object") {
+    return {
+      type: "object",
+      keys: Object.keys(value as Record<string, unknown>).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    };
+  }
+
+  return String(value);
+}
+
+function buildAuditSummary(
+  record: object,
+  changedFields: string[],
+) {
+  const auditRecord = record as Record<string, unknown>;
+  return Object.fromEntries(
+    changedFields.map((fieldName) => [
+      fieldName,
+      summarizeAuditValue(fieldName, auditRecord[fieldName]),
+    ]),
+  );
+}
+
+export function recordAuditAction(args: {
   operation: AuditActionOperation;
   entityType: string;
   entityId: string;
   entityLabel?: string | null;
   changedFields?: string[];
+  beforeJson?: object;
+  afterJson?: object;
   projectId?: string | null;
   projectIds?: Array<string | null | undefined>;
   taskId?: string | null;
   subsystemId?: string | null;
   actorMemberId?: string | null;
+  requestId?: string | null;
   memberIds?: Array<string | null | undefined>;
+  detailsJson?: Record<string, unknown>;
 }) {
   const entityLabel = resolveEntityLabel(args.entityLabel, args.entityId);
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
@@ -1379,6 +1448,10 @@ function recordAuditAction(args: {
       changedFields,
     }),
     changedFields,
+    ...(args.beforeJson ? { beforeJson: buildAuditSummary(args.beforeJson, changedFields) } : {}),
+    ...(args.afterJson ? { afterJson: buildAuditSummary(args.afterJson, changedFields) } : {}),
+    ...(args.detailsJson ? { detailsJson: args.detailsJson } : {}),
+    requestId: args.requestId ?? null,
     projectId: projectIds[0] ?? null,
     ...(projectIds.length > 0 ? { projectIds } : {}),
     taskId: args.taskId ?? null,
@@ -4011,7 +4084,11 @@ export function removeWorkLog(workLogId: string) {
   return workLog;
 }
 
-export function updateTask(taskId: string, input: Partial<TaskInput>): Task | null {
+export function updateTask(
+  taskId: string,
+  input: Partial<TaskInput>,
+  auditContext: AuditMutationContext = {},
+): Task | null {
   const currentTask = currentSnapshot.tasks.find((task) => task.id === taskId);
   if (!currentTask) {
     return null;
@@ -4073,11 +4150,14 @@ export function updateTask(taskId: string, input: Partial<TaskInput>): Task | nu
     subsystemId: savedTask.subsystemId,
     taskId: savedTask.id,
     memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
-    actorMemberId: savedTask.ownerId,
+    actorMemberId: auditContext.actorMemberId ?? savedTask.ownerId,
+    requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       currentTask,
       savedTask,
     ),
+    beforeJson: currentTask,
+    afterJson: savedTask,
   });
 
   return savedTask;

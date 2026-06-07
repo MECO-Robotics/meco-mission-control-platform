@@ -110,19 +110,34 @@ function buildPublicUrl(bucket: string, key: string) {
   return `${baseUrl}/${encodeURIComponent(bucket)}/${encodeObjectKey(key)}`;
 }
 
-function createTeamBucketName(teamId: string | null | undefined) {
-  const bucketPrefix = mediaUploadConfig.bucketPrefix;
-  if (!bucketPrefix) {
-    throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
+export function createTeamBucketName(
+  teamId: string | null | undefined,
+  options: {
+    bucket?: string;
+    bucketPrefix?: string;
+  } = mediaUploadConfig,
+) {
+  if (options.bucketPrefix) {
+    const prefixSegment = sanitizePathSegment(options.bucketPrefix, "media").slice(0, 40).replace(/-+$/g, "") || "media";
+    const teamSegmentMaxLength = Math.max(1, 63 - prefixSegment.length - 1);
+    const teamSegment =
+      sanitizePathSegment(teamId ?? "", DEFAULT_PROJECT_TEAM_ID).slice(0, teamSegmentMaxLength).replace(/-+$/g, "") ||
+      DEFAULT_PROJECT_TEAM_ID;
+
+    return `${prefixSegment}-${teamSegment}`;
   }
 
-  const prefixSegment = sanitizePathSegment(bucketPrefix, "media").slice(0, 40).replace(/-+$/g, "") || "media";
-  const teamSegmentMaxLength = Math.max(1, 63 - prefixSegment.length - 1);
-  const teamSegment =
-    sanitizePathSegment(teamId ?? "", DEFAULT_PROJECT_TEAM_ID).slice(0, teamSegmentMaxLength).replace(/-+$/g, "") ||
-    DEFAULT_PROJECT_TEAM_ID;
+  if (options.bucket) {
+    return options.bucket;
+  }
 
-  return `${prefixSegment}-${teamSegment}`;
+  throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
+}
+
+function createMediaBucketName(teamId: string | null | undefined) {
+  const bucketPrefix = mediaUploadConfig.bucketPrefix;
+  const bucket = mediaUploadConfig.bucket;
+  return createTeamBucketName(teamId, { bucket, bucketPrefix });
 }
 
 function createObjectKey(projectId: string, fileName: string, contentType: string, kind: MediaUploadKind) {
@@ -150,7 +165,7 @@ async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUpl
     throw new MediaUploadError(`${kind === "image" ? "Image" : "Video"} uploads require a file name.`);
   }
 
-  const bucket = createTeamBucketName(input.teamId);
+  const bucket = createMediaBucketName(input.teamId);
 
   const key = createObjectKey(input.projectId, fileName, contentType, kind);
   const client = getStorageClient();

@@ -134,6 +134,9 @@ curl -i "${PLATFORM_API_BASE_URL}/api/bootstrap"
 
 ## 6) Rollback / escalation
 
+Use `docs/platform-deployment-recovery.md` for detailed rollback and restore
+commands.
+
 - On first failed check:
   1. stop the deploy step and freeze any front-end release cutover
   2. capture `docker compose ... logs app` and `docker compose ... logs postgres`

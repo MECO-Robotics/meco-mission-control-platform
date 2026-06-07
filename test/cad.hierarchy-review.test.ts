@@ -250,6 +250,31 @@ test("part match proposals reuse one database part for repeated rivets", async (
   });
 });
 
+test("part match proposals keep repeated COTS hardware on one shared definition", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const rivet = createDomainPart({ name: "3/16 Aluminum Rivet", partNumber: "RVT-001", type: "hardware", source: "COTS" });
+    const imported = await uploadStep(app, "repeated-cots-hardware", hierarchyCadFixture({ rivetCount: 12 }));
+    resetLimits();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/part-match-proposals`,
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json() as {
+      items: Array<{ cadPartDefinitionSourceId: string; instanceQuantity: number; status: string; candidates: Array<{ id: string; strategy: string }> }>;
+    };
+    const proposals = body.items.filter((item) => item.cadPartDefinitionSourceId === "part-rivet");
+    assert.equal(proposals.length, 1);
+    assert.equal(proposals[0]?.instanceQuantity, 12);
+    assert.equal(proposals[0]?.status, "EXACT");
+    assert.equal(proposals[0]?.candidates[0]?.id, rivet.id);
+    assert.equal(proposals[0]?.candidates[0]?.strategy, "EXACT_PART_NUMBER");
+  });
+});
+
 test("part match proposals distinguish exact tube numbers from ambiguous tube names", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -302,6 +327,54 @@ test("hierarchy review groups 600 repeated part instances instead of overloading
     assert.equal(component?.partSummary.groups.length, 1);
     assert.ok(body.unresolved.length < 20, `expected grouped unresolved review items, got ${body.unresolved.length}`);
     assert.equal(body.partMatchProposals.length, 1);
+  });
+});
+
+test("component assemblies inherit a confirmed ancestor mechanism during finalize", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const rivet = createDomainPart({ name: "3/16 Aluminum Rivet", partNumber: "RVT-001", type: "hardware", source: "COTS" });
+    const imported = await uploadStep(app, "inherited-component-parent", hierarchyCadFixture());
+    resetLimits();
+
+    const reviewResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review`,
+    });
+    assert.equal(reviewResponse.statusCode, 200, reviewResponse.body);
+    const review = reviewResponse.json() as { root: HierarchyNode };
+    const root = findNode(review.root, "asm-root");
+    const drive = findNode(review.root, "asm-drive");
+    const chassis = findNode(review.root, "asm-chassis");
+    const component = findNode(review.root, "asm-bellypan");
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review/apply`,
+      payload: {
+        reviewedBy: "mentor@example.com",
+        assemblyDecisions: [
+          { sourceId: root?.id, targetKind: "IGNORE", status: "CONFIRMED" },
+          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: "drive", status: "CONFIRMED" },
+          { sourceId: chassis?.id, targetKind: "MECHANISM", targetId: "chassis", status: "CONFIRMED" },
+          { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", status: "CONFIRMED" },
+        ],
+        partMatchConfirmations: [
+          { cadPartDefinitionSourceId: "part-rivet", targetPartDefinitionId: rivet.id, status: "CONFIRMED" },
+        ],
+      },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    resetLimits();
+
+    const finalizeResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/finalize`,
+      payload: {},
+    });
+    assert.equal(finalizeResponse.statusCode, 200, finalizeResponse.body);
+    assert.equal(finalizeResponse.json().warnings.length, 0);
   });
 });
 

@@ -57,10 +57,13 @@ Retention policy:
 - Delete removes the domain record from normal lists while the audit action remains as a minimal
   tombstone until retention expires. Deleted-record audit entries must not require the deleted
   entity to still exist for scoped history display.
-- Audit history is visible only to authenticated leads, mentors, admins, or scoped users with a
-  legitimate operational need. Admin access is for maintenance, privacy requests, incident review,
-  and compliance review, not general browsing. Student-facing views must not expose broad audit
-  history for other members.
+- `/api/bootstrap` returns scoped audit actions to authenticated, non-external users alongside the
+  rest of the scoped workspace payload. Audit messages therefore must stay minimal and
+  non-sensitive. Broad audit browsing is limited to leads, mentors, admins, or other explicitly
+  authorized users with a legitimate operational need. Bulk export, retention override, archive,
+  and manual deletion tools are admin-only operations for maintenance, privacy requests, incident
+  review, and compliance review, not general browsing. Student-facing views must not expose broad
+  audit history for other members.
 
 ## Tutorial Session
 

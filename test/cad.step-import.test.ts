@@ -3,8 +3,11 @@ import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { resetCadRuntimeStore, setCadRuntimeStoreFinalizeFailureForTest } from "../src/cad/cadStore";
+import { runStepImport } from "../src/cad/cadImportService";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
+import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
+import { getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const execFileAsync = promisify(execFile);
@@ -14,7 +17,12 @@ function stepEntityFixture(options?: {
   repeatedPart?: boolean;
   flat?: boolean;
   duplicateNames?: boolean;
+  assemblyUsageEntityType?: string;
+  includeOccurrenceRelationshipMetadata?: boolean;
+  quantifiedQuantity?: number;
 }) {
+  const assemblyUsageEntityType = options?.assemblyUsageEntityType ?? "NEXT_ASSEMBLY_USAGE_OCCURRENCE";
+  const usageQuantityArg = assemblyUsageEntityType === "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE" ? ",#200" : "";
   const products = [
     "#1=PRODUCT('MAIN ASSEMBLY','', '', (#900));",
     "#2=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#1,.NOT_KNOWN.);",
@@ -58,26 +66,33 @@ function stepEntityFixture(options?: {
   const edges = options?.flat
     ? []
     : [
-        "#100=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO1','Shooter Assembly <1>','',#3,#6,$);",
-        "#101=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO2','Flywheel Assembly <1>','',#6,#9,$);",
-        "#102=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO3','Spacer <1>','',#9,#12,$);",
+        `#100=${assemblyUsageEntityType}('NAUO1','Shooter Assembly <1>','',#3,#6,$${usageQuantityArg});`,
+        `#101=${assemblyUsageEntityType}('NAUO2','Flywheel Assembly <1>','',#6,#9,$${usageQuantityArg});`,
+        `#102=${assemblyUsageEntityType}('NAUO3','Spacer <1>','',#9,#12,$${usageQuantityArg});`,
         ...(options?.repeatedPart
-          ? ["#103=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO4','Spacer <2>','',#9,#12,$);"]
+          ? [`#103=${assemblyUsageEntityType}('NAUO4','Spacer <2>','',#9,#12,$${usageQuantityArg});`]
           : []),
         ...(options?.multipleTopLevel
           ? [
-              "#104=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO5','Drivetrain Assembly <1>','',#3,#15,$);",
-              "#105=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO6','Conveyer Assembly <1>','',#3,#18,$);",
-              "#107=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO8','Wheel <1>','',#15,#24,$);",
-              "#108=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO9','Belt <1>','',#18,#27,$);",
+              `#104=${assemblyUsageEntityType}('NAUO5','Drivetrain Assembly <1>','',#3,#15,$${usageQuantityArg});`,
+              `#105=${assemblyUsageEntityType}('NAUO6','Conveyer Assembly <1>','',#3,#18,$${usageQuantityArg});`,
+              `#107=${assemblyUsageEntityType}('NAUO8','Wheel <1>','',#15,#24,$${usageQuantityArg});`,
+              `#108=${assemblyUsageEntityType}('NAUO9','Belt <1>','',#18,#27,$${usageQuantityArg});`,
             ]
           : []),
         ...(options?.duplicateNames
-          ? ["#106=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO7','Spacer duplicate','',#9,#21,$);"]
+          ? [`#106=${assemblyUsageEntityType}('NAUO7','Spacer duplicate','',#9,#21,$${usageQuantityArg});`]
+          : []),
+        ...(options?.includeOccurrenceRelationshipMetadata
+          ? ["#109=PRODUCT_DEFINITION_OCCURRENCE_RELATIONSHIP('REL1','metadata only',#12,#100);"]
           : []),
       ];
 
-  return ["ISO-10303-21;", "DATA;", ...products, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
+  const quantityEntities = assemblyUsageEntityType === "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE"
+    ? [`#200=MEASURE_WITH_UNIT(COUNT_MEASURE(${options?.quantifiedQuantity ?? 1}),$);`]
+    : [];
+
+  return ["ISO-10303-21;", "DATA;", ...products, ...quantityEntities, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
 }
 
 function uploadedClassStepFixture() {
@@ -380,6 +395,7 @@ function multipartStepPayload(input: {
   label: string;
   fileBuffer: Buffer;
   fileFirst?: boolean;
+  fileContentType?: string;
   projectId?: string;
   seasonId?: string;
   requestedBy?: string;
@@ -406,7 +422,7 @@ function multipartStepPayload(input: {
   const appendFile = () => {
     append(`--${input.boundary}\r\n`);
     append(`Content-Disposition: form-data; name="file"; filename="${input.fileName}"\r\n`);
-    append("Content-Type: model/step\r\n\r\n");
+    append(`Content-Type: ${input.fileContentType ?? "model/step"}\r\n\r\n`);
     chunks.push(input.fileBuffer);
     append("\r\n");
   };
@@ -444,6 +460,8 @@ test("STEP text parser extracts an Onshape-style assembly graph", async () => {
   assert.equal(parsed.partDefinitions[0]?.name, "Spacer");
   assert.equal(parsed.partInstances.length, 1);
   assert.equal(parsed.partInstances[0]?.parentAssemblySourceId, "step-asm-occ:#101");
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 3);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 3);
 });
 
 test("STEP text parser preserves multiple subsystem candidates and repeated part instances", async () => {
@@ -465,6 +483,70 @@ test("STEP text parser preserves multiple subsystem candidates and repeated part
   assert.equal(parsed.partDefinitions.length, 3);
   assert.equal(parsed.partInstances.length, 4);
   assert.notEqual(parsed.partInstances[0]?.sourceId, parsed.partInstances[1]?.sourceId);
+});
+
+test("STEP text parser accepts assembly component usage edges", async () => {
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText: stepEntityFixture({
+      assemblyUsageEntityType: "ASSEMBLY_COMPONENT_USAGE",
+      multipleTopLevel: true,
+      repeatedPart: true,
+    }),
+    originalFilename: "component-usage.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.rootName, "MAIN ASSEMBLY");
+  assert.deepEqual(
+    parsed.assemblyNodes.map((node) => [node.name, node.depth]),
+    [
+      ["MAIN ASSEMBLY", 0],
+      ["Shooter Assembly <1>", 1],
+      ["Flywheel Assembly <1>", 2],
+      ["Drivetrain Assembly <1>", 1],
+      ["Conveyer Assembly <1>", 1],
+    ],
+  );
+  assert.deepEqual(parsed.partDefinitions.map((part) => part.name).sort(), ["Belt", "Spacer", "Wheel"]);
+  assert.equal(parsed.partInstances.filter((instance) => instance.partDefinitionSourceId === "step-part-def:#12").length, 2);
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 8);
+});
+
+test("STEP text parser ignores occurrence relationship metadata as assembly edges", async () => {
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText: stepEntityFixture({
+      assemblyUsageEntityType: "ASSEMBLY_COMPONENT_USAGE",
+      includeOccurrenceRelationshipMetadata: true,
+      repeatedPart: true,
+    }),
+    originalFilename: "component-usage-metadata.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.rawStats.assemblyUsageCount, 4);
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
+  assert.equal(parsed.partInstances.length, 2);
+  assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_partial"));
+});
+
+test("STEP text parser accepts quantified assembly component usage edges", async () => {
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText: stepEntityFixture({
+      assemblyUsageEntityType: "QUANTIFIED_ASSEMBLY_COMPONENT_USAGE",
+      repeatedPart: true,
+      quantifiedQuantity: 3,
+    }),
+    originalFilename: "quantified-component-usage.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.rootName, "MAIN ASSEMBLY");
+  assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 0);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 4);
+  assert.equal(parsed.partInstances.length, 2);
+  assert.deepEqual(parsed.partInstances.map((instance) => instance.quantity), [27, 27]);
+  assert.ok(!parsed.warnings.some((warning) => warning.code === "step_flattened_file"));
 });
 
 test("STEP text parser extracts uploaded Onshape-style top-level assemblies and diagnostics", async () => {
@@ -1029,6 +1111,63 @@ test("snapshot diff reports grouped repeated-instance quantity changes", async (
   });
 });
 
+test("snapshot diff surfaces removed and renamed CAD parts as review evidence", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    await uploadStep(app, "rename-removal-iteration-1", repeatedPartCadFixture({
+      includeSingletonPart: true,
+      labelPrefix: "PRT",
+    }));
+    resetLimits();
+    const second = await uploadStep(app, "rename-removal-iteration-2", repeatedPartCadFixture({
+      includeSingletonPart: false,
+      labelPrefix: "RENAMED PRT",
+    }));
+    resetLimits();
+
+    const diffResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${second.snapshot.id}/diff`,
+    });
+    assert.equal(diffResponse.statusCode, 200, diffResponse.body);
+    const diff = diffResponse.json() as {
+      addedParts: Array<{ partNumber: string | null; name: string }>;
+      removedParts: Array<{ sourceId: string; partNumber: string | null; name: string; stableSignature: string }>;
+      removedPartInstances: Array<{ sourceId: string; instancePath: string }>;
+    };
+
+    assert.deepEqual(diff.addedParts, []);
+    assert.equal(diff.removedParts.length, 1);
+    assert.deepEqual(
+      {
+        sourceId: diff.removedParts[0]?.sourceId,
+        name: diff.removedParts[0]?.name,
+        partNumber: diff.removedParts[0]?.partNumber,
+        stableSignature: diff.removedParts[0]?.stableSignature,
+      },
+      {
+        sourceId: "part-plate",
+        name: "PRT - Shooter - Mounting Plate",
+        partNumber: "SHR-002",
+        stableSignature: "part:number:SHR-002",
+      },
+    );
+    assert.deepEqual(
+      diff.removedPartInstances.map((instance) => ({
+        sourceId: instance.sourceId,
+        instancePath: instance.instancePath,
+      })),
+      [
+        {
+          sourceId: "inst-plate-1",
+          instancePath: "/Robot/MECH - Shooter - Flywheel/Mounting Plate <1>",
+        },
+      ],
+    );
+  });
+});
+
 test("STEP import route honors explicit step_text mode and returns parser diagnostics", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1090,6 +1229,7 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
 test("STEP debug parse endpoint returns parser diagnostics without creating a snapshot", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
+    const initialActionCount = getSnapshot().actions?.length ?? 0;
 
     const response = await app.inject({
       method: "POST",
@@ -1127,6 +1267,7 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
     const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
     assert.equal(snapshotsResponse.statusCode, 200);
     assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+    assert.equal(getSnapshot().actions?.length ?? 0, initialActionCount);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
@@ -1322,6 +1463,116 @@ test("authenticated STEP uploads still accept JSON payloads", async () => {
   assert.equal(result.stderr, "");
 });
 
+test("STEP upload validation rejects unsafe extensions, MIME types, and malformed content", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const badExtensionResponse = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      payload: {
+        fileName: "robot.exe",
+        fileText: uploadedClassStepFixture(),
+        label: "bad-extension",
+      },
+    });
+    assert.equal(badExtensionResponse.statusCode, 400, badExtensionResponse.body);
+    assert.match(badExtensionResponse.body, /must use a \.step or \.stp file/i);
+    resetLimits();
+
+    const malformedResponse = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "robot.step",
+        fileText: "this is not a STEP exchange file",
+      },
+    });
+    assert.equal(malformedResponse.statusCode, 422, malformedResponse.body);
+    assert.match(malformedResponse.body, /could not be read/i);
+    assert.doesNotMatch(malformedResponse.body, /this is not a STEP/);
+    resetLimits();
+
+    const boundary = "meco-step-upload-bad-mime-boundary";
+    const body = multipartStepPayload({
+      boundary,
+      fileName: "robot.step",
+      label: "bad-mime",
+      fileBuffer: Buffer.from(uploadedClassStepFixture(), "utf8"),
+      fileContentType: "application/x-msdownload",
+    });
+    const badMimeResponse = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      payload: body,
+    });
+    assert.equal(badMimeResponse.statusCode, 400, badMimeResponse.body);
+    assert.match(badMimeResponse.body, /STEP file MIME type/i);
+  });
+});
+
+test("STEP upload validation enforces configured file size limit", () => {
+  assert.throws(
+    () =>
+      assertValidStepUpload({
+        fileName: "robot.step",
+        fileText: "ISO-10303-21;\nDATA;\nENDSEC;\nEND-ISO-10303-21;",
+        maxBytes: 16,
+      }),
+    /larger than the/,
+  );
+});
+
+test("STEP import reports parser timeout as a safe user-readable error", async () => {
+  await withIntegrationApp(async () => {
+    resetCadRuntimeStore();
+    const { getCadStore } = await import("../src/cad/cadStoreFactory");
+
+    await assert.rejects(
+      runStepImport({
+        store: getCadStore(),
+        parserClient: {
+          parseStepFile: () => new Promise(() => {}),
+        },
+        parserMode: "step_text",
+        input: {
+          fileText: uploadedClassStepFixture(),
+          originalFilename: "timeout.step",
+          label: "timeout",
+        },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /timed out/i);
+        assert.doesNotMatch(error.message, /Promise|setTimeout|stack/i);
+        return true;
+      },
+    );
+  }, { env: { CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
+});
+
+test("STEP route parsing times out built-in parser work off the request event loop", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "timeout.step",
+        fileText: uploadedClassStepFixture(),
+      },
+    });
+
+    assert.equal(response.statusCode, 408, response.body);
+    assert.match(response.body, /timed out/i);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text", CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
+});
+
 test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1331,7 +1582,10 @@ test("multipart STEP uploads accept files larger than the old 25 MiB cap", async
       boundary,
       fileName: "large-master.step",
       label: "large-master",
-      fileBuffer: Buffer.alloc((25 * 1024 * 1024) + 1024, " "),
+      fileBuffer: Buffer.from(
+        `ISO-10303-21;\nDATA;\n${" ".repeat((25 * 1024 * 1024) + 1024)}\nENDSEC;\nEND-ISO-10303-21;`,
+        "utf8",
+      ),
     });
 
     const response = await app.inject({
@@ -1540,8 +1794,11 @@ test("snapshot diff matches unchanged mappings by stable source identity", async
 test("finalize is blocked while required mappings need review", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
+    const initialActionCount = getSnapshot().actions?.length ?? 0;
 
     const result = await uploadStep(app, "iteration-1", cadFixture());
+    const postUploadActionCount = getSnapshot().actions?.length ?? 0;
+    assert.equal(postUploadActionCount, initialActionCount);
     resetLimits();
     const blocked = await app.inject({
       method: "POST",
@@ -1564,6 +1821,14 @@ test("finalize is blocked while required mappings need review", async () => {
     assert.equal(forcedBody.item.status, "finalized");
     assert.equal(forcedBody.item.finalizedBy, "mentor@example.com");
     assert.equal(forcedBody.importRun?.status, "FINALIZED");
+    const actions = getSnapshot().actions ?? [];
+    assert.equal(actions.length, postUploadActionCount + 1);
+    const lastAction = actions[actions.length - 1];
+    assert.equal(lastAction?.entityType, "cad_snapshot");
+    assert.equal(lastAction?.entityId, result.snapshot.id);
+    assert.equal(lastAction?.operation, "update");
+    assert.equal(lastAction?.actorMemberId, "mentor@example.com");
+    assert.deepEqual(lastAction?.changedFields, ["finalizedAt", "finalizedBy", "status"]);
     resetLimits();
 
     const importRunResponse = await app.inject({
@@ -1572,5 +1837,48 @@ test("finalize is blocked while required mappings need review", async () => {
     });
     assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
     assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, "FINALIZED");
+  });
+});
+
+test("failed STEP finalization leaves snapshot, import run, and audit unchanged", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "rollback-finalize", cadFixture());
+    const actionCountBeforeFinalize = getSnapshot().actions?.length ?? 0;
+    resetLimits();
+
+    setCadRuntimeStoreFinalizeFailureForTest(new Error("simulated finalize persistence failure"));
+
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: `/api/cad/snapshots/${result.snapshot.id}/finalize`,
+        payload: { allowUnresolved: true, finalizedBy: "mentor@example.com" },
+      });
+      assert.equal(failed.statusCode, 500, failed.body);
+      assert.equal(getSnapshot().actions?.length ?? 0, actionCountBeforeFinalize);
+    } finally {
+      setCadRuntimeStoreFinalizeFailureForTest(null);
+    }
+    resetLimits();
+
+    const snapshotResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}`,
+    });
+    assert.equal(snapshotResponse.statusCode, 200, snapshotResponse.body);
+    const snapshotBody = snapshotResponse.json() as { item: { status: string; finalizedAt: string | null; finalizedBy: string | null } };
+    assert.equal(snapshotBody.item.status, result.snapshot.status);
+    assert.equal(snapshotBody.item.finalizedAt, null);
+    assert.equal(snapshotBody.item.finalizedBy, null);
+    resetLimits();
+
+    const importRunResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/import-runs/${result.importRun.id}`,
+    });
+    assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
+    assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, result.importRun.status);
   });
 });
