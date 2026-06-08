@@ -354,7 +354,7 @@ These must still be reviewed if they exceed:
 
 Exceeding any hard limit is not allowed.
 # Cross-repo active PR notes
-- Shared context optimization stack now includes all implemented Mission Control adapters through commit `2bc7e89` in `mission-control-skills` (Repomix, Repository-Intelligence, Graphify, Static Analysis, Evaluation, Observability, and Semantic Retrieval).
+- Shared context optimization stack now includes all implemented Mission Control adapters through commit `41f76cf` in `mission-control-skills` (Repomix, Repository-Intelligence, Graphify, Static Analysis, Evaluation, Observability, and Semantic Retrieval).
 - Open cross-repo PR onboarding:
   - Primary context PR: `pr-286` (`mission-control-skills`).
   - Keep `AGENTS.md` cross-repo notes synchronized with `pr-286` before review.
