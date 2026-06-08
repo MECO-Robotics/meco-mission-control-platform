@@ -353,3 +353,11 @@ These must still be reviewed if they exceed:
 * Max imports: 150 lines
 
 Exceeding any hard limit is not allowed.
+# Cross-repo active PR notes
+- Shared context architecture changes live in `mission-control-skills` and are consumed by all repo PRs. Main change: repository-intelligence + repomix task-context bridge (commit: 46bab41).
+- Open cross-repo PR onboarding:
+  - Primary context PR: `pr-286` (`mission-control-skills`).
+  - Keep `AGENTS.md` cross-repo notes synchronized with `pr-286` before review.
+  - Graphify adapter updates now include cross-repo task graph/query support; keep the mission-control-skills commit history aligned with this review context.
+  - Mission Control Static Analysis adapter (`mission-control-skills`) is now part of cross-repo context generation and review workflows; keep task findings, summaries, and merge-readiness expectations synchronized.
+  - Mission Control Evaluation adapter (`mission-control-skills`) is now active for prompt-based agent/workflow/retrieval scoring; ensure cross-repo PR artifacts include scorecards and regression checks.

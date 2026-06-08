@@ -1,65 +1,103 @@
 # Shared Skills Workflow
 
-Mission Control app repos import `skills/` as local ignored files. The shared source of truth is the separate `mission-control-skills` repo, and each app repo hydrates a local copy from that source when needed.
-
-In this workspace the app repos are `meco-mission-control-web`, `meco-mission-control-platform`, and `meco-mission-control-mobile`. Older shorthand may call them `mission-control-web`, `mission-control-api`, and `mission-control-mobile`.
-
-## Why Ignored Imports Instead of Submodules
-
-Git submodules embed another repository with separate history and a pinned commit. That adds extra clone, checkout, update, and CI handling. GitHub Actions also needs explicit submodule checkout configuration. For students, mentors, and Codex agents, a script-managed local import is simpler to refresh and keeps app repo diffs focused.
-
-This repo intentionally does not use `.gitmodules`, `git submodule add`, or a nested Git repository under `skills/`.
-
-The app repos track the sync scripts and documentation, not the imported skill files. `skills/` is intentionally ignored by Git.
-
-## Shared Source Layout
-
-The shared `mission-control-skills` repo should contain:
-
-```text
-skills/
-  app-architecture/
-  ui-review/
-  api-review/
-  frc-domain/
-  github-project-management/
-  meco-writing-style/
-```
-
-## Update Shared Source
-
-```bash
-cd mission-control-skills
-git add skills
-git commit -m "Update shared skills"
-git push
-```
-
-## Import Into an App Repo
-
-```bash
-cd meco-mission-control-web
-bash scripts/sync-skills.sh
-```
-
-Do not `git add skills`. The imported directory is intentionally ignored and should stay out of app repo commits.
-
-## Override the Shared Repo
-
-The scripts default to:
+Mission Control repo-specific Codex skills are stored in a separate canonical repository:
 
 ```text
 https://github.com/MECO-Robotics/mission-control-skills.git
 ```
 
-Use `SKILLS_REPO` to point at a fork, local test repo, or alternate remote.
+The app repos `meco-mission-control-web`, `meco-mission-control-platform`, and `meco-mission-control-mobile` import `skills/` as local ignored files. The shared repo is the only place the skill files themselves should be versioned.
+
+## Storage Decision
+
+Use a separate shared Git repo plus script-managed ignored imports.
+
+Do not use Git submodules. Submodules add separate checkout, update, and CI handling, and they make student, mentor, and Codex workflows more fragile.
+
+Do not publish these skills as an npm package. Codex skills are repository files, not runtime application dependencies, and package installation would mix contributor tooling with app dependency management.
+
+Do not copy and commit `skills/` into app repos. Copied tracked skills drift across web, platform, and mobile. App repos track only the sync scripts, CI workflow, and this documentation.
+
+## Shared Source Layout
+
+The shared `mission-control-skills` repo uses this canonical layout:
+
+```text
+skills/
+  <skill-name>/
+    SKILL.md
+```
+
+## Versioning And Releases
+
+Shared skill releases use SemVer tags:
+
+```text
+vMAJOR.MINOR.PATCH
+```
+
+- Major: breaking workflow or skill contract changes that require coordinated app repo updates.
+- Minor: new skills or compatible behavior changes.
+- Patch: wording fixes, clarifications, and non-breaking instruction updates.
+
+`main` in `mission-control-skills` is the integration branch. App repos should pin stable releases with `SKILLS_REF=vX.Y.Z` once a release tag exists. Local testing may use `SKILLS_REF=main`, a feature branch, or a commit SHA.
+
+Release workflow:
 
 ```bash
-SKILLS_REPO=git@github.com:MECO-Robotics/mission-control-skills.git bash scripts/sync-skills.sh
+cd mission-control-skills
+git checkout -b feature/update-shared-skills origin/main
+git add skills README.md
+git commit -m "Update shared skills"
+git push -u origin feature/update-shared-skills
+```
+
+Open a pull request into `main`, review it, and merge it. Then tag the merged release:
+
+```bash
+git checkout main
+git pull
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+After tagging a release, announce the new tag and update the `SKILLS_REF` repository variable in web, platform, and mobile.
+
+## Import Into An App Repo
+
+From an app repo root:
+
+```bash
+SKILLS_REF=vX.Y.Z bash scripts/sync-skills.sh
+```
+
+On PowerShell:
+
+```powershell
+$env:SKILLS_REF = "vX.Y.Z"
+.\scripts\sync-skills.ps1
+```
+
+Do not `git add skills`. The imported directory is intentionally ignored and should stay out of app repo commits.
+
+## Configuration
+
+The scripts default to:
+
+```text
+SKILLS_REPO=https://github.com/MECO-Robotics/mission-control-skills.git
+SKILLS_REF=<shared repo default branch>
+```
+
+Use `SKILLS_REPO` to point at a fork, local test repo, or alternate remote. Use `SKILLS_REF` to pin a release tag, branch, or commit SHA.
+
+```bash
+SKILLS_REPO=git@github.com:MECO-Robotics/mission-control-skills.git SKILLS_REF=vX.Y.Z bash scripts/sync-skills.sh
 ```
 
 ```powershell
 $env:SKILLS_REPO = "git@github.com:MECO-Robotics/mission-control-skills.git"
+$env:SKILLS_REF = "vX.Y.Z"
 .\scripts\sync-skills.ps1
 ```
 
@@ -69,8 +107,15 @@ $env:SKILLS_REPO = "git@github.com:MECO-Robotics/mission-control-skills.git"
 bash scripts/check-skills-current.sh
 ```
 
-The check delegates to `scripts/sync-skills.sh`, imports the shared skills into ignored local state, and exits nonzero if the import fails.
-CI runs the same import check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
+The check uses the configured `SKILLS_REPO` and `SKILLS_REF`, imports or compares the shared skills depending on the repo script, and exits nonzero when the import fails.
+
+CI runs the same import check on pull requests and pushes. Configure:
+
+- `SKILLS_REPO` as an optional repository variable or secret when the default repo is not correct.
+- `SKILLS_REF` as a repository variable pinned to the approved release tag.
+- `SKILLS_REPO_DEPLOY_KEY` or `SKILLS_REPO_TOKEN` as a secret if the shared repo is private.
+
+Do not hardcode credentials in scripts or workflow files.
 
 ## Review Imported Files Locally
 
@@ -79,5 +124,3 @@ Inspect the local imported files when changing shared skill behavior:
 ```bash
 find skills -maxdepth 2 -type f | sort
 ```
-
-CI runs the same import check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
