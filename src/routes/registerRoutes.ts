@@ -584,10 +584,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
-    const isPublicDemoBootstrap = !isAuthEnabled() || session?.isPublicDemo || !session;
-    const userKey = isPublicDemoBootstrap && isAuthEnabled()
-      ? "public-demo"
-      : getNavigationPreferenceUserKey(request);
+    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const userKey = isPublicDemoBootstrap ? "public-demo" : getNavigationPreferenceUserKey(request);
     const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
       sanitizeEscalations: isPublicDemoBootstrap,
     });
