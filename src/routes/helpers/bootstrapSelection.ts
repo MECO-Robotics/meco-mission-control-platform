@@ -12,6 +12,7 @@ import type {
   Task,
   TaskDependency,
 } from "../../domain/types";
+import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
 import { uniqueIds } from "./taskTargets";
 
@@ -351,27 +352,29 @@ export function buildBootstrapResponse(
     activeProjectIds.has(workstream.projectId),
   );
   const scopedWorkstreamIds = new Set(scopedWorkstreams.map((workstream) => workstream.id));
-  const scopedSubsystems = snapshot.subsystems.filter((subsystem) =>
-    activeProjectIds.has(subsystem.projectId),
-  );
+  const scopedSubsystems = snapshot.subsystems
+    .filter((subsystem) => activeProjectIds.has(subsystem.projectId))
+    .map(normalizePmCadProvenance);
   const scopedSubsystemIds = new Set(scopedSubsystems.map((subsystem) => subsystem.id));
-  const scopedPartDefinitions = selectedSeasonId
+  const scopedPartDefinitions = (selectedSeasonId
     ? snapshot.partDefinitions.filter((partDefinition) =>
         isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
       )
-    : snapshot.partDefinitions;
-  const scopedMechanisms = snapshot.mechanisms.filter((mechanism) =>
-    scopedSubsystemIds.has(mechanism.subsystemId),
-  );
+    : snapshot.partDefinitions).map(normalizePmCadProvenance);
+  const scopedMechanisms = snapshot.mechanisms
+    .filter((mechanism) => scopedSubsystemIds.has(mechanism.subsystemId))
+    .map(normalizePmCadProvenance);
   const scopedMechanismIds = new Set(scopedMechanisms.map((mechanism) => mechanism.id));
   const scopedArtifacts = snapshot.artifacts.filter((artifact) =>
     activeProjectIds.has(artifact.projectId),
   );
-  const scopedPartInstances = snapshot.partInstances.filter(
-    (partInstance) =>
-      scopedSubsystemIds.has(partInstance.subsystemId) &&
-      (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
-  );
+  const scopedPartInstances = snapshot.partInstances
+    .filter(
+      (partInstance) =>
+        scopedSubsystemIds.has(partInstance.subsystemId) &&
+        (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
+    )
+    .map(normalizePmCadProvenance);
   const scopedPartInstanceIds = new Set(
     scopedPartInstances.map((partInstance) => partInstance.id),
   );

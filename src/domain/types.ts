@@ -80,6 +80,16 @@ export type PartInstanceStatus =
   | "blocked"
   | "qa"
   | "ready";
+export type PmCadSource = "manual" | "step" | "onshape";
+export type PmCadImportSource = "MANUAL" | "STEP_UPLOAD" | "ONSHAPE_API" | "ONSHAPE_BOM_CSV" | "MANUAL_BOM_CSV";
+
+export interface PmCadProvenance {
+  cadSource?: PmCadSource;
+  cadImportSource?: PmCadImportSource;
+  cadEditedAfterImport?: boolean;
+  cadSourceLabel?: string;
+  cadUpdatedAt?: string | null;
+}
 export type QaResult = "pass" | "minor-fix" | "iteration-worthy";
 export type SeasonType = "season" | "offseason" | "initiative";
 export type ProjectType = "robot" | "operations" | "outreach" | "other";
@@ -151,7 +161,7 @@ export interface Member {
   plannedAttendanceNotes?: string;
 }
 
-export interface Subsystem {
+export interface Subsystem extends PmCadProvenance {
   id: string;
   projectId: string;
   name: string;
@@ -174,7 +184,7 @@ export interface Discipline {
   name: string;
 }
 
-export interface Mechanism {
+export interface Mechanism extends PmCadProvenance {
   id: string;
   subsystemId: string;
   name: string;
@@ -185,7 +195,7 @@ export interface Mechanism {
   isArchived: boolean;
 }
 
-export interface PartDefinition {
+export interface PartDefinition extends PmCadProvenance {
   id: string;
   seasonId: string;
   activeSeasonIds?: string[];
@@ -202,7 +212,7 @@ export interface PartDefinition {
   photoUrl?: string;
 }
 
-export interface PartInstance {
+export interface PartInstance extends PmCadProvenance {
   id: string;
   subsystemId: string;
   mechanismId: string | null;

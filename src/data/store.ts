@@ -41,6 +41,11 @@ import {
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
 import {
+  isManualPmCadImportSource,
+  markPmCadEditedAfterImport,
+  normalizePmCadProvenance,
+} from "../domain/pmCadProvenance";
+import {
   dateOnlyFromDateTime,
   formatTimeFromDateTime,
   normalizeMeetingSchedule,
@@ -549,12 +554,30 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
     projects: normalizedProjects,
+    subsystems: clonedSnapshot.subsystems.map((subsystem) => ({
+      ...subsystem,
+      ...normalizePmCadProvenance(subsystem),
+    })),
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
     ),
+    mechanisms: clonedSnapshot.mechanisms.map((mechanism) => ({
+      ...mechanism,
+      ...normalizePmCadProvenance(mechanism),
+    })),
     partDefinitions: clonedSnapshot.partDefinitions.map((partDefinition) =>
-      normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
+      normalizePartDefinitionSeasonMembership(
+        {
+          ...partDefinition,
+          ...normalizePmCadProvenance(partDefinition),
+        },
+        fallbackSeasonId,
+      ),
     ),
+    partInstances: clonedSnapshot.partInstances.map((partInstance) => ({
+      ...partInstance,
+      ...normalizePmCadProvenance(partInstance),
+    })),
     milestones: normalizedMilestones,
     milestoneRequirements: normalizedMilestoneRequirements,
     qaRequests: clonedSnapshot.qaRequests ?? [],
@@ -744,6 +767,18 @@ function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
     const existingPartInstance = partInstanceByKey.get(mergeKey);
 
     if (existingPartInstance) {
+      const existingProvenance = normalizePmCadProvenance(existingPartInstance);
+      const incomingProvenance = normalizePmCadProvenance(normalizedPartInstance);
+      if (
+        isManualPmCadImportSource(existingProvenance.cadImportSource) ||
+        !isManualPmCadImportSource(incomingProvenance.cadImportSource)
+      ) {
+        existingPartInstance.cadSource = incomingProvenance.cadSource;
+        existingPartInstance.cadImportSource = incomingProvenance.cadImportSource;
+        existingPartInstance.cadEditedAfterImport = incomingProvenance.cadEditedAfterImport;
+        existingPartInstance.cadSourceLabel = incomingProvenance.cadSourceLabel;
+        existingPartInstance.cadUpdatedAt = incomingProvenance.cadUpdatedAt;
+      }
       existingPartInstance.quantity += normalizedPartInstance.quantity;
       remappedPartInstanceIds.set(normalizedPartInstance.id, existingPartInstance.id);
       continue;
@@ -2412,6 +2447,7 @@ export function createSubsystem(input: SubsystemInput) {
   const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
   const subsystem: Subsystem = {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
+    ...normalizePmCadProvenance(input),
     projectId: input.projectId,
     name: input.name,
     serialAlias: normalizeSubsystemSerialAlias(input.serialAlias),
@@ -2494,6 +2530,11 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        ...normalizePmCadProvenance({
+          ...subsystem,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(subsystem, input),
+        }),
         serialAlias: nextSerialAlias,
         color: nextColor,
         iteration:
@@ -2697,6 +2738,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
   );
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
+    ...normalizePmCadProvenance(input),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     name: input.name,
@@ -2752,6 +2794,11 @@ export function updatePartDefinition(
       updatedPartDefinition = {
         ...partDefinition,
         ...input,
+        ...normalizePmCadProvenance({
+          ...partDefinition,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(partDefinition, input),
+        }),
         seasonId,
         activeSeasonIds,
         iteration:
@@ -2856,6 +2903,7 @@ export function createMechanism(input: MechanismInput) {
   const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
   const mechanism: Mechanism = {
     id: uniqueId(toSlug(input.name) || "mechanism", mechanismIds),
+    ...normalizePmCadProvenance(input),
     subsystemId: input.subsystemId,
     name: input.name,
     description: input.description,
@@ -2905,6 +2953,7 @@ export function createPartInstance(input: PartInstanceInput) {
   );
   const partInstance: PartInstance = {
     id: uniqueId(toSlug(input.name) || "part-instance", partInstanceIds),
+    ...normalizePmCadProvenance(input),
     subsystemId: input.subsystemId,
     mechanismId: input.mechanismId,
     partDefinitionId: input.partDefinitionId,
@@ -2968,6 +3017,11 @@ export function updatePartInstance(
       updatedPartInstance = {
         ...partInstance,
         ...input,
+        ...normalizePmCadProvenance({
+          ...partInstance,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(partInstance, input),
+        }),
         subsystemId: nextSubsystemId,
         mechanismId: nextMechanismId,
         status:
@@ -3079,6 +3133,11 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       updatedMechanism = {
         ...mechanism,
         ...input,
+        ...normalizePmCadProvenance({
+          ...mechanism,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(mechanism, input),
+        }),
         googleSheetsUrl:
           input.googleSheetsUrl === undefined
             ? mechanism.googleSheetsUrl ?? ""

@@ -71,7 +71,44 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true
+        "additionalProperties": true,
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     "disciplines": {
@@ -85,7 +122,44 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true
+        "additionalProperties": true,
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     "materials": {
@@ -106,14 +180,88 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true
+        "additionalProperties": true,
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     "partInstances": {
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true
+        "additionalProperties": true,
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     "milestones": {

@@ -35,4 +35,9 @@ title: Bootstrap API Contract
   `PlatformSnapshot`. Clients must treat this field as optional and default to `[]` if missing.
 - If `designIterations` is added to `GET /api/bootstrap` in a later release, treat that as a contract-capable
   field change and update the contract together with client bootstrap defaults and normalization helpers.
+- PM object records in `subsystems`, `mechanisms`, `partDefinitions`, and `partInstances` must include
+  `cadSource`, `cadImportSource`, and `cadEditedAfterImport`. `cadSource` is the client-facing normalized bucket
+  (`manual`, `step`, or `onshape`), while `cadImportSource` preserves the backend import source enum
+  (`MANUAL`, `STEP_UPLOAD`, `ONSHAPE_API`, `ONSHAPE_BOM_CSV`, or `MANUAL_BOM_CSV`). Legacy PM records are
+  normalized to manual unless the part definition source text identifies STEP or Onshape provenance.
 - Note: PR checks in this repository require `development`-targeted PRs with all required checks passing before merge.
