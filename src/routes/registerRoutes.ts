@@ -457,10 +457,10 @@ export async function registerRoutes(app: FastifyInstance) {
     const task = getTasks().find((candidate) => candidate.id === taskId);
     return task
       ? {
-          ...task,
-          isBlocked: (task.blockers ?? []).length > 0,
-          isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
-        }
+        ...task,
+        isBlocked: (task.blockers ?? []).length > 0,
+        isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
+      }
       : null;
   };
 
@@ -584,7 +584,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
-    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const isPublicDemoBootstrap = !isAuthEnabled() || session?.isPublicDemo || !session;
     const userKey = isPublicDemoBootstrap
       ? "public-demo"
       : getNavigationPreferenceUserKey(request);
@@ -972,9 +972,9 @@ export async function registerRoutes(app: FastifyInstance) {
       parsed.data.reportType === "QA"
         ? parsed.data.taskId
           ? validateQaReportLinks({
-              taskId: parsed.data.taskId,
-              participantIds: parsed.data.participantIds ?? [],
-            })
+            taskId: parsed.data.taskId,
+            participantIds: parsed.data.participantIds ?? [],
+          })
           : "The selected task does not exist."
         : parsed.data.milestoneId
           ? validateTestResultLinks({ milestoneId: parsed.data.milestoneId })
@@ -2193,9 +2193,9 @@ export async function registerRoutes(app: FastifyInstance) {
       const defaultWorkstreamId =
         !workstreamWasProvided && subsystemWasProvided
           ? resolveWorkstreamId({
-              projectId: nextProjectId,
-              subsystemId: targetIds.subsystemId,
-            })
+            projectId: nextProjectId,
+            subsystemId: targetIds.subsystemId,
+          })
           : targetIds.workstreamId;
       const workstreamIds =
         workstreamWasProvided || !subsystemWasProvided
@@ -2241,10 +2241,10 @@ export async function registerRoutes(app: FastifyInstance) {
       return {
         item: updatedTask
           ? {
-              ...updatedTask,
-              isBlocked: (updatedTask.blockers ?? []).length > 0,
-              isWaitingOnDependency: isTaskWaitingOnDependencies(updatedTask, getSnapshot()),
-            }
+            ...updatedTask,
+            isBlocked: (updatedTask.blockers ?? []).length > 0,
+            isWaitingOnDependency: isTaskWaitingOnDependencies(updatedTask, getSnapshot()),
+          }
           : updatedTask,
       };
     },
@@ -3324,12 +3324,12 @@ export async function registerRoutes(app: FastifyInstance) {
             : parsed.data.partInstanceId,
         partInstanceIds:
           parsed.data.partInstanceIds === undefined &&
-          parsed.data.partInstanceId === undefined
+            parsed.data.partInstanceId === undefined
             ? currentItem.partInstanceIds ?? uniqueIds([currentItem.partInstanceId])
             : uniqueIds([
-                ...(parsed.data.partInstanceIds ?? []),
-                parsed.data.partInstanceId,
-              ]),
+              ...(parsed.data.partInstanceIds ?? []),
+              parsed.data.partInstanceId,
+            ]),
       };
 
       const validationError = validateManufacturingItemLinks(nextItemShape);
