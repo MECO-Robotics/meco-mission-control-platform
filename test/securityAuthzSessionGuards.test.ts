@@ -18,6 +18,11 @@ async function signTestToken(args: {
   hostedDomain?: string;
   accountId?: string;
 }) {
+  const authServicePath = require.resolve("../src/auth/authService");
+  const envPath = require.resolve("../src/config/env");
+  delete require.cache[authServicePath];
+  delete require.cache[envPath];
+
   const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
 
   return signSessionToken({
