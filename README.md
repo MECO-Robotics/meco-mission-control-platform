@@ -317,9 +317,3 @@ On every push to `main`, GitHub Actions will:
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
-
-Backups are created before production deploys under `/opt/pm-backups/server`.
-The deployment and recovery runbook documents what is backed up, how restore
-should be handled, and which rollback option to choose during an incident.
-Use `docs/backup-restore-drill.md` to prove a dump can be restored into a
-disposable local target before relying on it during an incident.
