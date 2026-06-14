@@ -12,6 +12,7 @@ import type { MemberRole } from "../domain/types";
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
 const PUBLIC_DEMO_SEASON_ID = "default-season";
+const EMAIL_DELIVERY_TIMEOUT_MS = 12_000;
 
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
@@ -440,15 +441,41 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
   pendingEmailCodes.set(email, record);
 
   try {
-    await transport.sendMail({
+    const sendMailPromise = transport.sendMail({
       from,
       to: email,
       subject: "Your MECO Mission Control sign-in code",
       text: buildEmailVerificationMessage(code),
       html: buildEmailVerificationHtml(code),
     });
+    void sendMailPromise.catch(() => undefined);
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        sendMailPromise,
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(
+              new AuthError(
+                "The verification email could not be sent. SMTP delivery timed out. Please try again later.",
+                503,
+              ),
+            );
+          }, EMAIL_DELIVERY_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
   } catch (error) {
     pendingEmailCodes.delete(email);
+    if (error instanceof AuthError) {
+      throw error;
+    }
+
     requestEmailDeliveryFailure(error);
   }
 
