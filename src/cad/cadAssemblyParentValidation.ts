@@ -5,6 +5,14 @@ function describeCycle(sourceIds: string[]) {
 }
 
 export function assertAcyclicAssemblyParents(input: CadAssemblyCreateInput[]) {
+  const sourceIds = new Set<string>();
+  for (const node of input) {
+    if (sourceIds.has(node.sourceId)) {
+      throw new Error(`Duplicate assembly sourceId found: ${node.sourceId}`);
+    }
+    sourceIds.add(node.sourceId);
+  }
+
   const parentsBySourceId = new Map(input.map((node) => [node.sourceId, node.parentSourceId ?? null] as const));
 
   for (const node of input) {
