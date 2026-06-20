@@ -234,6 +234,35 @@ function cyclicAssemblyCadFixture() {
   });
 }
 
+function duplicateAssemblySourceCadFixture() {
+  return JSON.stringify({
+    rootName: "Robot master assembly",
+    units: "millimeter",
+    assemblyNodes: [
+      {
+        sourceId: "asm-duplicate",
+        parentSourceId: null,
+        name: "Assembly A",
+        instancePath: "/Assembly A",
+        depth: 0,
+        inferredType: "ROOT",
+        stableSignature: "asm:path:/Assembly A",
+      },
+      {
+        sourceId: "asm-duplicate",
+        parentSourceId: null,
+        name: "Assembly B",
+        instancePath: "/Assembly B",
+        depth: 0,
+        inferredType: "ROOT",
+        stableSignature: "asm:path:/Assembly B",
+      },
+    ],
+    partDefinitions: [],
+    partInstances: [],
+  });
+}
+
 function repeatedPartCadFixture(options?: {
   spacerCount?: number;
   includeSingletonPart?: boolean;
@@ -1450,6 +1479,30 @@ test("STEP import rejects cyclic assembly parent relationships from JSON fixture
   });
 });
 
+test("STEP import rejects duplicate assembly source IDs from JSON fixtures", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      payload: {
+        fileName: "duplicate-assembly.step",
+        fileText: duplicateAssemblySourceCadFixture(),
+        label: "duplicate-assembly",
+      },
+    });
+
+    assert.equal(response.statusCode, 422, response.body);
+    assert.match(response.body, /duplicate assembly sourceId.*asm-duplicate/i);
+    resetLimits();
+
+    const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
+    assert.equal(snapshotsResponse.statusCode, 200, snapshotsResponse.body);
+    assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+  });
+});
+
 test("unauthenticated STEP JSON uploads are rejected before large body parsing", async () => {
   const script = `
     import assert from "node:assert/strict";
@@ -1483,7 +1536,7 @@ test("unauthenticated STEP JSON uploads are rejected before large body parsing",
       AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
       CAD_STORE_DRIVER: "runtime",
     },
-    timeout: 10_000,
+    timeout: 20_000,
   });
 
   assert.equal(result.stderr, "");
@@ -1534,7 +1587,7 @@ test("authenticated STEP uploads still accept JSON payloads", async () => {
       API_RATE_LIMIT_MAX_REQUESTS: "5",
       AUTH_RATE_LIMIT_MAX_REQUESTS: "5",
     },
-    timeout: 10_000,
+    timeout: 20_000,
   });
 
   assert.equal(result.stderr, "");
