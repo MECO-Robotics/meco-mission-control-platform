@@ -14,6 +14,10 @@ data/
 *.err
 *.out
 
+# Codex/GitHub-review scratch artifacts
+.codex/
+.codex_*.json
+
 .env
 .env.local
 .env.production
