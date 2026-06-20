@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "contracts:generate": "node --import tsx scripts/contracts/generate-bootstrap-contract.ts",
     "contracts:verify": "node --import tsx scripts/contracts/verify-bootstrap-contract.ts",
-    "test": "node scripts/test.mjs",
+    "test": "node scripts/run-tests.mjs",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
