@@ -134,7 +134,8 @@ export async function runStepImport(args: {
     });
     const configuredParserMode = args.parserMode ?? "custom";
     const placeholderUsed = stepParserUsedPlaceholder(parsed);
-    if (placeholderUsed && (!args.allowPlaceholder || process.env.NODE_ENV === "production")) {
+    const placeholderAllowed = args.allowPlaceholder === true && process.env.NODE_ENV === "test";
+    if (placeholderUsed && !placeholderAllowed) {
       await appendWarnings({
         store: args.store,
         importRunId: importRun.id,

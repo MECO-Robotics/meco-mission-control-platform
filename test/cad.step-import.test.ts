@@ -1271,6 +1271,47 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
+test("STEP debug parse reports placeholder diagnostics without creating import state", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const initialActionCount = getSnapshot().actions?.length ?? 0;
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "placeholder.step",
+        fileText: uploadedClassStepFixture(),
+      },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const parsed = response.json() as {
+      parserMode: string;
+      parserVersion: string;
+      parserUsedPlaceholder: boolean;
+      warningCodes: string[];
+      warnings: Array<{ code: string }>;
+    };
+    assert.equal(parsed.parserMode, "placeholder");
+    assert.equal(parsed.parserVersion, "mock-step-parser-placeholder-1");
+    assert.equal(parsed.parserUsedPlaceholder, true);
+    assert.ok(parsed.warningCodes.includes("step_parser_placeholder_used"));
+    assert.ok(parsed.warnings.some((warning) => warning.code === "step_parser_placeholder_used"));
+    resetLimits();
+
+    const importRunsResponse = await app.inject({ method: "GET", url: "/api/cad/import-runs" });
+    assert.equal(importRunsResponse.statusCode, 200);
+    assert.equal((importRunsResponse.json() as { items: unknown[] }).items.length, 0);
+    resetLimits();
+
+    const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
+    assert.equal(snapshotsResponse.statusCode, 200);
+    assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+    assert.equal(getSnapshot().actions?.length ?? 0, initialActionCount);
+  }, { env: { CAD_STEP_PARSER_MODE: "placeholder" } });
+});
+
 test("CAD import run and snapshot list filters use their own status enums", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1347,6 +1388,42 @@ test("normal STEP upload rejects placeholder parser mode instead of creating a p
     assert.equal(snapshotsResponse.statusCode, 200);
     assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
   }, { env: { CAD_STEP_PARSER_MODE: "placeholder" } });
+});
+
+test("allowPlaceholder cannot create placeholder snapshots outside test mode", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const { getCadStore } = await import("../src/cad/cadStoreFactory");
+
+    await assert.rejects(
+      runStepImport({
+        store: getCadStore(),
+        parserClient: createPlaceholderStepParserClient(),
+        parserMode: "placeholder",
+        allowPlaceholder: true,
+        input: {
+          fileText: uploadedClassStepFixture(),
+          originalFilename: "placeholder.step",
+          label: "direct-placeholder",
+        },
+      }),
+      /Placeholder STEP parser output is disabled/,
+    );
+    resetLimits();
+
+    const importRunsResponse = await app.inject({ method: "GET", url: "/api/cad/import-runs" });
+    assert.equal(importRunsResponse.statusCode, 200);
+    const runs = importRunsResponse.json() as {
+      items: Array<{ status: string; errorMessage: string | null }>;
+    };
+    assert.equal(runs.items[0]?.status, "FAILED");
+    assert.match(runs.items[0]?.errorMessage ?? "", /Placeholder STEP parser output is disabled/);
+    resetLimits();
+
+    const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
+    assert.equal(snapshotsResponse.statusCode, 200);
+    assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+  });
 });
 
 test("STEP import rejects cyclic assembly parent relationships from JSON fixtures", async () => {
