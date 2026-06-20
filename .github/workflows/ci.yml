@@ -24,6 +24,7 @@ on:
       - ".github/workflows/deploy-vps.yml"
       - ".gitignore"
       - ".dockerignore"
+      - ".nvmrc"
       - "Dockerfile"
       - "docker-compose.prod.yml"
       - "package.json"
