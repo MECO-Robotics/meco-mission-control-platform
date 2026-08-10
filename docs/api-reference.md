@@ -23,8 +23,16 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
 - `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
+- `POST /api/auth/mobile/email/verify`: verifies an email code for a mobile installation and returns the opaque access/refresh session envelope.
+- `POST /api/auth/mobile/refresh`: rotates a single-use refresh token and returns a replacement session envelope.
+- `POST /api/auth/mobile/logout`: revokes the current device session. Accepts the current bearer credential and optional refresh-token body.
+- `POST /api/auth/mobile/logout-all`: revokes every mobile device session for the current account.
+- `GET /api/auth/mobile/sessions`: lists active device sessions for the current account without returning credentials.
+- `DELETE /api/auth/mobile/sessions/:sessionId`: revokes one device session owned by the current account.
 - `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
 - `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs.
+
+Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Legacy mobile JWT requests receive `426 mobile_client_upgrade_required` after the configured compatibility window; browser and nonmobile bearer routes are unchanged.
 
 ## Bootstrap And Dashboards
 
