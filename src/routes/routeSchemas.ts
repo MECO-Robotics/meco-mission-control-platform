@@ -501,7 +501,18 @@ export const purchaseItemSchema = z.object({
   status: z.enum(["requested", "approved", "purchased", "shipped", "delivered"]),
 });
 
-export const purchaseItemPatchSchema = purchaseItemSchema.partial();
+export const purchaseItemPatchSchema = purchaseItemSchema.partial().extend({
+  approvedByMentor: z.boolean().optional(),
+});
+
+export const purchaseApprovalSchema = z.object({
+  approved: z.boolean(),
+}).strict();
+
+export const purchaseTransitionSchema = z.object({
+  status: z.enum(["purchased", "shipped", "delivered"]),
+  finalCost: z.coerce.number().min(0).optional(),
+}).strict();
 
 export const materialSchema = z.object({
   name: z.string().trim().min(2),
@@ -562,7 +573,17 @@ export const manufacturingItemSchema = z.object({
   batchLabel: z.string().trim().min(1).optional(),
 });
 
-export const manufacturingItemPatchSchema = manufacturingItemSchema.partial();
+export const manufacturingItemPatchSchema = manufacturingItemSchema.partial().extend({
+  mentorReviewed: z.boolean().optional(),
+});
+
+export const manufacturingReviewSchema = z.object({
+  reviewed: z.boolean(),
+}).strict();
+
+export const manufacturingTransitionSchema = z.object({
+  status: z.enum(["in-progress", "qa", "complete"]),
+}).strict();
 
 export const workLogSchema = z.object({
   taskId: z.string().trim().min(1),

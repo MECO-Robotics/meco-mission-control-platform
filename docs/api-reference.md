@@ -23,8 +23,16 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
 - `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
+- `POST /api/auth/mobile/email/verify`: verifies an email code for a mobile installation and returns the opaque access/refresh session envelope.
+- `POST /api/auth/mobile/refresh`: rotates a single-use refresh token and returns a replacement session envelope.
+- `POST /api/auth/mobile/logout`: revokes the current device session. Accepts the current bearer credential and optional refresh-token body.
+- `POST /api/auth/mobile/logout-all`: revokes every mobile device session for the current account.
+- `GET /api/auth/mobile/sessions`: lists active device sessions for the current account without returning credentials.
+- `DELETE /api/auth/mobile/sessions/:sessionId`: revokes one device session owned by the current account.
 - `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
 - `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs.
+
+Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Legacy mobile JWT requests receive `426 mobile_client_upgrade_required` after the configured compatibility window; browser and nonmobile bearer routes are unchanged.
 
 ## Bootstrap And Dashboards
 
@@ -110,9 +118,9 @@ Retention policy:
 
 ## Work Logs And Meetings
 
-- `POST /api/work-logs`: create a work log.
-- `PATCH /api/work-logs/:workLogId`: update a work log.
-- `DELETE /api/work-logs/:workLogId`: delete a work log.
+- `POST /api/work-logs`: create a work log. Any internal user may create; the authenticated member is recorded as `createdById` when a matching roster profile exists.
+- `PATCH /api/work-logs/:workLogId`: update a work log. Requires mentor or admin; leads are excluded.
+- `DELETE /api/work-logs/:workLogId`: delete a work log. Requires mentor or admin; leads are excluded.
 - `GET /api/meetings`: list meeting-focused workflow data.
 - `POST /api/meetings`: create a meeting. Requires mentor, lead, or admin when auth is enabled.
 
@@ -145,13 +153,19 @@ Retention policy:
 - `PATCH /api/artifacts/:artifactId`: update an artifact.
 - `DELETE /api/artifacts/:artifactId`: delete an artifact.
 - `GET /api/manufacturing`: list manufacturing items.
-- `POST /api/manufacturing`: create a manufacturing item.
-- `PATCH /api/manufacturing/:itemId`: update a manufacturing item.
-- `DELETE /api/manufacturing/:itemId`: delete a manufacturing item.
+- `POST /api/manufacturing`: create a requested, unreviewed manufacturing item.
+- `PATCH /api/manufacturing/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
+- `PUT /api/manufacturing/:itemId/review`: approve or revoke review with `{ "reviewed": boolean }`. Requires mentor or admin and derives reviewer metadata from the session.
+- `POST /api/manufacturing/:itemId/transition`: advance one step through `approved -> in-progress -> qa -> complete`. Any internal user may advance actively reviewed work.
+- `DELETE /api/manufacturing/:itemId`: delete a manufacturing item. Requires mentor or admin.
 - `GET /api/purchases`: list purchase items.
-- `POST /api/purchases`: create a purchase item.
-- `PATCH /api/purchases/:itemId`: update a purchase item.
-- `DELETE /api/purchases/:itemId`: delete a purchase item.
+- `POST /api/purchases`: create a requested, unapproved purchase item.
+- `PATCH /api/purchases/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
+- `PUT /api/purchases/:itemId/approval`: approve or revoke approval with `{ "approved": boolean }`. Requires mentor or admin and derives approver metadata from the session; approval cannot be revoked after purchasing begins.
+- `POST /api/purchases/:itemId/transition`: advance one step through `approved -> purchased -> shipped -> delivered`. Requires mentor or admin and accepts optional non-negative `finalCost`.
+- `DELETE /api/purchases/:itemId`: delete a purchase item. Requires mentor or admin.
+
+Workflow endpoints return `403` for insufficient role, `404` for a missing item, and `409` for a non-adjacent or otherwise invalid transition.
 
 ## Team And Robot Structure
 

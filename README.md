@@ -125,7 +125,10 @@ GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.c
 # AUTH_JWT_SECRET=
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 AUTH_TOKEN_TTL=12h
+# Legacy mobile JWT issuance is disabled unless explicitly enabled for a bounded migration.
 AUTH_DEVICE_TOKEN_TTL=3650d
+AUTH_LEGACY_MOBILE_JWT_ENABLED=false
+# AUTH_LEGACY_MOBILE_JWT_CUTOFF=2026-09-01T00:00:00Z
 # Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 # Local SMTP sink for email-code testing.
@@ -225,7 +228,10 @@ GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 # AUTH_JWT_SECRET=
 AUTH_TOKEN_TTL=12h
+# Legacy mobile JWT issuance is disabled unless explicitly enabled for a bounded migration.
 AUTH_DEVICE_TOKEN_TTL=3650d
+AUTH_LEGACY_MOBILE_JWT_ENABLED=false
+# AUTH_LEGACY_MOBILE_JWT_CUTOFF=2026-09-01T00:00:00Z
 # Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
@@ -260,7 +266,7 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - The server verifies the Google token against `GOOGLE_CLIENT_ID`.
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - The server issues its own signed app session token with `AUTH_JWT_SECRET`.
-- Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
+- Mobile email sign-in uses a per-install device ID to create a revocable server-side session. Access tokens last one hour, sessions expire after 30 days without a refresh or after 90 days absolutely, and refresh tokens rotate on every use.
 - Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
 - User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
@@ -269,6 +275,14 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 
 For production, the web origin must be configured in the Google Cloud Console OAuth client and served over HTTPS before SSO is enabled on the public site.
 If you only have a static IP, use a mapped HTTPS hostname (for example `178-104-192-162.nip.io` or `178-104-192-162.sslip.io`) while testing and add that exact HTTPS origin in the OAuth client.
+
+## Mobile session API
+
+`POST /api/auth/mobile/email/verify` accepts `{ email, code, deviceId, deviceName? }` and returns the access token as `token`, a single-use `refreshToken`, both expiry timestamps, the device-session summary, and `user`. Refresh with `POST /api/auth/mobile/refresh`; each successful refresh invalidates the previous access and refresh credentials. Reusing an already consumed refresh token revokes the whole device session.
+
+Authenticated mobile clients can use `GET /api/auth/mobile/sessions`, `DELETE /api/auth/mobile/sessions/:sessionId`, `POST /api/auth/mobile/logout`, and `POST /api/auth/mobile/logout-all`. The platform stores only SHA-256 token hashes. Bounded background-on-use cleanup retains invalid token rows for seven days and device-session metadata for 30 days.
+
+Legacy `/api/auth/email/verify` requests containing `deviceId` receive HTTP 426 with code `mobile_client_upgrade_required` unless `AUTH_LEGACY_MOBILE_JWT_ENABLED=true` and the optional `AUTH_LEGACY_MOBILE_JWT_CUTOFF` is still in the future. The same policy rejects previously issued JWTs containing the legacy device claim, forcing a supported client to reauthenticate. Keep the exception time-bounded; browser email sign-in without `deviceId` and existing nonmobile bearer verification are unchanged.
 
 ## Email sign-in fallback
 

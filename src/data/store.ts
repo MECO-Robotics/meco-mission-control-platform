@@ -581,6 +581,22 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     milestones: normalizedMilestones,
     milestoneRequirements: normalizedMilestoneRequirements,
     qaRequests: clonedSnapshot.qaRequests ?? [],
+    workLogs: clonedSnapshot.workLogs.map((workLog) => ({
+      ...workLog,
+      createdById: workLog.createdById ?? null,
+    })),
+    manufacturingItems: clonedSnapshot.manufacturingItems.map((item) => ({
+      ...item,
+      reviewedById: item.reviewedById ?? null,
+      reviewedAt: item.reviewedAt ?? null,
+    })),
+    purchaseItems: clonedSnapshot.purchaseItems.map((item) => ({
+      ...item,
+      approvedById: item.approvedById ?? null,
+      approvedAt: item.approvedAt ?? null,
+      purchasedAt: item.purchasedAt ?? null,
+      deliveredAt: item.deliveredAt ?? null,
+    })),
     meetings: clonedSnapshot.meetings.map((meeting) =>
       normalizeMeetingSchedule(meeting, fallbackSeasonId),
     ),
@@ -4134,7 +4150,10 @@ export function removeMeeting(meetingId: string) {
   return meeting;
 }
 
-export function createWorkLog(input: WorkLogInput) {
+export function createWorkLog(
+  input: WorkLogInput,
+  auditContext: AuditMutationContext = {},
+) {
   const workLog: WorkLog = {
     id: nextWorkLogId(),
     taskId: input.taskId,
@@ -4143,6 +4162,7 @@ export function createWorkLog(input: WorkLogInput) {
     participantIds: input.participantIds,
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
+    createdById: input.createdById ?? null,
   };
 
   currentSnapshot = {
@@ -4160,12 +4180,18 @@ export function createWorkLog(input: WorkLogInput) {
     taskId: workLog.taskId,
     subsystemId: task?.subsystemId ?? null,
     memberIds: workLog.participantIds,
+    actorMemberId: auditContext.actorMemberId ?? workLog.createdById,
+    requestId: auditContext.requestId ?? null,
   });
 
   return workLog;
 }
 
-export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
+export function updateWorkLog(
+  workLogId: string,
+  input: Partial<WorkLogInput>,
+  auditContext: AuditMutationContext = {},
+) {
   const previousWorkLog = currentSnapshot.workLogs.find((workLog) => workLog.id === workLogId);
   let updatedWorkLog: WorkLog | null = null;
 
@@ -4197,6 +4223,8 @@ export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
       taskId: savedWorkLog.taskId,
       subsystemId: task?.subsystemId ?? null,
       memberIds: savedWorkLog.participantIds,
+      actorMemberId: auditContext.actorMemberId ?? savedWorkLog.createdById,
+      requestId: auditContext.requestId ?? null,
       changedFields: collectChangedFields(
         previousWorkLog,
         savedWorkLog,
@@ -4207,7 +4235,10 @@ export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
   return updatedWorkLog;
 }
 
-export function removeWorkLog(workLogId: string) {
+export function removeWorkLog(
+  workLogId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const workLog = currentSnapshot.workLogs.find(
     (candidate) => candidate.id === workLogId,
   );
@@ -4232,6 +4263,8 @@ export function removeWorkLog(workLogId: string) {
     taskId: workLog.taskId,
     subsystemId: task?.subsystemId ?? null,
     memberIds: workLog.participantIds,
+    actorMemberId: auditContext.actorMemberId ?? workLog.createdById,
+    requestId: auditContext.requestId ?? null,
   });
 
   return workLog;
@@ -4366,7 +4399,10 @@ export function removeTask(taskId: string) {
   return task;
 }
 
-export function createPurchaseItem(input: PurchaseItemInput) {
+export function createPurchaseItem(
+  input: PurchaseItemInput,
+  auditContext: AuditMutationContext = {},
+) {
   const itemIds = new Set(currentSnapshot.purchaseItems.map((item) => item.id));
   const item: PurchaseItem = {
     id: uniqueId(toSlug(input.title) || "purchase-item", itemIds),
@@ -4380,6 +4416,10 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     estimatedCost: input.estimatedCost,
     finalCost: input.finalCost,
     approvedByMentor: input.approvedByMentor,
+    approvedById: input.approvedById ?? null,
+    approvedAt: input.approvedAt ?? null,
+    purchasedAt: input.purchasedAt ?? null,
+    deliveredAt: input.deliveredAt ?? null,
     status: input.status,
   };
 
@@ -4396,7 +4436,8 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
@@ -4406,6 +4447,7 @@ export function createPurchaseItem(input: PurchaseItemInput) {
 export function updatePurchaseItem(
   itemId: string,
   input: Partial<PurchaseItemInput>,
+  auditContext: AuditMutationContext = {},
 ) {
   const previousItem = currentSnapshot.purchaseItems.find((item) => item.id === itemId);
   let updatedItem: PurchaseItem | null = null;
@@ -4436,7 +4478,8 @@ export function updatePurchaseItem(
       entityLabel: savedPurchaseItem.title,
       projectId: subsystem?.projectId ?? null,
       subsystemId: savedPurchaseItem.subsystemId,
-      actorMemberId: savedPurchaseItem.requestedById,
+      actorMemberId: auditContext.actorMemberId ?? savedPurchaseItem.requestedById,
+      requestId: auditContext.requestId ?? null,
       memberIds: [savedPurchaseItem.requestedById],
       changedFields: collectChangedFields(
         previousItem,
@@ -4448,7 +4491,10 @@ export function updatePurchaseItem(
   return updatedItem;
 }
 
-export function removePurchaseItem(itemId: string) {
+export function removePurchaseItem(
+  itemId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const item = currentSnapshot.purchaseItems.find(
     (candidate) => candidate.id === itemId,
   );
@@ -4477,14 +4523,18 @@ export function removePurchaseItem(itemId: string) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
   return item;
 }
 
-export function createManufacturingItem(input: ManufacturingItemInput) {
+export function createManufacturingItem(
+  input: ManufacturingItemInput,
+  auditContext: AuditMutationContext = {},
+) {
   const itemIds = new Set(currentSnapshot.manufacturingItems.map((item) => item.id));
   const partInstanceIds = uniqueIds([
     ...(input.partInstanceIds ?? []),
@@ -4505,6 +4555,8 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     quantity: input.quantity,
     status: input.status,
     mentorReviewed: input.mentorReviewed,
+    reviewedById: input.reviewedById ?? null,
+    reviewedAt: input.reviewedAt ?? null,
     inHouse: input.process === "cnc" ? input.inHouse ?? true : true,
     batchLabel: input.batchLabel,
   };
@@ -4522,7 +4574,8 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
@@ -4532,6 +4585,7 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
 export function updateManufacturingItem(
   itemId: string,
   input: Partial<ManufacturingItemInput>,
+  auditContext: AuditMutationContext = {},
 ) {
   const previousItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
   let updatedItem: ManufacturingItem | null = null;
@@ -4574,7 +4628,8 @@ export function updateManufacturingItem(
       entityLabel: savedManufacturingItem.title,
       projectId: subsystem?.projectId ?? null,
       subsystemId: savedManufacturingItem.subsystemId,
-      actorMemberId: savedManufacturingItem.requestedById,
+      actorMemberId: auditContext.actorMemberId ?? savedManufacturingItem.requestedById,
+      requestId: auditContext.requestId ?? null,
       memberIds: [savedManufacturingItem.requestedById],
       changedFields: collectChangedFields(
         previousItem,
@@ -4586,7 +4641,10 @@ export function updateManufacturingItem(
   return updatedItem;
 }
 
-export function removeManufacturingItem(itemId: string) {
+export function removeManufacturingItem(
+  itemId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const item = currentSnapshot.manufacturingItems.find(
     (candidate) => candidate.id === itemId,
   );
@@ -4619,7 +4677,8 @@ export function removeManufacturingItem(itemId: string) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
@@ -4765,6 +4824,7 @@ export function removeMember(memberId: string) {
     })),
     workLogs: currentSnapshot.workLogs.map((workLog) => ({
       ...workLog,
+      createdById: workLog.createdById === memberId ? null : workLog.createdById,
       participantIds: workLog.participantIds.filter(
         (participantId) => participantId !== memberId,
       ),
@@ -4775,10 +4835,12 @@ export function removeMember(memberId: string) {
     manufacturingItems: currentSnapshot.manufacturingItems.map((item) => ({
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
+      reviewedById: item.reviewedById === memberId ? null : item.reviewedById,
     })),
     purchaseItems: currentSnapshot.purchaseItems.map((item) => ({
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
+      approvedById: item.approvedById === memberId ? null : item.approvedById,
     })),
     qaRequests: getQaRequests()
       .filter((request) => request.mentorId !== memberId)

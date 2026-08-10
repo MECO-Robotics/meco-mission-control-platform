@@ -228,41 +228,95 @@ enum OnshapePlanType {
   UNKNOWN
 }
 
+model MobileDeviceSession {
+  id                String               @id @default(cuid())
+  accountId         String
+  authProvider      String
+  email             String
+  name              String
+  picture           String?
+  hostedDomain      String
+  role              String
+  deviceId          String
+  deviceName        String?
+  createdAt         DateTime             @default(now())
+  lastUsedAt        DateTime
+  idleExpiresAt     DateTime
+  absoluteExpiresAt DateTime
+  revokedAt         DateTime?
+  accessTokens      MobileAccessToken[]
+  refreshTokens     MobileRefreshToken[]
+
+  @@index([accountId, revokedAt])
+  @@index([email, revokedAt])
+  @@index([idleExpiresAt])
+  @@index([absoluteExpiresAt])
+}
+
+model MobileAccessToken {
+  id        String              @id @default(cuid())
+  sessionId String
+  tokenHash String              @unique
+  createdAt DateTime            @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  session   MobileDeviceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, revokedAt])
+  @@index([expiresAt])
+}
+
+model MobileRefreshToken {
+  id        String              @id @default(cuid())
+  sessionId String
+  tokenHash String              @unique
+  createdAt DateTime            @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  session   MobileDeviceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, revokedAt])
+  @@index([expiresAt])
+}
+
 model Member {
-  id                        String              @id @default(cuid())
-  name                      String
-  role                      MemberRole
-  plannedWeeklyAttendanceHours Float            @default(0)
-  plannedAttendanceDays     String[]            @default([])
-  plannedAttendanceNotes    String              @default("")
-  ownedTasks                Task[]              @relation("TaskOwner")
-  mentoredTasks             Task[]              @relation("TaskMentor")
-  responsibleSubsystems     Subsystem[]         @relation("ResponsibleEngineer")
-  subsystemMemberships      SubsystemMember[]
-  subsystemMentorships      SubsystemMentor[]
-  workLogParticipants       WorkLogParticipant[]
-  attendanceRecords         AttendanceRecord[]
-  rsvps                     RSVP[]
-  requestedManufacturing    ManufacturingItem[] @relation("ManufacturingRequester")
-  requestedPurchases        PurchaseItem[]      @relation("PurchaseRequester")
-  approvedPurchases         PurchaseItem[]      @relation("PurchaseApprover")
-  qaParticipants            QAParticipant[]
-  mentorApprovedQaReviews   QAReview[]          @relation("QaMentorApprover")
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
+  id                           String               @id @default(cuid())
+  name                         String
+  role                         MemberRole
+  plannedWeeklyAttendanceHours Float                @default(0)
+  plannedAttendanceDays        String[]             @default([])
+  plannedAttendanceNotes       String               @default("")
+  ownedTasks                   Task[]               @relation("TaskOwner")
+  mentoredTasks                Task[]               @relation("TaskMentor")
+  responsibleSubsystems        Subsystem[]          @relation("ResponsibleEngineer")
+  subsystemMemberships         SubsystemMember[]
+  subsystemMentorships         SubsystemMentor[]
+  workLogParticipants          WorkLogParticipant[]
+  createdWorkLogs              WorkLog[]            @relation("WorkLogCreator")
+  attendanceRecords            AttendanceRecord[]
+  rsvps                        RSVP[]
+  requestedManufacturing       ManufacturingItem[]  @relation("ManufacturingRequester")
+  reviewedManufacturing        ManufacturingItem[]  @relation("ManufacturingReviewer")
+  requestedPurchases           PurchaseItem[]       @relation("PurchaseRequester")
+  approvedPurchases            PurchaseItem[]       @relation("PurchaseApprover")
+  qaParticipants               QAParticipant[]
+  mentorApprovedQaReviews      QAReview[]           @relation("QaMentorApprover")
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
 }
 
 model Subsystem {
-  id                    String            @id @default(cuid())
-  name                  String            @unique
+  id                    String              @id @default(cuid())
+  name                  String              @unique
   color                 String?
   description           String?
-  isCore                Boolean           @default(false)
+  isCore                Boolean             @default(false)
   parentSubsystemId     String?
-  parentSubsystem       Subsystem?        @relation("SubsystemParent", fields: [parentSubsystemId], references: [id])
-  childSubsystems       Subsystem[]       @relation("SubsystemParent")
+  parentSubsystem       Subsystem?          @relation("SubsystemParent", fields: [parentSubsystemId], references: [id])
+  childSubsystems       Subsystem[]         @relation("SubsystemParent")
   responsibleEngineerId String
-  responsibleEngineer   Member            @relation("ResponsibleEngineer", fields: [responsibleEngineerId], references: [id])
+  responsibleEngineer   Member              @relation("ResponsibleEngineer", fields: [responsibleEngineerId], references: [id])
   mechanisms            Mechanism[]
   requirements          Requirement[]
   partInstances         PartInstance[]
@@ -272,8 +326,8 @@ model Subsystem {
   members               SubsystemMember[]
   mentors               SubsystemMentor[]
   risks                 Risk[]
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 }
 
 model Discipline {
@@ -286,15 +340,15 @@ model Discipline {
 }
 
 model Mechanism {
-  id           String         @id @default(cuid())
-  subsystemId  String
-  name         String
-  description  String?
-  subsystem    Subsystem      @relation(fields: [subsystemId], references: [id])
+  id            String         @id @default(cuid())
+  subsystemId   String
+  name          String
+  description   String?
+  subsystem     Subsystem      @relation(fields: [subsystemId], references: [id])
   partInstances PartInstance[]
-  tasks        Task[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  tasks         Task[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model Requirement {
@@ -311,36 +365,36 @@ model Requirement {
 }
 
 model PartDefinition {
-  id                 String             @id @default(cuid())
+  id                 String              @id @default(cuid())
   seasonId           String
   activeSeasonIds    String[]
   name               String
-  partNumber         String             @unique
+  partNumber         String              @unique
   revision           String
   type               String
   source             String
   partInstances      PartInstance[]
   manufacturingItems ManufacturingItem[] @relation("ManufacturingPartDefinition")
   purchaseItems      PurchaseItem[]      @relation("PurchasePartDefinition")
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model PartInstance {
-  id                String         @id @default(cuid())
+  id                String             @id @default(cuid())
   partDefinitionId  String
   subsystemId       String
   mechanismId       String?
   name              String
-  quantity          Int            @default(1)
-  trackIndividually Boolean        @default(false)
+  quantity          Int                @default(1)
+  trackIndividually Boolean            @default(false)
   status            PartInstanceStatus @default(NOT_READY)
-  partDefinition    PartDefinition @relation(fields: [partDefinitionId], references: [id])
-  subsystem         Subsystem      @relation(fields: [subsystemId], references: [id])
-  mechanism         Mechanism?     @relation(fields: [mechanismId], references: [id])
+  partDefinition    PartDefinition     @relation(fields: [partDefinitionId], references: [id])
+  subsystem         Subsystem          @relation(fields: [subsystemId], references: [id])
+  mechanism         Mechanism?         @relation(fields: [mechanismId], references: [id])
   tasks             Task[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 }
 
 model SubsystemMember {
@@ -362,62 +416,62 @@ model SubsystemMentor {
 }
 
 model Task {
-  id                      String                @id @default(cuid())
-  title                   String
-  description             String
-  dueDate                 DateTime?
-  priority                TaskPriority
-  status                  TaskStatus            @default(NOT_STARTED)
-  estimatedHours          Float?
-  actualHours             Float?
-  requiresDocumentation   Boolean               @default(true)
-  documentationUrl        String?
-  subsystemId             String
-  disciplineId            String
-  requirementId           String?
-  mechanismId             String?
-  partInstanceId          String?
-  targetMilestoneId         String?
-  ownerId                 String
-  assigneeIds             String[]
-  mentorId                String
-  parentTaskId            String?
-  subsystem               Subsystem             @relation(fields: [subsystemId], references: [id])
-  discipline              Discipline            @relation(fields: [disciplineId], references: [id])
-  requirement             Requirement?          @relation(fields: [requirementId], references: [id])
-  mechanism               Mechanism?            @relation(fields: [mechanismId], references: [id])
-  partInstance            PartInstance?         @relation(fields: [partInstanceId], references: [id])
-  targetMilestone           Milestone?            @relation(fields: [targetMilestoneId], references: [id])
-  owner                   Member                @relation("TaskOwner", fields: [ownerId], references: [id])
-  mentor                  Member                @relation("TaskMentor", fields: [mentorId], references: [id])
-  parentTask              Task?                 @relation("TaskIterations", fields: [parentTaskId], references: [id])
-  iterationTasks          Task[]                @relation("TaskIterations")
-  workLogs                WorkLog[]
-  qaReviews               QAReview[]
-  blockers                TaskBlocker[]
-  dependencies            TaskDependency[]      @relation("TaskDependsOn")
-  dependentTasks          TaskDependency[]      @relation("TaskRequiredBy")
-  manufacturingLinks      TaskManufacturingItem[]
-  purchaseLinks           TaskPurchaseItem[]
-  riskLinks               RiskTask[]
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
+  id                    String                  @id @default(cuid())
+  title                 String
+  description           String
+  dueDate               DateTime?
+  priority              TaskPriority
+  status                TaskStatus              @default(NOT_STARTED)
+  estimatedHours        Float?
+  actualHours           Float?
+  requiresDocumentation Boolean                 @default(true)
+  documentationUrl      String?
+  subsystemId           String
+  disciplineId          String
+  requirementId         String?
+  mechanismId           String?
+  partInstanceId        String?
+  targetMilestoneId     String?
+  ownerId               String
+  assigneeIds           String[]
+  mentorId              String
+  parentTaskId          String?
+  subsystem             Subsystem               @relation(fields: [subsystemId], references: [id])
+  discipline            Discipline              @relation(fields: [disciplineId], references: [id])
+  requirement           Requirement?            @relation(fields: [requirementId], references: [id])
+  mechanism             Mechanism?              @relation(fields: [mechanismId], references: [id])
+  partInstance          PartInstance?           @relation(fields: [partInstanceId], references: [id])
+  targetMilestone       Milestone?              @relation(fields: [targetMilestoneId], references: [id])
+  owner                 Member                  @relation("TaskOwner", fields: [ownerId], references: [id])
+  mentor                Member                  @relation("TaskMentor", fields: [mentorId], references: [id])
+  parentTask            Task?                   @relation("TaskIterations", fields: [parentTaskId], references: [id])
+  iterationTasks        Task[]                  @relation("TaskIterations")
+  workLogs              WorkLog[]
+  qaReviews             QAReview[]
+  blockers              TaskBlocker[]
+  dependencies          TaskDependency[]        @relation("TaskDependsOn")
+  dependentTasks        TaskDependency[]        @relation("TaskRequiredBy")
+  manufacturingLinks    TaskManufacturingItem[]
+  purchaseLinks         TaskPurchaseItem[]
+  riskLinks             RiskTask[]
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 }
 
 model Milestone {
-  id                 String    @id @default(cuid())
-  title              String
-  type               MilestoneType
-  status             MilestoneStatus @default(NOT_READY)
-  startDateTime      DateTime
-  endDateTime        DateTime?
-  isExternal         Boolean   @default(false)
-  description        String?
-  projectIds         String[]
+  id                  String          @id @default(cuid())
+  title               String
+  type                MilestoneType
+  status              MilestoneStatus @default(NOT_READY)
+  startDateTime       DateTime
+  endDateTime         DateTime?
+  isExternal          Boolean         @default(false)
+  description         String?
+  projectIds          String[]
   relatedSubsystemIds String[]
-  tasks              Task[]
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  tasks               Task[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 }
 
 model TaskDependency {
@@ -445,9 +499,13 @@ model WorkLog {
   loggedAt     DateTime
   hours        Float
   notes        String?
+  createdById  String?
   task         Task                 @relation(fields: [taskId], references: [id])
+  createdBy    Member?              @relation("WorkLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
   participants WorkLogParticipant[]
   createdAt    DateTime             @default(now())
+
+  @@index([createdById])
 }
 
 model WorkLogParticipant {
@@ -488,53 +546,58 @@ model RSVP {
 }
 
 model AttendanceRecord {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   meetingId   String
   memberId    String
   signedInAt  DateTime
   signedOutAt DateTime?
   totalHours  Float
   notes       String?
-  meeting     Meeting  @relation(fields: [meetingId], references: [id])
-  member      Member   @relation(fields: [memberId], references: [id])
+  meeting     Meeting   @relation(fields: [meetingId], references: [id])
+  member      Member    @relation(fields: [memberId], references: [id])
 
   @@unique([meetingId, memberId])
 }
 
 model ManufacturingBatch {
-  id        String               @id @default(cuid())
-  label     String               @unique
+  id        String                @id @default(cuid())
+  label     String                @unique
   dueDate   DateTime?
   material  String?
   process   ManufacturingProcess?
   items     ManufacturingItem[]
-  createdAt DateTime             @default(now())
+  createdAt DateTime              @default(now())
 }
 
 model ManufacturingItem {
-  id                String                @id @default(cuid())
-  title             String
-  dueDate           DateTime?
-  priority          TaskPriority?
-  material          String?
-  materialId        String?
-  partDefinitionId  String?
-  quantity          Int                   @default(1)
-  mentorReviewed    Boolean               @default(false)
-  inHouse           Boolean               @default(true)
-  process           ManufacturingProcess
-  status            ManufacturingStatus   @default(REQUESTED)
-  subsystemId       String
-  requestedById     String
-  batchId           String?
-  subsystem         Subsystem             @relation(fields: [subsystemId], references: [id])
-  requestedBy       Member                @relation("ManufacturingRequester", fields: [requestedById], references: [id])
-  batch             ManufacturingBatch?   @relation(fields: [batchId], references: [id])
-  partDefinition    PartDefinition?       @relation("ManufacturingPartDefinition", fields: [partDefinitionId], references: [id])
-  qaReviews         QAReview[]
-  taskLinks         TaskManufacturingItem[]
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
+  id               String                  @id @default(cuid())
+  title            String
+  dueDate          DateTime?
+  priority         TaskPriority?
+  material         String?
+  materialId       String?
+  partDefinitionId String?
+  quantity         Int                     @default(1)
+  mentorReviewed   Boolean                 @default(false)
+  reviewedById     String?
+  reviewedAt       DateTime?
+  inHouse          Boolean                 @default(true)
+  process          ManufacturingProcess
+  status           ManufacturingStatus     @default(REQUESTED)
+  subsystemId      String
+  requestedById    String
+  batchId          String?
+  subsystem        Subsystem               @relation(fields: [subsystemId], references: [id])
+  requestedBy      Member                  @relation("ManufacturingRequester", fields: [requestedById], references: [id])
+  reviewedBy       Member?                 @relation("ManufacturingReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  batch            ManufacturingBatch?     @relation(fields: [batchId], references: [id])
+  partDefinition   PartDefinition?         @relation("ManufacturingPartDefinition", fields: [partDefinitionId], references: [id])
+  qaReviews        QAReview[]
+  taskLinks        TaskManufacturingItem[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([reviewedById])
 }
 
 model TaskManufacturingItem {
@@ -618,8 +681,8 @@ model Risk {
 model RiskTask {
   riskId String
   taskId String
-  risk   Risk @relation(fields: [riskId], references: [id])
-  task   Task @relation(fields: [taskId], references: [id])
+  risk   Risk   @relation(fields: [riskId], references: [id])
+  task   Task   @relation(fields: [taskId], references: [id])
 
   @@id([riskId, taskId])
 }
@@ -637,24 +700,24 @@ model OnshapeConnection {
 }
 
 model OnshapeDocumentRef {
-  id                 String         @id @default(cuid())
-  projectId          String?
-  seasonId           String?
-  subsystemId        String?
-  mechanismId        String?
-  label              String
-  documentId         String
-  workspaceId        String?
-  versionId          String?
-  microversionId     String?
-  elementId          String?
-  originalUrl        String
-  parsedUrlJson      Json
-  createdBy          String?
-  importRuns         CadImportRun[]
-  snapshots          CadSnapshot[]
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  projectId      String?
+  seasonId       String?
+  subsystemId    String?
+  mechanismId    String?
+  label          String
+  documentId     String
+  workspaceId    String?
+  versionId      String?
+  microversionId String?
+  elementId      String?
+  originalUrl    String
+  parsedUrlJson  Json
+  createdBy      String?
+  importRuns     CadImportRun[]
+  snapshots      CadSnapshot[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([documentId])
   @@index([workspaceId])
@@ -665,11 +728,11 @@ model OnshapeDocumentRef {
 }
 
 model CadImportRun {
-  id                   String              @id @default(cuid())
+  id                   String                 @id @default(cuid())
   projectId            String?
   seasonId             String?
   source               CadImportSource
-  status               CadImportStatus     @default(PENDING)
+  status               CadImportStatus        @default(PENDING)
   originalFilename     String
   uploadedFileId       String?
   uploadedFileHash     String?
@@ -682,14 +745,14 @@ model CadImportRun {
   onshapeDocumentRefId String?
   syncLevel            CadSyncLevel?
   callsEstimated       Int?
-  callsUsed            Int                 @default(0)
+  callsUsed            Int                    @default(0)
   stoppedReason        String?
-  documentRef          OnshapeDocumentRef? @relation(fields: [onshapeDocumentRefId], references: [id])
+  documentRef          OnshapeDocumentRef?    @relation(fields: [onshapeDocumentRefId], references: [id])
   requestLogs          OnshapeApiRequestLog[]
   snapshots            CadSnapshot[]
   warnings             CadImportWarning[]
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   @@index([projectId])
   @@index([seasonId])
@@ -700,19 +763,19 @@ model CadImportRun {
 }
 
 model OnshapeApiRequestLog {
-  id                   String        @id @default(cuid())
-  importRunId          String?
-  endpoint             String
-  method               String
-  cacheKey             String
-  usedCache            Boolean       @default(false)
-  statusCode           Int?
-  requestStartedAt     DateTime      @default(now())
-  requestCompletedAt   DateTime?
-  responseHeadersJson  Json
-  rateLimitRemaining   Int?
-  errorMessage         String?
-  importRun            CadImportRun? @relation(fields: [importRunId], references: [id])
+  id                  String        @id @default(cuid())
+  importRunId         String?
+  endpoint            String
+  method              String
+  cacheKey            String
+  usedCache           Boolean       @default(false)
+  statusCode          Int?
+  requestStartedAt    DateTime      @default(now())
+  requestCompletedAt  DateTime?
+  responseHeadersJson Json
+  rateLimitRemaining  Int?
+  errorMessage        String?
+  importRun           CadImportRun? @relation(fields: [importRunId], references: [id])
 
   @@index([importRunId])
   @@index([cacheKey])
@@ -720,8 +783,8 @@ model OnshapeApiRequestLog {
 }
 
 model OnshapeApiCacheEntry {
-  id                  String   @id @default(cuid())
-  cacheKey            String   @unique
+  id                  String    @id @default(cuid())
+  cacheKey            String    @unique
   endpoint            String
   method              String
   requestHash         String
@@ -732,8 +795,8 @@ model OnshapeApiCacheEntry {
   versionId           String?
   microversionId      String?
   elementId           String?
-  immutable           Boolean  @default(false)
-  createdAt           DateTime @default(now())
+  immutable           Boolean   @default(false)
+  createdAt           DateTime  @default(now())
   expiresAt           DateTime?
 
   @@index([documentId])
@@ -745,7 +808,7 @@ model OnshapeApiCacheEntry {
 }
 
 model CadSnapshot {
-  id                   String              @id @default(cuid())
+  id                   String               @id @default(cuid())
   projectId            String?
   seasonId             String?
   importRunId          String
@@ -768,7 +831,7 @@ model CadSnapshot {
   versionId            String?
   microversionId       String?
   elementId            String?
-  immutable            Boolean             @default(true)
+  immutable            Boolean              @default(true)
   documentRef          OnshapeDocumentRef?  @relation(fields: [onshapeDocumentRefId], references: [id])
   importRun            CadImportRun         @relation(fields: [importRunId], references: [id])
   previousSnapshot     CadSnapshot?         @relation("CadSnapshotHistory", fields: [previousSnapshotId], references: [id])
@@ -793,28 +856,28 @@ model CadSnapshot {
 }
 
 model CadAssemblyNode {
-  id                    String                  @id @default(cuid())
-  snapshotId            String
-  sourceId              String
-  parentSourceId        String?
-  parentAssemblyNodeId  String?
-  name                  String
-  normalizedName        String
-  instancePath          String
-  depth                 Int
-  inferredType          CadAssemblyInferredType @default(UNKNOWN)
-  stableSignature       String
-  metadataJson          Json
-  documentId            String?
-  elementId             String?
-  assemblyInstanceId    String?
-  subsystemId           String?
-  mechanismId           String?
-  snapshot              CadSnapshot             @relation(fields: [snapshotId], references: [id])
-  parentAssemblyNode    CadAssemblyNode?         @relation("CadAssemblyTree", fields: [parentAssemblyNodeId], references: [id])
-  childAssemblyNodes    CadAssemblyNode[]        @relation("CadAssemblyTree")
-  partInstances         CadPartInstance[]        @relation("CadAssemblyPartInstances")
-  createdAt             DateTime                @default(now())
+  id                   String                  @id @default(cuid())
+  snapshotId           String
+  sourceId             String
+  parentSourceId       String?
+  parentAssemblyNodeId String?
+  name                 String
+  normalizedName       String
+  instancePath         String
+  depth                Int
+  inferredType         CadAssemblyInferredType @default(UNKNOWN)
+  stableSignature      String
+  metadataJson         Json
+  documentId           String?
+  elementId            String?
+  assemblyInstanceId   String?
+  subsystemId          String?
+  mechanismId          String?
+  snapshot             CadSnapshot             @relation(fields: [snapshotId], references: [id])
+  parentAssemblyNode   CadAssemblyNode?        @relation("CadAssemblyTree", fields: [parentAssemblyNodeId], references: [id])
+  childAssemblyNodes   CadAssemblyNode[]       @relation("CadAssemblyTree")
+  partInstances        CadPartInstance[]       @relation("CadAssemblyPartInstances")
+  createdAt            DateTime                @default(now())
 
   @@unique([snapshotId, sourceId])
   @@index([snapshotId])
@@ -825,28 +888,28 @@ model CadAssemblyNode {
 }
 
 model CadPartDefinition {
-  id                         String              @id @default(cuid())
-  snapshotId                 String
-  sourceId                   String
-  name                       String
-  normalizedName             String
-  partNumber                 String?
-  material                   String?
-  stableSignature            String
-  metadataJson               Json
-  documentId                 String?
-  elementId                  String?
-  partId                     String?
-  versionId                  String?
-  microversionId             String?
-  mass                       Float?
-  configuration              String?
-  customPropertiesJson       Json?
-  metadataHash               String?
-  missionControlExternalKey  String?
-  snapshot                   CadSnapshot         @relation(fields: [snapshotId], references: [id])
-  instances                  CadPartInstance[]
-  createdAt                  DateTime            @default(now())
+  id                        String            @id @default(cuid())
+  snapshotId                String
+  sourceId                  String
+  name                      String
+  normalizedName            String
+  partNumber                String?
+  material                  String?
+  stableSignature           String
+  metadataJson              Json
+  documentId                String?
+  elementId                 String?
+  partId                    String?
+  versionId                 String?
+  microversionId            String?
+  mass                      Float?
+  configuration             String?
+  customPropertiesJson      Json?
+  metadataHash              String?
+  missionControlExternalKey String?
+  snapshot                  CadSnapshot       @relation(fields: [snapshotId], references: [id])
+  instances                 CadPartInstance[]
+  createdAt                 DateTime          @default(now())
 
   @@unique([snapshotId, sourceId])
   @@index([snapshotId])
@@ -944,19 +1007,19 @@ model CadSnapshotMapping {
 }
 
 model CadImportWarning {
-  id            String                @id @default(cuid())
-  importRunId   String
-  snapshotId    String?
-  severity      CadWarningSeverity
-  code          String
-  title         String
-  message       String
-  sourceKind    CadMappingSourceKind?
-  sourceId      String?
-  metadataJson  Json
-  importRun     CadImportRun          @relation(fields: [importRunId], references: [id])
-  snapshot      CadSnapshot?          @relation(fields: [snapshotId], references: [id])
-  createdAt     DateTime              @default(now())
+  id           String                @id @default(cuid())
+  importRunId  String
+  snapshotId   String?
+  severity     CadWarningSeverity
+  code         String
+  title        String
+  message      String
+  sourceKind   CadMappingSourceKind?
+  sourceId     String?
+  metadataJson Json
+  importRun    CadImportRun          @relation(fields: [importRunId], references: [id])
+  snapshot     CadSnapshot?          @relation(fields: [snapshotId], references: [id])
+  createdAt    DateTime              @default(now())
 
   @@index([importRunId])
   @@index([snapshotId])

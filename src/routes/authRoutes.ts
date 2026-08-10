@@ -4,6 +4,7 @@ import {
   AuthError,
   buildDevelopmentSessionUser,
   getPublicAuthConfig,
+  isLegacyMobileJwtIssuanceAllowed,
   isAuthEnabled,
   requestEmailSignInCode,
   requireSession,
@@ -155,6 +156,14 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       return reply.code(400).send({
         message: "Email verification payload is invalid.",
         issues: parsed.error.flatten(),
+      });
+    }
+
+    if (parsed.data.deviceId && !isLegacyMobileJwtIssuanceAllowed()) {
+      return reply.code(426).send({
+        error: "mobile_client_upgrade_required",
+        message: "Update MECO Mission Control Mobile to continue signing in.",
+        code: "mobile_client_upgrade_required",
       });
     }
 

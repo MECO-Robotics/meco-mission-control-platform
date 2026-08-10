@@ -49,7 +49,13 @@ Common production knobs:
   `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`,
   `AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS`, and `AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS`.
 - Auth lifetime/domain: `GOOGLE_ALLOWED_HOSTED_DOMAIN`, `AUTH_TOKEN_TTL`,
-  `AUTH_DEVICE_TOKEN_TTL`, and optional `AUTH_MENTOR_EMAILS`.
+  legacy-only `AUTH_DEVICE_TOKEN_TTL`, `AUTH_LEGACY_MOBILE_JWT_ENABLED`, optional
+  `AUTH_LEGACY_MOBILE_JWT_CUTOFF`, and optional `AUTH_MENTOR_EMAILS`.
+- Mobile session records are deployed from `prisma/schema.prisma` through the
+  repository's existing `prisma db push` deployment step. Keep legacy mobile
+  JWT issuance disabled after supported clients use the opaque refresh flow;
+  if a transition window is required, set both the enable flag and an explicit
+  UTC cutoff.
 - Email code behavior: `AUTH_EMAIL_CODE_TTL_MINUTES`,
   `AUTH_EMAIL_CODE_LENGTH`, `AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS`, and
   `AUTH_EMAIL_MAX_VERIFY_ATTEMPTS`.

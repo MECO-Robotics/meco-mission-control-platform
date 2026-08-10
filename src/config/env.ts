@@ -15,6 +15,12 @@ const optionalJwtSecret = z.preprocess(
   z.string().min(32).optional(),
 );
 
+const optionalDateTime = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim().length === 0 ? undefined : value,
+  z.string().datetime({ offset: true }).optional(),
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
@@ -61,6 +67,8 @@ const envSchema = z.object({
   AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
   AUTH_EMAIL_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_DEVICE_TOKEN_TTL: z.string().min(2).default("3650d"),
+  AUTH_LEGACY_MOBILE_JWT_ENABLED: z.enum(["true", "false"]).default("false"),
+  AUTH_LEGACY_MOBILE_JWT_CUTOFF: optionalDateTime,
   AUTH_MENTOR_EMAILS: z.string().min(1).optional(),
   AUTH_MEMBER_SUBTEAMS_BY_EMAIL: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
@@ -207,6 +215,10 @@ export const authConfig = {
   hostedDomain: env.GOOGLE_ALLOWED_HOSTED_DOMAIN.toLowerCase(),
   tokenTtl: env.AUTH_TOKEN_TTL,
   deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
+  legacyMobileJwtEnabled: env.AUTH_LEGACY_MOBILE_JWT_ENABLED === "true",
+  legacyMobileJwtCutoff: env.AUTH_LEGACY_MOBILE_JWT_CUTOFF
+    ? new Date(env.AUTH_LEGACY_MOBILE_JWT_CUTOFF)
+    : null,
   mentorEmails: new Set(parseCsv(env.AUTH_MENTOR_EMAILS).map((email) => email.toLowerCase())),
   memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   emailEnabled: hasEmailDeliveryConfig,
