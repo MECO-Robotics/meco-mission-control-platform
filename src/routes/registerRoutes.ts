@@ -166,6 +166,8 @@ import {
   milestoneSchema,
   manufacturingItemPatchSchema,
   manufacturingItemSchema,
+  manufacturingReviewSchema,
+  manufacturingTransitionSchema,
   materialPatchSchema,
   materialSchema,
   mediaUploadRequestSchema,
@@ -187,6 +189,8 @@ import {
   riskSchema,
   purchaseItemPatchSchema,
   purchaseItemSchema,
+  purchaseApprovalSchema,
+  purchaseTransitionSchema,
   seasonSchema,
   subsystemPatchSchema,
   subsystemSchema,
@@ -205,6 +209,15 @@ import {
   workstreamPatchSchema,
   workstreamSchema,
 } from "./routeSchemas";
+import {
+  assessGenericPatch,
+  isWorkflowApproverRole,
+  isNoopPatch,
+  validateManufacturingReview,
+  validateManufacturingTransition,
+  validatePurchaseApproval,
+  validatePurchaseTransition,
+} from "./workflowAuthorization";
 import {
   MediaUploadError,
   presignImageUpload,
@@ -407,6 +420,29 @@ export async function registerRoutes(app: FastifyInstance) {
     return false;
   };
 
+  const hasWorkflowApprovalPermission = (
+    request: Parameters<typeof requireSession>[0],
+  ) => {
+    if (!isAuthEnabled()) {
+      return true;
+    }
+
+    return isWorkflowApproverRole(getSessionFromRequest(request)?.role);
+  };
+
+  const requireWorkflowApprovalPermission = (
+    request: Parameters<typeof requireSession>[0],
+    reply: Parameters<typeof requireSession>[1],
+    message: string,
+  ) => {
+    if (hasWorkflowApprovalPermission(request)) {
+      return true;
+    }
+
+    reply.code(403).send({ message });
+    return false;
+  };
+
   const getTaskActionMember = (request: Parameters<typeof requireSession>[0]) => {
     const members = getMembers();
 
@@ -433,6 +469,15 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return null;
+  };
+
+  const getWorkflowApprovalMember = (request: Parameters<typeof requireSession>[0]) => {
+    if (!isAuthEnabled()) {
+      return getMembers().find((member) => member.role === "mentor" || member.role === "admin") ?? null;
+    }
+
+    const actor = getTaskActionMember(request);
+    return actor && isWorkflowApproverRole(actor.role) ? actor : null;
   };
 
   const readAuditRequestId = (request: FastifyRequest) => {
@@ -1332,7 +1377,8 @@ export async function registerRoutes(app: FastifyInstance) {
       ...parsed.data,
       notes: parsed.data.notes.trim(),
       participantIds: Array.from(new Set(parsed.data.participantIds)),
-    });
+      createdById: getTaskActionMember(request)?.id ?? null,
+    }, buildTaskAuditContext(request));
 
     return reply.code(201).send({
       item: workLog,
@@ -1343,6 +1389,14 @@ export async function registerRoutes(app: FastifyInstance) {
     "/api/work-logs/:workLogId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can update work logs.",
+      )) {
         return;
       }
 
@@ -1384,7 +1438,7 @@ export async function registerRoutes(app: FastifyInstance) {
           parsed.data.participantIds === undefined
             ? undefined
             : Array.from(new Set(parsed.data.participantIds)),
-      });
+      }, buildTaskAuditContext(request));
 
       return {
         item: workLog,
@@ -1399,7 +1453,18 @@ export async function registerRoutes(app: FastifyInstance) {
         return;
       }
 
-      const workLog = removeWorkLog(request.params.workLogId);
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can delete work logs.",
+      )) {
+        return;
+      }
+
+      const workLog = removeWorkLog(
+        request.params.workLogId,
+        buildTaskAuditContext(request),
+      );
       if (!workLog) {
         return reply.code(404).send({
           message: "Work log not found.",
@@ -3236,6 +3301,23 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    const initialPolicyFailure = assessGenericPatch({
+      current: { status: "requested", mentorReviewed: false },
+      patch: {
+        status: parsed.data.status,
+        mentorReviewed: parsed.data.mentorReviewed,
+      },
+      protectedFields: ["status", "mentorReviewed"],
+      isApprover: hasWorkflowApprovalPermission(request),
+      isPending: true,
+      entityLabel: "Manufacturing item",
+    });
+    if (initialPolicyFailure) {
+      return reply.code(initialPolicyFailure.statusCode).send({
+        message: initialPolicyFailure.message,
+      });
+    }
+
     const validationError = validateManufacturingItemLinks(parsed.data);
     if (validationError) {
       return reply.code(400).send({
@@ -3275,6 +3357,10 @@ export async function registerRoutes(app: FastifyInstance) {
     ]);
     const item = createManufacturingItem({
       ...parsed.data,
+      status: "requested",
+      mentorReviewed: false,
+      reviewedById: null,
+      reviewedAt: null,
       materialId: resolvedMaterialId,
       partDefinitionId: parsed.data.partDefinitionId ?? null,
       partInstanceId: partInstanceIds[0] ?? null,
@@ -3283,7 +3369,7 @@ export async function registerRoutes(app: FastifyInstance) {
         parsed.data.process === "fabrication" || !partDefinition
           ? parsed.data.title
           : partDefinition.name,
-    });
+    }, buildTaskAuditContext(request));
     return reply.code(201).send({
       item: withManufacturingQaReviewCounts([item])[0],
     });
@@ -3309,6 +3395,25 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.code(404).send({
           message: "Manufacturing item not found.",
         });
+      }
+
+
+      const policyFailure = assessGenericPatch({
+        current: currentItem as unknown as Record<string, unknown>,
+        patch: parsed.data as Record<string, unknown>,
+        protectedFields: ["status", "mentorReviewed", "reviewedById", "reviewedAt"],
+        isApprover: hasWorkflowApprovalPermission(request),
+        isPending: currentItem.status === "requested",
+        entityLabel: "Manufacturing item",
+      });
+      if (policyFailure) {
+        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
+      }
+      if (isNoopPatch(
+        currentItem as unknown as Record<string, unknown>,
+        parsed.data as Record<string, unknown>,
+      )) {
+        return { item: withManufacturingQaReviewCounts([currentItem])[0] };
       }
 
       const nextItemShape = {
@@ -3377,11 +3482,101 @@ export async function registerRoutes(app: FastifyInstance) {
           nextItemShape.process === "fabrication" || !partDefinition
             ? parsed.data.title ?? currentItem.title
             : partDefinition.name,
-      });
+      }, buildTaskAuditContext(request));
 
       return {
         item: item ? withManufacturingQaReviewCounts([item])[0] : item,
       };
+    },
+  );
+
+  app.put<{ Body: unknown; Params: { itemId: string } }>(
+    "/api/manufacturing/:itemId/review",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can review manufacturing items.",
+      )) {
+        return;
+      }
+
+      const parsed = manufacturingReviewSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Manufacturing review payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
+        return reply.code(404).send({ message: "Manufacturing item not found." });
+      }
+
+      if (
+        currentItem.mentorReviewed === parsed.data.reviewed &&
+        ((parsed.data.reviewed && currentItem.status === "approved") ||
+          (!parsed.data.reviewed && currentItem.status === "requested"))
+      ) {
+        return { item: withManufacturingQaReviewCounts([currentItem])[0] };
+      }
+
+      const policyFailure = validateManufacturingReview(currentItem, parsed.data.reviewed);
+      if (policyFailure) {
+        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
+      }
+
+      const actor = getWorkflowApprovalMember(request);
+      if (!actor) {
+        return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
+      }
+      const reviewedAt = parsed.data.reviewed ? new Date().toISOString() : null;
+      const item = updateManufacturingItem(request.params.itemId, {
+        mentorReviewed: parsed.data.reviewed,
+        status: parsed.data.reviewed ? "approved" : "requested",
+        reviewedById: parsed.data.reviewed ? actor.id : null,
+        reviewedAt,
+      }, buildTaskAuditContext(request, actor.id));
+
+      return { item: item ? withManufacturingQaReviewCounts([item])[0] : item };
+    },
+  );
+
+  app.post<{ Body: unknown; Params: { itemId: string } }>(
+    "/api/manufacturing/:itemId/transition",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = manufacturingTransitionSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Manufacturing transition payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
+        return reply.code(404).send({ message: "Manufacturing item not found." });
+      }
+
+      const policyFailure = validateManufacturingTransition(currentItem, parsed.data.status);
+      if (policyFailure) {
+        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
+      }
+
+      const item = updateManufacturingItem(
+        request.params.itemId,
+        { status: parsed.data.status },
+        buildTaskAuditContext(request),
+      );
+      return { item: item ? withManufacturingQaReviewCounts([item])[0] : item };
     },
   );
 
@@ -3392,7 +3587,18 @@ export async function registerRoutes(app: FastifyInstance) {
         return;
       }
 
-      const item = removeManufacturingItem(request.params.itemId);
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can delete manufacturing items.",
+      )) {
+        return;
+      }
+
+      const item = removeManufacturingItem(
+        request.params.itemId,
+        buildTaskAuditContext(request),
+      );
       if (!item) {
         return reply.code(404).send({
           message: "Manufacturing item not found.",
@@ -3432,6 +3638,24 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    const initialPolicyFailure = assessGenericPatch({
+      current: { status: "requested", approvedByMentor: false, finalCost: undefined },
+      patch: {
+        status: parsed.data.status,
+        approvedByMentor: parsed.data.approvedByMentor,
+        finalCost: parsed.data.finalCost,
+      },
+      protectedFields: ["status", "approvedByMentor", "finalCost"],
+      isApprover: hasWorkflowApprovalPermission(request),
+      isPending: true,
+      entityLabel: "Purchase item",
+    });
+    if (initialPolicyFailure) {
+      return reply.code(initialPolicyFailure.statusCode).send({
+        message: initialPolicyFailure.message,
+      });
+    }
+
     const validationError = validatePurchaseItemLinks(parsed.data);
     if (validationError) {
       return reply.code(400).send({
@@ -3450,9 +3674,16 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const item = createPurchaseItem({
       ...parsed.data,
+      status: "requested",
+      approvedByMentor: false,
+      finalCost: undefined,
+      approvedById: null,
+      approvedAt: null,
+      purchasedAt: null,
+      deliveredAt: null,
       partDefinitionId: parsed.data.partDefinitionId ?? null,
       title: partDefinition?.name ?? parsed.data.title,
-    });
+    }, buildTaskAuditContext(request));
     return reply.code(201).send({
       item,
     });
@@ -3478,6 +3709,33 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.code(404).send({
           message: "Purchase item not found.",
         });
+      }
+
+
+      const policyFailure = assessGenericPatch({
+        current: currentItem as unknown as Record<string, unknown>,
+        patch: parsed.data as Record<string, unknown>,
+        protectedFields: [
+          "status",
+          "approvedByMentor",
+          "finalCost",
+          "approvedById",
+          "approvedAt",
+          "purchasedAt",
+          "deliveredAt",
+        ],
+        isApprover: hasWorkflowApprovalPermission(request),
+        isPending: currentItem.status === "requested",
+        entityLabel: "Purchase item",
+      });
+      if (policyFailure) {
+        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
+      }
+      if (isNoopPatch(
+        currentItem as unknown as Record<string, unknown>,
+        parsed.data as Record<string, unknown>,
+      )) {
+        return { item: currentItem };
       }
 
       const nextItemShape = {
@@ -3508,11 +3766,114 @@ export async function registerRoutes(app: FastifyInstance) {
         ...parsed.data,
         partDefinitionId: nextItemShape.partDefinitionId ?? null,
         title: partDefinition?.name ?? parsed.data.title ?? currentItem.title,
-      });
+      }, buildTaskAuditContext(request));
 
       return {
         item,
       };
+    },
+  );
+
+  app.put<{ Body: unknown; Params: { itemId: string } }>(
+    "/api/purchases/:itemId/approval",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can approve purchases.",
+      )) {
+        return;
+      }
+
+      const parsed = purchaseApprovalSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Purchase approval payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
+        return reply.code(404).send({ message: "Purchase item not found." });
+      }
+
+      if (
+        currentItem.approvedByMentor === parsed.data.approved &&
+        ((parsed.data.approved && currentItem.status === "approved") ||
+          (!parsed.data.approved && currentItem.status === "requested"))
+      ) {
+        return { item: currentItem };
+      }
+
+      const policyFailure = validatePurchaseApproval(currentItem, parsed.data.approved);
+      if (policyFailure) {
+        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
+      }
+
+      const actor = getWorkflowApprovalMember(request);
+      if (!actor) {
+        return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
+      }
+      const item = updatePurchaseItem(request.params.itemId, {
+        approvedByMentor: parsed.data.approved,
+        status: parsed.data.approved ? "approved" : "requested",
+        approvedById: parsed.data.approved ? actor.id : null,
+        approvedAt: parsed.data.approved ? new Date().toISOString() : null,
+      }, buildTaskAuditContext(request, actor.id));
+
+      return { item };
+    },
+  );
+
+  app.post<{ Body: unknown; Params: { itemId: string } }>(
+    "/api/purchases/:itemId/transition",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can progress purchases.",
+      )) {
+        return;
+      }
+
+      const parsed = purchaseTransitionSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Purchase transition payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
+        return reply.code(404).send({ message: "Purchase item not found." });
+      }
+
+      const policyFailure = validatePurchaseTransition(currentItem.status, parsed.data.status);
+      if (policyFailure) {
+        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
+      }
+
+      const actor = getWorkflowApprovalMember(request);
+      if (!actor) {
+        return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
+      }
+      const now = new Date().toISOString();
+      const item = updatePurchaseItem(request.params.itemId, {
+        status: parsed.data.status,
+        finalCost: parsed.data.finalCost ?? currentItem.finalCost,
+        purchasedAt: parsed.data.status === "purchased" ? now : currentItem.purchasedAt,
+        deliveredAt: parsed.data.status === "delivered" ? now : currentItem.deliveredAt,
+      }, buildTaskAuditContext(request, actor.id));
+
+      return { item };
     },
   );
 
@@ -3523,7 +3884,18 @@ export async function registerRoutes(app: FastifyInstance) {
         return;
       }
 
-      const item = removePurchaseItem(request.params.itemId);
+      if (!requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors and admins can delete purchases.",
+      )) {
+        return;
+      }
+
+      const item = removePurchaseItem(
+        request.params.itemId,
+        buildTaskAuditContext(request),
+      );
       if (!item) {
         return reply.code(404).send({
           message: "Purchase item not found.",

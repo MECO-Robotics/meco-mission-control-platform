@@ -241,9 +241,11 @@ model Member {
   subsystemMemberships      SubsystemMember[]
   subsystemMentorships      SubsystemMentor[]
   workLogParticipants       WorkLogParticipant[]
+  createdWorkLogs           WorkLog[]             @relation("WorkLogCreator")
   attendanceRecords         AttendanceRecord[]
   rsvps                     RSVP[]
   requestedManufacturing    ManufacturingItem[] @relation("ManufacturingRequester")
+  reviewedManufacturing     ManufacturingItem[] @relation("ManufacturingReviewer")
   requestedPurchases        PurchaseItem[]      @relation("PurchaseRequester")
   approvedPurchases         PurchaseItem[]      @relation("PurchaseApprover")
   qaParticipants            QAParticipant[]
@@ -445,9 +447,13 @@ model WorkLog {
   loggedAt     DateTime
   hours        Float
   notes        String?
+  createdById  String?
   task         Task                 @relation(fields: [taskId], references: [id])
+  createdBy    Member?              @relation("WorkLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
   participants WorkLogParticipant[]
   createdAt    DateTime             @default(now())
+
+  @@index([createdById])
 }
 
 model WorkLogParticipant {
@@ -521,6 +527,8 @@ model ManufacturingItem {
   partDefinitionId  String?
   quantity          Int                   @default(1)
   mentorReviewed    Boolean               @default(false)
+  reviewedById      String?
+  reviewedAt        DateTime?
   inHouse           Boolean               @default(true)
   process           ManufacturingProcess
   status            ManufacturingStatus   @default(REQUESTED)
@@ -529,12 +537,15 @@ model ManufacturingItem {
   batchId           String?
   subsystem         Subsystem             @relation(fields: [subsystemId], references: [id])
   requestedBy       Member                @relation("ManufacturingRequester", fields: [requestedById], references: [id])
+  reviewedBy        Member?               @relation("ManufacturingReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   batch             ManufacturingBatch?   @relation(fields: [batchId], references: [id])
   partDefinition    PartDefinition?       @relation("ManufacturingPartDefinition", fields: [partDefinitionId], references: [id])
   qaReviews         QAReview[]
   taskLinks         TaskManufacturingItem[]
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
+
+  @@index([reviewedById])
 }
 
 model TaskManufacturingItem {

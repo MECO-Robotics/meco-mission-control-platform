@@ -297,6 +297,7 @@ export interface WorkLog {
   participantIds: string[];
   notes: string;
   photoUrl?: string;
+  createdById?: string | null;
 }
 
 export interface Meeting {
@@ -382,6 +383,8 @@ export interface ManufacturingItem {
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
   inHouse: boolean;
   batchLabel?: string;
 }
@@ -466,6 +469,10 @@ export interface PurchaseItem {
   estimatedCost: number;
   finalCost?: number;
   approvedByMentor: boolean;
+  approvedById?: string | null;
+  approvedAt?: string | null;
+  purchasedAt?: string | null;
+  deliveredAt?: string | null;
   status: PurchaseStatus;
 }
 

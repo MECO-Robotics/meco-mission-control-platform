@@ -29,6 +29,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Per-user preferences are stored outside git in `data/user-preferences.json`.
 - Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - Prisma schema lives in `prisma/schema.prisma` and includes core planning/manufacturing entities plus CAD import tables.
+- Work logs record an optional creator, manufacturing review records include reviewer/time metadata, and purchase approval records include the derived approver and workflow timestamps. Existing rows remain valid with null metadata until their next protected workflow action.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
 - The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store.
@@ -42,6 +43,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Non-production builds register `POST /api/auth/dev-bypass` when auth is configured, with student and mentor role modes for local permission testing.
 - API, auth, and email-auth requests use separate per-IP rate limit budgets.
 - API responses get no-store cache headers, content sniffing protection, frame denial, referrer policy, permissions policy, and production HSTS.
+- Work-log mutation and purchase/manufacturing approval or deletion require mentor/admin roles; leads do not inherit these safety and financial permissions. Manufacturing progress may be advanced by any internal user only after active mentor review.
 
 ## Audit Retention
 
