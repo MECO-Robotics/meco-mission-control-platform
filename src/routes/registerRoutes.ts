@@ -227,6 +227,8 @@ import { buildSlackHomeResponse } from "../slack/homeService";
 import { registerCadRoutes } from "../cad/cadRoutes";
 import { registerOnshapeRoutes } from "../onshape/onshapeRoutes";
 import { registerAuthRoutes } from "./authRoutes";
+import { registerMobileAuthRoutes } from "./mobileAuthRoutes";
+import type { MobileSessionService } from "../auth/mobileSessionService";
 import { registerMeetingRoutes } from "./meetingRoutes";
 
 const allowApiRouteRequest = createRequestLimitGuard({
@@ -352,7 +354,14 @@ interface TutorialResetResponse {
   tutorial: TutorialBaselineState;
 }
 
-export async function registerRoutes(app: FastifyInstance) {
+interface RegisterRoutesOptions {
+  mobileSessionService: MobileSessionService;
+}
+
+export async function registerRoutes(
+  app: FastifyInstance,
+  options: RegisterRoutesOptions,
+) {
   const requireApiSessionIfEnabled = (
     request: Parameters<typeof requireSession>[0],
     reply: Parameters<typeof requireSession>[1],
@@ -598,6 +607,11 @@ export async function registerRoutes(app: FastifyInstance) {
     allowApiRouteRequest,
     allowAuthEmailRouteRequest,
     allowAuthRouteRequest,
+  });
+  registerMobileAuthRoutes(app, {
+    allowAuthEmailRouteRequest,
+    allowAuthRouteRequest,
+    service: options.mobileSessionService,
   });
 
   app.get("/api/dashboard", async (request, reply) => {

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
+import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
 import { createMember, resetStore, type MemberInput } from "../../src/data/store";
 import { resetUserPreferencesStoreForTests } from "../../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../../src/security/requestLimits";
@@ -7,6 +8,9 @@ import { resetRequestLimits } from "../../src/security/requestLimits";
 const INTEGRATION_ENV_MODULES = [
   "../../src/app",
   "../../src/auth/authService",
+  "../../src/auth/mobileSessionPlugin",
+  "../../src/auth/mobileSessionPrismaStore",
+  "../../src/auth/mobileSessionService",
   "../../src/cad/cadStoreFactory",
   "../../src/cad/routes/cadStepImportPayload",
   "../../src/cad/routes/cadStepImportRoutes",
@@ -16,6 +20,8 @@ const INTEGRATION_ENV_MODULES = [
   "../../src/onshape/onshapeOverview",
   "../../src/onshape/onshapeRoutes",
   "../../src/routes/authRoutes",
+  "../../src/routes/mobileAuthRoutes",
+  "../../src/routes/mobileAuthSchemas",
   "../../src/routes/registerRoutes",
   "../../src/routes/routeSchemas",
   "../../src/slack/client",
@@ -30,6 +36,8 @@ const APP_ENV_KEYS = [
   "GOOGLE_CLIENT_ID",
   "AUTH_EMAIL_SMTP_HOST",
   "AUTH_EMAIL_FROM",
+  "AUTH_LEGACY_MOBILE_JWT_ENABLED",
+  "AUTH_LEGACY_MOBILE_JWT_CUTOFF",
   "AUTH_MENTOR_EMAILS",
   "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
@@ -100,6 +108,8 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.AUTH_EMAIL_SMTP_HOST;
   delete process.env.AUTH_EMAIL_FROM;
+  delete process.env.AUTH_LEGACY_MOBILE_JWT_ENABLED;
+  delete process.env.AUTH_LEGACY_MOBILE_JWT_CUTOFF;
   delete process.env.AUTH_MENTOR_EMAILS;
   delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -169,6 +179,7 @@ export async function withIntegrationApp(
   options?: {
     env?: Partial<Record<AppEnvKey, string | undefined>>;
     members?: MemberInput[];
+    mobileSessionStore?: MobileSessionStore;
   },
 ) {
   const envSnapshot = saveEnv();
@@ -180,7 +191,9 @@ export async function withIntegrationApp(
     resetUserPreferencesStoreForTests();
 
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
-    const app = await buildApp();
+    const app = await buildApp({
+      mobileSessionStore: options?.mobileSessionStore,
+    });
     for (const member of options?.members ?? []) {
       createMember(member);
     }

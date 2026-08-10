@@ -43,6 +43,7 @@ const emailTransport =
     : null;
 
 interface SessionClaims extends JwtPayload {
+  deviceId?: string;
   email: string;
   name: string;
   picture?: string | null;
@@ -640,6 +641,17 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError("The session token uses an unknown sign-in provider.", 401);
   }
 
+  if (
+    typeof payload.deviceId === "string" &&
+    payload.deviceId.trim().length > 0 &&
+    !isLegacyMobileJwtIssuanceAllowed()
+  ) {
+    throw new AuthError(
+      "Update MECO Mission Control Mobile to continue signing in.",
+      426,
+    );
+  }
+
   const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd.toLowerCase();
   const requiresGoogleHostedDomainProof =
@@ -675,6 +687,34 @@ export function verifySessionToken(token: string): SessionUser {
   };
 }
 
+export function refreshSessionUser(user: SessionUser): SessionUser {
+  const email = normalizeEmailAddress(user.email);
+  if (!isAllowedSignInEmail(email)) {
+    throw new AuthError(buildSignInAccessMessage(), 403);
+  }
+
+  const developmentRole =
+    env.NODE_ENV !== "production" &&
+    user.accountId.startsWith("local-dev-") &&
+    isDevelopmentSessionRole(user.role)
+      ? user.role
+      : null;
+
+  return {
+    ...user,
+    email,
+    role: developmentRole ?? getRoleForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+  };
+}
+
+export function isLegacyMobileJwtIssuanceAllowed(now = new Date()) {
+  return (
+    authConfig.legacyMobileJwtEnabled &&
+    (!authConfig.legacyMobileJwtCutoff || now < authConfig.legacyMobileJwtCutoff)
+  );
+}
+
 export function readBearerToken(headerValue: string | undefined) {
   if (!headerValue) {
     return null;
@@ -689,6 +729,10 @@ export function readBearerToken(headerValue: string | undefined) {
 }
 
 export function getSessionFromRequest(request: FastifyRequest) {
+  if (request.mobileSession) {
+    return request.mobileSession.user;
+  }
+
   const token = readBearerToken(request.headers.authorization);
   if (!token) {
     if (authConfig.enabled && isPublicDemoBootstrapRequest(request)) {

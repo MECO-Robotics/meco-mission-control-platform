@@ -2,6 +2,13 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 
+import { registerMobileSessionSupport } from "./auth/mobileSessionPlugin";
+import {
+  disconnectMobileSessionStore,
+  getPrismaMobileSessionStore,
+} from "./auth/mobileSessionPrismaStore";
+import { MobileSessionService } from "./auth/mobileSessionService";
+import type { MobileSessionStore } from "./auth/mobileSessionStoreTypes";
 import { resetCadRuntimeStore } from "./cad/cadStore";
 import { disconnectCadStore } from "./cad/cadStoreFactory";
 import { cadStepUploadConfig, corsConfig, env } from "./config/env";
@@ -9,7 +16,11 @@ import { resetStore } from "./data/store";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
-export async function buildApp() {
+export interface BuildAppOptions {
+  mobileSessionStore?: MobileSessionStore;
+}
+
+export async function buildApp(options: BuildAppOptions = {}) {
   // Always start from the checked-in seed snapshot so deploys regenerate tutorial state.
   resetStore();
   resetCadRuntimeStore();
@@ -30,6 +41,11 @@ export async function buildApp() {
     },
   });
 
+  const mobileSessionService = new MobileSessionService(
+    options.mobileSessionStore ?? getPrismaMobileSessionStore(),
+  );
+  registerMobileSessionSupport(app, mobileSessionService);
+
   app.addHook("onSend", async (request, reply, payload) => {
     if (request.url.startsWith("/api/")) {
       reply.header("Cache-Control", "no-store");
@@ -49,10 +65,13 @@ export async function buildApp() {
   });
 
   app.addHook("onClose", async () => {
-    await disconnectCadStore();
+    await Promise.all([
+      disconnectCadStore(),
+      disconnectMobileSessionStore(),
+    ]);
   });
 
-  await registerRoutes(app);
+  await registerRoutes(app, { mobileSessionService });
 
   return app;
 }
