@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from "fastify";
 
 import { cadStepUploadConfig, resolveCadStepParserMode } from "../../config/env";
+import { createRequestLimitGuard } from "../../security/requestLimits";
 import {
   buildStepParserDiagnostics,
   CadImportError,
@@ -14,10 +15,18 @@ import { readStepImportPayload } from "./cadStepImportPayload";
 import type { RequireApiSession } from "./cadRouteTypes";
 
 export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+  const allowStepImportRequest = createRequestLimitGuard({
+    scope: "cad-step-import",
+    maxRequests: 10,
+    windowMs: 60_000,
+  });
   const stepUploadRouteOptions = {
     bodyLimit: cadStepUploadConfig.maxBytes,
     onRequest(request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) {
       if (!requireApiSession(request, reply)) {
+        return;
+      }
+      if (!allowStepImportRequest(request, reply)) {
         return;
       }
       done();

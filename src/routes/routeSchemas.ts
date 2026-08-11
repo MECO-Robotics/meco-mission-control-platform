@@ -553,6 +553,7 @@ export const mediaUploadRequestSchema = z.object({
   projectId: z.string().trim().min(1),
   fileName: z.string().trim().min(1).max(200),
   contentType: z.string().trim().min(1).max(100),
+  sizeBytes: z.coerce.number().int().positive().max(500 * 1024 * 1024),
 });
 
 export const manufacturingItemSchema = z.object({

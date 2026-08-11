@@ -431,13 +431,15 @@ test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("complete"), "Complete");
 });
 
-test("deploy workflow keeps schema push ahead of milestone normalization", () => {
+test("deploy workflow runs non-destructive schema sync before milestone normalization", () => {
   const composeFile = readRepoFile("docker-compose.prod.yml");
+  const deployWorkflow = readRepoFile(".github/workflows/deploy-vps.yml");
+
   assertOrdered(
-    composeFile,
-    "npm run prisma:deploy:accept-data-loss",
+    deployWorkflow,
+    "docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy",
     "npm run prisma:normalize-event-types",
-    "deploy compose command",
+    "deploy workflow",
   );
   assertIncludesAll(
     composeFile,
@@ -445,9 +447,12 @@ test("deploy workflow keeps schema push ahead of milestone normalization", () =>
       'sh -c "if [ -z \\"$${DATABASE_URL:-}\\" ]; then',
       'export DATABASE_URL=\\"postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}?schema=public\\"',
       'wget -qO- http://127.0.0.1:8080/health || exit 1',
+      '127.0.0.1:${PUBLIC_PORT:-8080}:8080',
     ],
     "production compose file",
   );
+  assert.doesNotMatch(composeFile, /prisma:deploy:accept-data-loss/);
+  assert.doesNotMatch(composeFile, /prisma:normalize-event-types/);
 });
 
 test("deploy workflow validates secrets and retains the app health gate", () => {
@@ -462,8 +467,12 @@ test("deploy workflow validates secrets and retains the app health gate", () => 
       "name: production",
       "Validate deploy secrets",
       "Missing required deploy secret(s):",
+      "VPS_SSH_KNOWN_HOSTS",
       "Backup existing VPS server deployment",
-      "Production deploy is allowed only from main, release-* tags, or a release manifest.",
+      'test "${GITHUB_EVENT_NAME}" = "push"',
+      'test "${GITHUB_REF}" = "refs/heads/main"',
+      'test "${GITHUB_SHA}" = "$(git rev-parse origin/main)"',
+      "Database backup failed; aborting deployment.",
       "set -euo pipefail",
       "curl --fail --silent http://127.0.0.1:8080/health",
       "Health check passed.",

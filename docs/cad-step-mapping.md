@@ -82,7 +82,7 @@ CAD deletions and renames are review evidence, not destructive planning mutation
 
 ## Upload Size
 
-STEP uploads default to a 250 MiB server-side limit. Deployments can override this with `CAD_STEP_UPLOAD_MAX_BYTES` when teams need a smaller or larger cap.
+STEP uploads default to a 32 MiB server-side limit and cannot be configured above 64 MiB. Deployments can reduce this with `CAD_STEP_UPLOAD_MAX_BYTES`. Parser work is additionally bounded by `CAD_STEP_PARSER_MAX_CONCURRENCY`, `CAD_STEP_PARSER_MAX_QUEUE`, `CAD_STEP_PARSER_MAX_OLD_SPACE_MB`, `CAD_STEP_PARSER_TIMEOUT_MS`, and `CAD_STEP_PARSER_MAX_RESULT_BYTES` so concurrent uploads cannot create an unbounded number of workers or IPC results.
 
 ## Current Limits
 

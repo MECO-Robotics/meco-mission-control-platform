@@ -124,7 +124,9 @@ AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.com
 # AUTH_JWT_SECRET=
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
-AUTH_TOKEN_TTL=12h
+AUTH_TOKEN_TTL=1h
+AUTH_LEGACY_BEARER_ENABLED=false
+# AUTH_LEGACY_BEARER_CUTOFF=2026-09-01T00:00:00Z
 # Legacy mobile JWT issuance is disabled unless explicitly enabled for a bounded migration.
 AUTH_DEVICE_TOKEN_TTL=3650d
 AUTH_LEGACY_MOBILE_JWT_ENABLED=false
@@ -146,6 +148,14 @@ S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
 S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
+MEDIA_IMAGE_UPLOAD_MAX_BYTES=15728640
+MEDIA_VIDEO_UPLOAD_MAX_BYTES=262144000
+MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR=1073741824
+CAD_STEP_UPLOAD_MAX_BYTES=33554432
+CAD_STEP_PARSER_MAX_CONCURRENCY=2
+CAD_STEP_PARSER_MAX_QUEUE=4
+CAD_STEP_PARSER_MAX_OLD_SPACE_MB=256
+CAD_STEP_PARSER_MAX_RESULT_BYTES=16777216
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
 SLACK_CHANNEL_BUILD_ID=C03171JMMB4
@@ -192,7 +202,7 @@ role. Production builds do not register that route.
 3. SSH into it as your deploy user.
 4. Run `deploy/bootstrap-vps.sh` once.
 5. Make sure `/opt/pm-server` exists and is writable by your deploy user.
-6. Add a DNS record or reverse proxy later if you want a custom domain and TLS.
+6. Configure a TLS reverse proxy and firewall before enabling production traffic. The API container binds only to loopback and must not be exposed directly.
 
 ## Required GitHub secrets
 
@@ -201,6 +211,7 @@ Add these secrets to `MECO-Robotics/meco-mission-control-platform`:
 - `VPS_HOST`: public IP or hostname of the server
 - `VPS_USER`: deploy user, for example `root` or `deploy`
 - `VPS_SSH_KEY`: private SSH key used by GitHub Actions
+- `VPS_SSH_KNOWN_HOSTS`: reviewed `known_hosts` entry for the production VPS
 - `PRODUCTION_ENV_FILE`: full contents of the `.env.production` file, including SMTP settings if you want email sign-in enabled
 - `RESEND_API_KEY`: optional Resend API key for email sign-in
 
@@ -227,7 +238,9 @@ AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 # AUTH_JWT_SECRET=
-AUTH_TOKEN_TTL=12h
+AUTH_TOKEN_TTL=1h
+AUTH_LEGACY_BEARER_ENABLED=false
+# AUTH_LEGACY_BEARER_CUTOFF=2026-09-01T00:00:00Z
 # Legacy mobile JWT issuance is disabled unless explicitly enabled for a bounded migration.
 AUTH_DEVICE_TOKEN_TTL=3650d
 AUTH_LEGACY_MOBILE_JWT_ENABLED=false
@@ -250,6 +263,14 @@ S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
 S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
+MEDIA_IMAGE_UPLOAD_MAX_BYTES=15728640
+MEDIA_VIDEO_UPLOAD_MAX_BYTES=262144000
+MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR=1073741824
+CAD_STEP_UPLOAD_MAX_BYTES=33554432
+CAD_STEP_PARSER_MAX_CONCURRENCY=2
+CAD_STEP_PARSER_MAX_QUEUE=4
+CAD_STEP_PARSER_MAX_OLD_SPACE_MB=256
+CAD_STEP_PARSER_MAX_RESULT_BYTES=16777216
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
 SLACK_CHANNEL_BUILD_ID=C03171JMMB4
@@ -261,11 +282,11 @@ SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID=C088N9VC6H4
 
 ## Google SSO
 
-Google Identity Services sends a Google ID token to the web app, and the web app exchanges that token with `POST /api/auth/google`.
+Google Identity Services sends a Google ID token to the web app, and the web app exchanges that token with `POST /api/auth/web/google`.
 
 - The server verifies the Google token against `GOOGLE_CLIENT_ID`.
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
-- The server issues its own signed app session token with `AUTH_JWT_SECRET`.
+- Browser sign-in creates a 12-hour revocable server session and an HttpOnly, SameSite=Lax cookie. Unsafe cookie-authenticated API requests also require the session CSRF token and an allowed Origin.
 - Mobile email sign-in uses a per-install device ID to create a revocable server-side session. Access tokens last one hour, sessions expire after 30 days without a refresh or after 90 days absolutely, and refresh tokens rotate on every use.
 - Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
 - User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
@@ -282,7 +303,11 @@ If you only have a static IP, use a mapped HTTPS hostname (for example `178-104-
 
 Authenticated mobile clients can use `GET /api/auth/mobile/sessions`, `DELETE /api/auth/mobile/sessions/:sessionId`, `POST /api/auth/mobile/logout`, and `POST /api/auth/mobile/logout-all`. The platform stores only SHA-256 token hashes. Bounded background-on-use cleanup retains invalid token rows for seven days and device-session metadata for 30 days.
 
-Legacy `/api/auth/email/verify` requests containing `deviceId` receive HTTP 426 with code `mobile_client_upgrade_required` unless `AUTH_LEGACY_MOBILE_JWT_ENABLED=true` and the optional `AUTH_LEGACY_MOBILE_JWT_CUTOFF` is still in the future. The same policy rejects previously issued JWTs containing the legacy device claim, forcing a supported client to reauthenticate. Keep the exception time-bounded; browser email sign-in without `deviceId` and existing nonmobile bearer verification are unchanged.
+Legacy `/api/auth/email/verify` requests containing `deviceId` receive HTTP 426 with code `mobile_client_upgrade_required` unless `AUTH_LEGACY_MOBILE_JWT_ENABLED=true` and the optional `AUTH_LEGACY_MOBILE_JWT_CUTOFF` is still in the future. Legacy non-mobile bearer issuance and replay are disabled in production unless `AUTH_LEGACY_BEARER_ENABLED=true` and its optional UTC cutoff is still active. Keep either exception time-bounded.
+
+## Web session API
+
+Browser clients use `POST /api/auth/web/google`, `POST /api/auth/web/email/verify`, `GET /api/auth/web/session`, and `POST /api/auth/web/logout`. Non-production builds also expose `POST /api/auth/web/dev-bypass`. The session token is stored only in an HttpOnly cookie; the response returns an in-memory CSRF token for unsafe API methods. Logout revokes the server record before clearing the cookie.
 
 ## Email sign-in fallback
 
@@ -308,7 +333,7 @@ When `RESEND_API_KEY` is present and no explicit `AUTH_EMAIL_SMTP_HOST` is confi
 
 - The address must end in `@mecorobotics.org` unless you change `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - On localhost, the bundled SMTP sink gives you a no-password listener at `127.0.0.1:1025`.
-- The server sends a one-time code to the entered address and exchanges that code for the same JWT session used by Google sign-in.
+- The server sends a one-time code to the entered address. Supported web and mobile clients exchange it through their dedicated session endpoints.
 - Pending codes are stored in memory, so a server restart clears them.
 
 ## Deployment behavior
@@ -322,12 +347,12 @@ On every push to `main`, GitHub Actions will:
 1. install dependencies
 2. typecheck and build the server
 3. validate the Prisma schema
-4. connect to the VPS over SSH
-5. sync the repo to `/opt/pm-server`
-6. write `.env.production`
-7. run `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`
-8. check `/health` on the VPS
+4. verify the reviewed VPS host key and connect over SSH
+5. create and validate file, environment, and database backups; any required backup failure stops deployment
+6. sync the repo to `/opt/pm-server` and write `.env.production`
+7. start PostgreSQL, apply the non-destructive Prisma schema push, normalize event types, then start the application
+8. check `/health` through the loopback-bound API port
 
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
-The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
+Schema application is an explicit pre-start deployment step. The application container does not use `--accept-data-loss` and does not modify the schema on ordinary restarts.

@@ -35,7 +35,9 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ALLOWED_HOSTED_DOMAIN: z.string().min(1).default("mecorobotics.org"),
   AUTH_JWT_SECRET: optionalJwtSecret,
-  AUTH_TOKEN_TTL: z.string().min(2).default("12h"),
+  AUTH_TOKEN_TTL: z.string().min(2).default("1h"),
+  AUTH_LEGACY_BEARER_ENABLED: z.enum(["true", "false"]).default("false"),
+  AUTH_LEGACY_BEARER_CUTOFF: optionalDateTime,
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
   AUTH_EMAIL_SMTP_NAME: z.string().min(1).optional(),
@@ -79,6 +81,9 @@ const envSchema = z.object({
   S3_BUCKET_PREFIX: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
+  MEDIA_IMAGE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(50 * 1024 * 1024).default(15 * 1024 * 1024),
+  MEDIA_VIDEO_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(500 * 1024 * 1024).default(250 * 1024 * 1024),
+  MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR: z.coerce.number().int().positive().max(10 * 1024 * 1024 * 1024).default(1024 * 1024 * 1024),
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
   SLACK_ALERT_USERGROUP_HANDLES: z.string().min(1).default("allmentors,allstudents"),
   SLACK_CHANNEL_BUILD_ID: z.string().min(1).optional(),
@@ -99,9 +104,13 @@ const envSchema = z.object({
   ONSHAPE_OAUTH_TOKEN: z.string().min(1).optional(),
   ONSHAPE_CREDENTIAL_REFERENCE: z.string().min(1).optional(),
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
-  CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
+  CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(64 * 1024 * 1024).default(32 * 1024 * 1024),
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
   CAD_STEP_PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  CAD_STEP_PARSER_MAX_CONCURRENCY: z.coerce.number().int().positive().max(8).default(2),
+  CAD_STEP_PARSER_MAX_QUEUE: z.coerce.number().int().min(0).max(32).default(4),
+  CAD_STEP_PARSER_MAX_OLD_SPACE_MB: z.coerce.number().int().min(64).max(1024).default(256),
+  CAD_STEP_PARSER_MAX_RESULT_BYTES: z.coerce.number().int().positive().max(64 * 1024 * 1024).default(16 * 1024 * 1024),
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
@@ -214,6 +223,10 @@ export const authConfig = {
   googleClientIds,
   hostedDomain: env.GOOGLE_ALLOWED_HOSTED_DOMAIN.toLowerCase(),
   tokenTtl: env.AUTH_TOKEN_TTL,
+  legacyBearerEnabled: env.AUTH_LEGACY_BEARER_ENABLED === "true",
+  legacyBearerCutoff: env.AUTH_LEGACY_BEARER_CUTOFF
+    ? new Date(env.AUTH_LEGACY_BEARER_CUTOFF)
+    : null,
   deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
   legacyMobileJwtEnabled: env.AUTH_LEGACY_MOBILE_JWT_ENABLED === "true",
   legacyMobileJwtCutoff: env.AUTH_LEGACY_MOBILE_JWT_CUTOFF
@@ -250,6 +263,12 @@ function assertProductionSecurityConfig() {
     );
   }
 
+  if (env.AUTH_TOKEN_TTL !== "1h") {
+    throw new Error(
+      "Production AUTH_TOKEN_TTL must be 1h during the legacy bearer migration.",
+    );
+  }
+
   if (corsConfig.allowsAnyOrigin) {
     throw new Error(
       "Production deployments must set CORS_ORIGIN to one or more explicit origins.",
@@ -260,6 +279,29 @@ function assertProductionSecurityConfig() {
     throw new Error(
       "Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder.",
     );
+  }
+
+  const credentialedUrls = {
+    S3_ENDPOINT: env.S3_ENDPOINT,
+    S3_PUBLIC_BASE_URL: env.S3_PUBLIC_BASE_URL,
+    ONSHAPE_BASE_URL: env.ONSHAPE_BASE_URL,
+    ONSHAPE_OAUTH_REDIRECT_URI: env.ONSHAPE_OAUTH_REDIRECT_URI,
+    ONSHAPE_OAUTH_AUTHORIZATION_URL: env.ONSHAPE_OAUTH_AUTHORIZATION_URL,
+    ONSHAPE_OAUTH_TOKEN_URL: env.ONSHAPE_OAUTH_TOKEN_URL,
+  };
+  for (const [name, value] of Object.entries(credentialedUrls)) {
+    if (!value) {
+      continue;
+    }
+    let protocol: string;
+    try {
+      protocol = new URL(value).protocol;
+    } catch {
+      throw new Error(`Production ${name} must be a valid HTTPS URL.`);
+    }
+    if (protocol !== "https:") {
+      throw new Error(`Production ${name} must use HTTPS.`);
+    }
   }
 }
 
@@ -296,6 +338,9 @@ export const mediaUploadConfig = {
   bucket: env.S3_BUCKET,
   bucketPrefix: s3BucketPrefix,
   presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
+  imageMaxBytes: env.MEDIA_IMAGE_UPLOAD_MAX_BYTES,
+  videoMaxBytes: env.MEDIA_VIDEO_UPLOAD_MAX_BYTES,
+  quotaBytesPerHour: env.MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR,
 } as const;
 
 export const slackConfig = {
@@ -344,6 +389,10 @@ export const cadStepUploadConfig = {
 export const cadStepParserConfig = {
   mode: env.CAD_STEP_PARSER_MODE,
   timeoutMs: env.CAD_STEP_PARSER_TIMEOUT_MS,
+  maxConcurrency: env.CAD_STEP_PARSER_MAX_CONCURRENCY,
+  maxQueue: env.CAD_STEP_PARSER_MAX_QUEUE,
+  maxOldSpaceMb: env.CAD_STEP_PARSER_MAX_OLD_SPACE_MB,
+  maxResultBytes: env.CAD_STEP_PARSER_MAX_RESULT_BYTES,
 } as const;
 
 export function resolveCadStepParserMode() {

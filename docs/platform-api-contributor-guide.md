@@ -46,8 +46,7 @@ Use this flow for data-model changes:
 1. Update `prisma/schema.prisma`.
 2. Run `npm run prisma:generate` if generated client types are needed locally.
 3. Use `npm run prisma:deploy` for compatible schema pushes.
-4. Use `npm run prisma:deploy:accept-data-loss` only when the destructive change
-   is intentional and documented in the PR.
+4. Never add `--accept-data-loss` to routine deployment or application startup. A destructive schema change requires a separately reviewed maintenance procedure and a verified restore point.
 5. Document backfill, deploy order, rollback, and validation notes in the PR.
 6. Add or update tests that prove runtime and Prisma-backed paths stay aligned.
 

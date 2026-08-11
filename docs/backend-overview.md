@@ -8,14 +8,14 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - `src/app.ts` builds the Fastify instance, registers CORS and multipart handling, applies security headers, resets runtime stores on startup, and registers all routes.
 - The default port is `8080`, controlled by `PORT`.
 - JSON request bodies use Fastify's `2 MiB` body limit.
-- STEP multipart uploads use the separate `CAD_STEP_UPLOAD_MAX_BYTES` limit, defaulting to `250 MiB`.
+- STEP multipart uploads use the separate `CAD_STEP_UPLOAD_MAX_BYTES` limit, defaulting to `32 MiB`; parser processes also have bounded concurrency, queue, heap, timeout, stderr, and result sizes.
 
 ## Source Layout
 
 - `src/routes/` contains the main Mission Control route registration, route schemas, route helpers, and small helper modules for bootstrap selection, pagination, task targets, link validation, and roster insights.
 - `src/data/` contains the current seeded snapshot store and TypeScript input types for core platform entities.
 - `src/domain/` contains shared workflow, task dependency, discipline, and platform type logic.
-- `src/auth/` contains Google, email-code, JWT session, and development-bypass auth behavior.
+- `src/auth/` contains Google and email verification, revocable web and mobile sessions, legacy bearer migration checks, and development-bypass auth behavior.
 - `src/security/` contains request limit guards.
 - `src/storage/` contains S3-compatible presigned upload support.
 - `src/slack/` contains Slack home and alert-adjacent service logic.
@@ -41,6 +41,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Google sign-in verifies Google Identity Services ID tokens against `GOOGLE_CLIENT_ID` and `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - Email sign-in can use explicit SMTP settings or Resend SMTP via `RESEND_API_KEY`.
 - Non-production builds register `POST /api/auth/dev-bypass` when auth is configured, with student and mentor role modes for local permission testing.
+- Browser clients use revocable HttpOnly-cookie sessions with Origin and CSRF validation on unsafe methods. Mobile clients use independent rotating opaque access and refresh credentials. Legacy stateless bearer issuance is disabled by default in production.
 - API, auth, and email-auth requests use separate per-IP rate limit budgets.
 - API responses get no-store cache headers, content sniffing protection, frame denial, referrer policy, permissions policy, and production HSTS.
 - Work-log mutation and purchase/manufacturing approval or deletion require mentor/admin roles; leads do not inherit these safety and financial permissions. Manufacturing progress may be advanced by any internal user only after active mentor review.
@@ -72,7 +73,7 @@ Mission Control audit history is a safety and accountability record for team ope
 
 ## Integrations
 
-- S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured. Media buckets are derived per project team as `<S3_BUCKET_PREFIX>-<teamId>`; legacy `S3_BUCKET` is still accepted as the prefix.
+- S3-compatible storage powers image and video presign routes when all required `S3_*` settings are configured. Media buckets are derived per project team as `<S3_BUCKET_PREFIX>-<teamId>`; legacy `S3_BUCKET` is still accepted as the prefix. Each request declares `sizeBytes`, which is signed as `Content-Length`, and server-side type/size, issuance-rate, and hourly identity/team quotas are enforced.
 - Slack support is enabled by `SLACK_BOT_TOKEN` and channel/usergroup environment variables.
 - STEP CAD imports run through `StepParserClient`, parser mode config, mapping review, hierarchy validation, and snapshot finalization.
 - Onshape integration uses OAuth, saved document references, sync estimates, request logs, runtime budget tracking, and explicit sync runs.
@@ -94,7 +95,8 @@ Mission Control audit history is a safety and accountability record for team ope
 - `docker-compose.prod.yml` starts the API and PostgreSQL services.
 - `deploy/bootstrap-vps.sh` prepares a first-time Ubuntu VPS with Docker.
 - `.env.production.example` documents the runtime environment shape.
-- Production should deploy only from `main`, release tags, or an explicit release manifest.
+- Production deploys run only after a protected `main` push and require approval through the GitHub `production` environment.
+- The API container binds its published port to loopback; a mandatory TLS reverse proxy is the public ingress boundary.
 - `docs/platform-deployment-recovery.md` is the canonical runbook for production env, VPS deploy path, backup behavior, restore expectations, and rollback options.
 - Take VPS backups immediately before production deploys, including files, environment, and database dump.
 

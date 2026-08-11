@@ -43,10 +43,31 @@ interface PresignMediaUploadInput {
   contentType: string;
   fileName: string;
   projectId: string;
+  quotaKey: string;
+  sizeBytes: number;
   teamId?: string | null;
 }
 
 type MediaUploadKind = "image" | "video";
+const quotaWindowMs = 60 * 60 * 1000;
+const quotaReservations = new Map<string, { bytes: number; windowStartedAt: number }>();
+
+function reserveUploadQuota(quotaKey: string, sizeBytes: number, now = Date.now()) {
+  const current = quotaReservations.get(quotaKey);
+  const active = current && now - current.windowStartedAt < quotaWindowMs
+    ? current
+    : { bytes: 0, windowStartedAt: now };
+  if (active.bytes + sizeBytes > mediaUploadConfig.quotaBytesPerHour) {
+    throw new MediaUploadError(
+      "The hourly media upload quota has been reached. Try again later.",
+      429,
+    );
+  }
+  quotaReservations.set(quotaKey, {
+    bytes: active.bytes + sizeBytes,
+    windowStartedAt: active.windowStartedAt,
+  });
+}
 
 function getStorageClient() {
   if (
@@ -165,6 +186,16 @@ async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUpl
     throw new MediaUploadError(`${kind === "image" ? "Image" : "Video"} uploads require a file name.`);
   }
 
+  const maxBytes = kind === "image"
+    ? mediaUploadConfig.imageMaxBytes
+    : mediaUploadConfig.videoMaxBytes;
+  if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes <= 0 || input.sizeBytes > maxBytes) {
+    throw new MediaUploadError(
+      `${kind === "image" ? "Image" : "Video"} uploads must be ${maxBytes} bytes or smaller.`,
+      413,
+    );
+  }
+
   const bucket = createMediaBucketName(input.teamId);
 
   const key = createObjectKey(input.projectId, fileName, contentType, kind);
@@ -173,11 +204,13 @@ async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUpl
     client,
     new PutObjectCommand({
       Bucket: bucket,
+      ContentLength: input.sizeBytes,
       Key: key,
       ContentType: contentType,
     }),
     { expiresIn: mediaUploadConfig.presignTtlSeconds },
   );
+  reserveUploadQuota(`${input.teamId ?? DEFAULT_PROJECT_TEAM_ID}:${input.quotaKey}`, input.sizeBytes);
 
   return {
     expiresInSeconds: mediaUploadConfig.presignTtlSeconds,

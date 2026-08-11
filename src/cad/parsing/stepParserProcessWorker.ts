@@ -4,6 +4,7 @@ import { parseStepTextAssemblyGraph } from "./stepTextParser";
 import type { StepParserInput, StepParserMode } from "./stepParserTypes";
 
 interface ParserProcessInput extends StepParserInput {
+  maxResultBytes: number;
   mode: Exclude<StepParserMode, "placeholder">;
 }
 
@@ -44,7 +45,12 @@ function sendResult(result: ParserProcessResult) {
 
 process.once("message", (input: ParserProcessInput) => {
   try {
-    sendResult({ ok: true, parsed: parseInProcess(input) });
+    const parsed = parseInProcess(input);
+    const resultBytes = Buffer.byteLength(JSON.stringify(parsed), "utf8");
+    if (resultBytes > input.maxResultBytes) {
+      throw new Error("STEP parser result exceeds the configured safe output limit.");
+    }
+    sendResult({ ok: true, parsed });
   } catch (error) {
     sendResult({
       ok: false,

@@ -420,6 +420,7 @@ test("media upload endpoint returns a presigned image upload contract", async ()
         projectId: "project-media-2026",
         fileName: "Robot Reveal Photo.png",
         contentType: "image/png",
+        sizeBytes: 1024,
       },
     });
 
@@ -450,6 +451,10 @@ test("media upload endpoint returns a presigned image upload contract", async ()
     assert.equal(uploadUrl.origin, "https://s3.example.test");
     assert.ok(uploadUrl.pathname.startsWith("/meco-pm-meco-robotics/projects/project-media-2026/images/"));
     assert.equal(uploadUrl.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
+    assert.match(
+      uploadUrl.searchParams.get("X-Amz-SignedHeaders") ?? "",
+      /content-length/,
+    );
 
     resetLimits();
 
@@ -460,6 +465,7 @@ test("media upload endpoint returns a presigned image upload contract", async ()
         projectId: "project-media-2026",
         fileName: "not-an-image.pdf",
         contentType: "application/pdf",
+        sizeBytes: 1024,
       },
     });
 
@@ -468,6 +474,20 @@ test("media upload endpoint returns a presigned image upload contract", async ()
       invalidTypeResponse.json().message,
       "Only image uploads are supported by the media bucket.",
     );
+
+    resetLimits();
+
+    const oversizedResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "oversized.png",
+        contentType: "image/png",
+        sizeBytes: 15 * 1024 * 1024 + 1,
+      },
+    });
+    assert.equal(oversizedResponse.statusCode, 413);
   });
 });
 
@@ -490,6 +510,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
         projectId: otherTeamProject.id,
         fileName: "Sponsor banner.png",
         contentType: "image/png",
+        sizeBytes: 2048,
       },
     });
 
@@ -530,6 +551,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
         projectId: "legacy-media-project",
         fileName: "Legacy reveal.png",
         contentType: "image/png",
+        sizeBytes: 2048,
       },
     });
 
@@ -574,6 +596,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
         projectId: apiProjectBody.item.id,
         fileName: "API-created project.png",
         contentType: "image/png",
+        sizeBytes: 2048,
       },
     });
 
@@ -598,6 +621,7 @@ test("video upload endpoint returns a presigned video upload contract", async ()
         projectId: "project-media-2026",
         fileName: "QA review clip.mp4",
         contentType: "video/mp4",
+        sizeBytes: 4096,
       },
     });
 
@@ -632,6 +656,7 @@ test("video upload endpoint returns a presigned video upload contract", async ()
         projectId: "project-media-2026",
         fileName: "not-a-video.png",
         contentType: "image/png",
+        sizeBytes: 4096,
       },
     });
 
@@ -640,5 +665,36 @@ test("video upload endpoint returns a presigned video upload contract", async ()
       invalidTypeResponse.json().message,
       "Only video uploads are supported by the media bucket.",
     );
+  });
+});
+
+test("media signing enforces an identity-scoped hourly byte quota", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "first.png",
+        contentType: "image/png",
+        sizeBytes: 800,
+      },
+    });
+    assert.equal(first.statusCode, 200);
+
+    resetLimits();
+    const overQuota = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "second.png",
+        contentType: "image/png",
+        sizeBytes: 800,
+      },
+    });
+    assert.equal(overQuota.statusCode, 429);
+  }, {
+    env: { MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR: "1500" },
   });
 });

@@ -229,6 +229,8 @@ import { registerOnshapeRoutes } from "../onshape/onshapeRoutes";
 import { registerAuthRoutes } from "./authRoutes";
 import { registerMobileAuthRoutes } from "./mobileAuthRoutes";
 import type { MobileSessionService } from "../auth/mobileSessionService";
+import type { WebSessionService } from "../auth/webSessionService";
+import { registerWebAuthRoutes } from "./webAuthRoutes";
 import { registerMeetingRoutes } from "./meetingRoutes";
 
 const allowApiRouteRequest = createRequestLimitGuard({
@@ -242,6 +244,11 @@ const allowAuthRouteRequest = createRequestLimitGuard({
 const allowAuthEmailRouteRequest = createRequestLimitGuard({
   scope: "auth-email",
   ...requestLimitConfig.authEmail,
+});
+const allowMediaPresignRequest = createRequestLimitGuard({
+  scope: "media-presign",
+  maxRequests: 30,
+  windowMs: 60 * 60 * 1000,
 });
 const PUBLIC_DEMO_SEASON_ID = "default-season";
 
@@ -356,6 +363,7 @@ interface TutorialResetResponse {
 
 interface RegisterRoutesOptions {
   mobileSessionService: MobileSessionService;
+  webSessionService: WebSessionService;
 }
 
 export async function registerRoutes(
@@ -612,6 +620,11 @@ export async function registerRoutes(
     allowAuthEmailRouteRequest,
     allowAuthRouteRequest,
     service: options.mobileSessionService,
+  });
+  registerWebAuthRoutes(app, {
+    allowAuthEmailRouteRequest,
+    allowAuthRouteRequest,
+    webSessionService: options.webSessionService,
   });
 
   app.get("/api/dashboard", async (request, reply) => {
@@ -1027,6 +1040,18 @@ export async function registerRoutes(
       });
     }
 
+    if (
+      parsed.data.reportType === "QA" &&
+      parsed.data.mentorApproved === true &&
+      !requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors or admins can approve QA.",
+      )
+    ) {
+      return;
+    }
+
     const validationError =
       parsed.data.reportType === "QA"
         ? parsed.data.taskId
@@ -1127,7 +1152,11 @@ export async function registerRoutes(
 
     if (
       parsed.data.mentorApproved &&
-      !requireMentorPermission(request, reply, "Only mentors can approve QA.")
+      !requireWorkflowApprovalPermission(
+        request,
+        reply,
+        "Only mentors or admins can approve QA.",
+      )
     ) {
       return;
     }
@@ -1843,40 +1872,7 @@ export async function registerRoutes(
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
-
-    const parsed = mediaUploadRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Media upload payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    const project = findProject(parsed.data.projectId);
-    if (!project) {
-      return reply.code(400).send({
-        message: "The selected project does not exist.",
-      });
-    }
-
-    try {
-      return await presignImageUpload({ ...parsed.data, teamId: project.teamId });
-    } catch (error) {
-      if (error instanceof MediaUploadError) {
-        return reply.code(error.statusCode).send({
-          message: error.message,
-        });
-      }
-
-      request.log.error({ err: error }, "Media upload presign failed");
-      return reply.code(500).send({
-        message: "Media upload failed unexpectedly.",
-      });
-    }
-  });
-
-  app.post<{ Body: unknown }>("/api/media/presign-video-upload", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
+    if (!allowMediaPresignRequest(request, reply)) {
       return;
     }
 
@@ -1896,7 +1892,54 @@ export async function registerRoutes(
     }
 
     try {
-      return await presignVideoUpload({ ...parsed.data, teamId: project.teamId });
+      return await presignImageUpload({
+        ...parsed.data,
+        quotaKey: getSessionFromRequest(request)?.accountId ?? request.ip,
+        teamId: project.teamId,
+      });
+    } catch (error) {
+      if (error instanceof MediaUploadError) {
+        return reply.code(error.statusCode).send({
+          message: error.message,
+        });
+      }
+
+      request.log.error({ err: error }, "Media upload presign failed");
+      return reply.code(500).send({
+        message: "Media upload failed unexpectedly.",
+      });
+    }
+  });
+
+  app.post<{ Body: unknown }>("/api/media/presign-video-upload", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+    if (!allowMediaPresignRequest(request, reply)) {
+      return;
+    }
+
+    const parsed = mediaUploadRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Media upload payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const project = findProject(parsed.data.projectId);
+    if (!project) {
+      return reply.code(400).send({
+        message: "The selected project does not exist.",
+      });
+    }
+
+    try {
+      return await presignVideoUpload({
+        ...parsed.data,
+        quotaKey: getSessionFromRequest(request)?.accountId ?? request.ip,
+        teamId: project.teamId,
+      });
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({
@@ -2627,6 +2670,16 @@ export async function registerRoutes(
       });
     }
     if (
+      (parsed.data.role === "mentor" || parsed.data.role === "admin" || parsed.data.elevated) &&
+      !requireAdminPermission(
+        request,
+        reply,
+        "Only admins can create elevated roster accounts.",
+      )
+    ) {
+      return;
+    }
+    if (
       parsed.data.seasonId !== undefined &&
       !getSeasons().some((season) => season.id === parsed.data.seasonId)
     ) {
@@ -2679,6 +2732,39 @@ export async function registerRoutes(
           issues: parsed.error.flatten(),
         });
       }
+
+      const changesProtectedIdentity =
+        parsed.data.role !== undefined ||
+        parsed.data.email !== undefined ||
+        parsed.data.elevated !== undefined;
+      if (
+        changesProtectedIdentity &&
+        !requireAdminPermission(
+          request,
+          reply,
+          "Only admins can change member roles or sign-in identities.",
+        )
+      ) {
+        return;
+      }
+
+      const currentMember = getMembers().find(
+        (member) => member.id === request.params.memberId,
+      );
+      if (!currentMember) {
+        return reply.code(404).send({ message: "Member not found." });
+      }
+
+      if (
+        currentMember.role === "admin" &&
+        parsed.data.role !== undefined &&
+        parsed.data.role !== "admin" &&
+        getMembers().filter((member) => member.role === "admin").length === 1
+      ) {
+        return reply.code(409).send({
+          message: "The final administrator cannot be demoted.",
+        });
+      }
       if (
         parsed.data.seasonId !== undefined &&
         !getSeasons().some((season) => season.id === parsed.data.seasonId)
@@ -2708,7 +2794,11 @@ export async function registerRoutes(
         });
       }
 
-      const member = updateMember(request.params.memberId, parsed.data);
+      const member = updateMember(
+        request.params.memberId,
+        parsed.data,
+        buildTaskAuditContext(request),
+      );
       if (!member) {
         return reply.code(404).send({
           message: "Member not found.",
@@ -2728,8 +2818,20 @@ export async function registerRoutes(
         return;
       }
 
-      if (!requireMentorPermission(request, reply, "Only mentors can delete people.")) {
+      if (!requireAdminPermission(request, reply, "Only admins can delete people.")) {
         return;
+      }
+
+      const currentMember = getMembers().find(
+        (member) => member.id === request.params.memberId,
+      );
+      if (
+        currentMember?.role === "admin" &&
+        getMembers().filter((member) => member.role === "admin").length === 1
+      ) {
+        return reply.code(409).send({
+          message: "The final administrator cannot be deleted.",
+        });
       }
 
       const member = removeMember(request.params.memberId);

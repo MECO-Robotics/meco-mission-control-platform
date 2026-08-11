@@ -652,6 +652,16 @@ export function verifySessionToken(token: string): SessionUser {
     );
   }
 
+  if (
+    (typeof payload.deviceId !== "string" || payload.deviceId.trim().length === 0) &&
+    !isLegacyBearerIssuanceAllowed()
+  ) {
+    throw new AuthError(
+      "Use a supported web or mobile session to continue signing in.",
+      426,
+    );
+  }
+
   const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd.toLowerCase();
   const requiresGoogleHostedDomainProof =
@@ -715,6 +725,14 @@ export function isLegacyMobileJwtIssuanceAllowed(now = new Date()) {
   );
 }
 
+export function isLegacyBearerIssuanceAllowed(now = new Date()) {
+  return (
+    env.NODE_ENV !== "production" ||
+    (authConfig.legacyBearerEnabled &&
+      (!authConfig.legacyBearerCutoff || now < authConfig.legacyBearerCutoff))
+  );
+}
+
 export function readBearerToken(headerValue: string | undefined) {
   if (!headerValue) {
     return null;
@@ -734,19 +752,21 @@ export function getSessionFromRequest(request: FastifyRequest) {
   }
 
   const token = readBearerToken(request.headers.authorization);
-  if (!token) {
-    if (authConfig.enabled && isPublicDemoBootstrapRequest(request)) {
-      return buildPublicDemoSessionUser();
+  if (token) {
+    try {
+      return verifySessionToken(token);
+    } catch {
+      return null;
     }
-
-    return null;
   }
 
-  try {
-    return verifySessionToken(token);
-  } catch {
-    return null;
+  if (request.webSession) {
+    return request.webSession.user;
   }
+
+  return authConfig.enabled && isPublicDemoBootstrapRequest(request)
+    ? buildPublicDemoSessionUser()
+    : null;
 }
 
 export function requireSession(request: FastifyRequest, reply: FastifyReply) {
