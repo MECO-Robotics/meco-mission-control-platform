@@ -14,7 +14,7 @@ const plannedAttendanceDaySchema = z.enum([
 
 export const devBypassSchema = z.object({
   role: z.enum(["student", "mentor"]).default("student"),
-});
+}).strict();
 
 export const memberSchema = z.object({
   name: z.string().trim().min(2),
@@ -100,6 +100,12 @@ export const taskSchema = z.object({
 });
 
 export const taskPatchSchema = taskSchema.partial();
+export const taskClaimSchema = z.object({
+  start: z.boolean().optional().default(false),
+});
+export const taskReassignSchema = z.object({
+  ownerId: z.string().trim().min(1).nullable(),
+});
 
 export const milestoneSchema = z.object({
   title: z.string().trim().min(2),
@@ -179,6 +185,21 @@ export const userPreferencesPatchSchema = z.object({
     .optional(),
   themeMode: z.enum(["light", "dark"]).nullable().optional(),
 });
+
+export const auditExportQuerySchema = z.object({
+  format: z.enum(["json", "csv"]).default("json"),
+  seasonId: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1).optional(),
+  entityType: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+}).strict().refine(
+  (query) => !query.from || !query.to || Date.parse(query.from) <= Date.parse(query.to),
+  {
+    message: "from must be on or before to.",
+    path: ["from"],
+  },
+);
 
 export const reportSchema = z.object({
   reportType: z.enum(["QA", "MilestoneTest"]),

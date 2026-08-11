@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 
+import { createMember } from "../src/data/store";
 import { resetUserPreferencesStoreForTests } from "../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
@@ -22,7 +20,6 @@ function restoreEnv(saved: Map<string, string | undefined>) {
 }
 
 test("buildApp exposes a development-only sign-in bypass", async () => {
-  let tempDir: string | null = null;
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
@@ -31,9 +28,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
-    "AUTH_MENTOR_EMAILS",
     "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
-    "AUTH_MEMBER_SUBTEAMS_ENV_PATH",
     "API_RATE_LIMIT_MAX_REQUESTS",
     "API_RATE_LIMIT_WINDOW_SECONDS",
     "AUTH_RATE_LIMIT_MAX_REQUESTS",
@@ -43,9 +38,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
   ]);
 
   try {
-    tempDir = mkdtempSync(join(tmpdir(), "meco-env-test-"));
-    const memberSubteamsEnvPath = join(tempDir, ".env.test");
-    writeFileSync(memberSubteamsEnvPath, "DATABASE_URL=postgresql://example\n", "utf8");
     process.env.NODE_ENV = "development";
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
@@ -54,8 +46,8 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
-    delete process.env.AUTH_MENTOR_EMAILS;
-    process.env.AUTH_MEMBER_SUBTEAMS_ENV_PATH = memberSubteamsEnvPath;
+    process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL =
+      "dev.student@mecorobotics.org=scouting";
     process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
     process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
     process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -64,6 +56,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS = "60";
 
     const { buildApp } = await import("../src/app");
+    const { signSessionToken } = await import("../src/auth/authService");
     const app = await buildApp();
 
     try {
@@ -102,6 +95,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           name: string;
           picture: string | null;
           role: string;
+          taskSubteamIds: string[];
         };
       };
 
@@ -112,11 +106,12 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       assert.equal(bypassBody.user.hostedDomain, "mecorobotics.org");
       assert.equal(bypassBody.user.picture, null);
       assert.equal(bypassBody.user.role, "student");
+      assert.deepEqual(bypassBody.user.taskSubteamIds, ["scouting"]);
       assert.ok(bypassBody.token.length > 0);
 
       resetRequestLimits();
 
-      const mentorBypassResponse = await app.inject({
+      const roleBypassResponse = await app.inject({
         method: "POST",
         url: "/api/auth/dev-bypass",
         payload: {
@@ -124,21 +119,29 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         },
       });
 
-      assert.equal(mentorBypassResponse.statusCode, 200);
-      const mentorBypassBody = mentorBypassResponse.json() as {
+      assert.equal(roleBypassResponse.statusCode, 200);
+      const roleBypassBody = roleBypassResponse.json() as {
         token: string;
         user: {
           accountId: string;
+          authProvider: string;
           email: string;
+          hostedDomain: string;
           name: string;
+          picture: string | null;
           role: string;
+          taskSubteamIds: string[];
         };
       };
-      assert.equal(mentorBypassBody.user.accountId, "local-dev-mentor");
-      assert.equal(mentorBypassBody.user.email, "dev.mentor@mecorobotics.org");
-      assert.equal(mentorBypassBody.user.name, "Local Dev Mentor");
-      assert.equal(mentorBypassBody.user.role, "mentor");
-      assert.ok(mentorBypassBody.token.length > 0);
+      assert.equal(roleBypassBody.user.accountId, "local-dev-mentor");
+      assert.equal(roleBypassBody.user.authProvider, "email");
+      assert.equal(roleBypassBody.user.email, "dev.mentor@mecorobotics.org");
+      assert.equal(roleBypassBody.user.name, "Local Dev Mentor");
+      assert.equal(roleBypassBody.user.hostedDomain, "mecorobotics.org");
+      assert.equal(roleBypassBody.user.picture, null);
+      assert.equal(roleBypassBody.user.role, "mentor");
+      assert.deepEqual(roleBypassBody.user.taskSubteamIds, []);
+      assert.ok(roleBypassBody.token.length > 0);
 
       resetRequestLimits();
 
@@ -185,6 +188,43 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
+      const updateThemeOnlyPreferencesResponse = await app.inject({
+        method: "PATCH",
+        url: "/api/users/me/preferences",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          themeMode: "dark",
+        },
+      });
+
+      assert.equal(updateThemeOnlyPreferencesResponse.statusCode, 200);
+      assert.deepEqual(updateThemeOnlyPreferencesResponse.json(), {
+        taskSubteamIds: [],
+        themeMode: "dark",
+      });
+
+      resetRequestLimits();
+
+      const themeOnlyAuthMeResponse = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(themeOnlyAuthMeResponse.statusCode, 200);
+      const themeOnlyAuthMeBody = themeOnlyAuthMeResponse.json() as {
+        user: {
+          taskSubteamIds: string[];
+        } | null;
+      };
+      assert.deepEqual(themeOnlyAuthMeBody.user?.taskSubteamIds, ["scouting"]);
+
+      resetRequestLimits();
+
       const updatePreferencesResponse = await app.inject({
         method: "PATCH",
         url: "/api/users/me/preferences",
@@ -192,14 +232,14 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           authorization: `Bearer ${bypassBody.token}`,
         },
         payload: {
-          taskSubteamIds: ["scouting"],
+          taskSubteamIds: ["programming"],
           themeMode: "dark",
         },
       });
 
       assert.equal(updatePreferencesResponse.statusCode, 200);
       assert.deepEqual(updatePreferencesResponse.json(), {
-        taskSubteamIds: ["scouting"],
+        taskSubteamIds: ["programming"],
         themeMode: "dark",
       });
 
@@ -215,13 +255,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       assert.equal(savedPreferencesResponse.statusCode, 200);
       assert.deepEqual(savedPreferencesResponse.json(), {
-        taskSubteamIds: ["scouting"],
+        taskSubteamIds: ["programming"],
         themeMode: "dark",
       });
-      assert.match(
-        readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
-      );
 
       resetRequestLimits();
 
@@ -239,7 +275,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           taskSubteamIds: string[];
         } | null;
       };
-      assert.deepEqual(updatedAuthMeBody.user?.taskSubteamIds, ["scouting"]);
+      assert.deepEqual(updatedAuthMeBody.user?.taskSubteamIds, ["programming"]);
 
       resetRequestLimits();
 
@@ -260,15 +296,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         taskSubteamIds: [],
         themeMode: "dark",
       });
-      assert.doesNotMatch(
-        readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=dev\.student@mecorobotics\.org=scouting$/m,
-      );
-      assert.doesNotMatch(
-        readFileSync(memberSubteamsEnvPath, "utf8"),
-        /^AUTH_MEMBER_SUBTEAMS_BY_EMAIL=/m,
-      );
-      assert.equal(process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL, undefined);
 
       resetRequestLimits();
 
@@ -358,6 +385,227 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       });
 
       assert.equal(studentTaskDeleteResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const { signSessionToken } = await import("../src/auth/authService");
+      const mentorToken = signSessionToken({
+        accountId: "local-dev-mentor",
+        authProvider: "email",
+        email: "mentor@mecorobotics.org",
+        hostedDomain: "mecorobotics.org",
+        name: "Mentor Test",
+        picture: null,
+        role: "mentor",
+        taskSubteamIds: [],
+      });
+
+      const claimableTaskPayload = {
+        title: "Claimable student task",
+        summary: "Students can claim this task from mobile.",
+        subsystemId: "drive",
+        disciplineId: "design",
+        mechanismId: null,
+        partInstanceId: null,
+        targetMilestoneId: null,
+        ownerId: null,
+        mentorId: "riley",
+        dueDate: "2026-05-06",
+        priority: "medium",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 0,
+        actualHours: 0,
+      };
+      const claimableTaskResponse = await app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+        payload: claimableTaskPayload,
+      });
+
+      assert.equal(claimableTaskResponse.statusCode, 201);
+      const claimableTask = claimableTaskResponse.json() as { item: { id: string; ownerId: string | null } };
+      assert.equal(claimableTask.item.ownerId, null);
+
+      resetRequestLimits();
+
+      const nonRosterClaimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(nonRosterClaimResponse.statusCode, 403);
+
+      const localDevStudent = createMember({
+        name: "Local Dev Student",
+        email: "dev.student@mecorobotics.org",
+        role: "student",
+      });
+      assert.equal(localDevStudent.id, "local-dev-student");
+
+      const spoofedNameToken = signSessionToken({
+        accountId: "not-local-dev-student",
+        authProvider: "email",
+        email: "display-name-spoof@mecorobotics.org",
+        hostedDomain: "mecorobotics.org",
+        name: "Local Dev Student",
+        picture: null,
+        role: "student",
+        taskSubteamIds: [],
+      });
+
+      resetRequestLimits();
+
+      const spoofedNameClaimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${spoofedNameToken}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(spoofedNameClaimResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(claimResponse.statusCode, 200);
+      assert.equal(
+        (claimResponse.json() as { item: { ownerId: string } }).item.ownerId,
+        "local-dev-student",
+      );
+
+      resetRequestLimits();
+
+      const releaseResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${claimableTask.item.id}/release`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(releaseResponse.statusCode, 200);
+      assert.equal((releaseResponse.json() as { item: { ownerId: string | null } }).item.ownerId, null);
+
+      resetRequestLimits();
+
+      const startClaimTaskResponse = await app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+        payload: {
+          ...claimableTaskPayload,
+          title: "Start claim student task",
+        },
+      });
+      assert.equal(startClaimTaskResponse.statusCode, 201);
+      const startClaimTask = startClaimTaskResponse.json() as { item: { id: string } };
+
+      resetRequestLimits();
+
+      const startClaimResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {
+          start: true,
+        },
+      });
+
+      assert.equal(startClaimResponse.statusCode, 200);
+      const startClaimBody = startClaimResponse.json() as {
+        item: { ownerId: string; status: string };
+      };
+      assert.equal(startClaimBody.item.ownerId, "local-dev-student");
+      assert.equal(startClaimBody.item.status, "in-progress");
+
+      resetRequestLimits();
+
+      const reassignResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/reassign`,
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+        payload: {
+          ownerId: "lucas",
+        },
+      });
+
+      assert.equal(reassignResponse.statusCode, 200);
+      assert.equal((reassignResponse.json() as { item: { ownerId: string } }).item.ownerId, "lucas");
+
+      resetRequestLimits();
+
+      const forbiddenReleaseResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/release`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+      });
+
+      assert.equal(forbiddenReleaseResponse.statusCode, 403);
+
+      resetRequestLimits();
+
+      const conflictResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/claim`,
+        headers: {
+          authorization: `Bearer ${bypassBody.token}`,
+        },
+        payload: {},
+      });
+
+      assert.equal(conflictResponse.statusCode, 409);
+      assert.deepEqual(conflictResponse.json(), {
+        code: "task_already_claimed",
+        message: "Task is already claimed.",
+        ownerId: "lucas",
+        taskId: startClaimTask.item.id,
+      });
+
+      resetRequestLimits();
+
+      const managerReleaseResponse = await app.inject({
+        method: "POST",
+        url: `/api/tasks/${startClaimTask.item.id}/release`,
+        headers: {
+          authorization: `Bearer ${mentorToken}`,
+        },
+      });
+
+      assert.equal(managerReleaseResponse.statusCode, 200);
+      const managerReleaseBody = managerReleaseResponse.json() as {
+        item: { assigneeIds: string[]; ownerId: string | null };
+      };
+      assert.equal(managerReleaseBody.item.ownerId, null);
+      assert.deepEqual(managerReleaseBody.item.assigneeIds, []);
 
       resetRequestLimits();
 
@@ -471,9 +719,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       resetRequestLimits();
     }
   } finally {
-    if (tempDir) {
-      rmSync(tempDir, { force: true, recursive: true });
-    }
     restoreEnv(saved);
   }
 });

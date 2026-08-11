@@ -13,41 +13,18 @@ import {
   getTaskDisciplineBucketForProject,
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
-
-type IteratedSeed<T extends { iteration: number; isArchived: boolean }> = Omit<
-  T,
-  "iteration" | "isArchived"
-> &
-  Partial<Pick<T, "iteration" | "isArchived">>;
-
-type SeedSubsystem = IteratedSeed<Subsystem>;
-type SeedMechanism = IteratedSeed<Mechanism>;
-type SeedPartDefinition = Omit<IteratedSeed<PartDefinition>, "seasonId" | "activeSeasonIds"> &
-  Partial<Pick<PartDefinition, "seasonId" | "activeSeasonIds">>;
-type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Workstream, "isArchived">>;
-
-type SeedTask = Omit<
-  Task,
-  | "workstreamIds"
-  | "subsystemIds"
-  | "mechanismIds"
-  | "partInstanceIds"
-  | "artifactId"
-  | "artifactIds"
-  | "assigneeIds"
-> &
-  Partial<
-    Pick<
-      Task,
-      | "workstreamIds"
-      | "subsystemIds"
-      | "mechanismIds"
-      | "partInstanceIds"
-      | "artifactId"
-      | "artifactIds"
-      | "assigneeIds"
-    >
-  >;
+import type {
+  SeedMechanism,
+  SeedPartDefinition,
+  SeedSubsystem,
+  SeedTask,
+  SeedWorkstream,
+} from "./seedTypes";
+import {
+  offseasonSeedAdditions,
+  offseasonTaskBlockers,
+  offseasonTaskDependencies,
+} from "./offseasonSeed";
 
 function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
@@ -194,12 +171,13 @@ const snapshotSeed: Omit<
       name: "Tutorial Season",
       type: "season",
       startDate: "2026-01-06",
-      endDate: "2026-04-30",
+      endDate: "2026-08-31",
     },
   ],
   projects: [
     {
       id: "project-robot-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Tutorial Robot 2026",
       projectType: "robot",
@@ -208,6 +186,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-media-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Media",
       projectType: "other",
@@ -216,6 +195,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-outreach-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Outreach",
       projectType: "outreach",
@@ -224,6 +204,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-operations-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Operations",
       projectType: "operations",
@@ -232,6 +213,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-strategy-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Strategy",
       projectType: "other",
@@ -240,6 +222,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-training-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Training",
       projectType: "other",
@@ -1972,7 +1955,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-outreach-milestones",
       subsystemId: "outreach",
       mechanismId: "demo-kiosk",
-      partInstanceId: "pi-demo-kiosk-signage-kit",
+      partInstanceId: "pi-demo-kiosk-signage",
       artifactId: "artifact-stem-night-run-of-show",
       title: "Outreach kiosk signage copy is too dense",
       detail:
@@ -1993,7 +1976,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-controls",
       subsystemId: "vision",
       mechanismId: "limelight-mount",
-      partInstanceId: "pi-limelight-mount-plate",
+      partInstanceId: "pi-limelight-mount",
       artifactId: null,
       title: "Vision confidence drop near field corners",
       detail:
@@ -2048,7 +2031,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-outreach-milestones",
       subsystemId: "outreach",
       mechanismId: "demo-kiosk",
-      partInstanceId: "pi-demo-kiosk-signage-kit",
+      partInstanceId: "pi-demo-kiosk-signage",
       artifactId: "artifact-stem-night-run-of-show",
       taskId: "outreach-script-rehearsal",
       notes: "Simplify entrance signage and align copy with run-of-show callouts.",
@@ -2823,8 +2806,45 @@ const snapshotSeed: Omit<
   ],
 };
 
-export const snapshot: PlatformSnapshot = {
+const combinedSnapshotSeed: typeof snapshotSeed = {
   ...snapshotSeed,
+  members: [...snapshotSeed.members, ...offseasonSeedAdditions.members],
+  mechanisms: [...snapshotSeed.mechanisms, ...offseasonSeedAdditions.mechanisms],
+  materials: [...snapshotSeed.materials, ...offseasonSeedAdditions.materials],
+  artifacts: [...snapshotSeed.artifacts, ...offseasonSeedAdditions.artifacts],
+  partDefinitions: [
+    ...snapshotSeed.partDefinitions,
+    ...offseasonSeedAdditions.partDefinitions,
+  ],
+  partInstances: [...snapshotSeed.partInstances, ...offseasonSeedAdditions.partInstances],
+  milestones: [...snapshotSeed.milestones, ...offseasonSeedAdditions.milestones],
+  tasks: [...snapshotSeed.tasks, ...offseasonSeedAdditions.tasks],
+  qaReports: [...snapshotSeed.qaReports, ...offseasonSeedAdditions.qaReports],
+  testResults: [...snapshotSeed.testResults, ...offseasonSeedAdditions.testResults],
+  qaFindings: [...snapshotSeed.qaFindings, ...offseasonSeedAdditions.qaFindings],
+  testFindings: [...snapshotSeed.testFindings, ...offseasonSeedAdditions.testFindings],
+  designIterations: [
+    ...snapshotSeed.designIterations,
+    ...offseasonSeedAdditions.designIterations,
+  ],
+  risks: [...snapshotSeed.risks, ...offseasonSeedAdditions.risks],
+  workLogs: [...snapshotSeed.workLogs, ...offseasonSeedAdditions.workLogs],
+  meetings: [...snapshotSeed.meetings, ...offseasonSeedAdditions.meetings],
+  attendanceRecords: [
+    ...snapshotSeed.attendanceRecords,
+    ...offseasonSeedAdditions.attendanceRecords,
+  ],
+  manufacturingItems: [
+    ...snapshotSeed.manufacturingItems,
+    ...offseasonSeedAdditions.manufacturingItems,
+  ],
+  purchaseItems: [...snapshotSeed.purchaseItems, ...offseasonSeedAdditions.purchaseItems],
+  qaReviews: [...snapshotSeed.qaReviews, ...offseasonSeedAdditions.qaReviews],
+  escalations: [...snapshotSeed.escalations, ...offseasonSeedAdditions.escalations],
+};
+
+export const snapshot: PlatformSnapshot = {
+  ...combinedSnapshotSeed,
   taskDependencies: [
     {
       id: "dep-media-social-rollout-task",
@@ -2862,6 +2882,7 @@ export const snapshot: PlatformSnapshot = {
       dependencyType: "soft",
       createdAt: "2026-05-06T08:00:00-04:00",
     },
+    ...offseasonTaskDependencies,
   ],
   taskBlockers: [
     {
@@ -2900,17 +2921,18 @@ export const snapshot: PlatformSnapshot = {
       createdAt: "2026-05-05T08:15:00-04:00",
       resolvedAt: null,
     },
+    ...offseasonTaskBlockers,
   ],
-  workstreams: snapshotSeed.workstreams.map(withArchiveState),
-  subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
-  mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
-  partDefinitions: snapshotSeed.partDefinitions.map((partDefinition) =>
-    withPartDefinitionSeasonMembership(partDefinition, snapshotSeed.seasons[0]?.id ?? "default-season"),
+  workstreams: combinedSnapshotSeed.workstreams.map(withArchiveState),
+  subsystems: combinedSnapshotSeed.subsystems.map(withIteration).map(withArchiveState),
+  mechanisms: combinedSnapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
+  partDefinitions: combinedSnapshotSeed.partDefinitions.map((partDefinition) =>
+    withPartDefinitionSeasonMembership(partDefinition, combinedSnapshotSeed.seasons[0]?.id ?? "default-season"),
   ),
-  tasks: snapshotSeed.tasks.map(normalizeTaskTargets).map((task) =>
+  tasks: combinedSnapshotSeed.tasks.map(normalizeTaskTargets).map((task) =>
     normalizeTaskDiscipline(
       task,
-      new Map(snapshotSeed.projects.map((project) => [project.id, project])),
+      new Map(combinedSnapshotSeed.projects.map((project) => [project.id, project])),
     ),
   ),
   favoriteViews: [],

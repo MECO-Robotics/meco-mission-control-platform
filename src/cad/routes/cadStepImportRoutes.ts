@@ -1,9 +1,10 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from "fastify";
 
 import { cadStepUploadConfig, resolveCadStepParserMode } from "../../config/env";
 import {
   buildStepParserDiagnostics,
   CadImportError,
+  parseStepFileWithTimeout,
   runStepImport,
   stepParserUsedPlaceholder,
 } from "../cadImportService";
@@ -13,19 +14,27 @@ import { readStepImportPayload } from "./cadStepImportPayload";
 import type { RequireApiSession } from "./cadRouteTypes";
 
 export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
-  const stepUploadRouteOptions = { bodyLimit: cadStepUploadConfig.maxBytes };
+  const stepUploadRouteOptions = {
+    bodyLimit: cadStepUploadConfig.maxBytes,
+    onRequest(request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) {
+      if (!requireApiSession(request, reply)) {
+        return;
+      }
+      done();
+    },
+  };
 
   app.post("/api/cad/step-imports/debug-parse", stepUploadRouteOptions, async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
     try {
       const payload = await readStepImportPayload(request);
       const parserMode = resolveCadStepParserMode();
-      const parsed = await createStepParserClient({ mode: parserMode }).parseStepFile({
+      const parsed = await parseStepFileWithTimeout({
+        parserClient: createStepParserClient({ mode: parserMode }),
         fileText: payload.fileText,
         originalFilename: payload.fileName,
         importRunId: "debug-parse",
+        parserMode,
+        runInWorker: true,
       });
       const parserUsedPlaceholder = stepParserUsedPlaceholder(parsed);
       const diagnostics = buildStepParserDiagnostics({
@@ -47,15 +56,12 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
       if (error instanceof CadImportError) {
         return reply.code(error.statusCode).send({ message: error.message });
       }
-      const message = error instanceof Error ? error.message : String(error);
-      return reply.code(422).send({ message });
+      request.log.warn({ err: error }, "STEP debug parse failed");
+      return reply.code(422).send({ message: "STEP upload could not be parsed. Export a STEP AP203/AP214/AP242 file and try again." });
     }
   });
 
   app.post("/api/cad/step-imports", stepUploadRouteOptions, async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
     try {
       const payload = await readStepImportPayload(request);
       let parserMode: ReturnType<typeof resolveCadStepParserMode>;
@@ -69,6 +75,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
         store: getCadStore(),
         parserClient: createStepParserClient({ mode: parserMode }),
         parserMode,
+        parseInWorker: true,
         allowPlaceholder: process.env.NODE_ENV === "test" && payload.allowPlaceholder === true,
         input: {
           fileText: payload.fileText,

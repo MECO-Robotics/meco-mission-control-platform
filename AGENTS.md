@@ -26,11 +26,11 @@
 
 * Never implement, edit files, stage, commit, or run long-lived dev servers from the base repo checkout unless the user explicitly says to work there.
 * Use base repo checkouts only for read-only inspection, fetches, and creating worktrees.
-* Before touching files, create or enter a dedicated temporary worktree rooted on the intended PR target branch: use `origin/development` for normal `feature/*`, `fix/*`, and hotfixes targeting `development`; use `origin/main` for `hotfix/*` branches that will PR directly into `main`.
+* Before touching files, create or enter a dedicated temporary worktree rooted on the intended PR target branch: use `origin/development` for normal `feature/*`, `fix/*`, and hotfixes targeting `development`; use `origin/staging` or the named `origin/staging/*` branch for stabilization fixes when it exists; use `origin/main` for `hotfix/*` branches that will PR directly into `main`.
 * Keep worktree paths outside repo roots, such as workspace `_feature-branches/` or a Codex-managed worktree path.
 * Use branch names matching `feature/*`, `fix/*`, or `hotfix/*`; keep each worktree scoped to one task.
 * If a repo lacks `development`, create `development` from `origin/main` first, push it, then do feature work from a separate worktree branch based on `origin/development`.
-* Do not apply fixes directly to a `development -> main` promotion branch. Fix findings through a worktree branch PR into `development`, then let the promotion PR update from `development`.
+* Do not apply fixes directly to `staging -> main` or `development -> main` promotion branches. Fix findings through a worktree branch PR into `development`, then intentionally refresh the staging/main promotion PR from the corrected source branch.
 
 ### Environment Preflight
 
@@ -143,22 +143,27 @@ On Windows, assume PowerShell 5.1 semantics unless proven otherwise.
 
 * Branch model:
   * `main`: production-ready only
+  * `staging` or `staging/*`: audited release-candidate snapshot branches; immutable except for stabilization fixes
   * `development`: integration branch for active work
   * `feature/*`: short-lived feature branches
   * `fix/*`: short-lived bugfix branches
   * `hotfix/*`: emergency production fixes
 * PR flow:
-  * Normal work moves `feature/*` or `fix/*` in a temporary worktree by PR into `development`, then `development` by PR into `main`.
+  * Normal work moves `feature/*` or `fix/*` in a temporary worktree by PR into `development`.
+  * Cut `staging` or `staging/*` from the current `development` head when a reviewed release-candidate snapshot should sit in an open `main` PR while regular development continues separately.
   * Merge `feature/*` and `fix/*` into `development` by PR only.
+  * Merge `fix/*` or `hotfix/*` into `staging` or `staging/*` by PR only for stabilization fixes.
   * Merge `hotfix/*` into `development` or `main` by PR only.
-  * Merge into `main` only from `development` or `hotfix/*` by PR only.
+  * Merge into `main` only from `staging`, `staging/*`, `development`, or `hotfix/*` by PR only.
 * PRs into `development` must come from branches named only:
   * `feature/*`
   * `fix/*`
   * `hotfix/*`
+* PRs into `staging` or `staging/*` must come from `development`, `fix/*`, or `hotfix/*`.
+* Do not merge `feature/*` into `staging`; feature work continues through `development`.
 * Protected branch requirements:
   * GitHub branch protection must require the stable `merge-requirements` check instead of individual workflow jobs that can be skipped or absent.
-  * `merge-requirements` dynamically enforces `branch-model`, `ci-validate`, and `snapshot-validate` for PRs into `development`.
+  * `merge-requirements` dynamically enforces `branch-model`, `ci-validate`, and `snapshot-validate` for PRs into `development` and staging branches.
   * For PRs into `main`, `merge-requirements` also enforces `cross-repo-production-gate`.
   * Keep configured review counts, conversation resolution, linear history, and admin enforcement enabled on protected branches.
 * Production safety requirements:
@@ -166,7 +171,7 @@ On Windows, assume PowerShell 5.1 semantics unless proven otherwise.
   * Enforce stricter cross-repo validation before `main` merges.
   * Deploy production server only from `main`, `release-*` tags, or a release manifest.
   * Create VPS backups immediately before production deploy (files, env, and database dump).
-* Do not introduce or rely on a permanent live staging environment. There is one production VPS.
+* Do not introduce or rely on a permanent live staging environment. Staging branches are auditable release-candidate snapshots, not a second VPS.
 
 ---
 

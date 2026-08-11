@@ -11,7 +11,8 @@ Treat PR publishing as an end-to-end workflow: scoped branch, related issue, pro
 
 - Confirm repo, base branch, current branch, dirty files, and auth with `git status --short --branch`, `git remote -v`, and `gh auth status`.
 - Use the user's newest wording as scope. Stage only in-scope files and keep unrelated dirty work untouched.
-- Prefer a feature or fix branch off the requested base branch. Default Mission Control PR target is `development` unless the user asks for `main` or another branch.
+- Prefer a feature or fix branch off the requested base branch. Default Mission Control PR target is `development` unless the user asks for `staging`, `main`, or another branch.
+- Treat `staging` and `staging/*` as immutable release-candidate snapshots: cut or refresh them from `development` for a `main` promotion PR, then allow only `fix/*` or `hotfix/*` stabilization PRs into the staged snapshot.
 - Run relevant validation before publishing or after each fix pass. Use targeted checks first, then broader repo checks when the touched surface is shared.
 - If connector or `gh` commands fail, try one practical fallback and continue. Do not repeat the same broken path.
 
@@ -52,6 +53,13 @@ Treat PR publishing as an end-to-end workflow: scoped branch, related issue, pro
 
 - Prefer GitHub connector PR tools when they are healthy. Use `gh pr create`, `gh pr edit`, `gh pr comment`, and `gh api graphql` as the practical fallback.
 - After the PR exists, post `@codex review` unless a connector review was already triggered by the platform.
+
+## Staging Snapshot Flow
+
+- Cut `staging` or `staging/*` from the current `development` head when an audited release-candidate snapshot needs to remain in an open `main` PR while regular development continues separately.
+- Do not land feature work directly in staging. If review finds a product or contract bug, fix it through `development` first when practical; use a `fix/*` or `hotfix/*` PR into staging only for stabilization fixes that must preserve the staged snapshot.
+- Main promotions may come from `staging`, `staging/*`, `development`, or `hotfix/*`. Prefer staging when the release candidate needs an audit trail before production.
+- Keep staging PRs in the same connector loop as other protected PRs: request `@codex review`, resolve actionable threads, and stop only on explicit clean review language.
 
 ## Connector Review Loop
 

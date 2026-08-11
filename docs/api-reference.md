@@ -24,7 +24,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
 - `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
-- `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs and also updates the env-backed `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` roster.
+- `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs.
 
 ## Bootstrap And Dashboards
 
@@ -33,6 +33,39 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `GET /api/bootstrap`: selected bootstrap payload for initial frontend hydration.
 - `GET /api/metrics`: workflow and delivery metrics.
 - `GET /api/roster/insights`: roster participation and contribution insights.
+
+### Audit History Retention
+
+Audit actions are operational history for create, update, and delete activity exposed through
+`/api/bootstrap` as `actions`. They support accountability, troubleshooting, and scoped activity
+review; they are not a permanent archive of student activity. This policy is designed to align with
+FTC COPPA guidance that children's personal information should be retained only as long as needed
+and deleted with reasonable safeguards:
+https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions
+
+Retention policy:
+
+- Retain audit actions for 3 years after the end of the season in which the action occurred.
+- After the retention window, delete the audit action or anonymize actor/member references,
+  free-text labels, and messages. Keep only aggregate, non-identifying metrics when needed.
+- Treat student audit references as personal data and likely minor data. Audit messages should
+  avoid sensitive free text, private notes, unnecessary contact details, photos, or precise
+  personal details.
+- Honor verified parent/guardian or admin privacy requests through deletion or anonymization
+  unless a documented safety, legal, or operational reason requires temporary retention.
+- Archive hides a domain record from normal active views but does not shorten audit retention.
+- Delete removes the domain record from normal lists while the audit action remains as a minimal
+  tombstone until retention expires. Deleted-record audit entries must not require the deleted
+  entity to still exist for scoped history display.
+- `/api/bootstrap` returns scoped audit actions to authenticated, non-external users alongside the
+  rest of the scoped workspace payload. Audit messages therefore must stay minimal and
+  non-sensitive. Broad audit browsing is limited to leads, mentors, admins, or other explicitly
+  authorized users with a legitimate operational need. Bulk export, retention override, archive,
+  and manual deletion tools are admin-only operations for maintenance, privacy requests, incident
+  review, and compliance review, not general browsing.
+- `GET /api/audit/export`: admin-only audit action export. Supports `format=json|csv`,
+  `seasonId`, `projectId`, `entityType`, `from`, and `to` query filters. Date filters use ISO
+  datetimes and are inclusive.
 
 ## Tutorial Session
 
@@ -60,6 +93,9 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 - `GET /api/tasks`: list tasks, with filters and pagination handled by route helpers.
 - `POST /api/tasks`: create a task. Requires mentor, lead, or admin when auth is enabled.
+- `POST /api/tasks/:taskId/claim`: claim a task for the signed-in student or lead. Optional `{ "start": true }` starts eligible unblocked work. Returns `409 task_already_claimed` when another owner claimed first.
+- `POST /api/tasks/:taskId/release`: release a task. Students can release their own task; leads, mentors, and admins can release any task.
+- `POST /api/tasks/:taskId/reassign`: assign or unassign a task owner. Requires lead, mentor, or admin when auth is enabled.
 - `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled.
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
@@ -140,8 +176,8 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 ## Media Uploads
 
-- `POST /api/media/presign-upload`: returns a presigned image upload target when S3-compatible storage is configured.
-- `POST /api/media/presign-video-upload`: returns a presigned video upload target when S3-compatible storage is configured.
+- `POST /api/media/presign-upload`: returns a presigned image upload target in the selected project's team bucket when S3-compatible storage is configured.
+- `POST /api/media/presign-video-upload`: returns a presigned video upload target in the selected project's team bucket when S3-compatible storage is configured.
 
 ## Iterations And Findings
 

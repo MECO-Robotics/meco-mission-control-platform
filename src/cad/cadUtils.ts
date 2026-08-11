@@ -1,17 +1,19 @@
 import { createHash } from "node:crypto";
+import { cloneJson } from "../shared/json";
 
 export function nowIso() {
   return new Date().toISOString();
 }
 
 export function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return cloneJson(value);
 }
 
 export function nextId(prefix: string, existingIds: string[]) {
+  const usedIds = new Set(existingIds);
   let index = existingIds.length + 1;
   let candidate = `${prefix}-${String(index).padStart(4, "0")}`;
-  while (existingIds.includes(candidate)) {
+  while (usedIds.has(candidate)) {
     index += 1;
     candidate = `${prefix}-${String(index).padStart(4, "0")}`;
   }

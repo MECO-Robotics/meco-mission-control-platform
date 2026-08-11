@@ -6,11 +6,12 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
-import { getUserPreferences } from "../data/userPreferencesStore";
+import { getUserTaskSubteamIdsPreference } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
+const PUBLIC_DEMO_SEASON_ID = "default-season";
 
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
@@ -45,6 +46,7 @@ interface SessionClaims extends JwtPayload {
   name: string;
   picture?: string | null;
   hd: string;
+  googleHostedDomainVerified?: boolean;
   provider?: "google" | "email";
   role?: MemberRole;
 }
@@ -65,11 +67,14 @@ export interface SessionUser {
   hostedDomain: string;
   role: MemberRole;
   taskSubteamIds: string[];
+  isPublicDemo?: boolean;
 }
 
 interface SessionTokenOptions {
   deviceId?: string | null;
 }
+
+type DevelopmentSessionRole = Extract<MemberRole, "student" | "mentor">;
 
 export interface EmailCodeDelivery {
   sentTo: string;
@@ -148,10 +153,9 @@ function isAllowedHostedDomain(email: string) {
   return domain === authConfig.hostedDomain;
 }
 
-function isExternalRosterEmailAllowed(email: string) {
+function isRosterEmailAllowed(email: string) {
   return getMembers().some((member) => {
     return (
-      member.role === "external" &&
       member.email.length > 0 &&
       normalizeEmailAddress(member.email) === email
     );
@@ -159,11 +163,11 @@ function isExternalRosterEmailAllowed(email: string) {
 }
 
 function isAllowedSignInEmail(email: string) {
-  return isAllowedHostedDomain(email) || isExternalRosterEmailAllowed(email);
+  return isAllowedHostedDomain(email) || isRosterEmailAllowed(email);
 }
 
 function buildSignInAccessMessage() {
-  return `Use your ${authConfig.hostedDomain} email address or an external access email from the roster to continue.`;
+  return `Use your ${authConfig.hostedDomain} email address or a roster email to continue.`;
 }
 
 function formatEmailLocalPart(localPart: string) {
@@ -264,17 +268,22 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
 }
 
 function getTaskSubteamIdsForEmail(email: string) {
-  return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
+  const normalizedEmail = normalizeEmailAddress(email);
+  return (
+    getUserTaskSubteamIdsPreference(normalizedEmail) ??
+    authConfig.memberSubteamsByEmail[normalizedEmail] ??
+    []
+  );
 }
 
 function getRoleForEmail(email: string): MemberRole {
   const normalizedEmail = normalizeEmailAddress(email);
-  const rosterRole = getMembers().find(
+  const rosterMember = getMembers().find(
     (member) => normalizeEmailAddress(member.email) === normalizedEmail,
-  )?.role;
+  );
 
-  if (rosterRole && rosterRole !== "external") {
-    return rosterRole;
+  if (rosterMember) {
+    return rosterMember.role;
   }
 
   return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
@@ -295,24 +304,59 @@ function buildEmailSessionUser(email: string): SessionUser {
   };
 }
 
-function isDevelopmentSessionRole(role: MemberRole | undefined): role is "student" | "mentor" {
+function isDevelopmentSessionRole(role: MemberRole | undefined): role is DevelopmentSessionRole {
   return role === "student" || role === "mentor";
 }
 
-export function buildDevelopmentSessionUser(role: "student" | "mentor" = "student"): SessionUser {
-  const emailPrefix = role === "mentor" ? "dev.mentor" : "dev.student";
-  const email = `${emailPrefix}@${authConfig.hostedDomain}`;
+export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "student"): SessionUser {
+  const email = `dev.${role}@${authConfig.hostedDomain}`;
+  const displayRole = role === "mentor" ? "Mentor" : "Student";
 
   return {
     accountId: `local-dev-${role}`,
     authProvider: "email",
     email,
-    name: role === "mentor" ? "Local Dev Mentor" : "Local Dev Student",
+    name: `Local Dev ${displayRole}`,
     picture: null,
     hostedDomain: authConfig.hostedDomain,
     role,
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
+}
+
+function buildPublicDemoSessionUser(): SessionUser {
+  const email = `public.demo@${authConfig.hostedDomain}`;
+
+  return {
+    accountId: "public-demo",
+    authProvider: "email",
+    email,
+    name: "Public Demo",
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
+    role: "student",
+    taskSubteamIds: [],
+    isPublicDemo: true,
+  };
+}
+
+function isPublicDemoBootstrapRequest(request: FastifyRequest) {
+  if (request.method !== "GET") {
+    return false;
+  }
+
+  const [path = "", rawQuery = ""] = request.url.split("?", 2);
+  if (path !== "/api/bootstrap") {
+    return false;
+  }
+
+  const query = new URLSearchParams(rawQuery);
+  const seasonIds = query.getAll("seasonId");
+  return (
+    seasonIds.length === 1 &&
+    seasonIds[0] === PUBLIC_DEMO_SEASON_ID &&
+    !query.has("personId")
+  );
 }
 
 function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
@@ -326,6 +370,11 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
 
   const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd?.toLowerCase();
+  const hostedDomainEmail = isAllowedHostedDomain(email);
+  if (hostedDomainEmail && hostedDomain !== authConfig.hostedDomain) {
+    throw new AuthError("Google sign-in requires a verified hosted domain claim.", 403);
+  }
+
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
@@ -336,7 +385,7 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     email,
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
-    hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
+    hostedDomain: hostedDomain ?? authConfig.hostedDomain,
     role: getRoleForEmail(email),
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
@@ -515,10 +564,15 @@ function normalizeDeviceId(value: string | null | undefined) {
 export function signSessionToken(user: SessionUser, options: SessionTokenOptions = {}) {
   const secret = getJwtSecret();
   const deviceId = normalizeDeviceId(options.deviceId);
+  const googleHostedDomainVerified =
+    user.authProvider === "google" &&
+    isAllowedHostedDomain(user.email) &&
+    user.hostedDomain.toLowerCase() === authConfig.hostedDomain;
 
   return jwt.sign(
     {
       ...(deviceId ? { deviceId } : null),
+      ...(googleHostedDomainVerified ? { googleHostedDomainVerified: true } : null),
       email: user.email,
       name: user.name,
       picture: user.picture,
@@ -554,11 +608,23 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError("The session token is missing required identity fields.", 401);
   }
 
-  if (payload.provider && payload.provider !== "google" && payload.provider !== "email") {
+  const provider = payload.provider ?? "google";
+  if (provider !== "google" && provider !== "email") {
     throw new AuthError("The session token uses an unknown sign-in provider.", 401);
   }
 
   const email = normalizeEmailAddress(payload.email);
+  const hostedDomain = payload.hd.toLowerCase();
+  const requiresGoogleHostedDomainProof =
+    provider === "google" && isAllowedHostedDomain(email);
+  if (
+    requiresGoogleHostedDomainProof &&
+    (hostedDomain !== authConfig.hostedDomain ||
+      payload.googleHostedDomainVerified !== true)
+  ) {
+    throw new AuthError("Google sessions require a verified hosted domain claim.", 403);
+  }
+
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
@@ -572,11 +638,11 @@ export function verifySessionToken(token: string): SessionUser {
 
   return {
     accountId: payload.sub,
-    authProvider: payload.provider ?? "google",
+    authProvider: provider,
     email,
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
-    hostedDomain: payload.hd.toLowerCase(),
+    hostedDomain,
     role: developmentRole ?? getRoleForEmail(email),
     taskSubteamIds: getTaskSubteamIdsForEmail(email),
   };
@@ -598,6 +664,10 @@ export function readBearerToken(headerValue: string | undefined) {
 export function getSessionFromRequest(request: FastifyRequest) {
   const token = readBearerToken(request.headers.authorization);
   if (!token) {
+    if (authConfig.enabled && isPublicDemoBootstrapRequest(request)) {
+      return buildPublicDemoSessionUser();
+    }
+
     return null;
   }
 

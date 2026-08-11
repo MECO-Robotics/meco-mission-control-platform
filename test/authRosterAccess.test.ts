@@ -38,7 +38,9 @@ test("external roster role whitelists non-team email for email sign-in", async (
     const {
       AuthError,
       requestEmailSignInCode,
+      signSessionToken,
       verifyEmailSignInCode,
+      verifySessionToken,
     } = await import("../src/auth/authService");
 
     resetStore();
@@ -52,6 +54,12 @@ test("external roster role whitelists non-team email for email sign-in", async (
       name: "Sponsor Invitee",
       email: "invitee@sponsor.example",
       role: "external",
+      seasonId: "default-season",
+    });
+    createMember({
+      name: "Sponsor Mentor",
+      email: "mentor@sponsor.example",
+      role: "mentor",
       seasonId: "default-season",
     });
 
@@ -71,6 +79,25 @@ test("external roster role whitelists non-team email for email sign-in", async (
         return true;
       },
     );
+
+    try {
+      await requestEmailSignInCode(" MENTOR@SPONSOR.EXAMPLE ");
+    } catch (error) {
+      assert.ok(error instanceof AuthError);
+      assert.notEqual(error.statusCode, 403);
+    }
+
+    const mentorToken = signSessionToken({
+      accountId: "mentor@sponsor.example",
+      authProvider: "email",
+      email: "mentor@sponsor.example",
+      hostedDomain: "sponsor.example",
+      name: "Sponsor Mentor",
+      picture: null,
+      role: "student",
+      taskSubteamIds: [],
+    });
+    assert.equal(verifySessionToken(mentorToken).role, "mentor");
 
     assert.throws(
       () => verifyEmailSignInCode("VIEWER@sponsor.example", "123456"),
