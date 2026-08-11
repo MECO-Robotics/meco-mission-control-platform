@@ -1,17 +1,9 @@
 name: Deploy Server to VPS
 
 on:
-  workflow_dispatch:
-    inputs:
-      release_manifest:
-        description: Optional release-manifest JSON for coordinated cross-repo promotion
-        required: false
-        type: string
   push:
     branches:
       - main
-    tags:
-      - "release-*"
     paths:
       - ".github/workflows/deploy-vps.yml"
       - "src/**"
@@ -43,59 +35,25 @@ jobs:
     outputs:
       deploy_source: ${{ steps.gate.outputs.deploy_source }}
     steps:
+      - name: Check out deployment revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - name: Validate deployment source
         id: gate
-        env:
-          RELEASE_MANIFEST: ${{ github.event.inputs.release_manifest || '' }}
-          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
+          set -euo pipefail
+          git fetch --no-tags origin main
 
-          const eventName = process.env.GITHUB_EVENT_NAME;
-          const ref = process.env.GITHUB_REF;
-          const sha = process.env.GITHUB_SHA;
-          const repoName = process.env.REPOSITORY_NAME;
-          const manifestText = (process.env.RELEASE_MANIFEST || '').trim();
+          test "${GITHUB_EVENT_NAME}" = "push"
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${GITHUB_SHA}" = "$(git rev-parse origin/main)"
+          deploy_source="protected-main"
 
-          let deploySource = null;
-          if (ref === 'refs/heads/main') {
-            deploySource = 'main';
-          } else if (ref.startsWith('refs/tags/release-')) {
-            deploySource = 'release-tag';
-          } else if (manifestText.length > 0) {
-            deploySource = 'release-manifest';
-          }
-
-          if (!deploySource) {
-            throw new Error(
-              `Production deploy is allowed only from main, release-* tags, or a release manifest. Got event=${eventName}, ref=${ref}.`,
-            );
-          }
-
-          if (manifestText.length > 0) {
-            let manifest;
-            try {
-              manifest = JSON.parse(manifestText);
-            } catch (error) {
-              throw new Error(`release_manifest is not valid JSON: ${error.message}`);
-            }
-
-            const repoEntry = manifest?.repositories?.[repoName];
-            if (!repoEntry?.sha) {
-              throw new Error(`release_manifest.repositories.${repoName}.sha is required.`);
-            }
-
-            if (repoEntry.sha !== sha) {
-              throw new Error(
-                `release manifest SHA mismatch for ${repoName}: expected ${sha} but got ${repoEntry.sha}.`,
-              );
-            }
-          }
-
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `deploy_source=${deploySource}\n`);
-          console.log(`Deployment source accepted: ${deploySource}`);
-          NODE
+          printf 'deploy_source=%s\n' "${deploy_source}" >> "${GITHUB_OUTPUT}"
+          printf 'Deployment source accepted: %s at %s\n' "${deploy_source}" "${GITHUB_SHA}"
 
   validate:
     name: validate
@@ -104,10 +62,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -140,7 +98,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Validate deploy secrets
         shell: bash
@@ -148,12 +106,13 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
         run: |
           set -euo pipefail
 
           missing=()
-          for key in VPS_HOST VPS_USER VPS_SSH_KEY PRODUCTION_ENV_FILE; do
+          for key in VPS_HOST VPS_USER VPS_SSH_KEY VPS_SSH_KNOWN_HOSTS PRODUCTION_ENV_FILE; do
             if [[ -z "${!key:-}" ]]; then
               missing+=("$key")
             fi
@@ -166,12 +125,16 @@ jobs:
 
       - name: Configure SSH
         shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          printf '%s\n' "${VPS_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Backup existing VPS server deployment
         shell: bash
@@ -211,10 +174,12 @@ jobs:
                 echo "Created database backup: $backup_root/pm-server-db-${timestamp}.sql"
               else
                 rm -f "$backup_root/pm-server-db-${timestamp}.sql"
-                echo "Database backup failed; continuing deployment without DB dump."
+                echo "Database backup failed; aborting deployment." >&2
+                exit 1
               fi
             else
-              echo "Postgres service is not running; skipping database backup."
+              echo "Existing Postgres service is not running; aborting deployment." >&2
+              exit 1
             fi
           else
             echo "No existing env/compose deployment files found; skipping database backup."
@@ -358,6 +323,9 @@ jobs:
           cd /opt/pm-server
           docker --version
           docker compose version
+          docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres
+          docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy
+          docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:normalize-event-types
           docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
           docker image prune -f
           for attempt in $(seq 1 30); do

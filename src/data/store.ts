@@ -4726,7 +4726,11 @@ export function createMember(input: MemberInput) {
   return member;
 }
 
-export function updateMember(memberId: string, input: Partial<MemberInput>) {
+export function updateMember(
+  memberId: string,
+  input: Partial<MemberInput>,
+  auditContext: AuditMutationContext = {},
+) {
   const previousMember = currentSnapshot.members.find((member) => member.id === memberId);
   let updatedMember: Member | null = null;
 
@@ -4784,7 +4788,8 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
       entityType: "member",
       entityId: savedMember.id,
       entityLabel: savedMember.name,
-      actorMemberId: savedMember.id,
+      actorMemberId: auditContext.actorMemberId ?? savedMember.id,
+      requestId: auditContext.requestId ?? null,
       memberIds: [savedMember.id],
       detailsJson: getSeasonAuditDetails(previousMember, savedMember),
       changedFields: collectChangedFields(

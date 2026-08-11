@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
+import type { WebSessionStore } from "../../src/auth/webSessionStore";
 import { createMember, resetStore, type MemberInput } from "../../src/data/store";
 import { resetUserPreferencesStoreForTests } from "../../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../../src/security/requestLimits";
@@ -11,6 +12,9 @@ const INTEGRATION_ENV_MODULES = [
   "../../src/auth/mobileSessionPlugin",
   "../../src/auth/mobileSessionPrismaStore",
   "../../src/auth/mobileSessionService",
+  "../../src/auth/webSessionPlugin",
+  "../../src/auth/webSessionService",
+  "../../src/auth/webSessionStore",
   "../../src/cad/cadStoreFactory",
   "../../src/cad/routes/cadStepImportPayload",
   "../../src/cad/routes/cadStepImportRoutes",
@@ -24,6 +28,7 @@ const INTEGRATION_ENV_MODULES = [
   "../../src/routes/mobileAuthSchemas",
   "../../src/routes/registerRoutes",
   "../../src/routes/routeSchemas",
+  "../../src/routes/webAuthRoutes",
   "../../src/slack/client",
   "../../src/slack/homeService",
   "../../src/storage/mediaUploadService",
@@ -38,6 +43,8 @@ const APP_ENV_KEYS = [
   "AUTH_EMAIL_FROM",
   "AUTH_LEGACY_MOBILE_JWT_ENABLED",
   "AUTH_LEGACY_MOBILE_JWT_CUTOFF",
+  "AUTH_LEGACY_BEARER_ENABLED",
+  "AUTH_LEGACY_BEARER_CUTOFF",
   "AUTH_MENTOR_EMAILS",
   "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
@@ -55,6 +62,9 @@ const APP_ENV_KEYS = [
   "S3_BUCKET_PREFIX",
   "S3_BUCKET",
   "S3_PRESIGN_TTL_SECONDS",
+  "MEDIA_IMAGE_UPLOAD_MAX_BYTES",
+  "MEDIA_VIDEO_UPLOAD_MAX_BYTES",
+  "MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR",
   "SLACK_BOT_TOKEN",
   "SLACK_ALERT_USERGROUP_HANDLES",
   "SLACK_CHANNEL_BUILD_ID",
@@ -78,6 +88,10 @@ const APP_ENV_KEYS = [
   "CAD_STEP_UPLOAD_MAX_BYTES",
   "CAD_STEP_PARSER_MODE",
   "CAD_STEP_PARSER_TIMEOUT_MS",
+  "CAD_STEP_PARSER_MAX_CONCURRENCY",
+  "CAD_STEP_PARSER_MAX_QUEUE",
+  "CAD_STEP_PARSER_MAX_OLD_SPACE_MB",
+  "CAD_STEP_PARSER_MAX_RESULT_BYTES",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -110,6 +124,8 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   delete process.env.AUTH_EMAIL_FROM;
   delete process.env.AUTH_LEGACY_MOBILE_JWT_ENABLED;
   delete process.env.AUTH_LEGACY_MOBILE_JWT_CUTOFF;
+  delete process.env.AUTH_LEGACY_BEARER_ENABLED;
+  delete process.env.AUTH_LEGACY_BEARER_CUTOFF;
   delete process.env.AUTH_MENTOR_EMAILS;
   delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -126,6 +142,9 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.S3_BUCKET_PREFIX = "meco-pm";
   process.env.S3_BUCKET = "meco-pm";
   process.env.S3_PRESIGN_TTL_SECONDS = "300";
+  process.env.MEDIA_IMAGE_UPLOAD_MAX_BYTES = String(15 * 1024 * 1024);
+  process.env.MEDIA_VIDEO_UPLOAD_MAX_BYTES = String(250 * 1024 * 1024);
+  process.env.MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR = String(1024 * 1024 * 1024);
   delete process.env.SLACK_BOT_TOKEN;
   process.env.SLACK_ALERT_USERGROUP_HANDLES = "allmentors,allstudents";
   process.env.SLACK_CHANNEL_BUILD_ID = "C03171JMMB4";
@@ -149,6 +168,10 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
   delete process.env.CAD_STEP_PARSER_MODE;
   delete process.env.CAD_STEP_PARSER_TIMEOUT_MS;
+  delete process.env.CAD_STEP_PARSER_MAX_CONCURRENCY;
+  delete process.env.CAD_STEP_PARSER_MAX_QUEUE;
+  delete process.env.CAD_STEP_PARSER_MAX_OLD_SPACE_MB;
+  delete process.env.CAD_STEP_PARSER_MAX_RESULT_BYTES;
 
   for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
     if (value === undefined) {
@@ -180,6 +203,7 @@ export async function withIntegrationApp(
     env?: Partial<Record<AppEnvKey, string | undefined>>;
     members?: MemberInput[];
     mobileSessionStore?: MobileSessionStore;
+    webSessionStore?: WebSessionStore;
   },
 ) {
   const envSnapshot = saveEnv();
@@ -193,6 +217,7 @@ export async function withIntegrationApp(
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp({
       mobileSessionStore: options?.mobileSessionStore,
+      webSessionStore: options?.webSessionStore,
     });
     for (const member of options?.members ?? []) {
       createMember(member);

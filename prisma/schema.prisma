@@ -228,6 +228,27 @@ enum OnshapePlanType {
   UNKNOWN
 }
 
+model WebSession {
+  id             String   @id @default(cuid())
+  tokenHash      String   @unique @db.Char(64)
+  csrfTokenHash  String   @db.Char(64)
+  accountId      String
+  authProvider   String
+  email          String
+  name           String
+  picture        String?
+  hostedDomain   String
+  role           String
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@index([email])
+}
+
 model MobileDeviceSession {
   id                String               @id @default(cuid())
   accountId         String

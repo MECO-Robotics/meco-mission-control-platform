@@ -60,12 +60,126 @@ test("external roster sessions cannot access broad platform API routes", async (
       env: authEnv,
       members: [
         {
+          name: "Security Test Lead",
+          email: "lead@mecorobotics.org",
+          role: "lead",
+        },
+        {
           name: "Sponsor Viewer",
           email: "viewer@sponsor.example",
           role: "external",
         },
       ],
     },
+  );
+});
+
+test("leads cannot elevate roster roles while admins can perform legitimate role changes", async () => {
+  await withIntegrationApp(
+    async ({ app, resetLimits }) => {
+      const leadToken = await signTestToken({
+        email: "lead@mecorobotics.org",
+        role: "lead",
+      });
+      const adminToken = await signTestToken({
+        email: "admin@mecorobotics.org",
+        role: "admin",
+      });
+
+      const denied = await app.inject({
+        method: "PATCH",
+        url: "/api/members/priya",
+        headers: { authorization: `Bearer ${leadToken}` },
+        payload: { role: "admin" },
+      });
+      assert.equal(denied.statusCode, 403);
+
+      resetLimits();
+
+      const createDenied = await app.inject({
+        method: "POST",
+        url: "/api/members",
+        headers: { authorization: `Bearer ${leadToken}` },
+        payload: {
+          name: "Unauthorized Admin",
+          email: "unauthorized-admin@mecorobotics.org",
+          role: "admin",
+        },
+      });
+      assert.equal(createDenied.statusCode, 403);
+
+      resetLimits();
+
+      const allowed = await app.inject({
+        method: "PATCH",
+        url: "/api/members/priya",
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { role: "mentor" },
+      });
+      assert.equal(allowed.statusCode, 200);
+      assert.equal(allowed.json().item.role, "mentor");
+    },
+    {
+      env: authEnv,
+      members: [
+        {
+          name: "Security Test Admin",
+          email: "admin@mecorobotics.org",
+          role: "admin",
+        },
+      ],
+    },
+  );
+});
+
+test("generic QA reports cannot bypass mentor approval authorization", async () => {
+  await withIntegrationApp(
+    async ({ app, resetLimits }) => {
+      const studentToken = await signTestToken({
+        email: "student@mecorobotics.org",
+        role: "student",
+      });
+      const mentorToken = await signTestToken({
+        email: "mentor@mecorobotics.org",
+        role: "mentor",
+      });
+      const payload = {
+        reportType: "QA",
+        projectId: "default-season-robot",
+        taskId: "swerve-sensor-bundle",
+        milestoneId: null,
+        workstreamId: null,
+        createdByMemberId: "priya",
+        result: "pass",
+        summary: "Security regression",
+        notes: "Approval must be server-authorized.",
+        photoUrl: "",
+        createdAt: "2026-08-11T12:00:00.000Z",
+        participantIds: ["priya"],
+        mentorApproved: true,
+        reviewedAt: "2026-08-11",
+      };
+
+      const denied = await app.inject({
+        method: "POST",
+        url: "/api/reports",
+        headers: { authorization: `Bearer ${studentToken}` },
+        payload,
+      });
+      assert.equal(denied.statusCode, 403);
+
+      resetLimits();
+
+      const allowed = await app.inject({
+        method: "POST",
+        url: "/api/reports",
+        headers: { authorization: `Bearer ${mentorToken}` },
+        payload,
+      });
+      assert.equal(allowed.statusCode, 201);
+      assert.equal(allowed.json().item.mentorApproved, true);
+    },
+    { env: authEnv },
   );
 });
 

@@ -1,12 +1,54 @@
 import { fork } from "child_process";
 import { dirname, extname, join } from "path";
 
+import { cadStepParserConfig } from "../../config/env";
 import type { StepParseResult } from "../cadTypes";
 import { CadImportError } from "../errors/cadImportErrors";
 import type { StepParserClient, StepParserMode } from "./stepParserTypes";
 
 const defaultStepParserTimeoutMs = 30_000;
 const builtInWorkerParserModes = new Set<StepParserMode>(["auto", "step_text", "json_fixture"]);
+let activeParserProcesses = 0;
+const parserWaiters: Array<{
+  resolve: () => void;
+  timer: ReturnType<typeof setTimeout>;
+}> = [];
+
+async function acquireParserSlot(timeoutMs: number) {
+  if (activeParserProcesses < cadStepParserConfig.maxConcurrency) {
+    activeParserProcesses += 1;
+    return;
+  }
+  if (parserWaiters.length >= cadStepParserConfig.maxQueue) {
+    throw new CadImportError(
+      "STEP parsing is currently at capacity. Wait for an active import to finish and try again.",
+      503,
+    );
+  }
+  await new Promise<void>((resolve, reject) => {
+    const waiter = {
+      resolve,
+      timer: setTimeout(() => {
+        const index = parserWaiters.indexOf(waiter);
+        if (index >= 0) {
+          parserWaiters.splice(index, 1);
+        }
+        reject(new CadImportError("STEP parsing timed out while waiting for capacity.", 408));
+      }, timeoutMs),
+    };
+    parserWaiters.push(waiter);
+  });
+  activeParserProcesses += 1;
+}
+
+function releaseParserSlot() {
+  activeParserProcesses = Math.max(0, activeParserProcesses - 1);
+  const next = parserWaiters.shift();
+  if (next) {
+    clearTimeout(next.timer);
+    next.resolve();
+  }
+}
 
 function resolveStepParserTimeoutMs() {
   const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
@@ -46,24 +88,35 @@ function resolveParserProcessExecArgv(workerPath: string) {
   return execArgv.length > 0 ? execArgv : ["--import", "tsx"];
 }
 
-function parseStepFileInParserProcess(args: {
+async function parseStepFileInParserProcess(args: {
   fileText: string;
   importRunId: string;
   mode: Exclude<StepParserMode, "placeholder">;
   originalFilename: string;
   timeoutMs: number;
 }) {
-  const workerPath = resolveParserProcessPath();
-  const child = fork(workerPath, [], {
-    execArgv: resolveParserProcessExecArgv(workerPath),
-    stdio: ["ignore", "ignore", "pipe", "ipc"],
-  });
-  const stderrChunks: Buffer[] = [];
-  let didFinish = false;
+  await acquireParserSlot(args.timeoutMs);
+  try {
+    const workerPath = resolveParserProcessPath();
+    const child = fork(workerPath, [], {
+      execArgv: [
+        `--max-old-space-size=${cadStepParserConfig.maxOldSpaceMb}`,
+        ...resolveParserProcessExecArgv(workerPath),
+      ],
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
+    const stderrChunks: Buffer[] = [];
+    let stderrBytes = 0;
+    let didFinish = false;
 
-  return new Promise<StepParseResult>((resolve, reject) => {
+    return await new Promise<StepParseResult>((resolve, reject) => {
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderrChunks.push(chunk);
+      const remaining = 64 * 1024 - stderrBytes;
+      if (remaining > 0) {
+        const bounded = chunk.subarray(0, remaining);
+        stderrChunks.push(bounded);
+        stderrBytes += bounded.length;
+      }
     });
 
     const settle = (callback: () => void) => {
@@ -110,10 +163,14 @@ function parseStepFileInParserProcess(args: {
     child.send({
       fileText: args.fileText,
       importRunId: args.importRunId,
+      maxResultBytes: cadStepParserConfig.maxResultBytes,
       mode: args.mode,
       originalFilename: args.originalFilename,
     });
-  });
+    });
+  } finally {
+    releaseParserSlot();
+  }
 }
 
 export async function parseStepFileWithTimeout(args: {

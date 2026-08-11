@@ -4,6 +4,7 @@ import {
   AuthError,
   buildDevelopmentSessionUser,
   getPublicAuthConfig,
+  isLegacyBearerIssuanceAllowed,
   isLegacyMobileJwtIssuanceAllowed,
   isAuthEnabled,
   requestEmailSignInCode,
@@ -66,6 +67,12 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
   app.post<{ Body: { credential?: string } }>("/api/auth/google", async (request, reply) => {
     if (!allowAuthRouteRequest(request, reply)) {
       return;
+    }
+    if (!isLegacyBearerIssuanceAllowed()) {
+      return reply.code(426).send({
+        code: "session_client_upgrade_required",
+        message: "Use the supported web or mobile sign-in flow.",
+      });
     }
 
     const credential = request.body?.credential;
@@ -164,6 +171,12 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         error: "mobile_client_upgrade_required",
         message: "Update MECO Mission Control Mobile to continue signing in.",
         code: "mobile_client_upgrade_required",
+      });
+    }
+    if (!parsed.data.deviceId && !isLegacyBearerIssuanceAllowed()) {
+      return reply.code(426).send({
+        code: "session_client_upgrade_required",
+        message: "Use the supported web or mobile sign-in flow.",
       });
     }
 

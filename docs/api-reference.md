@@ -18,10 +18,15 @@ This reference describes the current Fastify route surface for the Mission Contr
 ## Authentication
 
 - `GET /api/auth/config`: public auth configuration for the frontend.
-- `POST /api/auth/google`: exchanges a Google Identity Services credential for a Mission Control session token.
+- `POST /api/auth/google`: legacy non-mobile bearer exchange. Production returns `426 session_client_upgrade_required` unless the bounded compatibility flag is enabled.
 - `POST /api/auth/dev-bypass`: development-only local sign-in helper. Accepts optional `{ "role": "student" | "mentor" }`; production does not register this route.
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
-- `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
+- `POST /api/auth/email/verify`: legacy bearer exchange. Supported clients use the dedicated web or mobile verification endpoint.
+- `POST /api/auth/web/google`: verifies a Google credential and creates a revocable HttpOnly-cookie web session.
+- `POST /api/auth/web/email/verify`: verifies an email code and creates a revocable HttpOnly-cookie web session.
+- `POST /api/auth/web/dev-bypass`: non-production web-session development helper.
+- `GET /api/auth/web/session`: restores the current web session and returns the user, expiry, and in-memory CSRF token.
+- `POST /api/auth/web/logout`: revokes the current web session and clears its cookie.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
 - `POST /api/auth/mobile/email/verify`: verifies an email code for a mobile installation and returns the opaque access/refresh session envelope.
 - `POST /api/auth/mobile/refresh`: rotates a single-use refresh token and returns a replacement session envelope.
@@ -32,7 +37,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
 - `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs.
 
-Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Legacy mobile JWT requests receive `426 mobile_client_upgrade_required` after the configured compatibility window; browser and nonmobile bearer routes are unchanged.
+Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Legacy mobile JWT requests receive `426 mobile_client_upgrade_required` after the configured compatibility window. Legacy non-mobile bearer issuance and replay are disabled by default in production; web sessions are revocable and require an allowed Origin plus `X-CSRF-Token` on unsafe cookie-authenticated requests.
 
 ## Bootstrap And Dashboards
 
@@ -127,11 +132,11 @@ Retention policy:
 ## Reports, QA, And Risks
 
 - `GET /api/reports`: list reports.
-- `POST /api/reports`: create a report.
+- `POST /api/reports`: create a report. A QA report with `mentorApproved: true` requires mentor or admin authorization.
 - `GET /api/report-findings`: list report findings.
 - `POST /api/report-findings`: create a report finding.
 - `GET /api/qa-reports`: list QA reports.
-- `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor, lead, or admin when auth is enabled.
+- `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor or admin; leads are excluded.
 - `GET /api/qa-requests`: list QA requests.
 - `POST /api/qa-requests`: create a QA request.
 - `GET /api/test-results`: list test results.
@@ -170,9 +175,9 @@ Workflow endpoints return `403` for insufficient role, `404` for a missing item,
 ## Team And Robot Structure
 
 - `GET /api/members`: list members.
-- `POST /api/members`: create or invite a member. Requires mentor, lead, or admin when auth is enabled.
-- `PATCH /api/members/:memberId`: update a member. Requires mentor, lead, or admin when auth is enabled.
-- `DELETE /api/members/:memberId`: delete a member. Requires mentor, lead, or admin when auth is enabled.
+- `POST /api/members`: create or invite a member. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
+- `PATCH /api/members/:memberId`: update a member. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
+- `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted.
 - `POST /api/subsystems`: create a subsystem.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.
 - `DELETE /api/subsystems/:subsystemId`: delete a subsystem.
@@ -190,8 +195,10 @@ Workflow endpoints return `403` for insufficient role, `404` for a missing item,
 
 ## Media Uploads
 
-- `POST /api/media/presign-upload`: returns a presigned image upload target in the selected project's team bucket when S3-compatible storage is configured.
-- `POST /api/media/presign-video-upload`: returns a presigned video upload target in the selected project's team bucket when S3-compatible storage is configured.
+- `POST /api/media/presign-upload`: accepts `{ projectId, fileName, contentType, sizeBytes }` and returns an exact-length presigned image PUT in the project's team bucket.
+- `POST /api/media/presign-video-upload`: accepts `{ projectId, fileName, contentType, sizeBytes }` and returns an exact-length presigned video PUT in the project's team bucket.
+
+Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and an hourly identity/team byte quota. The returned URL signs `Content-Length`; clients must upload the exact byte length declared in `sizeBytes`.
 
 ## Iterations And Findings
 

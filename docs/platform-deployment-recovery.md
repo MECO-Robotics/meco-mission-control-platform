@@ -15,6 +15,7 @@ Production deploys require these GitHub secrets in
 - `VPS_HOST`: public IP or hostname for the production VPS.
 - `VPS_USER`: SSH deploy user, for example `root` or `deploy`.
 - `VPS_SSH_KEY`: private SSH key used by GitHub Actions.
+- `VPS_SSH_KNOWN_HOSTS`: reviewed host-key entry for the production VPS. Do not populate it with a live `ssh-keyscan` during deployment.
 - `PRODUCTION_ENV_FILE`: full `.env.production` content for the VPS.
 
 The deploy workflow can also inject these optional email secrets at deploy time:
@@ -49,6 +50,7 @@ Common production knobs:
   `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`,
   `AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS`, and `AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS`.
 - Auth lifetime/domain: `GOOGLE_ALLOWED_HOSTED_DOMAIN`, `AUTH_TOKEN_TTL`,
+  `AUTH_LEGACY_BEARER_ENABLED`, optional `AUTH_LEGACY_BEARER_CUTOFF`,
   legacy-only `AUTH_DEVICE_TOKEN_TTL`, `AUTH_LEGACY_MOBILE_JWT_ENABLED`, optional
   `AUTH_LEGACY_MOBILE_JWT_CUTOFF`, and optional `AUTH_MENTOR_EMAILS`.
 - Mobile session records are deployed from `prisma/schema.prisma` through the
@@ -61,7 +63,7 @@ Common production knobs:
   `AUTH_EMAIL_MAX_VERIFY_ATTEMPTS`.
 - Media storage: `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`,
   `S3_PUBLIC_BASE_URL`, `S3_REGION`, `S3_BUCKET_PREFIX`, and
-  `S3_PRESIGN_TTL_SECONDS`.
+  `S3_PRESIGN_TTL_SECONDS`, plus the image/video maximum and hourly quota values.
 - Slack: `SLACK_BOT_TOKEN`, `SLACK_ALERT_USERGROUP_HANDLES`, and
   `SLACK_CHANNEL_*_ID` values.
 - Onshape: `ONSHAPE_BASE_URL`, `ONSHAPE_OAUTH_CLIENT_ID`,
@@ -69,8 +71,8 @@ Common production knobs:
   `ONSHAPE_OAUTH_AUTHORIZATION_URL`, `ONSHAPE_OAUTH_TOKEN_URL`,
   `ONSHAPE_OAUTH_SCOPES`, token bootstrap values, and
   `ONSHAPE_CREDENTIAL_REFERENCE`.
-- CAD: `CAD_STORE_DRIVER`, `CAD_STEP_UPLOAD_MAX_BYTES`, and
-  `CAD_STEP_PARSER_MODE`.
+- CAD: `CAD_STORE_DRIVER`, `CAD_STEP_UPLOAD_MAX_BYTES`, `CAD_STEP_PARSER_MODE`,
+  and the parser concurrency, queue, heap, timeout, and result-size bounds.
 
 Production startup refuses these states:
 
@@ -78,6 +80,8 @@ Production startup refuses these states:
 - Neither Google nor email sign-in is configured.
 - `CORS_ORIGIN=*`.
 - `CAD_STEP_PARSER_MODE=placeholder`.
+- `AUTH_TOKEN_TTL` is not `1h` during the legacy bearer migration.
+- A configured S3 or Onshape credentialed URL does not use HTTPS.
 
 ## VPS Deployment Flow
 
@@ -93,12 +97,10 @@ creates `/opt/pm-server` for the deploy user.
 
 Production deployment uses `.github/workflows/deploy-vps.yml`.
 
-Allowed production deploy sources:
-
-- push to `main`
-- `release-*` tag
-- manual workflow dispatch with a release manifest whose repository SHA matches
-  the workflow SHA
+The only production deploy source is a push to protected `main`. Tag pushes,
+manual dispatches, and caller-supplied release manifests do not start this
+workflow. The source gate verifies that `GITHUB_SHA` is the current public
+`origin/main` revision before validation or deployment continues.
 
 The workflow deploy path is:
 
@@ -118,6 +120,9 @@ The workflow deploy path is:
 14. Run:
 
     ```bash
+    docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres
+    docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy
+    docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:normalize-event-types
     docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
     ```
 
@@ -129,11 +134,20 @@ The Compose stack contains:
 - `postgres`: `postgres:16-alpine` with the named `postgres-data` volume.
 - `app`: the Node API built from `Dockerfile`, with `.env.production` mounted.
 
-The app container command applies Prisma state before serving traffic:
+The app port is published on `127.0.0.1` only. A TLS reverse proxy and firewall
+are mandatory before production traffic is enabled; do not expose port 8080
+directly to the public network.
+
+The deploy workflow starts PostgreSQL, applies compatible Prisma state, and
+normalizes event types before starting the application:
 
 ```bash
-npm run prisma:deploy:accept-data-loss && npm run prisma:normalize-event-types && npm run start
+npm run prisma:deploy
+npm run prisma:normalize-event-types
 ```
+
+Ordinary application startup runs only `npm run start`; it does not perform a
+schema push and never uses `--accept-data-loss`.
 
 ## Backup Behavior
 
@@ -173,11 +187,9 @@ Database backup:
 
 - Permissions: `0600`
 
-The workflow keeps the newest 20 files in `/opt/pm-backups/server`.
-
-Important limitation: the current deploy continues if the database dump fails.
-Before risky production changes, operators must confirm that a recent usable DB
-dump exists or create one manually before continuing.
+The workflow keeps the newest 20 files in `/opt/pm-backups/server`. If an
+existing PostgreSQL service is unavailable or `pg_dump` fails, deployment stops
+before new source is synchronized.
 
 Manual backup command from an operator machine with VPS SSH access:
 
@@ -257,8 +269,8 @@ Prefer the least destructive rollback that fixes the incident.
 
 Redeploy previous source:
 
-- Use the deploy workflow against a previous approved git SHA, `main` state,
-  `release-*` tag, or release manifest.
+- Revert the affected change through the protected branch process and merge the
+  revert to `main`; that protected push starts a new deployment.
 - Use this when the new application code or workflow-triggered build is the
   suspected failure.
 

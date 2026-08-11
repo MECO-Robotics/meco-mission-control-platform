@@ -149,6 +149,34 @@ test("production config loads when auth and explicit origins are configured", as
   }
 });
 
+test("production config rejects cleartext credentialed integration URLs", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "AUTH_JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "S3_ENDPOINT",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "https://app.example.com";
+    process.env.AUTH_JWT_SECRET = "a".repeat(32);
+    process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
+    process.env.S3_ENDPOINT = "http://storage.example.com";
+
+    await assert.rejects(
+      loadEnvModule(`production-cleartext-integration-${Date.now()}`),
+      /Production S3_ENDPOINT must use HTTPS/,
+    );
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
 test("explicit SMTP settings override Resend fallback", async () => {
   const saved = saveEnv([
     "NODE_ENV",
@@ -259,7 +287,7 @@ test("CAD persistence defaults to Prisma and allows runtime override", async () 
   }
 });
 
-test("STEP upload limit defaults above common CAD export sizes and allows override", async () => {
+test("STEP upload limit defaults to a bounded size and allows a capped override", async () => {
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
@@ -275,7 +303,7 @@ test("STEP upload limit defaults above common CAD export sizes and allows overri
     delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
 
     const defaultConfig = await loadEnvModule(`cad-step-upload-default-${Date.now()}`);
-    assert.equal(defaultConfig.cadStepUploadConfig.maxBytes, 250 * 1024 * 1024);
+    assert.equal(defaultConfig.cadStepUploadConfig.maxBytes, 32 * 1024 * 1024);
 
     delete require.cache[require.resolve("../src/config/env.ts")];
     process.env.CAD_STEP_UPLOAD_MAX_BYTES = String(64 * 1024 * 1024);
