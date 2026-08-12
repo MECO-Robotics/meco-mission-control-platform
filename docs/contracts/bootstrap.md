@@ -25,9 +25,17 @@ title: Bootstrap API Contract
 - Platform:
   - `npm run verify` now includes `npm run contracts:verify`.
   - `npm run contracts:generate` writes `contracts/platform/bootstrap/v1/contract.json`.
+  - Pushes to protected `development` and `main` publish an attested GHCR artifact at
+    `ghcr.io/meco-robotics/meco-bootstrap-contract`. Each channel has a moving `v1-<channel>` tag and an
+    immutable `v1-<channel>-sha-<commit>` tag that must resolve to the same digest.
 - Web + Mobile:
   - `npm run verify` validates that their copied contract artifact matches the platform source (local checkout or
     GitHub raw URL when available).
+  - The web trusted merge gate pulls the public channel artifact, verifies its platform workflow attestation and
+    protected-branch source revision, then compares its exact contract bytes before publishing `merge-requirements`.
+
+The GHCR package must remain publicly readable. Public visibility exposes only the generated API schema and its
+manifest; no source secrets or credentials are included in the image.
 
 ## Migration notes
 

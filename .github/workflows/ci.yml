@@ -22,6 +22,7 @@ on:
       - ".editorconfig"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy-vps.yml"
+      - ".github/workflows/publish-bootstrap-contract.yml"
       - ".gitignore"
       - ".dockerignore"
       - "Dockerfile"
