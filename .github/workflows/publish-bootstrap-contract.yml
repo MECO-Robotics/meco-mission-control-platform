@@ -1,0 +1,135 @@
+name: Publish Bootstrap Contract
+
+on:
+  push:
+    branches:
+      - development
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: bootstrap-contract-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CONTRACT_IMAGE: ghcr.io/meco-robotics/meco-bootstrap-contract
+
+jobs:
+  verify-and-publish:
+    name: verify-and-publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out protected branch revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify checked-in bootstrap contract
+        run: npm run contracts:verify
+
+      - name: Build contract bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="${RUNNER_TEMP}/bootstrap-contract"
+          install -d "${artifact_dir}"
+          cp contracts/platform/bootstrap/v1/contract.json "${artifact_dir}/contract.json"
+          sha256=$(sha256sum "${artifact_dir}/contract.json" | awk '{print $1}')
+          CHANNEL="${GITHUB_REF_NAME}" SOURCE_REVISION="${GITHUB_SHA}" SHA256="${sha256}" \
+            node <<'NODE' > "${artifact_dir}/manifest.json"
+          const manifest = {
+            contractVersion: "v1",
+            channel: process.env.CHANNEL,
+            sourceRevision: process.env.SOURCE_REVISION.toLowerCase(),
+            sha256: process.env.SHA256.toLowerCase(),
+          };
+          process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          cp deploy/bootstrap-contract.Dockerfile "${artifact_dir}/Dockerfile"
+          echo "context=${artifact_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Check immutable revision tag
+        id: immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          immutable_tag="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}-sha-${GITHUB_SHA}"
+          if docker buildx imagetools inspect "${immutable_tag}" >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "Immutable contract artifact already exists; it will be promoted to this channel."
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build and publish contract artifact
+        if: steps.immutable.outputs.exists != 'true'
+        id: publish
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ steps.bundle.outputs.context }}
+          file: ${{ steps.bundle.outputs.context }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          tags: |
+            ${{ env.CONTRACT_IMAGE }}:v1-${{ github.ref_name }}
+            ${{ env.CONTRACT_IMAGE }}:v1-${{ github.ref_name }}-sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Promote existing immutable artifact to channel
+        if: steps.immutable.outputs.exists == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          immutable_ref="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}-sha-${GITHUB_SHA}"
+          channel_ref="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}"
+          docker buildx imagetools create --tag "${channel_ref}" "${immutable_ref}"
+
+      - name: Attest published contract artifact
+        if: steps.immutable.outputs.exists != 'true'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ env.CONTRACT_IMAGE }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify immutable and channel artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          immutable_ref="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}-sha-${GITHUB_SHA}"
+          channel_ref="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}"
+          immutable_digest=$(docker buildx imagetools inspect "${immutable_ref}" | awk '$1 == "Digest:" { print $2; exit }')
+          channel_digest=$(docker buildx imagetools inspect "${channel_ref}" | awk '$1 == "Digest:" { print $2; exit }')
+          test -n "${immutable_digest}"
+          test "${channel_digest}" = "${immutable_digest}"
+          gh attestation verify "oci://${CONTRACT_IMAGE}@${immutable_digest}" \
+            --repo MECO-Robotics/meco-mission-control-platform \
+            --signer-workflow github.com/MECO-Robotics/meco-mission-control-platform/.github/workflows/publish-bootstrap-contract.yml

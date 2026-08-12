@@ -44,3 +44,17 @@ test("production deployment fails closed on backups and avoids automatic destruc
   assert.doesNotMatch(compose, /accept-data-loss/);
   assert.doesNotMatch(packageJson, /accept-data-loss/);
 });
+
+test("protected branches publish an immutable attested bootstrap contract", () => {
+  const workflow = readRepoFile(".github/workflows/publish-bootstrap-contract.yml");
+  const dockerfile = readRepoFile("deploy/bootstrap-contract.Dockerfile");
+
+  assert.match(workflow, /branches:\s*\n\s*- development\s*\n\s*- main/);
+  assert.match(workflow, /packages: write/);
+  assert.match(workflow, /id-token: write/);
+  assert.match(workflow, /attestations: write/);
+  assert.match(workflow, /v1-\$\{\{ github\.ref_name \}\}-sha-\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /actions\/attest-build-provenance@[0-9a-f]{40}/);
+  assert.match(workflow, /test "\$\{channel_digest\}" = "\$\{immutable_digest\}"/);
+  assert.match(dockerfile, /^FROM busybox:[^@\s]+@sha256:[0-9a-f]{64}$/m);
+});
