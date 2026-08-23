@@ -37,19 +37,25 @@ test("production platform state survives a fresh process", () => {
     runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
+      const transaction = await store.acquireGlobalSnapshotMutation();
+      transaction.enter();
       store.createProject({
-        name: "Durable restart project",
-        seasonId: "default-season",
-        projectType: "operations",
-        description: "Persists across process restarts",
-        status: "active",
+          name: "Durable restart project",
+          seasonId: "default-season",
+          projectType: "operations",
+          description: "Persists across process restarts",
+          status: "active",
       });
+      await transaction.commit();
+      transaction.release();
+      process.exit(0);
     `);
 
     const loadedProjectName = runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
       process.stdout.write(store.getProjects().find((item) => item.name === "Durable restart project")?.name ?? "");
+      process.exit(0);
     `);
 
     assert.equal(loadedProjectName, "Durable restart project");
@@ -57,6 +63,33 @@ test("production platform state survives a fresh process", () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("failed production persistence does not publish staged state", () => {
+  const impossiblePath = "/dev/null/platform-snapshot.json";
+  const result = runProductionStoreScript(impossiblePath, `
+    const imported = await import("./src/data/store.ts");
+    const store = imported.default ?? imported;
+    const transaction = await store.acquireGlobalSnapshotMutation();
+    transaction.enter();
+    store.createProject({
+        name: "Rejected durable project",
+        seasonId: "default-season",
+        projectType: "operations",
+        description: "Must not reach global memory",
+        status: "active",
+    });
+    try {
+      await transaction.commit();
+    } catch {
+      // Expected persistence failure.
+    } finally {
+      transaction.release();
+    }
+    process.stdout.write(store.getProjects().some((item) => item.name === "Rejected durable project") ? "published" : "not-published");
+    process.exit(0);
+  `);
+  assert.equal(result, "not-published");
 });
 
 test("production startup rejects a corrupt durable snapshot instead of reseeding", () => {

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { PlatformSnapshot } from "../domain/types";
@@ -34,12 +35,12 @@ export function loadPlatformSnapshotFile(path: string) {
   return parsed;
 }
 
-export function savePlatformSnapshotFile(path: string, snapshot: PlatformSnapshot) {
-  mkdirSync(dirname(path), { recursive: true });
+export async function savePlatformSnapshotFile(path: string, snapshot: PlatformSnapshot) {
+  await mkdir(dirname(path), { recursive: true });
   const temporaryPath = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporaryPath, `${JSON.stringify(snapshot)}\n`, {
+  await writeFile(temporaryPath, `${JSON.stringify(snapshot)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
-  renameSync(temporaryPath, path);
+  await rename(temporaryPath, path);
 }

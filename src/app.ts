@@ -22,6 +22,7 @@ import { resetCadRuntimeStore } from "./cad/cadStore";
 import { disconnectCadStore } from "./cad/cadStoreFactory";
 import { cadStepUploadConfig, corsConfig, env } from "./config/env";
 import {
+  acquireGlobalSnapshotMutation,
   hasInteractiveTutorialSession,
   resetStore,
   runWithInteractiveTutorialSession,
@@ -66,21 +67,33 @@ export async function buildApp(options: BuildAppOptions = {}) {
     options.webSessionStore ?? getPrismaWebSessionStore(),
   );
   registerWebSessionSupport(app, webSessionService);
+  const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+  const mutationTransactions = new WeakMap<
+    object,
+    Awaited<ReturnType<typeof acquireGlobalSnapshotMutation>>
+  >();
 
   app.addHook("preHandler", (request, _reply, done) => {
-    if (!isAuthEnabled()) {
-      done();
-      return;
-    }
-
-    const session = getSessionFromRequest(request);
+    const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
     const userKey = session?.email?.trim().toLowerCase() || session?.accountId;
-    if (!userKey || !hasInteractiveTutorialSession(userKey)) {
+    if (userKey && hasInteractiveTutorialSession(userKey)) {
+      runWithInteractiveTutorialSession(userKey, done);
+      return;
+    }
+
+    if (!mutationMethods.has(request.method)) {
       done();
       return;
     }
 
-    runWithInteractiveTutorialSession(userKey, done);
+    acquireGlobalSnapshotMutation().then(
+      (transaction) => {
+        mutationTransactions.set(request, transaction);
+        transaction.enter();
+        done();
+      },
+      done,
+    );
   });
 
   app.addHook("onSend", async (request, reply, payload) => {
@@ -98,7 +111,18 @@ export async function buildApp(options: BuildAppOptions = {}) {
       reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     }
 
+    const transaction = mutationTransactions.get(request);
+    if (transaction?.hasChanges()) {
+      await transaction.commit();
+    }
+
     return payload;
+  });
+
+  app.addHook("onResponse", async (request) => {
+    const transaction = mutationTransactions.get(request);
+    mutationTransactions.delete(request);
+    transaction?.release();
   });
 
   app.addHook("onClose", async () => {

@@ -48,6 +48,40 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     assert.equal(secondProjects.statusCode, 200);
     assert.ok(firstProjects.json().items.some((project: { id: string }) => project.id === projectId));
     assert.equal(secondProjects.json().items.some((project: { id: string }) => project.id === projectId), false);
+
+    resetLimits();
+    const reset = await app.inject({
+      method: "POST",
+      url: "/api/tutorial/session/reset",
+      headers: firstHeaders,
+      payload: { mode: "session" },
+    });
+    assert.equal(reset.statusCode, 200);
+    assert.equal(reset.json().restored, true);
+
+    resetLimits();
+    const globalProject = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: firstHeaders,
+      payload: {
+        name: "Post-tutorial shared project",
+        seasonId: "default-season",
+        projectType: "operations",
+      },
+    });
+    assert.equal(globalProject.statusCode, 201);
+    const globalProjectId = globalProject.json().item.id as string;
+
+    resetLimits();
+    const peerProjectsAfterReset = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: secondHeaders,
+    });
+    assert.ok(peerProjectsAfterReset.json().items.some(
+      (project: { id: string }) => project.id === globalProjectId,
+    ));
   }, {
     env: {
       AUTH_JWT_SECRET: "test-secret-that-is-long-enough-for-auth",

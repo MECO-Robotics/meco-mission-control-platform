@@ -616,6 +616,8 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 interface SnapshotState {
   current: PlatformSnapshot;
   interactive: PlatformSnapshot | null;
+  isGlobalTransaction?: boolean;
+  dirty?: boolean;
 }
 
 const platformSnapshotPath = resolve(
@@ -631,6 +633,7 @@ const globalSnapshotState: SnapshotState = {
 };
 const tutorialSnapshotStates = new Map<string, SnapshotState>();
 const snapshotContext = new AsyncLocalStorage<SnapshotState>();
+let globalMutationTail = Promise.resolve();
 
 function activeSnapshotState() {
   return snapshotContext.getStore() ?? globalSnapshotState;
@@ -641,8 +644,8 @@ const currentSnapshot = new Proxy({} as PlatformSnapshot, {
   set: (_target, property, value) => {
     const state = activeSnapshotState();
     const updated = Reflect.set(state.current, property, value);
-    if (updated && process.env.NODE_ENV === "production" && state === globalSnapshotState) {
-      savePlatformSnapshotFile(platformSnapshotPath, state.current);
+    if (updated && state.isGlobalTransaction) {
+      state.dirty = true;
     }
     return updated;
   },
@@ -654,9 +657,57 @@ const currentSnapshot = new Proxy({} as PlatformSnapshot, {
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   const state = activeSnapshotState();
   state.current = snapshot;
-  if (process.env.NODE_ENV === "production" && state === globalSnapshotState) {
-    savePlatformSnapshotFile(platformSnapshotPath, snapshot);
+  if (state.isGlobalTransaction) {
+    state.dirty = true;
+  } else if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
+    throw new Error("Production platform mutations require a durable request transaction.");
   }
+}
+
+export async function acquireGlobalSnapshotMutation() {
+  let releaseLock!: () => void;
+  const previous = globalMutationTail;
+  globalMutationTail = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  await previous;
+
+  const state: SnapshotState = {
+    current: globalSnapshotState.current,
+    interactive: null,
+    isGlobalTransaction: true,
+    dirty: false,
+  };
+  let released = false;
+
+  return {
+    enter() {
+      snapshotContext.enterWith(state);
+    },
+    hasChanges() {
+      return state.dirty === true;
+    },
+    async commit() {
+      if (!state.dirty) {
+        return;
+      }
+      try {
+        if (process.env.NODE_ENV === "production") {
+          await savePlatformSnapshotFile(platformSnapshotPath, state.current);
+        }
+        globalSnapshotState.current = state.current;
+      } finally {
+        state.dirty = false;
+      }
+    },
+    release() {
+      if (!released) {
+        released = true;
+        snapshotContext.enterWith(globalSnapshotState);
+        releaseLock();
+      }
+    },
+  };
 }
 
 function getInteractiveTutorialSnapshot() {
@@ -1722,6 +1773,7 @@ export function resetInteractiveTutorialSession(userKey?: string) {
 
     state.current = cloneSnapshot(state.interactive);
     state.interactive = null;
+    tutorialSnapshotStates.delete(userKey);
     return true;
   }
 
