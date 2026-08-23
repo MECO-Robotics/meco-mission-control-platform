@@ -174,6 +174,13 @@ Environment backup:
 - Source: `/opt/pm-server/.env.production`
 - Permissions: `0600`
 
+Application data backup:
+
+- File name: `pm-server-app-data-<timestamp>.tgz`
+- Source: `/app/data` in the running `app` Compose service
+- Includes the authoritative production preferences and platform snapshot files
+- Permissions: `0600`
+
 Database backup:
 
 - File name: `pm-server-db-<timestamp>.sql`
@@ -187,9 +194,9 @@ Database backup:
 
 - Permissions: `0600`
 
-The workflow keeps the newest 20 files in `/opt/pm-backups/server`. If an
-existing PostgreSQL service is unavailable or `pg_dump` fails, deployment stops
-before new source is synchronized.
+The workflow keeps the newest 20 files in `/opt/pm-backups/server`. If the
+existing application or PostgreSQL service is unavailable, or either required
+backup fails, deployment stops before new source is synchronized.
 
 Manual backup command from an operator machine with VPS SSH access:
 
@@ -248,7 +255,9 @@ Production incident restore outline:
 3. Select the backup timestamp to restore from `/opt/pm-backups/server`.
 4. Preserve the current broken state if investigation may need it.
 5. Restore env or source files only when env drift or missing source artifacts
-   caused the incident.
+   caused the incident. Restore `pm-server-app-data-<timestamp>.tgz` into the
+   app data volume when preferences or snapshot-backed platform state are
+   corrupted or lost.
 6. Restore the DB dump only for confirmed data corruption, bad data writes, or a
    migration/schema incident that cannot be repaired safely in place.
 7. Use `psql -v ON_ERROR_STOP=1` for SQL restore commands so failures stop
