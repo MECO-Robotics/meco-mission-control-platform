@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
+import { isSnapshotMutationRequest } from "../src/data/snapshotMutationRoutes";
+
 import {
   createProject,
   createSeason,
@@ -33,6 +35,19 @@ import {
 
 beforeEach(() => {
   resetStore();
+});
+
+test("snapshot mutation routing locks only snapshot-backed writes", () => {
+  assert.equal(isSnapshotMutationRequest("POST", "/api/projects"), true);
+  assert.equal(isSnapshotMutationRequest("PATCH", "/api/tasks/task-1?mode=quick"), true);
+  assert.equal(isSnapshotMutationRequest("DELETE", "/api/meetings/meeting-1"), true);
+
+  assert.equal(isSnapshotMutationRequest("POST", "/api/auth/dev-bypass"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/media/presign-upload"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/cad/step-imports"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/onshape/import-runs"), false);
+  assert.equal(isSnapshotMutationRequest("GET", "/api/projects"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/project-settings"), false);
 });
 
 function nonRobotProjectNamesForSeason(seasonId: string) {

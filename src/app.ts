@@ -27,6 +27,7 @@ import {
   resetStore,
   runWithInteractiveTutorialSession,
 } from "./data/store";
+import { isSnapshotMutationRequest } from "./data/snapshotMutationRoutes";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
@@ -67,7 +68,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
     options.webSessionStore ?? getPrismaWebSessionStore(),
   );
   registerWebSessionSupport(app, webSessionService);
-  const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
   const mutationTransactions = new WeakMap<
     object,
     Awaited<ReturnType<typeof acquireGlobalSnapshotMutation>>
@@ -81,15 +81,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return;
     }
 
-    if (!mutationMethods.has(request.method)) {
-      done();
-      return;
-    }
-
-    // Tutorial session helpers manage their own isolated snapshots. Wrapping
-    // auth-disabled tutorial requests in a global transaction would make the
-    // interactive snapshot request-local and discard it before the next call.
-    if (request.url.startsWith("/api/tutorial/session/")) {
+    if (!isSnapshotMutationRequest(request.method, request.url)) {
       done();
       return;
     }
@@ -103,6 +95,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
       done,
     );
   });
+
+  const releaseMutationTransaction = (request: object) => {
+    const transaction = mutationTransactions.get(request);
+    mutationTransactions.delete(request);
+    transaction?.release();
+  };
 
   app.addHook("onSend", async (request, reply, payload) => {
     if (request.url.startsWith("/api/")) {
@@ -120,18 +118,19 @@ export async function buildApp(options: BuildAppOptions = {}) {
     }
 
     const transaction = mutationTransactions.get(request);
-    if (transaction?.hasChanges()) {
-      await transaction.commit();
+    try {
+      if (transaction?.hasChanges()) {
+        await transaction.commit();
+      }
+    } finally {
+      releaseMutationTransaction(request);
     }
 
     return payload;
   });
 
-  app.addHook("onResponse", async (request) => {
-    const transaction = mutationTransactions.get(request);
-    mutationTransactions.delete(request);
-    transaction?.release();
-  });
+  app.addHook("onError", async (request) => releaseMutationTransaction(request));
+  app.addHook("onResponse", async (request) => releaseMutationTransaction(request));
 
   app.addHook("onClose", async () => {
     await Promise.all([
