@@ -370,6 +370,18 @@ export async function registerRoutes(
   app: FastifyInstance,
   options: RegisterRoutesOptions,
 ) {
+  const sharedHierarchyPrefixes = [
+    "/api/seasons",
+    "/api/projects",
+    "/api/workstreams",
+    "/api/subsystems",
+    "/api/mechanisms",
+    "/api/part-definitions",
+    "/api/part-instances",
+    "/api/cad",
+    "/api/onshape",
+  ];
+  const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
   const requireApiSessionIfEnabled = (
     request: Parameters<typeof requireSession>[0],
     reply: Parameters<typeof requireSession>[1],
@@ -390,6 +402,18 @@ export async function registerRoutes(
     if (session.role === "external") {
       reply.code(403).send({
         message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    const path = request.url.split("?", 1)[0];
+    if (
+      session.role === "student" &&
+      mutationMethods.has(request.method) &&
+      sharedHierarchyPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+    ) {
+      reply.code(403).send({
+        message: "Only leads, mentors, and admins can modify shared planning or CAD hierarchy.",
       });
       return false;
     }
