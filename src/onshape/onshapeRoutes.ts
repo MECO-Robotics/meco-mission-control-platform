@@ -20,6 +20,11 @@ import { parseOnshapeUrl } from "./onshapeUrlParser";
 import type { CadImportOnshapeClient } from "./onshapeTypes";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
+type RequireMentorPermission = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  message: string,
+) => boolean;
 
 function createNoopClient(): CadImportOnshapeClient {
   return {
@@ -83,7 +88,11 @@ function resolveImportActor(request: FastifyRequest, requestedBy: string | null 
   return member?.id ?? session?.accountId ?? session?.email ?? null;
 }
 
-export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+export async function registerOnshapeRoutes(
+  app: FastifyInstance,
+  requireApiSession: RequireApiSession,
+  requireMentorPermission: RequireMentorPermission,
+) {
   registerOnshapeOAuthRoutes(app, requireApiSession);
   registerOnshapeSyncJobRoutes(app, requireApiSession);
 
@@ -132,6 +141,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     if (!requireApiSession(request, reply)) {
       return;
     }
+    if (!requireMentorPermission(request, reply, "Only mentors can create Onshape references.")) {
+      return;
+    }
 
     const parsedBody = onshapeDocumentRefSchema.safeParse(request.body);
     if (!parsedBody.success) {
@@ -152,7 +164,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     const item = getOnshapeRuntimeStore().createDocumentRef({
       label: parsedBody.data.label ?? parsedUrl.elementId ?? parsedUrl.documentId ?? "Onshape reference",
       parsed: parsedUrl,
-      createdBy: parsedBody.data.createdBy ?? null,
+      createdBy: resolveImportActor(request, parsedBody.data.createdBy),
       projectId: parsedBody.data.projectId ?? null,
       seasonId: parsedBody.data.seasonId ?? null,
       subsystemId: parsedBody.data.subsystemId ?? null,
@@ -164,6 +176,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
 
   app.post("/api/onshape/import-runs", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
+      return;
+    }
+    if (!requireMentorPermission(request, reply, "Only mentors can run Onshape imports.")) {
       return;
     }
 
