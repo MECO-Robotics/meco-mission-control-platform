@@ -26,7 +26,10 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 - The main app state starts from `src/data/mockData.ts` and is reset during app creation.
 - Core platform reads and writes go through `src/data/store.ts`.
-- Per-user preferences are stored outside git in `data/user-preferences.json`.
+- Core platform state is loaded from and atomically persisted to `data/platform-snapshot.json`
+  in production. Mutations are serialized and acknowledged only after the asynchronous durable
+  write succeeds. The production Compose stack mounts `/app/data` as a durable named volume.
+- Per-user preferences are stored outside git in `data/user-preferences.json` on the same volume.
 - Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - Prisma schema lives in `prisma/schema.prisma` and includes core planning/manufacturing entities plus CAD import tables.
 - Work logs record an optional creator, manufacturing review records include reviewer/time metadata, and purchase approval records include the derived approver and workflow timestamps. Existing rows remain valid with null metadata until their next protected workflow action.

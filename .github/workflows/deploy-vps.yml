@@ -168,6 +168,21 @@ jobs:
           fi
 
           if [ -f /opt/pm-server/.env.production ] && [ -f /opt/pm-server/docker-compose.prod.yml ]; then
+            if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml ps --status running --services app 2>/dev/null | grep -qx 'app'; then
+              snapshot_backup="$backup_root/pm-server-app-data-${timestamp}.tgz"
+              if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T app tar -czf - -C /app data > "$snapshot_backup"; then
+                chmod 600 "$snapshot_backup"
+                echo "Created application data backup: $snapshot_backup"
+              else
+                rm -f "$snapshot_backup"
+                echo "Application data backup failed; aborting deployment." >&2
+                exit 1
+              fi
+            else
+              echo "Existing app service is not running; aborting deployment." >&2
+              exit 1
+            fi
+
             if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml ps --status running --services postgres 2>/dev/null | grep -qx 'postgres'; then
               if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_root/pm-server-db-${timestamp}.sql"; then
                 chmod 600 "$backup_root/pm-server-db-${timestamp}.sql"

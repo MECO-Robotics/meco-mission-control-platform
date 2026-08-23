@@ -104,6 +104,7 @@ const envSchema = z.object({
   ONSHAPE_OAUTH_TOKEN: z.string().min(1).optional(),
   ONSHAPE_CREDENTIAL_REFERENCE: z.string().min(1).optional(),
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
+  PLATFORM_SNAPSHOT_PATH: z.string().trim().min(1).default("data/platform-snapshot.json"),
   CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(64 * 1024 * 1024).default(32 * 1024 * 1024),
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
   CAD_STEP_PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),

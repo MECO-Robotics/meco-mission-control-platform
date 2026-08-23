@@ -120,7 +120,7 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
         headers: studentHeaders,
       });
       assert.equal(deniedAuthorizationResponse.statusCode, 403);
-      assert.match(deniedAuthorizationResponse.json().message, /restricted to leads, mentors, and admins/i);
+      assert.match(deniedAuthorizationResponse.json().message, /leads, mentors, and admins/i);
 
       resetLimits();
 
@@ -130,7 +130,7 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
         headers: studentHeaders,
       });
       assert.equal(deniedRefreshResponse.statusCode, 403);
-      assert.match(deniedRefreshResponse.json().message, /restricted to leads, mentors, and admins/i);
+      assert.match(deniedRefreshResponse.json().message, /leads, mentors, and admins/i);
 
       resetLimits();
 

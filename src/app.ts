@@ -11,6 +11,7 @@ import {
 import { MobileSessionService } from "./auth/mobileSessionService";
 import type { MobileSessionStore } from "./auth/mobileSessionStoreTypes";
 import { registerWebSessionSupport } from "./auth/webSessionPlugin";
+import { getSessionFromRequest, isAuthEnabled } from "./auth/authService";
 import { WebSessionService } from "./auth/webSessionService";
 import {
   disconnectWebSessionStore,
@@ -20,7 +21,13 @@ import {
 import { resetCadRuntimeStore } from "./cad/cadStore";
 import { disconnectCadStore } from "./cad/cadStoreFactory";
 import { cadStepUploadConfig, corsConfig, env } from "./config/env";
-import { resetStore } from "./data/store";
+import {
+  acquireGlobalSnapshotMutation,
+  hasInteractiveTutorialSession,
+  resetStore,
+  runWithInteractiveTutorialSession,
+} from "./data/store";
+import { isSnapshotMutationRequest } from "./data/snapshotMutationRoutes";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
@@ -30,10 +37,11 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
-  // Always start from the checked-in seed snapshot so deploys regenerate tutorial state.
-  resetStore();
-  resetCadRuntimeStore();
-  resetOnshapeRuntimeStore();
+  if (env.NODE_ENV !== "production") {
+    resetStore();
+    resetCadRuntimeStore();
+    resetOnshapeRuntimeStore();
+  }
 
   const app = Fastify({
     logger: true,
@@ -60,6 +68,39 @@ export async function buildApp(options: BuildAppOptions = {}) {
     options.webSessionStore ?? getPrismaWebSessionStore(),
   );
   registerWebSessionSupport(app, webSessionService);
+  const mutationTransactions = new WeakMap<
+    object,
+    Awaited<ReturnType<typeof acquireGlobalSnapshotMutation>>
+  >();
+
+  app.addHook("preHandler", (request, _reply, done) => {
+    const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
+    const userKey = session?.email?.trim().toLowerCase() || session?.accountId;
+    if (userKey && hasInteractiveTutorialSession(userKey)) {
+      runWithInteractiveTutorialSession(userKey, done);
+      return;
+    }
+
+    if (!isSnapshotMutationRequest(request.method, request.url)) {
+      done();
+      return;
+    }
+
+    acquireGlobalSnapshotMutation().then(
+      (transaction) => {
+        mutationTransactions.set(request, transaction);
+        transaction.enter();
+        done();
+      },
+      done,
+    );
+  });
+
+  const releaseMutationTransaction = (request: object) => {
+    const transaction = mutationTransactions.get(request);
+    mutationTransactions.delete(request);
+    transaction?.release();
+  };
 
   app.addHook("onSend", async (request, reply, payload) => {
     if (request.url.startsWith("/api/")) {
@@ -76,8 +117,20 @@ export async function buildApp(options: BuildAppOptions = {}) {
       reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     }
 
+    const transaction = mutationTransactions.get(request);
+    try {
+      if (transaction?.hasChanges()) {
+        await transaction.commit();
+      }
+    } finally {
+      releaseMutationTransaction(request);
+    }
+
     return payload;
   });
+
+  app.addHook("onError", async (request) => releaseMutationTransaction(request));
+  app.addHook("onResponse", async (request) => releaseMutationTransaction(request));
 
   app.addHook("onClose", async () => {
     await Promise.all([

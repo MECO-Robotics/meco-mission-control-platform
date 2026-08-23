@@ -40,13 +40,13 @@ test("Onshape import audit actor is derived from the authenticated session", asy
     await withIntegrationApp(async ({ app, resetLimits }) => {
       const { signSessionToken } = await import("../src/auth/authService");
       const token = signSessionToken({
-        accountId: "ava",
+        accountId: "jordan",
         authProvider: "email",
-        email: "ava.chen@mecorobotics.org",
+        email: "jordan.lee@mecorobotics.org",
         hostedDomain: "mecorobotics.org",
-        name: "Ava Chen",
+        name: "Jordan Lee",
         picture: null,
-        role: "student",
+        role: "mentor",
         taskSubteamIds: [],
       });
       const authHeaders = { authorization: `Bearer ${token}` };
@@ -64,6 +64,7 @@ test("Onshape import audit actor is derived from the authenticated session", asy
         },
       });
       assert.equal(createResponse.statusCode, 201);
+      assert.equal(createResponse.json().item.createdBy, "jordan");
       const refId = createResponse.json().item.id as string;
 
       resetLimits();
@@ -79,9 +80,9 @@ test("Onshape import audit actor is derived from the authenticated session", asy
 
       const auditAction = (getSnapshot().actions ?? []).find((action) => action.entityId === result.syncJobId);
       assert.ok(auditAction);
-      assert.equal(auditAction.actorMemberId, "ava");
-      assert.deepEqual(auditAction.memberIds, ["ava"]);
-      assert.equal(auditAction.detailsJson?.actor, "ava");
+      assert.equal(auditAction.actorMemberId, "jordan");
+      assert.deepEqual(auditAction.memberIds, ["jordan"]);
+      assert.equal(auditAction.detailsJson?.actor, "jordan");
     }, {
       env: {
         AUTH_JWT_SECRET: "test-secret-that-is-long-enough-for-auth",

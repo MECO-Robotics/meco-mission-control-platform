@@ -370,6 +370,18 @@ export async function registerRoutes(
   app: FastifyInstance,
   options: RegisterRoutesOptions,
 ) {
+  const sharedHierarchyPrefixes = [
+    "/api/seasons",
+    "/api/projects",
+    "/api/workstreams",
+    "/api/subsystems",
+    "/api/mechanisms",
+    "/api/part-definitions",
+    "/api/part-instances",
+    "/api/cad",
+    "/api/onshape",
+  ];
+  const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
   const requireApiSessionIfEnabled = (
     request: Parameters<typeof requireSession>[0],
     reply: Parameters<typeof requireSession>[1],
@@ -390,6 +402,18 @@ export async function registerRoutes(
     if (session.role === "external") {
       reply.code(403).send({
         message: "External roster sessions cannot access internal platform API routes.",
+      });
+      return false;
+    }
+
+    const path = request.url.split("?", 1)[0];
+    if (
+      session.role === "student" &&
+      mutationMethods.has(request.method) &&
+      sharedHierarchyPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+    ) {
+      reply.code(403).send({
+        message: "Only leads, mentors, and admins can modify shared planning or CAD hierarchy.",
       });
       return false;
     }
@@ -753,11 +777,14 @@ export async function registerRoutes(
       return;
     }
 
-    startInteractiveTutorialSession();
+    const userKey = getNavigationPreferenceUserKey(request);
+    startInteractiveTutorialSession(isAuthEnabled() ? userKey : undefined);
     return {
       ok: true,
       mode: "session" as const,
-      tutorial: getTutorialBaselineState(),
+      tutorial: isAuthEnabled()
+        ? resetTutorialBaseline(userKey)
+        : getTutorialBaselineState(),
     };
   });
 
@@ -779,7 +806,9 @@ export async function registerRoutes(
     }
 
     if (parsed.data.mode === "baseline") {
-      const tutorial = resetTutorialBaseline();
+      const tutorial = resetTutorialBaseline(
+        isAuthEnabled() ? getNavigationPreferenceUserKey(request) : undefined,
+      );
       const baselineReady =
         tutorial.seasonId !== null && tutorial.missingProjectNames.length === 0;
 
@@ -804,7 +833,9 @@ export async function registerRoutes(
       return response;
     }
 
-    const restored = resetInteractiveTutorialSession();
+    const restored = resetInteractiveTutorialSession(
+      isAuthEnabled() ? getNavigationPreferenceUserKey(request) : undefined,
+    );
 
     const response: TutorialResetResponse = {
       ok: restored,
@@ -830,6 +861,9 @@ export async function registerRoutes(
 
   app.post<{ Body: unknown }>("/api/seasons", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+    if (!requireMentorPermission(request, reply, "Only mentors can create seasons.")) {
       return;
     }
 
@@ -880,6 +914,9 @@ export async function registerRoutes(
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
+    if (!requireMentorPermission(request, reply, "Only mentors can create projects.")) {
+      return;
+    }
 
     const parsed = projectSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -906,6 +943,9 @@ export async function registerRoutes(
     "/api/projects/:projectId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+      if (!requireMentorPermission(request, reply, "Only mentors can edit projects.")) {
         return;
       }
 
@@ -948,6 +988,9 @@ export async function registerRoutes(
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
+    if (!requireMentorPermission(request, reply, "Only mentors can create workstreams.")) {
+      return;
+    }
 
     const parsed = workstreamSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -974,6 +1017,9 @@ export async function registerRoutes(
     "/api/workstreams/:workstreamId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+      if (!requireMentorPermission(request, reply, "Only mentors can edit workstreams.")) {
         return;
       }
 
@@ -4046,5 +4092,5 @@ export async function registerRoutes(
   });
 
   await registerCadRoutes(app, requireApiSessionIfEnabled);
-  await registerOnshapeRoutes(app, requireApiSessionIfEnabled);
+  await registerOnshapeRoutes(app, requireApiSessionIfEnabled, requireMentorPermission);
 }

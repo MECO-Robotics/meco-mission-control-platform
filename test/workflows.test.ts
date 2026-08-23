@@ -484,6 +484,14 @@ test("deploy workflow validates secrets and retains the app health gate", () => 
   );
 });
 
+test("deploy workflow backs up durable application state before deployment", () => {
+  const workflow = readFileSync(".github/workflows/deploy-vps.yml", "utf8");
+
+  assert.match(workflow, /pm-server-app-data-\$\{timestamp\}\.tgz/);
+  assert.match(workflow, /exec -T app tar -czf - -C \/app data/);
+  assert.match(workflow, /Application data backup failed; aborting deployment/);
+});
+
 test("deploy bootstrap script guards Linux-only execution and installs prerequisites", () => {
   const bootstrapScript = readRepoFile("deploy/bootstrap-vps.sh");
 
