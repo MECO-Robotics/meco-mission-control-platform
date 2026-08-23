@@ -11,6 +11,7 @@ import {
 import { MobileSessionService } from "./auth/mobileSessionService";
 import type { MobileSessionStore } from "./auth/mobileSessionStoreTypes";
 import { registerWebSessionSupport } from "./auth/webSessionPlugin";
+import { getSessionFromRequest, isAuthEnabled } from "./auth/authService";
 import { WebSessionService } from "./auth/webSessionService";
 import {
   disconnectWebSessionStore,
@@ -20,7 +21,11 @@ import {
 import { resetCadRuntimeStore } from "./cad/cadStore";
 import { disconnectCadStore } from "./cad/cadStoreFactory";
 import { cadStepUploadConfig, corsConfig, env } from "./config/env";
-import { resetStore } from "./data/store";
+import {
+  hasInteractiveTutorialSession,
+  resetStore,
+  runWithInteractiveTutorialSession,
+} from "./data/store";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
@@ -30,10 +35,11 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
-  // Always start from the checked-in seed snapshot so deploys regenerate tutorial state.
-  resetStore();
-  resetCadRuntimeStore();
-  resetOnshapeRuntimeStore();
+  if (env.NODE_ENV !== "production") {
+    resetStore();
+    resetCadRuntimeStore();
+    resetOnshapeRuntimeStore();
+  }
 
   const app = Fastify({
     logger: true,
@@ -60,6 +66,22 @@ export async function buildApp(options: BuildAppOptions = {}) {
     options.webSessionStore ?? getPrismaWebSessionStore(),
   );
   registerWebSessionSupport(app, webSessionService);
+
+  app.addHook("preHandler", (request, _reply, done) => {
+    if (!isAuthEnabled()) {
+      done();
+      return;
+    }
+
+    const session = getSessionFromRequest(request);
+    const userKey = session?.email?.trim().toLowerCase() || session?.accountId;
+    if (!userKey || !hasInteractiveTutorialSession(userKey)) {
+      done();
+      return;
+    }
+
+    runWithInteractiveTutorialSession(userKey, done);
+  });
 
   app.addHook("onSend", async (request, reply, payload) => {
     if (request.url.startsWith("/api/")) {
