@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { resolve } from "node:path";
 
 import { snapshot as initialSnapshot } from "./mockData";
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
@@ -62,6 +63,7 @@ import {
   reportFromTestResult,
   type FindingListItem,
 } from "./store/reportDerivations";
+import { loadPlatformSnapshotFile, savePlatformSnapshotFile } from "./platformSnapshotFile";
 import type {
   ArtifactInput,
   MilestoneInput,
@@ -616,8 +618,15 @@ interface SnapshotState {
   interactive: PlatformSnapshot | null;
 }
 
+const platformSnapshotPath = resolve(
+  process.cwd(),
+  process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json",
+);
+const persistedProductionSnapshot = process.env.NODE_ENV === "production"
+  ? loadPlatformSnapshotFile(platformSnapshotPath)
+  : null;
 const globalSnapshotState: SnapshotState = {
-  current: cloneSnapshot(initialSnapshot),
+  current: cloneSnapshot(persistedProductionSnapshot ?? initialSnapshot),
   interactive: null,
 };
 const tutorialSnapshotStates = new Map<string, SnapshotState>();
@@ -629,14 +638,25 @@ function activeSnapshotState() {
 
 const currentSnapshot = new Proxy({} as PlatformSnapshot, {
   get: (_target, property) => Reflect.get(activeSnapshotState().current, property),
-  set: (_target, property, value) => Reflect.set(activeSnapshotState().current, property, value),
+  set: (_target, property, value) => {
+    const state = activeSnapshotState();
+    const updated = Reflect.set(state.current, property, value);
+    if (updated && process.env.NODE_ENV === "production" && state === globalSnapshotState) {
+      savePlatformSnapshotFile(platformSnapshotPath, state.current);
+    }
+    return updated;
+  },
   ownKeys: () => Reflect.ownKeys(activeSnapshotState().current),
   getOwnPropertyDescriptor: (_target, property) =>
     Reflect.getOwnPropertyDescriptor(activeSnapshotState().current, property),
 });
 
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
-  activeSnapshotState().current = snapshot;
+  const state = activeSnapshotState();
+  state.current = snapshot;
+  if (process.env.NODE_ENV === "production" && state === globalSnapshotState) {
+    savePlatformSnapshotFile(platformSnapshotPath, snapshot);
+  }
 }
 
 function getInteractiveTutorialSnapshot() {
@@ -1654,6 +1674,10 @@ export function getTutorialBaselineState() {
 }
 
 export function resetStore() {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
   globalSnapshotState.current = cloneSnapshot(initialSnapshot);
   globalSnapshotState.interactive = null;
   tutorialSnapshotStates.clear();
