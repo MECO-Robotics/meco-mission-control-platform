@@ -86,6 +86,14 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return;
     }
 
+    // Tutorial session helpers manage their own isolated snapshots. Wrapping
+    // auth-disabled tutorial requests in a global transaction would make the
+    // interactive snapshot request-local and discard it before the next call.
+    if (request.url.startsWith("/api/tutorial/session/")) {
+      done();
+      return;
+    }
+
     acquireGlobalSnapshotMutation().then(
       (transaction) => {
         mutationTransactions.set(request, transaction);

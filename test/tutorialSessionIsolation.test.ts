@@ -82,6 +82,39 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     assert.ok(peerProjectsAfterReset.json().items.some(
       (project: { id: string }) => project.id === globalProjectId,
     ));
+
+    resetLimits();
+    const baselineWithoutSession = await app.inject({
+      method: "POST",
+      url: "/api/tutorial/session/reset",
+      headers: secondHeaders,
+      payload: { mode: "baseline" },
+    });
+    assert.equal(baselineWithoutSession.statusCode, 200);
+
+    resetLimits();
+    const sharedAfterBaseline = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: secondHeaders,
+      payload: {
+        name: "Shared after baseline inspection",
+        seasonId: "default-season",
+        projectType: "operations",
+      },
+    });
+    assert.equal(sharedAfterBaseline.statusCode, 201);
+    const sharedAfterBaselineId = sharedAfterBaseline.json().item.id as string;
+
+    resetLimits();
+    const firstProjectsAfterBaseline = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: firstHeaders,
+    });
+    assert.ok(firstProjectsAfterBaseline.json().items.some(
+      (project: { id: string }) => project.id === sharedAfterBaselineId,
+    ));
   }, {
     env: {
       AUTH_JWT_SECRET: "test-secret-that-is-long-enough-for-auth",

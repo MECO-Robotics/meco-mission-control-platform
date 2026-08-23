@@ -673,7 +673,7 @@ export async function acquireGlobalSnapshotMutation() {
   await previous;
 
   const state: SnapshotState = {
-    current: globalSnapshotState.current,
+    current: cloneSnapshot(globalSnapshotState.current),
     interactive: null,
     isGlobalTransaction: true,
     dirty: false,
@@ -1736,12 +1736,12 @@ export function resetStore() {
 
 export function resetTutorialBaseline(userKey?: string) {
   if (userKey) {
-    const state = tutorialSnapshotStates.get(userKey) ?? {
-      current: cloneSnapshot(initialSnapshot),
-      interactive: null,
-    };
+    const state = tutorialSnapshotStates.get(userKey);
+    if (!state) {
+      return buildTutorialBaselineState(initialSnapshot);
+    }
+
     state.current = cloneSnapshot(initialSnapshot);
-    tutorialSnapshotStates.set(userKey, state);
     return buildTutorialBaselineState(state.current);
   }
 
@@ -1761,7 +1761,7 @@ export function startInteractiveTutorialSession(userKey?: string) {
     return;
   }
 
-  setInteractiveTutorialSnapshot(cloneSnapshot(currentSnapshot));
+  setInteractiveTutorialSnapshot(cloneSnapshot(activeSnapshotState().current));
 }
 
 export function resetInteractiveTutorialSession(userKey?: string) {
