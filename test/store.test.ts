@@ -41,6 +41,10 @@ test("snapshot mutation routing locks only snapshot-backed writes", () => {
   assert.equal(isSnapshotMutationRequest("POST", "/api/projects"), true);
   assert.equal(isSnapshotMutationRequest("PATCH", "/api/tasks/task-1?mode=quick"), true);
   assert.equal(isSnapshotMutationRequest("DELETE", "/api/meetings/meeting-1"), true);
+  assert.equal(
+    isSnapshotMutationRequest("PATCH", "/api/navigation/favorites/tasks-timeline"),
+    true,
+  );
 
   assert.equal(isSnapshotMutationRequest("POST", "/api/auth/dev-bypass"), false);
   assert.equal(isSnapshotMutationRequest("POST", "/api/media/presign-upload"), false);
