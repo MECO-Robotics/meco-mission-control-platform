@@ -4,78 +4,11 @@ import { dirname, extname, join } from "path";
 import { cadStepParserConfig } from "../../config/env";
 import type { StepParseResult } from "../cadTypes";
 import { CadImportError } from "../errors/cadImportErrors";
+import { acquireParserSlot, releaseParserSlot, stepParserTimeoutError } from "./stepParserCapacity";
 import type { StepParserClient, StepParserMode } from "./stepParserTypes";
 
 const defaultStepParserTimeoutMs = 30_000;
 const builtInWorkerParserModes = new Set<StepParserMode>(["auto", "step_text", "json_fixture"]);
-let activeParserProcesses = 0;
-const parserWaiters: Array<{
-  resolve: () => void;
-  timer: ReturnType<typeof setTimeout>;
-  removeAbortListener: () => void;
-}> = [];
-
-function timeoutError(waitingForCapacity = false) {
-  return new CadImportError(
-    waitingForCapacity
-      ? "STEP parsing timed out while waiting for capacity."
-      : "STEP parsing timed out. Export a smaller STEP file and try again.",
-    408,
-  );
-}
-
-async function acquireParserSlot(deadline: number, signal: AbortSignal) {
-  if (signal.aborted || Date.now() >= deadline) {
-    throw timeoutError(true);
-  }
-  if (activeParserProcesses < cadStepParserConfig.maxConcurrency) {
-    activeParserProcesses += 1;
-    return;
-  }
-  if (parserWaiters.length >= cadStepParserConfig.maxQueue) {
-    throw new CadImportError(
-      "STEP parsing is currently at capacity. Wait for an active import to finish and try again.",
-      503,
-    );
-  }
-  await new Promise<void>((resolve, reject) => {
-    const removeWaiter = () => {
-      const index = parserWaiters.indexOf(waiter);
-      if (index >= 0) {
-        parserWaiters.splice(index, 1);
-      }
-      clearTimeout(waiter.timer);
-      waiter.removeAbortListener();
-    };
-    const onAbort = () => {
-      removeWaiter();
-      reject(timeoutError(true));
-    };
-    const waiter = {
-      resolve: () => {
-        removeWaiter();
-        resolve();
-      },
-      timer: setTimeout(() => {
-        removeWaiter();
-        reject(timeoutError(true));
-      }, Math.max(0, deadline - Date.now())),
-      removeAbortListener: () => signal.removeEventListener("abort", onAbort),
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    parserWaiters.push(waiter);
-  });
-  activeParserProcesses += 1;
-}
-
-function releaseParserSlot() {
-  activeParserProcesses = Math.max(0, activeParserProcesses - 1);
-  const next = parserWaiters.shift();
-  if (next) {
-    clearTimeout(next.timer);
-    next.resolve();
-  }
-}
 
 function resolveStepParserTimeoutMs() {
   const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
@@ -160,7 +93,7 @@ async function parseStepFileInParserProcess(args: {
     const abort = () => {
       settle(() => {
         child.kill();
-        reject(timeoutError());
+        reject(stepParserTimeoutError());
       });
     };
 
@@ -244,7 +177,7 @@ export async function parseStepFileWithTimeout(args: {
       parsePromise,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
-          reject(timeoutError());
+          reject(stepParserTimeoutError());
           controller.abort();
         }, timeoutMs);
       }),
