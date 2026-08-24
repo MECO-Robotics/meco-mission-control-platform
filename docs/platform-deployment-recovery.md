@@ -121,10 +121,14 @@ The workflow deploy path is:
 
     ```bash
     docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres
+    docker compose --env-file .env.production -f docker-compose.prod.yml build app
     docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy
     docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:normalize-event-types
     docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
     ```
+
+    Building `app` before `prisma:deploy` ensures schema updates run with the
+    same revision that will be started after normalization.
 
 15. Run `docker image prune -f`.
 16. Poll `http://127.0.0.1:8080/health` for up to 30 attempts.

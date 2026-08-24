@@ -9,6 +9,11 @@ import { createPlaceholderStepParserClient, createStepParserClient } from "../sr
 import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
 import { getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import {
+  MemoryWebSessionStore,
+  readWebSessionCookie,
+  webSessionAuthEnv,
+} from "./helpers/webSessionMemoryStore";
 
 const execFileAsync = promisify(execFile);
 
@@ -1596,6 +1601,38 @@ test("authenticated STEP uploads still accept JSON payloads", async () => {
   assert.equal(result.stderr, "");
 });
 
+test("STEP uploads accept a resolved web session", async () => {
+  const store = new MemoryWebSessionStore();
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const signIn = await app.inject({
+      method: "POST",
+      url: "/api/auth/web/dev-bypass",
+      payload: { role: "mentor" },
+    });
+    assert.equal(signIn.statusCode, 200, signIn.body);
+    const cookie = readWebSessionCookie(signIn.headers["set-cookie"]);
+    const { csrfToken } = signIn.json() as { csrfToken: string };
+
+    resetLimits();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      headers: {
+        cookie,
+        origin: "http://localhost:5173",
+        "x-csrf-token": csrfToken,
+      },
+      payload: {
+        fileName: "web-session.step",
+        fileText: cadFixture(),
+        label: "web-session-upload",
+      },
+    });
+
+    assert.equal(response.statusCode, 201, response.body);
+  }, { env: webSessionAuthEnv, webSessionStore: store });
+});
+
 test("STEP upload validation rejects unsafe extensions, MIME types, and malformed content", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1664,12 +1701,21 @@ test("STEP import reports parser timeout as a safe user-readable error", async (
   await withIntegrationApp(async () => {
     resetCadRuntimeStore();
     const { getCadStore } = await import("../src/cad/cadStoreFactory");
+    let queuedWorkStarted = false;
 
     await assert.rejects(
       runStepImport({
         store: getCadStore(),
         parserClient: {
-          parseStepFile: () => new Promise(() => {}),
+          parseStepFile: ({ signal }) => new Promise((_resolve, reject) => {
+            const queuedWork = setTimeout(() => {
+              queuedWorkStarted = true;
+            }, 20);
+            signal?.addEventListener("abort", () => {
+              clearTimeout(queuedWork);
+              reject(new Error("parser work cancelled"));
+            }, { once: true });
+          }),
         },
         parserMode: "step_text",
         input: {
@@ -1685,6 +1731,8 @@ test("STEP import reports parser timeout as a safe user-readable error", async (
         return true;
       },
     );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(queuedWorkStarted, false, "timed-out parser work must be cancelled before it starts");
   }, { env: { CAD_STEP_PARSER_TIMEOUT_MS: "1" } });
 });
 

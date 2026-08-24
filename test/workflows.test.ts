@@ -455,6 +455,15 @@ test("deploy workflow runs non-destructive schema sync before milestone normaliz
   assert.doesNotMatch(composeFile, /prisma:normalize-event-types/);
 });
 
+test("deploy workflow builds the new application image before schema updates", () => {
+  const workflow = readFileSync(".github/workflows/deploy-vps.yml", "utf8");
+  const buildIndex = workflow.indexOf("docker-compose.prod.yml build app");
+  const deployIndex = workflow.indexOf("run --rm app npm run prisma:deploy");
+
+  assert.ok(buildIndex >= 0);
+  assert.ok(deployIndex > buildIndex);
+});
+
 test("deploy workflow validates secrets and retains the app health gate", () => {
   const deployWorkflow = readRepoFile(".github/workflows/deploy-vps.yml");
 

@@ -53,7 +53,7 @@ export function registerWebSessionSupport(
 ) {
   app.decorateRequest("webSession", null);
 
-  app.addHook("preHandler", async (request, reply) => {
+  app.addHook("onRequest", async (request, reply) => {
     request.webSession = null;
 
     const path = request.url.split("?", 1)[0];
