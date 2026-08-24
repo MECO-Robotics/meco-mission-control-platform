@@ -1,5 +1,5 @@
-import { onshapeConfig } from "../config/env";
-import { getOnshapeRuntimeStore } from "./cadStore";
+import { onshapeConfig } from "../../config/env";
+import { getOnshapeRuntimeStore } from "../cadStore";
 import { getOAuthStatus } from "./onshapeOAuthHealth";
 
 export function getOnshapeOverview() {

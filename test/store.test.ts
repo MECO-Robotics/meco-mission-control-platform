@@ -48,8 +48,12 @@ test("snapshot mutation routing locks only snapshot-backed writes", () => {
 
   assert.equal(isSnapshotMutationRequest("POST", "/api/auth/dev-bypass"), false);
   assert.equal(isSnapshotMutationRequest("POST", "/api/media/presign-upload"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/cad/snapshots/snapshot-1/finalize"), true);
   assert.equal(isSnapshotMutationRequest("POST", "/api/cad/step-imports"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/cad/step-imports/debug-parse"), false);
   assert.equal(isSnapshotMutationRequest("POST", "/api/onshape/import-runs"), false);
+  assert.equal(isSnapshotMutationRequest("POST", "/api/onshape/oauth/refresh"), false);
+  assert.equal(isSnapshotMutationRequest("GET", "/api/cad/snapshots/snapshot-1"), false);
   assert.equal(isSnapshotMutationRequest("GET", "/api/projects"), false);
   assert.equal(isSnapshotMutationRequest("POST", "/api/project-settings"), false);
 });

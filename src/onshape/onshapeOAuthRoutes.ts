@@ -11,7 +11,7 @@ import {
   isOnshapeOAuthRefreshConfigured,
   refreshOnshapeOAuthToken,
 } from "./onshapeOAuth";
-import { getOAuthConnectionHealth } from "./onshapeOAuthHealth";
+import { getOAuthConnectionHealth } from "./services/onshapeOAuthHealth";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 

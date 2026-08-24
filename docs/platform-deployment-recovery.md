@@ -183,6 +183,8 @@ Application data backup:
 - File name: `pm-server-app-data-<timestamp>.tgz`
 - Source: `/app/data` in the running `app` Compose service
 - Includes the authoritative production preferences and platform snapshot files
+- On upgrades from legacy images without `/app/data`, records an empty archive so
+  the absence of legacy file-backed state does not block the deployment
 - Permissions: `0600`
 
 Database backup:

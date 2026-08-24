@@ -1,6 +1,6 @@
-import { recordAuditAction } from "../data/store";
-import type { OnshapeRuntimeStore } from "./cadStore";
-import type { CadGraphImportResult, OnshapeDocumentRef } from "./onshapeTypes";
+import { acquireGlobalSnapshotMutation, recordAuditAction } from "../../data/store";
+import type { OnshapeRuntimeStore } from "../cadStore";
+import type { CadGraphImportResult, OnshapeDocumentRef } from "../onshapeTypes";
 
 function buildChangedFields(result: CadGraphImportResult) {
   return [
@@ -30,7 +30,7 @@ function readObjectCounts(value: unknown, result: CadGraphImportResult) {
   };
 }
 
-export function recordCadImportAuditAction(args: {
+export async function recordCadImportAuditAction(args: {
   store: OnshapeRuntimeStore;
   documentRef: OnshapeDocumentRef;
   result: CadGraphImportResult;
@@ -47,26 +47,33 @@ export function recordCadImportAuditAction(args: {
     originalUrl: args.documentRef.originalUrl,
   };
 
-  recordAuditAction({
-    operation: "update",
-    entityType: "onshape_sync_job",
-    entityId: args.result.syncJobId || args.result.importRunId,
-    entityLabel: args.documentRef.label,
-    changedFields: buildChangedFields(args.result),
-    projectId: args.documentRef.projectId,
-    subsystemId: args.documentRef.subsystemId,
-    actorMemberId: args.actorMemberId ?? null,
-    memberIds: [args.actorMemberId ?? null],
-    detailsJson: {
-      syncJobId: args.result.syncJobId,
-      importRunId: args.result.importRunId,
-      status: args.result.status,
-      failureStatus: args.result.status === "failed" ? args.result.stoppedReason ?? "failed" : null,
-      actor: args.actorMemberId ?? null,
-      sourceReference,
-      objectCounts: readObjectCounts(importRun?.rawSummaryJson.objectChangeCounts, args.result),
-      warningCount: args.result.warningCount,
-      callsUsed: args.result.callsUsed,
-    },
-  });
+  const transaction = await acquireGlobalSnapshotMutation();
+  try {
+    transaction.enter();
+    recordAuditAction({
+      operation: "update",
+      entityType: "onshape_sync_job",
+      entityId: args.result.syncJobId || args.result.importRunId,
+      entityLabel: args.documentRef.label,
+      changedFields: buildChangedFields(args.result),
+      projectId: args.documentRef.projectId,
+      subsystemId: args.documentRef.subsystemId,
+      actorMemberId: args.actorMemberId ?? null,
+      memberIds: [args.actorMemberId ?? null],
+      detailsJson: {
+        syncJobId: args.result.syncJobId,
+        importRunId: args.result.importRunId,
+        status: args.result.status,
+        failureStatus: args.result.status === "failed" ? args.result.stoppedReason ?? "failed" : null,
+        actor: args.actorMemberId ?? null,
+        sourceReference,
+        objectCounts: readObjectCounts(importRun?.rawSummaryJson.objectChangeCounts, args.result),
+        warningCount: args.result.warningCount,
+        callsUsed: args.result.callsUsed,
+      },
+    });
+    await transaction.commit();
+  } finally {
+    transaction.release();
+  }
 }

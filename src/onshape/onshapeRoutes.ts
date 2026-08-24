@@ -6,7 +6,7 @@ import { getMembers } from "../data/store";
 import { getOnshapeRuntimeStore } from "./cadStore";
 import { runCadImport } from "./cadImporter";
 import { createConfiguredOnshapeCadClient } from "./onshapeClientFactory";
-import { getOnshapeOverview } from "./onshapeOverview";
+import { getOnshapeOverview } from "./services/onshapeOverview";
 import { registerOnshapeOAuthRoutes } from "./onshapeOAuthRoutes";
 import {
   onshapeDocumentRefSchema,
@@ -15,7 +15,7 @@ import {
   onshapeListQuerySchema,
 } from "./onshapeRouteSchemas";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "./onshapeSyncPolicy";
-import { registerOnshapeSyncJobRoutes } from "./onshapeSyncJobRoutes";
+import { registerOnshapeSyncJobRoutes } from "./routes/onshapeSyncJobRoutes";
 import { parseOnshapeUrl } from "./onshapeUrlParser";
 import type { CadImportOnshapeClient } from "./onshapeTypes";
 

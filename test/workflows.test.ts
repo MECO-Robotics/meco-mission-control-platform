@@ -497,7 +497,8 @@ test("deploy workflow backs up durable application state before deployment", () 
   const workflow = readFileSync(".github/workflows/deploy-vps.yml", "utf8");
 
   assert.match(workflow, /pm-server-app-data-\$\{timestamp\}\.tgz/);
-  assert.match(workflow, /exec -T app tar -czf - -C \/app data/);
+  assert.match(workflow, /if \[ -d \/app\/data \]; then tar -czf - -C \/app data/);
+  assert.match(workflow, /else tar -czf - --files-from \/dev\/null/);
   assert.match(workflow, /Application data backup failed; aborting deployment/);
 });
 
