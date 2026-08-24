@@ -146,6 +146,7 @@ export async function runCadImport(args: {
   syncLevel: SyncLevel;
   requestedBy?: string | null;
   client: CadImportOnshapeClient;
+  auditRecorder?: typeof recordCadImportAuditAction;
 }): Promise<CadGraphImportResult> {
   const documentRef = args.store.findDocumentRef(args.documentRefId);
   if (!documentRef) {
@@ -173,7 +174,7 @@ export async function runCadImport(args: {
       client: args.client,
       summary: { syncLevel: args.syncLevel, linkOnly: true },
     });
-    await recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    await (args.auditRecorder ?? recordCadImportAuditAction)({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
     return result;
   }
 
@@ -181,6 +182,7 @@ export async function runCadImport(args: {
   const policy = buildPolicy(args.store, args.syncLevel);
   let snapshot: CadSnapshot | null = null;
 
+  let result: CadGraphImportResult;
   try {
     const metadata = await args.client.fetchDocumentMetadata({ reference, importRunId: run.id, policy });
     const bom = args.syncLevel === "shallow"
@@ -209,7 +211,7 @@ export async function runCadImport(args: {
       Math.max(0, afterGraphCounts.partDefinitions - beforeGraphCounts.partDefinitions) +
       Math.max(0, afterGraphCounts.partInstances - beforeGraphCounts.partInstances);
 
-    const result = completeRun({
+    result = completeRun({
       store: args.store,
       runId: run.id,
       status: "completed",
@@ -226,8 +228,6 @@ export async function runCadImport(args: {
         },
       },
     });
-    await recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
-    return result;
   } catch (error) {
     const isBudgetStop = error instanceof OnshapeCallBudgetExceededError || error instanceof OnshapeRateLimitError;
     const stoppedReason = error instanceof Error ? error.message : String(error);
@@ -240,7 +240,7 @@ export async function runCadImport(args: {
         stoppedReason,
       });
     }
-    const result = completeRun({
+    result = completeRun({
       store: args.store,
       runId: run.id,
       status: isBudgetStop ? "partial" : "failed",
@@ -250,9 +250,14 @@ export async function runCadImport(args: {
       errorMessage: isBudgetStop ? null : stoppedReason,
       summary: { syncLevel: args.syncLevel },
     });
-    await recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
-    return result;
   }
+  await (args.auditRecorder ?? recordCadImportAuditAction)({
+    store: args.store,
+    documentRef,
+    result,
+    actorMemberId: args.requestedBy,
+  });
+  return result;
 }
 
 export function estimateCadImportCalls(syncLevel: SyncLevel) {
