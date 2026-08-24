@@ -324,6 +324,7 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     workLogs: selectedBootstrap.workLogs.map((workLog) => ({
       ...workLog,
       participantIds: rewriteDemoMemberIds(workLog.participantIds, memberIdsByOriginalId),
+      createdById: rewriteDemoMemberId(workLog.createdById, memberIdsByOriginalId),
     })),
     attendanceRecords: selectedBootstrap.attendanceRecords.map((record) => ({
       ...record,
@@ -332,10 +333,12 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     manufacturingItems: selectedBootstrap.manufacturingItems.map((item) => ({
       ...item,
       requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+      reviewedById: rewriteDemoMemberId(item.reviewedById, memberIdsByOriginalId),
     })),
     purchaseItems: selectedBootstrap.purchaseItems.map((item) => ({
       ...item,
       requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
+      approvedById: rewriteDemoMemberId(item.approvedById, memberIdsByOriginalId),
     })),
     qaReports: selectedBootstrap.qaReports.map((report) => ({
       ...report,

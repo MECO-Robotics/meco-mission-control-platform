@@ -6,6 +6,7 @@ const SNAPSHOT_MUTATION_PREFIXES = [
   "/api/task-blockers", "/api/members", "/api/subsystems", "/api/mechanisms",
   "/api/part-definitions", "/api/part-instances", "/api/manufacturing",
   "/api/purchases", "/api/meetings",
+  "/api/navigation/favorites",
 ] as const;
 
 export function isSnapshotMutationRequest(method: string, url: string) {

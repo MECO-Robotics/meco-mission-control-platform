@@ -278,9 +278,9 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
         members: Array<Record<string, unknown>>;
         milestones: Array<{ seasonId?: string; projectIds: string[] }>;
-        manufacturingItems: Array<{ requestedById: string | null }>;
+        manufacturingItems: Array<{ requestedById: string | null; reviewedById: string | null }>;
         projects: Array<{ id: string; seasonId: string }>;
-        purchaseItems: Array<{ requestedById: string | null }>;
+        purchaseItems: Array<{ requestedById: string | null; approvedById: string | null }>;
         qaReports: Array<{ participantIds: string[] }>;
         qaRequests: Array<{ mentorId: string; requestedById: string | null; taskId: string | null }>;
         qaReviews: Array<{ participantIds: string[] }>;
@@ -289,7 +289,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
         taskBlockers: Array<{ createdByMemberId: string | null; description: string }>;
         tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
-        workLogs: Array<{ participantIds: string[] }>;
+        workLogs: Array<{ participantIds: string[]; createdById: string | null }>;
       };
       assert.equal(demoBody.seasons.every((season) => season.id === "default-season"), true);
       assert.ok(demoBody.projects.length > 0);
@@ -373,10 +373,10 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         ]),
         ...demoBody.tasks.flatMap((task) => [task.ownerId, task.mentorId, ...task.assigneeIds]),
         ...demoBody.taskBlockers.map((blocker) => blocker.createdByMemberId),
-        ...demoBody.workLogs.flatMap((workLog) => workLog.participantIds),
+        ...demoBody.workLogs.flatMap((workLog) => [workLog.createdById, ...workLog.participantIds]),
         ...demoBody.attendanceRecords.map((record) => record.memberId),
-        ...demoBody.manufacturingItems.map((item) => item.requestedById),
-        ...demoBody.purchaseItems.map((item) => item.requestedById),
+        ...demoBody.manufacturingItems.flatMap((item) => [item.requestedById, item.reviewedById]),
+        ...demoBody.purchaseItems.flatMap((item) => [item.requestedById, item.approvedById]),
         ...demoBody.qaReports.flatMap((report) => report.participantIds),
         ...demoBody.qaRequests.flatMap((request) => [request.mentorId, request.requestedById]),
         ...demoBody.qaReviews.flatMap((review) => review.participantIds),
