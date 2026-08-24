@@ -60,6 +60,7 @@ export const webSessionAuthEnv = {
   GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
   CORS_ORIGIN: "http://localhost:5173",
   AUTH_MENTOR_EMAILS: "mentor@mecorobotics.org",
+  API_RATE_LIMIT_MAX_REQUESTS: "3",
 } as const;
 
 export function readWebSessionCookie(setCookie: string | string[] | undefined) {

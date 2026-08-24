@@ -17,7 +17,7 @@ declare module "fastify" {
 
 const allowMobileTokenResolution = createRequestLimitGuard({
   scope: "mobile-token-resolution",
-  ...requestLimitConfig.auth,
+  ...requestLimitConfig.api,
 });
 
 export function registerMobileSessionSupport(
