@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { getOnshapeRuntimeStore } from "./cadStore";
-import { onshapeListQuerySchema } from "./onshapeRouteSchemas";
+import { getOnshapeRuntimeStore } from "../cadStore";
+import { onshapeListQuerySchema } from "../onshapeRouteSchemas";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 

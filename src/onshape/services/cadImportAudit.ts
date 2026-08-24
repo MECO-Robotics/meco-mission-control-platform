@@ -1,6 +1,6 @@
-import { recordAuditAction } from "../data/store";
-import type { OnshapeRuntimeStore } from "./cadStore";
-import type { CadGraphImportResult, OnshapeDocumentRef } from "./onshapeTypes";
+import { recordAuditAction } from "../../data/store";
+import type { OnshapeRuntimeStore } from "../cadStore";
+import type { CadGraphImportResult, OnshapeDocumentRef } from "../onshapeTypes";
 
 function buildChangedFields(result: CadGraphImportResult) {
   return [

@@ -1,10 +1,10 @@
-import { onshapeConfig } from "../config/env";
-import type { getOnshapeRuntimeStore } from "./cadStore";
+import { onshapeConfig } from "../../config/env";
+import type { getOnshapeRuntimeStore } from "../cadStore";
 import {
   isOnshapeOAuthClientConfigured,
   isOnshapeOAuthRefreshConfigured,
-} from "./onshapeOAuth";
-import type { OnshapeOAuthConnectionHealth, OnshapeOAuthTokenSet } from "./onshapeTypes";
+} from "../onshapeOAuth";
+import type { OnshapeOAuthConnectionHealth, OnshapeOAuthTokenSet } from "../onshapeTypes";
 
 interface OAuthConnectionHealthOptions {
   nowMs?: number;

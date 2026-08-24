@@ -8,7 +8,7 @@ import {
   addGraphWarnings,
   addReferenceWarnings,
 } from "./cadImporterWarnings";
-import { recordCadImportAuditAction } from "./cadImportAudit";
+import { recordCadImportAuditAction } from "./services/cadImportAudit";
 import { estimateCadImportCalls as estimateSyncCalls } from "./onshapeSyncPolicy";
 import type {
   CadGraphImportResult,
