@@ -350,7 +350,7 @@ On every push to `main`, GitHub Actions will:
 4. verify the reviewed VPS host key and connect over SSH
 5. create and validate file, environment, and database backups; any required backup failure stops deployment
 6. sync the repo to `/opt/pm-server` and write `.env.production`
-7. start PostgreSQL, apply the non-destructive Prisma schema push, normalize event types, then start the application
+7. start PostgreSQL, build the new application image, apply the non-destructive Prisma schema push from that image, normalize event types, then start the application
 8. check `/health` through the loopback-bound API port
 
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
