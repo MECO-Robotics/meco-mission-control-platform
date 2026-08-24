@@ -67,6 +67,17 @@ test("mobile sessions persist only token hashes and enforce bounded lifetimes", 
   assert.equal(await service.resolve(response.token), null);
 });
 
+test("mobile session creation preserves the supplied task subteams", async () => {
+  const service = new MobileSessionService(new MobileSessionMemoryStore());
+  const response = await service.create(
+    { ...user, taskSubteamIds: ["programming", "scouting"] },
+    "install-subteams",
+    "Student phone",
+  );
+
+  assert.deepEqual(response.user.taskSubteamIds, ["programming", "scouting"]);
+});
+
 test("refresh rotation invalidates old access and reuse revokes the token family", async () => {
   const store = new MobileSessionMemoryStore();
   let now = new Date("2026-08-10T12:00:00.000Z");

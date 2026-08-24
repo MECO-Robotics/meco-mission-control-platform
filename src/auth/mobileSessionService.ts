@@ -109,6 +109,7 @@ export class MobileSessionService {
     refreshToken: string,
     accessExpiresAt: Date,
     session: StoredMobileSession,
+    user: SessionUser = sessionUser(session),
   ): MobileSessionResponse {
     return {
       token: accessToken,
@@ -123,7 +124,7 @@ export class MobileSessionService {
         createdAt: session.createdAt.toISOString(),
         lastUsedAt: session.lastUsedAt.toISOString(),
       },
-      user: sessionUser(session),
+      user,
     };
   }
 
@@ -154,7 +155,7 @@ export class MobileSessionService {
       absoluteExpiresAt,
       now,
     });
-    return this.buildResponse(accessToken, refreshToken, accessExpiresAt, session);
+    return this.buildResponse(accessToken, refreshToken, accessExpiresAt, session, user);
   }
 
   async resolve(accessToken: string): Promise<ResolvedMobileSession | null> {
