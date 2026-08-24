@@ -1508,7 +1508,7 @@ test("STEP import rejects duplicate assembly source IDs from JSON fixtures", asy
   });
 });
 
-test("unauthenticated STEP JSON uploads are rejected", async () => {
+test("unauthenticated STEP JSON uploads are rejected before large body parsing", async () => {
   const script = `
     import assert from "node:assert/strict";
 
@@ -1521,10 +1521,7 @@ test("unauthenticated STEP JSON uploads are rejected", async () => {
         headers: {
           "content-type": "application/json",
         },
-        payload: {
-          fileName: "unauthenticated.step",
-          fileText: "ISO-10303-21;END-ISO-10303-21;",
-        },
+        payload: '{"fileName":"large.step","fileText":"' + "x".repeat((2 * 1024 * 1024) + 1024),
       });
 
       assert.equal(response.statusCode, 401, response.body);

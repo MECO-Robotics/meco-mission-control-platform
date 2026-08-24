@@ -26,7 +26,7 @@ export function registerMobileSessionSupport(
 ) {
   app.decorateRequest("mobileSession", null);
 
-  app.addHook("preHandler", async (request, reply) => {
+  app.addHook("onRequest", async (request, reply) => {
     request.mobileSession = null;
     const token = readBearerToken(request.headers.authorization);
     if (!token || !isMobileAccessToken(token)) return;

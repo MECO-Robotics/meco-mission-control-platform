@@ -22,7 +22,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
   });
   const stepUploadRouteOptions = {
     bodyLimit: cadStepUploadConfig.maxBytes,
-    preHandler(request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) {
+    onRequest(request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) {
       if (!requireApiSession(request, reply)) {
         return;
       }
