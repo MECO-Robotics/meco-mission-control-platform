@@ -170,9 +170,11 @@ jobs:
           if [ -f /opt/pm-server/.env.production ] && [ -f /opt/pm-server/docker-compose.prod.yml ]; then
             if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml ps --status running --services app 2>/dev/null | grep -qx 'app'; then
               snapshot_backup="$backup_root/pm-server-app-data-${timestamp}.tgz"
-              if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T app tar -czf - -C /app data > "$snapshot_backup"; then
+              if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T app sh -c \
+                'if [ -d /app/data ]; then tar -czf - -C /app data; else tar -czf - --files-from /dev/null; fi' \
+                > "$snapshot_backup"; then
                 chmod 600 "$snapshot_backup"
-                echo "Created application data backup: $snapshot_backup"
+                echo "Created application data backup (empty when legacy /app/data is absent): $snapshot_backup"
               else
                 rm -f "$snapshot_backup"
                 echo "Application data backup failed; aborting deployment." >&2
