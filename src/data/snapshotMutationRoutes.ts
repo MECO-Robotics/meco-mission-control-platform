@@ -6,8 +6,11 @@ const SNAPSHOT_MUTATION_PREFIXES = [
   "/api/task-blockers", "/api/members", "/api/subsystems", "/api/mechanisms",
   "/api/part-definitions", "/api/part-instances", "/api/manufacturing",
   "/api/purchases", "/api/meetings",
-  "/api/cad", "/api/onshape",
   "/api/navigation/favorites",
+] as const;
+
+const SNAPSHOT_MUTATION_PATTERNS = [
+  /^\/api\/cad\/snapshots\/[^/]+\/finalize$/,
 ] as const;
 
 export function isSnapshotMutationRequest(method: string, url: string) {
@@ -18,5 +21,5 @@ export function isSnapshotMutationRequest(method: string, url: string) {
   const pathname = url.split("?", 1)[0];
   return SNAPSHOT_MUTATION_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+  ) || SNAPSHOT_MUTATION_PATTERNS.some((pattern) => pattern.test(pathname));
 }

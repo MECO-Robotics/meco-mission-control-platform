@@ -173,7 +173,7 @@ export async function runCadImport(args: {
       client: args.client,
       summary: { syncLevel: args.syncLevel, linkOnly: true },
     });
-    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    await recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
     return result;
   }
 
@@ -226,7 +226,7 @@ export async function runCadImport(args: {
         },
       },
     });
-    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    await recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
     return result;
   } catch (error) {
     const isBudgetStop = error instanceof OnshapeCallBudgetExceededError || error instanceof OnshapeRateLimitError;
@@ -250,7 +250,7 @@ export async function runCadImport(args: {
       errorMessage: isBudgetStop ? null : stoppedReason,
       summary: { syncLevel: args.syncLevel },
     });
-    recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
+    await recordCadImportAuditAction({ store: args.store, documentRef, result, actorMemberId: args.requestedBy });
     return result;
   }
 }
