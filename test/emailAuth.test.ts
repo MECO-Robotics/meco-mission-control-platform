@@ -74,3 +74,12 @@ test("buildApp advertises email sign-in when localhost SMTP is configured", asyn
     }
   }
 });
+
+test("SMTP timeout reports uncertain delivery without waiting for the send to settle", async () => {
+  const { awaitEmailDelivery } = await import("../src/auth/authService");
+  let resolveDelivery!: () => void;
+  const delivery = new Promise<void>((resolve) => { resolveDelivery = resolve; });
+  assert.equal(await awaitEmailDelivery(delivery, 1), "uncertain");
+  resolveDelivery();
+  await delivery;
+});

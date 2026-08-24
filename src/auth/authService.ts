@@ -14,6 +14,23 @@ const SESSION_AUDIENCE = "meco-apps";
 const PUBLIC_DEMO_SEASON_ID = "default-season";
 const EMAIL_DELIVERY_TIMEOUT_MS = 12_000;
 
+export async function awaitEmailDelivery(
+  sendMailPromise: Promise<unknown>,
+  timeoutMs = EMAIL_DELIVERY_TIMEOUT_MS,
+) {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      sendMailPromise.then(() => "delivered" as const),
+      new Promise<"uncertain">((resolve) => {
+        timeoutHandle = setTimeout(() => resolve("uncertain"), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
 const emailTransport =
@@ -441,6 +458,7 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
 
   pendingEmailCodes.set(email, record);
 
+  let deliveryUncertain = false;
   try {
     const sendMailPromise = transport.sendMail({
       from,
@@ -451,28 +469,15 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
     });
     void sendMailPromise.catch(() => undefined);
 
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        sendMailPromise,
-        new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(() => {
-            reject(
-              new AuthError(
-                "The verification email could not be sent. SMTP delivery timed out. Please try again later.",
-                503,
-              ),
-            );
-          }, EMAIL_DELIVERY_TIMEOUT_MS);
-        }),
-      ]);
-    } finally {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
+    if (await awaitEmailDelivery(sendMailPromise) === "uncertain") {
+      deliveryUncertain = true;
+      throw new AuthError(
+        "Email delivery is still pending. Wait before requesting another code, and use this code if it arrives.",
+        503,
+      );
     }
   } catch (error) {
-    pendingEmailCodes.delete(email);
+    if (!deliveryUncertain) pendingEmailCodes.delete(email);
     if (error instanceof AuthError) {
       throw error;
     }
