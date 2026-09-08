@@ -29,7 +29,7 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 
 - Fastify + TypeScript API shell with typed route responses
 - Completion-gating logic for work logs, mentor QA approval, and documentation evidence
-- Prisma schema for members, tasks, attendance, manufacturing, purchases, QA reviews, and risks
+- Prisma schema for web/mobile sessions and CAD persistence; core workspace data uses the platform snapshot model
 - `docker-compose.prod.yml` for API + Postgres on one VPS
 - GitHub Actions workflow that deploys over SSH to the VPS
 - `deploy/bootstrap-vps.sh` for first-time Docker setup on Ubuntu
@@ -350,7 +350,7 @@ On every push to `main`, GitHub Actions will:
 4. verify the reviewed VPS host key and connect over SSH
 5. create and validate file, environment, and database backups; any required backup failure stops deployment
 6. sync the repo to `/opt/pm-server` and write `.env.production`
-7. start PostgreSQL, build the new application image, apply the non-destructive Prisma schema push from that image, normalize event types, then start the application
+7. start PostgreSQL, build the new application image, apply the Prisma schema from that image, then start the application
 8. check `/health` through the loopback-bound API port
 
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.

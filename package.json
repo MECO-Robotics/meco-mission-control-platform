@@ -16,8 +16,7 @@
     "verify": "npm run contracts:verify && npm run prisma:generate && npm run typecheck:test && npm test && npm run build",
     "smoke:test": "node scripts/smoke-test.mjs",
     "prisma:generate": "prisma generate",
-    "prisma:deploy": "prisma db push --skip-generate",
-    "prisma:normalize-event-types": "prisma db execute --schema prisma/schema.prisma --file prisma/sql/normalize-event-types.sql"
+    "prisma:deploy": "prisma db push --skip-generate"
   },
   "keywords": [
     "meco",
