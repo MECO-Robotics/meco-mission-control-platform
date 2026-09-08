@@ -458,7 +458,6 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
 
   pendingEmailCodes.set(email, record);
 
-  let deliveryUncertain = false;
   try {
     const sendMailPromise = transport.sendMail({
       from,
@@ -469,15 +468,11 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
     });
     void sendMailPromise.catch(() => undefined);
 
-    if (await awaitEmailDelivery(sendMailPromise) === "uncertain") {
-      deliveryUncertain = true;
-      throw new AuthError(
-        "Email delivery is still pending. Wait before requesting another code, and use this code if it arrives.",
-        503,
-      );
-    }
+    // The request remains accepted while SMTP is pending, so clients can enter
+    // a code that arrives after this bounded wait.
+    await awaitEmailDelivery(sendMailPromise);
   } catch (error) {
-    if (!deliveryUncertain) pendingEmailCodes.delete(email);
+    pendingEmailCodes.delete(email);
     if (error instanceof AuthError) {
       throw error;
     }
