@@ -4,7 +4,9 @@ import type { FastifyInstance } from "fastify";
 import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
 import type { WebSessionStore } from "../../src/auth/webSessionStore";
 import { createMember, resetStore, type MemberInput } from "../../src/data/store";
-import { resetUserPreferencesStoreForTests } from "../../src/data/userPreferencesStore";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resetRequestLimits } from "../../src/security/requestLimits";
 
 const INTEGRATION_ENV_MODULES = [
@@ -191,15 +193,16 @@ export async function withIntegrationApp(
   },
 ) {
   const envSnapshot = saveEnv(APP_ENV_KEYS);
+  const preferencesDirectory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
 
   try {
     configureEnv(options?.env);
     resetIntegrationEnvModuleCache();
     resetStore();
-    resetUserPreferencesStoreForTests();
 
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp({
+      userPreferencesPath: join(preferencesDirectory, "preferences.json"),
       mobileSessionStore: options?.mobileSessionStore,
       webSessionStore: options?.webSessionStore,
     });
@@ -213,9 +216,9 @@ export async function withIntegrationApp(
     } finally {
       await app.close();
       resetRequestLimits();
-      resetUserPreferencesStoreForTests();
     }
   } finally {
+    rmSync(preferencesDirectory, { recursive: true, force: true });
     restoreEnv(envSnapshot);
     resetIntegrationEnvModuleCache();
   }

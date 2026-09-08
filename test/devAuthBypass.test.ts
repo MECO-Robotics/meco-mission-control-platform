@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { createMember } from "../src/data/store";
-import { resetUserPreferencesStoreForTests } from "../src/data/userPreferencesStore";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
 
 test("buildApp exposes a development-only sign-in bypass", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
@@ -45,10 +48,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
     const { buildApp } = await import("../src/app");
     const { signSessionToken } = await import("../src/auth/authService");
-    const app = await buildApp();
+    const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json") });
 
     try {
-      resetUserPreferencesStoreForTests();
       resetRequestLimits();
 
       const authConfigResponse = await app.inject({
@@ -707,6 +709,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       resetRequestLimits();
     }
   } finally {
+    rmSync(directory, { recursive: true, force: true });
     restoreEnv(saved);
   }
 });

@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { saveEnv, restoreEnv } from "./helpers/environment";
 
-test("buildApp advertises email sign-in when localhost SMTP is configured", async () => {
+test("buildApp advertises email sign-in when localhost SMTP is configured", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const previousNodeEnv = process.env.NODE_ENV;
   const previousDatabaseUrl = process.env.DATABASE_URL;
   const previousAuthJwtSecret = process.env.AUTH_JWT_SECRET;
@@ -19,7 +24,7 @@ test("buildApp advertises email sign-in when localhost SMTP is configured", asyn
   process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
 
   const { buildApp } = await import("../src/app");
-  const app = await buildApp();
+  const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json") });
 
   try {
     const authConfigResponse = await app.inject({

@@ -31,7 +31,16 @@ import { isSnapshotMutationRequest } from "./data/snapshotMutationRoutes";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
+import { createUserPreferencesStore, type UserPreferencesStore } from "./data/userPreferencesStore";
+
+declare module "fastify" {
+  interface FastifyInstance {
+    userPreferences: UserPreferencesStore;
+  }
+}
+
 export interface BuildAppOptions {
+  userPreferencesPath?: string;
   mobileSessionStore?: MobileSessionStore;
   webSessionStore?: WebSessionStore;
 }
@@ -47,6 +56,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
     logger: true,
     bodyLimit: 2 * 1024 * 1024,
   });
+
+  app.decorate("userPreferences", createUserPreferencesStore(options.userPreferencesPath));
 
   await app.register(cors, {
     origin: corsConfig.allowsAnyOrigin ? true : corsConfig.origins,

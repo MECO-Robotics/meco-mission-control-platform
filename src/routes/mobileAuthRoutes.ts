@@ -67,7 +67,7 @@ export function registerMobileAuthRoutes(
       );
     }
     try {
-      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
+      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code, app.userPreferences);
       return await service.create(
         user,
         parsed.data.deviceId,
@@ -91,7 +91,7 @@ export function registerMobileAuthRoutes(
     try {
       const response = await service.refresh(parsed.data.refreshToken);
       try {
-        response.user = refreshSessionUser(response.user);
+        response.user = refreshSessionUser(response.user, app.userPreferences);
       } catch (error) {
         await service.revokeSession(response.session.id);
         throw error;
