@@ -80,7 +80,7 @@ export function registerWebSessionSupport(
     }
 
     try {
-      resolved.user = refreshSessionUser(resolved.user);
+      resolved.user = refreshSessionUser(resolved.user, app.userPreferences);
     } catch {
       await service.revoke(resolved);
       reply.clearCookie(WEB_SESSION_COOKIE_NAME, webSessionCookieOptions());

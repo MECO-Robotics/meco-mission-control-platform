@@ -66,7 +66,7 @@ export function registerWebAuthRoutes(app: FastifyInstance, options: WebAuthRout
       return await establishWebSession(
         reply,
         webSessionService,
-        await verifyGoogleCredential(request.body.credential),
+        await verifyGoogleCredential(request.body.credential, app.userPreferences),
       );
     } catch (error) {
       return sendAuthFailure(request, reply, error);
@@ -81,7 +81,7 @@ export function registerWebAuthRoutes(app: FastifyInstance, options: WebAuthRout
     }
 
     try {
-      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
+      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code, app.userPreferences);
       return await establishWebSession(reply, webSessionService, user);
     } catch (error) {
       return sendAuthFailure(request, reply, error);
@@ -103,7 +103,7 @@ export function registerWebAuthRoutes(app: FastifyInstance, options: WebAuthRout
         return await establishWebSession(
           reply,
           webSessionService,
-          buildDevelopmentSessionUser(parsed.data.role),
+          buildDevelopmentSessionUser(parsed.data.role, app.userPreferences),
         );
       } catch (error) {
         return sendAuthFailure(request, reply, error);

@@ -17,7 +17,6 @@ export interface UserPreferences {
 
 type StoredUserPreferences = Partial<UserPreferences>;
 
-const preferencesPath = join(process.cwd(), "data", "user-preferences.json");
 const taskSubteamIds = new Set([
   "programming",
   "mechanical",
@@ -30,8 +29,6 @@ const defaultPreferences: UserPreferences = {
   taskSubteamIds: [],
   themeMode: null,
 };
-
-let preferencesByEmail = loadPreferences();
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
@@ -70,7 +67,7 @@ function normalizeStoredPreferences(value: StoredUserPreferences | undefined): S
   };
 }
 
-function loadPreferences() {
+function loadPreferences(preferencesPath: string) {
   if (!existsSync(preferencesPath)) {
     return {} as Record<string, StoredUserPreferences>;
   }
@@ -92,51 +89,34 @@ function loadPreferences() {
   }
 }
 
-function savePreferences() {
-  mkdirSync(dirname(preferencesPath), { recursive: true });
-  writeFileSync(
-    preferencesPath,
-    `${JSON.stringify(preferencesByEmail, null, 2)}\n`,
-    "utf8",
-  );
-}
+export function createUserPreferencesStore(
+  preferencesPath = join(process.cwd(), "data", "user-preferences.json"),
+) {
+  let preferencesByEmail = loadPreferences(preferencesPath);
 
-export function getUserPreferences(email: string): UserPreferences {
-  return normalizePreferences(preferencesByEmail[normalizeEmail(email)]);
-}
-
-export function getUserTaskSubteamIdsPreference(email: string) {
-  const preferences = preferencesByEmail[normalizeEmail(email)];
-  if (
-    !hasPreferenceField(preferences, "taskSubteamIds") ||
-    !Array.isArray(preferences.taskSubteamIds)
-  ) {
-    return null;
-  }
-
-  return normalizePreferences(preferences).taskSubteamIds;
-}
-
-export function updateUserPreferences(
-  email: string,
-  patch: Partial<UserPreferences>,
-): UserPreferences {
-  const normalizedEmail = normalizeEmail(email);
-  const storedPreferences = normalizeStoredPreferences({
-    ...preferencesByEmail[normalizedEmail],
-    ...patch,
-  });
-  const nextPreferences = normalizePreferences(storedPreferences);
-
-  preferencesByEmail = {
-    ...preferencesByEmail,
-    [normalizedEmail]: storedPreferences,
+  return {
+    get(email: string): UserPreferences {
+      return normalizePreferences(preferencesByEmail[normalizeEmail(email)]);
+    },
+    getTaskSubteamIds(email: string) {
+      const preferences = preferencesByEmail[normalizeEmail(email)];
+      return hasPreferenceField(preferences, "taskSubteamIds")
+        ? normalizePreferences(preferences).taskSubteamIds
+        : null;
+    },
+    update(email: string, patch: Partial<UserPreferences>): UserPreferences {
+      const normalizedEmail = normalizeEmail(email);
+      const storedPreferences = normalizeStoredPreferences({
+        ...preferencesByEmail[normalizedEmail],
+        ...patch,
+      });
+      const next = { ...preferencesByEmail, [normalizedEmail]: storedPreferences };
+      mkdirSync(dirname(preferencesPath), { recursive: true });
+      writeFileSync(preferencesPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+      preferencesByEmail = next;
+      return normalizePreferences(storedPreferences);
+    },
   };
-  savePreferences();
-
-  return nextPreferences;
 }
 
-export function resetUserPreferencesStoreForTests() {
-  preferencesByEmail = {};
-}
+export type UserPreferencesStore = ReturnType<typeof createUserPreferencesStore>;

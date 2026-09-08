@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
@@ -1508,12 +1511,14 @@ test("STEP import rejects duplicate assembly source IDs from JSON fixtures", asy
   });
 });
 
-test("unauthenticated STEP JSON uploads are rejected before large body parsing", async () => {
+test("unauthenticated STEP JSON uploads are rejected before large body parsing", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const script = `
     import assert from "node:assert/strict";
 
     const { buildApp } = (await import("./src/app.ts")).default;
-    const app = await buildApp();
+    const app = await buildApp({ userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
     try {
       const response = await app.inject({
         method: "POST",
@@ -1547,12 +1552,14 @@ test("unauthenticated STEP JSON uploads are rejected before large body parsing",
   assert.equal(result.stderr, "");
 });
 
-test("authenticated STEP uploads still accept JSON payloads", async () => {
+test("authenticated STEP uploads still accept JSON payloads", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const script = `
     import assert from "node:assert/strict";
 
     const { buildApp } = (await import("./src/app.ts")).default;
-    const app = await buildApp();
+    const app = await buildApp({ userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
     try {
       const signInResponse = await app.inject({
         method: "POST",

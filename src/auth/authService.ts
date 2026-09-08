@@ -6,7 +6,7 @@ import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
-import { getUserTaskSubteamIdsPreference } from "../data/userPreferencesStore";
+import type { UserPreferencesStore } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
 const SESSION_ISSUER = "meco-platform";
@@ -286,10 +286,10 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
   }
 }
 
-function getTaskSubteamIdsForEmail(email: string) {
+function getTaskSubteamIdsForEmail(email: string, preferences?: UserPreferencesStore) {
   const normalizedEmail = normalizeEmailAddress(email);
   return (
-    getUserTaskSubteamIdsPreference(normalizedEmail) ??
+    preferences?.getTaskSubteamIds(normalizedEmail) ??
     authConfig.memberSubteamsByEmail[normalizedEmail] ??
     []
   );
@@ -308,7 +308,7 @@ function getRoleForEmail(email: string): MemberRole {
   return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
 }
 
-function buildEmailSessionUser(email: string): SessionUser {
+function buildEmailSessionUser(email: string, preferences?: UserPreferencesStore): SessionUser {
   const normalizedEmail = normalizeEmailAddress(email);
 
   return {
@@ -319,7 +319,7 @@ function buildEmailSessionUser(email: string): SessionUser {
     picture: null,
     hostedDomain: authConfig.hostedDomain,
     role: getRoleForEmail(normalizedEmail),
-    taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail),
+    taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail, preferences),
   };
 }
 
@@ -327,7 +327,7 @@ function isDevelopmentSessionRole(role: MemberRole | undefined): role is Develop
   return role === "student" || role === "mentor";
 }
 
-export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "student"): SessionUser {
+export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "student", preferences?: UserPreferencesStore): SessionUser {
   const email = `dev.${role}@${authConfig.hostedDomain}`;
   const displayRole = role === "mentor" ? "Mentor" : "Student";
 
@@ -339,7 +339,7 @@ export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "stud
     picture: null,
     hostedDomain: authConfig.hostedDomain,
     role,
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
@@ -378,7 +378,7 @@ function isPublicDemoBootstrapRequest(request: FastifyRequest) {
   );
 }
 
-function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
+function mapGooglePayload(payload: TokenPayload | undefined, preferences?: UserPreferencesStore): SessionUser {
   if (!payload?.sub || !payload.email) {
     throw new AuthError("Google did not return the required identity fields.", 401);
   }
@@ -406,11 +406,11 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     picture: payload.picture ?? null,
     hostedDomain: hostedDomain ?? authConfig.hostedDomain,
     role: getRoleForEmail(email),
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
-export async function verifyGoogleCredential(credential: string) {
+export async function verifyGoogleCredential(credential: string, preferences?: UserPreferencesStore) {
   const { client, googleClientIds } = assertGoogleAuthReady();
 
   let ticket;
@@ -423,7 +423,7 @@ export async function verifyGoogleCredential(credential: string) {
     throw toAuthError(error);
   }
 
-  return mapGooglePayload(ticket.getPayload());
+  return mapGooglePayload(ticket.getPayload(), preferences);
 }
 
 export async function requestEmailSignInCode(emailInput: string): Promise<EmailCodeDelivery> {
@@ -486,7 +486,7 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
   };
 }
 
-export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
+export function verifyEmailSignInCode(emailInput: string, codeInput: string, preferences?: UserPreferencesStore) {
   assertEmailAuthReady();
   cleanupExpiredPendingEmailCodes();
 
@@ -519,7 +519,7 @@ export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
   }
 
   pendingEmailCodes.delete(email);
-  return buildEmailSessionUser(email);
+  return buildEmailSessionUser(email, preferences);
 }
 
 function toAuthError(error: unknown) {
@@ -619,7 +619,7 @@ export function signSessionToken(user: SessionUser, options: SessionTokenOptions
   );
 }
 
-export function verifySessionToken(token: string): SessionUser {
+export function verifySessionToken(token: string, preferences?: UserPreferencesStore): SessionUser {
   const secret = getJwtSecret();
   const payload = jwt.verify(token, secret, {
     issuer: SESSION_ISSUER,
@@ -693,11 +693,11 @@ export function verifySessionToken(token: string): SessionUser {
     picture: typeof payload.picture === "string" ? payload.picture : null,
     hostedDomain,
     role: developmentRole ?? getRoleForEmail(email),
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
-export function refreshSessionUser(user: SessionUser): SessionUser {
+export function refreshSessionUser(user: SessionUser, preferences?: UserPreferencesStore): SessionUser {
   const email = normalizeEmailAddress(user.email);
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
@@ -714,7 +714,7 @@ export function refreshSessionUser(user: SessionUser): SessionUser {
     ...user,
     email,
     role: developmentRole ?? getRoleForEmail(email),
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
@@ -754,7 +754,7 @@ export function getSessionFromRequest(request: FastifyRequest) {
   const token = readBearerToken(request.headers.authorization);
   if (token) {
     try {
-      return verifySessionToken(token);
+      return verifySessionToken(token, request.server.userPreferences);
     } catch {
       return null;
     }

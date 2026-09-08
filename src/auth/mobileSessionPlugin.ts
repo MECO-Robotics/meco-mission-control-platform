@@ -35,7 +35,7 @@ export function registerMobileSessionSupport(
     const resolved = await service.resolve(token);
     if (!resolved) return;
     try {
-      resolved.user = refreshSessionUser(resolved.user);
+      resolved.user = refreshSessionUser(resolved.user, app.userPreferences);
     } catch {
       await service.revokeSession(resolved.session.id);
       return;

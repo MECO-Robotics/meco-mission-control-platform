@@ -18,10 +18,6 @@ import {
   env,
 } from "../config/env";
 import {
-  getUserPreferences,
-  updateUserPreferences,
-} from "../data/userPreferencesStore";
-import {
   devBypassSchema,
   emailSignInRequestSchema,
   emailSignInVerifySchema,
@@ -83,7 +79,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     }
 
     try {
-      const user = await verifyGoogleCredential(credential);
+      const user = await verifyGoogleCredential(credential, app.userPreferences);
       const token = signSessionToken(user);
 
       return { token, user };
@@ -119,7 +115,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         });
       }
 
-      const user = buildDevelopmentSessionUser(parsed.data.role);
+      const user = buildDevelopmentSessionUser(parsed.data.role, app.userPreferences);
       const token = signSessionToken(user);
 
       return { token, user };
@@ -181,7 +177,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     }
 
     try {
-      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
+      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code, app.userPreferences);
       const token = signSessionToken(user, { deviceId: parsed.data.deviceId });
 
       return { token, user };
@@ -230,7 +226,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       return;
     }
 
-    return getUserPreferences(identity.userKey);
+    return app.userPreferences.get(identity.userKey);
   });
 
   app.patch<{ Body: unknown }>("/api/users/me/preferences", async (request, reply) => {
@@ -251,6 +247,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       });
     }
 
-    return updateUserPreferences(identity.userKey, parsed.data);
+    return app.userPreferences.update(identity.userKey, parsed.data);
   });
 }
