@@ -3908,6 +3908,7 @@ export function createTaskBlocker(input: TaskBlockerInput) {
     id: uniqueId(`${input.blockedTaskId}-blocker`, blockerIds),
     blockedTaskId: input.blockedTaskId,
     blockerType: input.blockerType,
+    issueType: input.issueType ?? "external",
     blockerId: input.blockerId,
     description: input.description,
     severity: input.severity,
