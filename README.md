@@ -356,3 +356,7 @@ On every push to `main`, GitHub Actions will:
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 Schema application is an explicit pre-start deployment step. The application container does not use `--accept-data-loss` and does not modify the schema on ordinary restarts.
+
+### Tutorial fixture dates
+
+Fresh seed data and tutorial starts/baseline resets use the current UTC month and Monday–Sunday week. Seasons span the month; fixture activity is scaled chronologically into the part of the week inside that month, including month/year boundaries. Each start/reset reads the clock again; active sessions keep their dates and edits until reset. Session exit still restores the pre-tutorial workspace. Stored application data is not re-dated.
