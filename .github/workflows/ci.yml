@@ -14,11 +14,12 @@ on:
       - staging
       - "staging/**"
       - main
-      - "feature/**"
-      - "fix/**"
-      - "hotfix/**"
     paths:
       - "AGENTS.md"
+      - "CONTRIBUTING.md"
+      - "README.md"
+      - ".nvmrc"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
       - ".editorconfig"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy-vps.yml"
@@ -141,7 +142,6 @@ jobs:
             ref: process.env.GITHUB_REF,
             generatedAtUtc: new Date().toISOString(),
             validations: [
-              'npm run typecheck:test',
               'npm run verify',
               'npx prisma validate',
               'docker compose --env-file .env.production.example -f docker-compose.prod.yml config',
