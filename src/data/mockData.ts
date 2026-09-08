@@ -13,41 +13,18 @@ import {
   getTaskDisciplineBucketForProject,
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
-
-type IteratedSeed<T extends { iteration: number; isArchived: boolean }> = Omit<
-  T,
-  "iteration" | "isArchived"
-> &
-  Partial<Pick<T, "iteration" | "isArchived">>;
-
-type SeedSubsystem = IteratedSeed<Subsystem>;
-type SeedMechanism = IteratedSeed<Mechanism>;
-type SeedPartDefinition = Omit<IteratedSeed<PartDefinition>, "seasonId" | "activeSeasonIds"> &
-  Partial<Pick<PartDefinition, "seasonId" | "activeSeasonIds">>;
-type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Workstream, "isArchived">>;
-
-type SeedTask = Omit<
-  Task,
-  | "workstreamIds"
-  | "subsystemIds"
-  | "mechanismIds"
-  | "partInstanceIds"
-  | "artifactId"
-  | "artifactIds"
-  | "assigneeIds"
-> &
-  Partial<
-    Pick<
-      Task,
-      | "workstreamIds"
-      | "subsystemIds"
-      | "mechanismIds"
-      | "partInstanceIds"
-      | "artifactId"
-      | "artifactIds"
-      | "assigneeIds"
-    >
-  >;
+import type {
+  SeedMechanism,
+  SeedPartDefinition,
+  SeedSubsystem,
+  SeedTask,
+  SeedWorkstream,
+} from "./seedTypes";
+import {
+  offseasonSeedAdditions,
+  offseasonTaskBlockers,
+  offseasonTaskDependencies,
+} from "./offseasonSeed";
 
 function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
@@ -90,6 +67,23 @@ function withPartDefinitionSeasonMembership(
     activeSeasonIds: item.activeSeasonIds ?? [seasonId],
     iteration: normalizeIteration(item.iteration),
     isArchived: item.isArchived ?? false,
+  };
+}
+
+function normalizeMemberSeasonMembership<
+  T extends { seasonId?: string | null; activeSeasonIds?: Array<string | null | undefined> | null },
+>(
+  member: T,
+  fallbackSeasonId: string,
+): Omit<T, "seasonId" | "activeSeasonIds"> & {
+  seasonId: string;
+  activeSeasonIds: string[];
+} {
+  const seasonId = member.seasonId ?? fallbackSeasonId;
+  return {
+    ...member,
+    seasonId,
+    activeSeasonIds: uniqueIds([...(member.activeSeasonIds ?? []), seasonId]),
   };
 }
 
@@ -194,12 +188,13 @@ const snapshotSeed: Omit<
       name: "Tutorial Season",
       type: "season",
       startDate: "2026-01-06",
-      endDate: "2026-04-30",
+      endDate: "2026-08-31",
     },
   ],
   projects: [
     {
       id: "project-robot-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Tutorial Robot 2026",
       projectType: "robot",
@@ -208,6 +203,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-media-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Media",
       projectType: "other",
@@ -216,6 +212,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-outreach-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Outreach",
       projectType: "outreach",
@@ -224,6 +221,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-operations-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Operations",
       projectType: "operations",
@@ -232,6 +230,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-strategy-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Strategy",
       projectType: "other",
@@ -240,6 +239,7 @@ const snapshotSeed: Omit<
     },
     {
       id: "project-training-2026",
+      teamId: "meco-robotics",
       seasonId: "default-season",
       name: "Training",
       projectType: "other",
@@ -1183,7 +1183,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-22",
       priority: "critical",
       status: "waiting-for-qa",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: ["sensor-bracket"],
       linkedPurchaseIds: [],
@@ -1209,7 +1209,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-24",
       priority: "medium",
       status: "not-started",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1235,8 +1235,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-25",
       priority: "high",
       status: "in-progress",
-      dependencyIds: [],
-      blockers: ["Waiting on CNC batch B-17 to clear the router."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: ["guard-cnc"],
       linkedPurchaseIds: ["polycarb-sheet"],
       estimatedHours: 12,
@@ -1261,7 +1261,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-20",
       priority: "medium",
       status: "complete",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1287,7 +1287,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-25",
       priority: "high",
       status: "in-progress",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1313,7 +1313,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-24",
       priority: "medium",
       status: "not-started",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1339,8 +1339,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-27",
       priority: "high",
       status: "not-started",
-      dependencyIds: ["swerve-sensor-bundle"],
-      blockers: ["Needs final drive calibration report before review."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
       estimatedHours: 8,
@@ -1365,7 +1365,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-24",
       priority: "low",
       status: "in-progress",
-      dependencyIds: ["pdh-labels"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: ["ferrule-kit"],
@@ -1391,7 +1391,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-27",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["swerve-sensor-bundle"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1417,7 +1417,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-27",
       priority: "medium",
       status: "not-started",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1443,8 +1443,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-01",
       priority: "high",
       status: "in-progress",
-      dependencyIds: ["swerve-sensor-bundle"],
-      blockers: ["Need final vibration pass after mount hardware arrives."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: ["limelight-mount-plate-cnc"],
       linkedPurchaseIds: ["cat6-bulk-pack"],
       estimatedHours: 9,
@@ -1469,7 +1469,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-30",
       priority: "medium",
       status: "not-started",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: ["cat6-bulk-pack"],
@@ -1495,8 +1495,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-06",
       priority: "critical",
       status: "not-started",
-      dependencyIds: ["integrate-controls"],
-      blockers: ["Ratchet service kit still pending order approval."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: ["climb-winch-spacer-print"],
       linkedPurchaseIds: ["climber-ratchet-kit"],
       estimatedHours: 11,
@@ -1521,7 +1521,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-07",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["vision-calibration-sweep", "wire-limelight-mount"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1547,8 +1547,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-28",
       priority: "high",
       status: "in-progress",
-      dependencyIds: [],
-      blockers: ["Need final battery swap timing targets from mentors."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: ["pit-board-frame-fab"],
       linkedPurchaseIds: ["anderson-service-pack"],
       estimatedHours: 6,
@@ -1573,7 +1573,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-04-28",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["pit-board-refresh"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1599,7 +1599,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-03",
       priority: "medium",
       status: "in-progress",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1625,7 +1625,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-04",
       priority: "high",
       status: "in-progress",
-      dependencyIds: [],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: ["demo-kiosk-signage-print"],
       linkedPurchaseIds: ["demo-kiosk-signage-print-order"],
@@ -1651,7 +1651,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-04",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["outreach-kiosk-assembly"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1677,8 +1677,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-02",
       priority: "high",
       status: "in-progress",
-      dependencyIds: [],
-      blockers: ["Need venue Wi-Fi test window from milestone contacts."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: ["tablet-bracket-cut"],
       linkedPurchaseIds: ["cat6-bulk-pack"],
       estimatedHours: 8,
@@ -1703,7 +1703,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-06",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["scouting-tablet-refresh"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1730,7 +1730,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-07",
       priority: "high",
       status: "in-progress",
-      dependencyIds: ["outreach-kiosk-assembly"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: ["camera-rig-plate-cnc"],
       linkedPurchaseIds: ["media-uplink-batteries"],
@@ -1757,8 +1757,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-08",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["media-highlight-cut"],
-      blockers: ["Sponsor logo lockup approval is still pending final mentor signoff."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
       estimatedHours: 4,
@@ -1784,7 +1784,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-05",
       priority: "high",
       status: "waiting-for-qa",
-      dependencyIds: ["scouting-tablet-refresh"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1811,8 +1811,8 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-08",
       priority: "medium",
       status: "in-progress",
-      dependencyIds: ["strategy-opponent-model-update"],
-      blockers: ["Final event schedule from organizers is still pending."],
+      checklistItems: [],
+      blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
       estimatedHours: 5,
@@ -1838,7 +1838,7 @@ const snapshotSeed: Omit<
       dueDate: "2026-05-08",
       priority: "medium",
       status: "not-started",
-      dependencyIds: ["strategy-playoff-scenario-cards"],
+      checklistItems: [],
       blockers: [],
       linkedManufacturingIds: [],
       linkedPurchaseIds: [],
@@ -1972,7 +1972,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-outreach-milestones",
       subsystemId: "outreach",
       mechanismId: "demo-kiosk",
-      partInstanceId: "pi-demo-kiosk-signage-kit",
+      partInstanceId: "pi-demo-kiosk-signage",
       artifactId: "artifact-stem-night-run-of-show",
       title: "Outreach kiosk signage copy is too dense",
       detail:
@@ -1993,7 +1993,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-controls",
       subsystemId: "vision",
       mechanismId: "limelight-mount",
-      partInstanceId: "pi-limelight-mount-plate",
+      partInstanceId: "pi-limelight-mount",
       artifactId: null,
       title: "Vision confidence drop near field corners",
       detail:
@@ -2048,7 +2048,7 @@ const snapshotSeed: Omit<
       workstreamId: "workstream-outreach-milestones",
       subsystemId: "outreach",
       mechanismId: "demo-kiosk",
-      partInstanceId: "pi-demo-kiosk-signage-kit",
+      partInstanceId: "pi-demo-kiosk-signage",
       artifactId: "artifact-stem-night-run-of-show",
       taskId: "outreach-script-rehearsal",
       notes: "Simplify entrance signage and align copy with run-of-show callouts.",
@@ -2823,9 +2823,69 @@ const snapshotSeed: Omit<
   ],
 };
 
-export const snapshot: PlatformSnapshot = {
+const combinedSnapshotSeed: typeof snapshotSeed = {
   ...snapshotSeed,
+  members: [...snapshotSeed.members, ...offseasonSeedAdditions.members],
+  mechanisms: [...snapshotSeed.mechanisms, ...offseasonSeedAdditions.mechanisms],
+  materials: [...snapshotSeed.materials, ...offseasonSeedAdditions.materials],
+  artifacts: [...snapshotSeed.artifacts, ...offseasonSeedAdditions.artifacts],
+  partDefinitions: [
+    ...snapshotSeed.partDefinitions,
+    ...offseasonSeedAdditions.partDefinitions,
+  ],
+  partInstances: [...snapshotSeed.partInstances, ...offseasonSeedAdditions.partInstances],
+  milestones: [...snapshotSeed.milestones, ...offseasonSeedAdditions.milestones],
+  tasks: [...snapshotSeed.tasks, ...offseasonSeedAdditions.tasks],
+  qaReports: [...snapshotSeed.qaReports, ...offseasonSeedAdditions.qaReports],
+  testResults: [...snapshotSeed.testResults, ...offseasonSeedAdditions.testResults],
+  qaFindings: [...snapshotSeed.qaFindings, ...offseasonSeedAdditions.qaFindings],
+  testFindings: [...snapshotSeed.testFindings, ...offseasonSeedAdditions.testFindings],
+  designIterations: [
+    ...snapshotSeed.designIterations,
+    ...offseasonSeedAdditions.designIterations,
+  ],
+  risks: [...snapshotSeed.risks, ...offseasonSeedAdditions.risks],
+  workLogs: [...snapshotSeed.workLogs, ...offseasonSeedAdditions.workLogs],
+  meetings: [...snapshotSeed.meetings, ...offseasonSeedAdditions.meetings],
+  attendanceRecords: [
+    ...snapshotSeed.attendanceRecords,
+    ...offseasonSeedAdditions.attendanceRecords,
+  ],
+  manufacturingItems: [
+    ...snapshotSeed.manufacturingItems,
+    ...offseasonSeedAdditions.manufacturingItems,
+  ],
+  purchaseItems: [...snapshotSeed.purchaseItems, ...offseasonSeedAdditions.purchaseItems],
+  qaReviews: [...snapshotSeed.qaReviews, ...offseasonSeedAdditions.qaReviews],
+  escalations: [...snapshotSeed.escalations, ...offseasonSeedAdditions.escalations],
+};
+
+export const snapshot: PlatformSnapshot = {
+  ...combinedSnapshotSeed,
+  members: combinedSnapshotSeed.members.map((member) =>
+    normalizeMemberSeasonMembership(member, combinedSnapshotSeed.seasons[0]?.id ?? "default-season"),
+  ),
   taskDependencies: [
+    {"id": "dep-auto-safety-review-swerve-sensor-bundle", "taskId": "auto-safety-review", "kind": "task", "refId": "swerve-sensor-bundle", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-22"},
+    {"id": "dep-pit-checklist-pdh-labels", "taskId": "pit-checklist", "kind": "task", "refId": "pdh-labels", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-19"},
+    {"id": "dep-wire-auto-safety-swerve-sensor-bundle", "taskId": "wire-auto-safety", "kind": "task", "refId": "swerve-sensor-bundle", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-22"},
+    {"id": "dep-vision-calibration-sweep-swerve-sensor-bundle", "taskId": "vision-calibration-sweep", "kind": "task", "refId": "swerve-sensor-bundle", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-24"},
+    {"id": "dep-climb-load-test-integrate-controls", "taskId": "climb-load-test", "kind": "task", "refId": "integrate-controls", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-27"},
+    {"id": "dep-integrate-vision-vision-calibration-sweep", "taskId": "integrate-vision", "kind": "task", "refId": "vision-calibration-sweep", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-01"},
+    {"id": "dep-integrate-vision-wire-limelight-mount", "taskId": "integrate-vision", "kind": "task", "refId": "wire-limelight-mount", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-01"},
+    {"id": "dep-pit-bin-labeling-pit-board-refresh", "taskId": "pit-bin-labeling", "kind": "task", "refId": "pit-board-refresh", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-25"},
+    {"id": "dep-outreach-script-rehearsal-outreach-kiosk-assembly", "taskId": "outreach-script-rehearsal", "kind": "task", "refId": "outreach-kiosk-assembly", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-28"},
+    {"id": "dep-scouting-rubric-training-scouting-tablet-refresh", "taskId": "scouting-rubric-training", "kind": "task", "refId": "scouting-tablet-refresh", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-29"},
+    {"id": "dep-media-highlight-cut-outreach-kiosk-assembly", "taskId": "media-highlight-cut", "kind": "task", "refId": "outreach-kiosk-assembly", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-02"},
+    {"id": "dep-strategy-opponent-model-update-scouting-tablet-refresh", "taskId": "strategy-opponent-model-update", "kind": "task", "refId": "scouting-tablet-refresh", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-01"},
+    {"id": "dep-strategy-playoff-scenario-cards-strategy-opponent-model-update", "taskId": "strategy-playoff-scenario-cards", "kind": "task", "refId": "strategy-opponent-model-update", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-02"},
+    {"id": "dep-drive-module-spares-audit-swerve-sensor-bundle", "taskId": "drive-module-spares-audit", "kind": "task", "refId": "swerve-sensor-bundle", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-28"},
+    {"id": "dep-scouting-schema-normalization-scouting-tablet-refresh", "taskId": "scouting-schema-normalization", "kind": "task", "refId": "scouting-tablet-refresh", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-27"},
+    {"id": "dep-scrimmage-spares-loadout-drive-module-spares-audit", "taskId": "scrimmage-spares-loadout", "kind": "task", "refId": "drive-module-spares-audit", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-03"},
+    {"id": "dep-open-house-demo-loop-media-social-rollout", "taskId": "open-house-demo-loop", "kind": "task", "refId": "media-social-rollout", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-05"},
+    {"id": "dep-scrimmage-drive-coach-cards-strategy-opponent-model-update", "taskId": "scrimmage-drive-coach-cards", "kind": "task", "refId": "strategy-opponent-model-update", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-04"},
+    {"id": "dep-sponsor-open-house-media-package-media-social-rollout", "taskId": "sponsor-open-house-media-package", "kind": "task", "refId": "media-social-rollout", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-05"},
+
     {
       id: "dep-media-social-rollout-task",
       taskId: "media-social-rollout",
@@ -2862,8 +2922,18 @@ export const snapshot: PlatformSnapshot = {
       dependencyType: "soft",
       createdAt: "2026-05-06T08:00:00-04:00",
     },
+    ...offseasonTaskDependencies,
   ],
   taskBlockers: [
+    {"id": "blocker-intake-guard-1", "blockedTaskId": "intake-guard", "blockerType": "external", "blockerId": null, "description": "Waiting on CNC batch B-17 to clear the router.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-18", "resolvedAt": null},
+    {"id": "blocker-auto-safety-review-1", "blockedTaskId": "auto-safety-review", "blockerType": "external", "blockerId": null, "description": "Needs final drive calibration report before review.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-22", "resolvedAt": null},
+    {"id": "blocker-vision-calibration-sweep-1", "blockedTaskId": "vision-calibration-sweep", "blockerType": "external", "blockerId": null, "description": "Need final vibration pass after mount hardware arrives.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-24", "resolvedAt": null},
+    {"id": "blocker-climb-load-test-1", "blockedTaskId": "climb-load-test", "blockerType": "external", "blockerId": null, "description": "Ratchet service kit still pending order approval.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-27", "resolvedAt": null},
+    {"id": "blocker-pit-board-refresh-1", "blockedTaskId": "pit-board-refresh", "blockerType": "external", "blockerId": null, "description": "Need final battery swap timing targets from mentors.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-24", "resolvedAt": null},
+    {"id": "blocker-scouting-tablet-refresh-1", "blockedTaskId": "scouting-tablet-refresh", "blockerType": "external", "blockerId": null, "description": "Need venue Wi-Fi test window from milestone contacts.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-24", "resolvedAt": null},
+    {"id": "blocker-auto-replay-suite-1", "blockedTaskId": "auto-replay-suite", "blockerType": "external", "blockerId": null, "description": "Driver station image is waiting on firmware and DS log tooling updates.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-05-30", "resolvedAt": null},
+    {"id": "blocker-apriltag-field-calibration-1", "blockedTaskId": "apriltag-field-calibration", "blockerType": "external", "blockerId": null, "description": "Practice field tag stands are short two bases until the purchase lands.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-06-08", "resolvedAt": null},
+
     {
       id: "blocker-media-brand-approval",
       blockedTaskId: "media-social-rollout",
@@ -2900,17 +2970,18 @@ export const snapshot: PlatformSnapshot = {
       createdAt: "2026-05-05T08:15:00-04:00",
       resolvedAt: null,
     },
+    ...offseasonTaskBlockers,
   ],
-  workstreams: snapshotSeed.workstreams.map(withArchiveState),
-  subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
-  mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
-  partDefinitions: snapshotSeed.partDefinitions.map((partDefinition) =>
-    withPartDefinitionSeasonMembership(partDefinition, snapshotSeed.seasons[0]?.id ?? "default-season"),
+  workstreams: combinedSnapshotSeed.workstreams.map(withArchiveState),
+  subsystems: combinedSnapshotSeed.subsystems.map(withIteration).map(withArchiveState),
+  mechanisms: combinedSnapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
+  partDefinitions: combinedSnapshotSeed.partDefinitions.map((partDefinition) =>
+    withPartDefinitionSeasonMembership(partDefinition, combinedSnapshotSeed.seasons[0]?.id ?? "default-season"),
   ),
-  tasks: snapshotSeed.tasks.map(normalizeTaskTargets).map((task) =>
+  tasks: combinedSnapshotSeed.tasks.map(normalizeTaskTargets).map((task) =>
     normalizeTaskDiscipline(
       task,
-      new Map(snapshotSeed.projects.map((project) => [project.id, project])),
+      new Map(combinedSnapshotSeed.projects.map((project) => [project.id, project])),
     ),
   ),
   favoriteViews: [],

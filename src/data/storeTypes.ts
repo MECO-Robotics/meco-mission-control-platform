@@ -8,6 +8,7 @@ import type {
   MaterialCategory,
   Member,
   PartInstance,
+  PmCadProvenance,
   Project,
   QaResult,
   ReportType,
@@ -15,6 +16,7 @@ import type {
   RiskSeverity,
   PurchaseStatus,
   Season,
+  TaskBlockerIssueType,
   TaskBlockerSeverity,
   TaskBlockerStatus,
   TaskBlockerType,
@@ -23,6 +25,8 @@ import type {
   TaskStatus,
   TestResultStatus,
 } from "../domain/types";
+
+export type PmCadProvenanceInput = Partial<PmCadProvenance>;
 
 export interface TaskInput {
   projectId: string;
@@ -50,8 +54,7 @@ export interface TaskInput {
   status: TaskStatus;
   estimatedHours: number;
   actualHours: number;
-  blockers: string[];
-  dependencyIds: string[];
+  checklistItems?: string[];
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];
   requiresDocumentation: boolean;
@@ -65,6 +68,7 @@ export interface WorkLogInput {
   participantIds: string[];
   notes: string;
   photoUrl?: string;
+  createdById?: string | null;
 }
 
 export interface MemberInput {
@@ -100,6 +104,7 @@ export interface SeasonInput {
 }
 
 export interface ProjectInput {
+  teamId?: string;
   seasonId: string;
   name: string;
   projectType: Project["projectType"];
@@ -118,6 +123,10 @@ export interface PurchaseItemInput {
   estimatedCost: number;
   finalCost?: number;
   approvedByMentor: boolean;
+  approvedById?: string | null;
+  approvedAt?: string | null;
+  purchasedAt?: string | null;
+  deliveredAt?: string | null;
   status: PurchaseStatus;
 }
 
@@ -135,6 +144,8 @@ export interface ManufacturingItemInput {
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
   inHouse?: boolean;
   batchLabel?: string;
 }
@@ -170,7 +181,12 @@ export interface WorkstreamInput {
   isArchived?: boolean;
 }
 
-export interface SubsystemInput {
+export interface SubsystemInput extends PmCadProvenanceInput {
+  layoutX?: number | null;
+  layoutY?: number | null;
+  layoutZone?: "front" | "rear" | "left" | "right" | "center" | "top" | "unplaced" | null;
+  layoutView?: "top" | null;
+  sortOrder?: number | null;
   projectId: string;
   name: string;
   serialAlias?: string;
@@ -185,7 +201,7 @@ export interface SubsystemInput {
   risks: string[];
 }
 
-export interface MechanismInput {
+export interface MechanismInput extends PmCadProvenanceInput {
   subsystemId: string;
   name: string;
   description: string;
@@ -195,7 +211,7 @@ export interface MechanismInput {
   isArchived?: boolean;
 }
 
-export interface PartDefinitionInput {
+export interface PartDefinitionInput extends PmCadProvenanceInput {
   seasonId?: string;
   activeSeasonIds?: string[];
   name: string;
@@ -211,7 +227,7 @@ export interface PartDefinitionInput {
   photoUrl?: string;
 }
 
-export interface PartInstanceInput {
+export interface PartInstanceInput extends PmCadProvenanceInput {
   subsystemId: string;
   mechanismId: string | null;
   partDefinitionId: string;
@@ -235,6 +251,9 @@ export interface MilestoneInput {
 }
 
 export interface QaReportInput {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   taskId: string;
   participantIds: string[];
   result: QaResult;
@@ -260,6 +279,9 @@ export interface TestResultInput {
 }
 
 export interface ReportInput {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   reportType: ReportType;
   projectId: string;
   taskId: string | null;
@@ -296,13 +318,14 @@ export interface TaskDependencyInput {
   taskId: string;
   kind: "task" | "milestone" | "part_instance";
   refId: string;
-  requiredState?: string;
+  requiredState: string;
   dependencyType: TaskDependencyType;
 }
 
 export interface TaskBlockerInput {
   blockedTaskId: string;
   blockerType: TaskBlockerType;
+  issueType?: TaskBlockerIssueType;
   blockerId: string | null;
   description: string;
   severity: TaskBlockerSeverity;

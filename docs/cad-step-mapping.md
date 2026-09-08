@@ -60,15 +60,29 @@ Do not parse large native CAD geometry inside the main request path.
 
 ## Persistence
 
-Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVER=prisma`. Tests and local compatibility flows can opt into `CAD_STORE_DRIVER=runtime`. The store selection is centralized in `src/cad/cadStoreFactory.ts`, while legacy runtime state remains available for isolated tests and local smoke paths.
+Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVER=prisma`. Tests and local compatibility flows can opt into `CAD_STORE_DRIVER=runtime`. `src/app.ts` selects the CAD store once at startup, sharing its Prisma client with session stores. Runtime storage is an explicit test/local mode; database failures never switch backends.
 
 Snapshots are historical evidence. Do not rewrite old snapshots when mappings change. Use snapshot mappings for one-off decisions and create/supersede mapping rules for future-import behavior.
 
 Finalized snapshots keep their historical parser diagnostics, warning records, tree, and mapping review decisions. New uploads should create new import runs and snapshots rather than mutating previous evidence.
 
+## Planning Ownership
+
+CAD records and planning records have separate ownership. `CadPartDefinition` and `CadPartInstance` records belong to one historical CAD snapshot. They can propose matches, quantities, diffs, and hierarchy decisions, but they do not silently own, delete, archive, or rewrite planning inventory.
+
+`PartDefinition` is the shared reusable planning definition. It owns the stable part identity that teams search, buy, fabricate, and reuse across mechanisms: part number, revision, type, source, material, photo, and description. CAD-derived parts may match an existing definition by exact part number or stable signature; ambiguous name-only matches require review.
+
+`PartInstance` is the planning placement or demand record. It owns exactly one subsystem, optionally one mechanism through `partInstance.mechanismId`, the required quantity, individual tracking mode, status, and instance photo. A mechanism owns a part instance only through that `mechanismId`; component assemblies stay CAD hierarchy context and do not become mechanisms by default.
+
+Repeated CAD occurrences of the same part under the same subsystem and mechanism collapse into one planning part instance with summed quantity. Repeated occurrences under different mechanisms or subsystems remain separate planning part instances that share one `PartDefinition`. COTS, vendor hardware, stock, and shared components follow the same rule: keep one shared definition and create per-subsystem or per-mechanism instances for demand quantity.
+
+Component assemblies inherit the nearest mapped parent mechanism for ownership review. If no ancestor mechanism is mapped, the review decision must explicitly provide a parent mechanism before finalization can proceed without `allowUnresolved`.
+
+CAD deletions and renames are review evidence, not destructive planning mutations. A later snapshot that removes a part reports removed CAD parts or instances in diff output; a rename with the same stable signature or exact part number keeps matching the same shared definition. Ambiguous rename or duplicate candidate cases remain blocking review items until a human confirms, rejects, ignores, or remaps them.
+
 ## Upload Size
 
-STEP uploads default to a 250 MiB server-side limit. Deployments can override this with `CAD_STEP_UPLOAD_MAX_BYTES` when teams need a smaller or larger cap.
+STEP uploads default to a 32 MiB server-side limit and cannot be configured above 64 MiB. Deployments can reduce this with `CAD_STEP_UPLOAD_MAX_BYTES`. Parser work is additionally bounded by `CAD_STEP_PARSER_MAX_CONCURRENCY`, `CAD_STEP_PARSER_MAX_QUEUE`, `CAD_STEP_PARSER_MAX_OLD_SPACE_MB`, `CAD_STEP_PARSER_TIMEOUT_MS`, and `CAD_STEP_PARSER_MAX_RESULT_BYTES` so concurrent uploads cannot create an unbounded number of workers or IPC results.
 
 ## Current Limits
 

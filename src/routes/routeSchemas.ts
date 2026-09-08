@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { authConfig as runtimeAuthConfig } from "../config/env";
 
 const plannedAttendanceDaySchema = z.enum([
   "monday",
@@ -14,7 +13,7 @@ const plannedAttendanceDaySchema = z.enum([
 
 export const devBypassSchema = z.object({
   role: z.enum(["student", "mentor"]).default("student"),
-});
+}).strict();
 
 export const memberSchema = z.object({
   name: z.string().trim().min(2),
@@ -91,15 +90,20 @@ export const taskSchema = z.object({
   status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]),
   estimatedHours: z.coerce.number().min(0),
   actualHours: z.coerce.number().min(0),
-  blockers: z.array(z.string().trim().min(1)).default([]),
-  dependencyIds: z.array(z.string().trim().min(1)).default([]),
+  checklistItems: z.array(z.string().trim().min(1)).default([]),
   linkedManufacturingIds: z.array(z.string().trim().min(1)).default([]),
   linkedPurchaseIds: z.array(z.string().trim().min(1)).default([]),
   requiresDocumentation: z.boolean().default(false),
   documentationLinked: z.boolean().default(false),
-});
+}).strict();
 
 export const taskPatchSchema = taskSchema.partial();
+export const taskClaimSchema = z.object({
+  start: z.boolean().optional().default(false),
+});
+export const taskReassignSchema = z.object({
+  ownerId: z.string().trim().min(1).nullable(),
+});
 
 export const milestoneSchema = z.object({
   title: z.string().trim().min(2),
@@ -148,7 +152,14 @@ export const meetingSchema = z.object({
 
 export const meetingPatchSchema = meetingSchema.partial();
 
+export const qaReassessmentSchema = z.object({
+  targetRiskId: z.string().trim().min(1).nullable().optional(),
+  proposedRiskSeverity: z.enum(["high", "medium", "low"]).nullable().optional(),
+  proposedRiskStatus: z.enum(["partial-mitigation", "full-mitigation"]).nullable().optional(),
+});
+
 export const qaReportSchema = z.object({
+  ...qaReassessmentSchema.shape,
   taskId: z.string().trim().min(1),
   participantIds: z.array(z.string().trim().min(1)).min(1),
   result: z.enum(["pass", "minor-fix", "iteration-worthy"]),
@@ -156,7 +167,7 @@ export const qaReportSchema = z.object({
   notes: z.string().trim().default(""),
   photoUrl: z.string().trim().default(""),
   reviewedAt: z.string().date(),
-});
+}).strict();
 
 export const qaRequestSchema = z.object({
   taskId: z.string().trim().min(1).nullable().optional(),
@@ -180,7 +191,23 @@ export const userPreferencesPatchSchema = z.object({
   themeMode: z.enum(["light", "dark"]).nullable().optional(),
 });
 
+export const auditExportQuerySchema = z.object({
+  format: z.enum(["json", "csv"]).default("json"),
+  seasonId: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1).optional(),
+  entityType: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+}).strict().refine(
+  (query) => !query.from || !query.to || Date.parse(query.from) <= Date.parse(query.to),
+  {
+    message: "from must be on or before to.",
+    path: ["from"],
+  },
+);
+
 export const reportSchema = z.object({
+  ...qaReassessmentSchema.shape,
   reportType: z.enum(["QA", "MilestoneTest"]),
   projectId: z.string().trim().min(1),
   taskId: z.string().trim().min(1).nullable(),
@@ -198,7 +225,7 @@ export const reportSchema = z.object({
   title: z.string().trim().min(1).optional(),
   status: z.enum(["pass", "fail", "blocked"]).optional(),
   findings: z.array(z.string().trim().min(1)).optional(),
-});
+}).strict();
 
 export const reportFindingSchema = z.object({
   reportId: z.string().trim().min(1),
@@ -213,115 +240,27 @@ export const reportFindingSchema = z.object({
   spawnedRiskId: z.string().trim().min(1).nullable(),
 });
 
-const taskDependencyKindSchema = z.enum(["task", "milestone", "part_instance"]);
-const taskDependencyTypeSchema = z.enum(["hard", "soft"]);
-const legacyTaskDependencyTypeSchema = z.enum(["blocks", "soft", "finish_to_start"]);
-
-const taskDependencyInputSchema = z.object({
+const taskDependencyFields = {
   taskId: z.string().trim().min(1),
-  kind: taskDependencyKindSchema,
   refId: z.string().trim().min(1),
-  requiredState: z.string().trim().min(1).optional(),
-  dependencyType: taskDependencyTypeSchema,
-});
+  dependencyType: z.enum(["hard", "soft"]),
+};
+const dependencyTaskStateSchema = z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]);
+const dependencyReadinessStateSchema = z.enum(["not ready", "blocked", "qa", "ready"]);
+export const taskDependencySchema = z.discriminatedUnion("kind", [
+  z.object({ ...taskDependencyFields, kind: z.literal("task"), requiredState: dependencyTaskStateSchema }).strict(),
+  z.object({ ...taskDependencyFields, kind: z.literal("milestone"), requiredState: dependencyReadinessStateSchema }).strict(),
+  z.object({ ...taskDependencyFields, kind: z.literal("part_instance"), requiredState: dependencyReadinessStateSchema }).strict(),
+]);
+export const taskDependencyPatchSchema = z.object({
+  ...taskDependencyFields,
+  kind: z.enum(["task", "milestone", "part_instance"]),
+  requiredState: z.union([dependencyTaskStateSchema, dependencyReadinessStateSchema]),
+}).strict().partial();
 
-const legacyTaskDependencyInputSchema = z.object({
-  upstreamTaskId: z.string().trim().min(1),
-  downstreamTaskId: z.string().trim().min(1),
-  dependencyType: legacyTaskDependencyTypeSchema,
-});
-
-const taskDependencyPatchInputSchema = z.object({
-  taskId: z.string().trim().min(1).optional(),
-  kind: taskDependencyKindSchema.optional(),
-  refId: z.string().trim().min(1).optional(),
-  requiredState: z.string().trim().min(1).optional(),
-  dependencyType: z.union([taskDependencyTypeSchema, legacyTaskDependencyTypeSchema]).optional(),
-  upstreamTaskId: z.string().trim().min(1).optional(),
-  downstreamTaskId: z.string().trim().min(1).optional(),
-});
-
-function normalizeTaskDependencyInput(input: {
-  taskId?: string;
-  kind?: "task" | "milestone" | "part_instance";
-  refId?: string;
-  requiredState?: string;
-  dependencyType?: "hard" | "soft" | "blocks" | "finish_to_start";
-  upstreamTaskId?: string;
-  downstreamTaskId?: string;
-}) {
-  return {
-    taskId: input.taskId ?? input.downstreamTaskId ?? "",
-    kind: input.kind ?? "task",
-    refId: input.refId ?? input.upstreamTaskId ?? "",
-    requiredState: input.requiredState ?? (input.kind === "part_instance" ? "ready" : "complete"),
-    dependencyType:
-      input.dependencyType === "soft"
-        ? "soft"
-        : "hard",
-  } as const;
-}
-
-function normalizeTaskDependencyPatchInput(input: {
-  taskId?: string;
-  kind?: "task" | "milestone" | "part_instance";
-  refId?: string;
-  requiredState?: string;
-  dependencyType?: "hard" | "soft" | "blocks" | "finish_to_start";
-  upstreamTaskId?: string;
-  downstreamTaskId?: string;
-}) {
-  const normalized: Partial<{
-    taskId: string;
-    kind: "task" | "milestone" | "part_instance";
-    refId: string;
-    requiredState: string;
-    dependencyType: "hard" | "soft";
-  }> = {};
-
-  if (input.taskId !== undefined || input.downstreamTaskId !== undefined) {
-    normalized.taskId = input.taskId ?? input.downstreamTaskId ?? "";
-  }
-
-  if (input.kind !== undefined) {
-    normalized.kind = input.kind;
-  }
-
-  if (input.refId !== undefined || input.upstreamTaskId !== undefined) {
-    normalized.refId = input.refId ?? input.upstreamTaskId ?? "";
-  }
-
-  if (input.requiredState !== undefined) {
-    normalized.requiredState = input.requiredState;
-  }
-
-  if (input.dependencyType !== undefined) {
-    normalized.dependencyType = input.dependencyType === "soft" ? "soft" : "hard";
-  }
-
-  return normalized;
-}
-
-export const taskDependencySchema = z
-  .union([taskDependencyInputSchema, legacyTaskDependencyInputSchema])
-  .transform((input) => {
-    if ("taskId" in input) {
-      return normalizeTaskDependencyInput(input);
-    }
-
-    return normalizeTaskDependencyInput({
-      taskId: input.downstreamTaskId,
-      kind: "task",
-      refId: input.upstreamTaskId,
-      dependencyType: input.dependencyType,
-    });
-  });
-
-export const taskDependencyPatchSchema = taskDependencyPatchInputSchema.transform((input) =>
-  normalizeTaskDependencyPatchInput(input),
-);
-
-export const taskBlockerSchema = z.object({
+const taskBlockerFieldsSchema = z.object({
+  issueType: z.enum(["external", "lost-part", "broken-part", "lost-tool", "broken-tool",
+    "design-issue", "shipping-delay", "manufacturing-unavailable", "qa-failed", "other"]).optional(),
   blockedTaskId: z.string().trim().min(1),
   blockerType: z.enum([
     "task",
@@ -335,11 +274,14 @@ export const taskBlockerSchema = z.object({
   blockerId: z.string().trim().min(1).nullable(),
   description: z.string().trim().min(1),
   severity: z.enum(["low", "medium", "high", "critical"]),
-  status: z.enum(["open", "resolved"]).default("open"),
+  status: z.enum(["open", "resolved"]),
   createdByMemberId: z.string().trim().min(1).nullable().optional(),
 });
 
-export const taskBlockerPatchSchema = taskBlockerSchema.partial();
+export const taskBlockerSchema = taskBlockerFieldsSchema.extend({
+  status: taskBlockerFieldsSchema.shape.status.default("open"),
+}).strict();
+export const taskBlockerPatchSchema = taskBlockerFieldsSchema.partial();
 
 export const riskSchema = z.object({
   title: z.string().trim().min(2),
@@ -355,6 +297,21 @@ export const riskSchema = z.object({
 export const riskPatchSchema = riskSchema.partial();
 
 export const iterationSchema = z.coerce.number().int().min(1).default(1);
+const pmCadSourceSchema = z.enum(["manual", "step", "onshape"]);
+const pmCadImportSourceSchema = z.enum([
+  "MANUAL",
+  "STEP_UPLOAD",
+  "ONSHAPE_API",
+  "ONSHAPE_BOM_CSV",
+  "MANUAL_BOM_CSV",
+]);
+const pmCadProvenanceSchema = {
+  cadSource: pmCadSourceSchema.optional(),
+  cadImportSource: pmCadImportSourceSchema.optional(),
+  cadEditedAfterImport: z.boolean().optional(),
+  cadSourceLabel: z.string().trim().min(1).optional(),
+  cadUpdatedAt: z.string().datetime({ offset: true }).nullable().optional(),
+};
 
 export const workstreamSchema = z.object({
   projectId: z.string().trim().min(1),
@@ -366,7 +323,17 @@ export const workstreamSchema = z.object({
 
 export const workstreamPatchSchema = workstreamSchema.partial();
 
+export const subsystemLayoutSchema = z.object({
+  layoutX: z.number().min(0).max(1).nullable().optional(),
+  layoutY: z.number().min(0).max(1).nullable().optional(),
+  layoutZone: z.enum(["front", "rear", "left", "right", "center", "top", "unplaced"]).nullable().optional(),
+  layoutView: z.literal("top").nullable().optional(),
+  sortOrder: z.number().int().nullable().optional(),
+});
+
 export const subsystemSchema = z.object({
+  ...subsystemLayoutSchema.shape,
+  ...pmCadProvenanceSchema,
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
   serialAlias: z
@@ -384,11 +351,12 @@ export const subsystemSchema = z.object({
   responsibleEngineerId: z.string().trim().min(1).nullable(),
   mentorIds: z.array(z.string().trim().min(1)).default([]),
   risks: z.array(z.string().trim().min(1)).default([]),
-});
+}).strict();
 
 export const subsystemPatchSchema = subsystemSchema.partial();
 
 export const mechanismSchema = z.object({
+  ...pmCadProvenanceSchema,
   subsystemId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
@@ -401,6 +369,7 @@ export const mechanismSchema = z.object({
 export const mechanismPatchSchema = mechanismSchema.partial();
 
 export const partDefinitionSchema = z.object({
+  ...pmCadProvenanceSchema,
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2),
@@ -418,6 +387,7 @@ export const partDefinitionSchema = z.object({
 });
 
 export const partDefinitionPatchSchema = z.object({
+  ...pmCadProvenanceSchema,
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2).optional(),
@@ -434,6 +404,7 @@ export const partDefinitionPatchSchema = z.object({
 });
 
 export const partInstanceSchema = z.object({
+  ...pmCadProvenanceSchema,
   subsystemId: z.string().trim().min(1),
   mechanismId: z.string().trim().min(1).nullable().optional(),
   partDefinitionId: z.string().trim().min(1),
@@ -460,7 +431,18 @@ export const purchaseItemSchema = z.object({
   status: z.enum(["requested", "approved", "purchased", "shipped", "delivered"]),
 });
 
-export const purchaseItemPatchSchema = purchaseItemSchema.partial();
+export const purchaseItemPatchSchema = purchaseItemSchema.partial().extend({
+  approvedByMentor: z.boolean().optional(),
+});
+
+export const purchaseApprovalSchema = z.object({
+  approved: z.boolean(),
+}).strict();
+
+export const purchaseTransitionSchema = z.object({
+  status: z.enum(["purchased", "shipped", "delivered"]),
+  finalCost: z.coerce.number().min(0).optional(),
+}).strict();
 
 export const materialSchema = z.object({
   name: z.string().trim().min(2),
@@ -501,6 +483,7 @@ export const mediaUploadRequestSchema = z.object({
   projectId: z.string().trim().min(1),
   fileName: z.string().trim().min(1).max(200),
   contentType: z.string().trim().min(1).max(100),
+  sizeBytes: z.coerce.number().int().positive().max(500 * 1024 * 1024),
 });
 
 export const manufacturingItemSchema = z.object({
@@ -521,7 +504,17 @@ export const manufacturingItemSchema = z.object({
   batchLabel: z.string().trim().min(1).optional(),
 });
 
-export const manufacturingItemPatchSchema = manufacturingItemSchema.partial();
+export const manufacturingItemPatchSchema = manufacturingItemSchema.partial().extend({
+  mentorReviewed: z.boolean().optional(),
+});
+
+export const manufacturingReviewSchema = z.object({
+  reviewed: z.boolean(),
+}).strict();
+
+export const manufacturingTransitionSchema = z.object({
+  status: z.enum(["in-progress", "qa", "complete"]),
+}).strict();
 
 export const workLogSchema = z.object({
   taskId: z.string().trim().min(1),
@@ -533,18 +526,6 @@ export const workLogSchema = z.object({
 });
 
 export const workLogPatchSchema = workLogSchema.partial();
-
-const emailCodeLength = runtimeAuthConfig.emailCodeLength;
-
-export const emailSignInRequestSchema = z.object({
-  email: z.string().trim().email(),
-});
-
-export const emailSignInVerifySchema = z.object({
-  email: z.string().trim().email(),
-  code: z.string().trim().length(emailCodeLength),
-  deviceId: z.string().trim().min(1).max(128).optional().nullable(),
-});
 
 export const tutorialSessionResetSchema = z.object({
   mode: z.enum(["session", "baseline"]).default("session"),

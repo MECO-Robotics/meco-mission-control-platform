@@ -1,0 +1,145 @@
+import type { PlatformSnapshot } from "../../domain/types";
+import type { SeedMechanism } from "../seedTypes";
+
+export {
+  offseasonArtifacts,
+  offseasonPartDefinitions,
+  offseasonPartInstances,
+} from "./inventoryRecords";
+
+export const offseasonMembers = [
+    {
+      id: "diego",
+      name: "Diego Alvarez",
+      email: "diego.alvarez@mecorobotics.org",
+      role: "student",
+      elevated: false,
+      disciplineId: "manufacturing",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 7,
+      plannedAttendanceDays: ["tuesday", "thursday", "saturday"],
+      plannedAttendanceNotes: "Primary offseason shop-night coverage for drivetrain service.",
+    },
+    {
+      id: "emma",
+      name: "Emma Nguyen",
+      email: "emma.nguyen@mecorobotics.org",
+      role: "mentor",
+      elevated: false,
+      disciplineId: "testing",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 5,
+      plannedAttendanceDays: ["wednesday", "saturday"],
+      plannedAttendanceNotes: "Mentor QA rotation for summer scrimmage readiness.",
+    },
+    {
+      id: "jamal",
+      name: "Jamal Reed",
+      email: "jamal.reed@mecorobotics.org",
+      role: "student",
+      elevated: false,
+      disciplineId: "electrical",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 6,
+      plannedAttendanceDays: ["monday", "wednesday", "saturday"],
+      plannedAttendanceNotes: "Electrical spare-radio bench testing and event power checks.",
+    },
+    {
+      id: "mika",
+      name: "Mika Tanaka",
+      email: "mika.tanaka@mecorobotics.org",
+      role: "lead",
+      elevated: true,
+      disciplineId: "strategy",
+      seasonId: "default-season",
+      plannedWeeklyAttendanceHours: 5,
+      plannedAttendanceDays: ["thursday", "saturday"],
+      plannedAttendanceNotes: "Drive-team strategy cards and scouting data review owner.",
+    },
+  ] satisfies PlatformSnapshot["members"];
+
+export const offseasonMechanisms = [
+    {
+      id: "swerve-service-cart",
+      subsystemId: "drive",
+      name: "Swerve Service Cart",
+      description: "Offseason service station for wheel swaps, module checks, and spare tracking.",
+    },
+    {
+      id: "battery-checkout",
+      subsystemId: "pit-readiness",
+      name: "Battery Checkout",
+      description: "Battery health, charger labeling, and event-ready checkout workflow.",
+    },
+    {
+      id: "driver-station-replay",
+      subsystemId: "controls",
+      name: "Driver Station Replay",
+      description: "Replay setup for driver practice, log review, and autonomous regression runs.",
+    },
+    {
+      id: "event-data-review",
+      subsystemId: "scouting",
+      name: "Event Data Review",
+      description: "Post-event scouting normalization, rubric checks, and strategy handoff.",
+    },
+    {
+      id: "field-calibration-kit",
+      subsystemId: "vision",
+      name: "Field Calibration Kit",
+      description: "Portable AprilTag and tape-mark setup for offseason localization checks.",
+    },
+    {
+      id: "spare-radio-bench",
+      subsystemId: "controls",
+      name: "Spare Radio Bench",
+      description: "Bench setup for imaging radios, checking Ethernet leads, and labeling spares.",
+    },
+] satisfies SeedMechanism[];
+
+export const offseasonMaterials = [
+    {
+      id: "mat-traction-wheel-set",
+      name: "4 in Traction Wheel Set",
+      category: "hardware",
+      unit: "set",
+      onHandQuantity: 3,
+      reorderPoint: 4,
+      location: "Drive spares bin",
+      vendor: "WCP",
+      notes: "Used for offseason module swaps and practice-worn wheel replacement.",
+    },
+    {
+      id: "mat-xt30-connectors",
+      name: "XT30 Connector Pair",
+      category: "electronics",
+      unit: "pair",
+      onHandQuantity: 18,
+      reorderPoint: 12,
+      location: "Electrical small parts",
+      vendor: "REV Robotics",
+      notes: "Low-current sensor and accessory connector standard for the offseason robot.",
+    },
+    {
+      id: "mat-radio-poe-injector",
+      name: "Radio PoE Injector",
+      category: "electronics",
+      unit: "each",
+      onHandQuantity: 2,
+      reorderPoint: 3,
+      location: "Controls spares drawer",
+      vendor: "Vivid Hosting",
+      notes: "Practice and event spare for radio bench checks and field-side recovery.",
+    },
+    {
+      id: "mat-apriltag-stand-kit",
+      name: "AprilTag Stand Kit",
+      category: "hardware",
+      unit: "kit",
+      onHandQuantity: 1,
+      reorderPoint: 2,
+      location: "Practice field crate",
+      vendor: "AndyMark",
+      notes: "Portable offseason field calibration kit for vision and autonomous replay checks.",
+    },
+  ] satisfies PlatformSnapshot["materials"];

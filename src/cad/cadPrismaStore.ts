@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import type {
   CadAssemblyNode,
@@ -11,6 +11,7 @@ import type {
   CadSnapshotMapping,
 } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
+import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { normalizeCadName } from "./cadUtils";
 
 type JsonValue = unknown;
@@ -174,7 +175,10 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       return importRunFromDb(await prisma.cadImportRun.create({ data: input as any }));
     },
     async updateImportRun(id, patch) {
-      const item = await prisma.cadImportRun.update({ where: { id }, data: patch as any }).catch(() => null);
+      const item = await prisma.cadImportRun.update({ where: { id }, data: patch as any }).catch((error: unknown) => {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "P2025") return null;
+        throw error;
+      });
       return item ? importRunFromDb(item) : null;
     },
     async listImportRuns(filter) {
@@ -205,8 +209,39 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       );
     },
     async updateSnapshot(id, patch) {
-      const item = await prisma.cadSnapshot.update({ where: { id }, data: patch as any }).catch(() => null);
+      const item = await prisma.cadSnapshot.update({ where: { id }, data: patch as any }).catch((error: unknown) => {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "P2025") return null;
+        throw error;
+      });
       return item ? snapshotFromDb(item) : null;
+    },
+    async finalizeSnapshot(id, input) {
+      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const existingSnapshot = await tx.cadSnapshot.findUnique({ where: { id } });
+        if (!existingSnapshot) {
+          return null;
+        }
+
+        const [snapshot, importRun] = await Promise.all([
+          tx.cadSnapshot.update({
+            where: { id },
+            data: {
+              status: "finalized",
+              finalizedAt: input.finalizedAt,
+              finalizedBy: input.finalizedBy,
+            },
+          }),
+          tx.cadImportRun.update({
+            where: { id: existingSnapshot.importRunId },
+            data: { status: "FINALIZED" },
+          }),
+        ]);
+
+        return {
+          snapshot: snapshotFromDb(snapshot),
+          importRun: importRunFromDb(importRun),
+        };
+      });
     },
     async listSnapshots(filter) {
       const items = await prisma.cadSnapshot.findMany({
@@ -225,6 +260,8 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       return item ? snapshotFromDb(item) : null;
     },
     async createAssemblyNodes(snapshotId, input) {
+      assertAcyclicAssemblyParents(input);
+
       const bySourceId = new Map<string, CadAssemblyNode>();
       for (const node of input) {
         const item = assemblyFromDb(
@@ -303,7 +340,10 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       return ruleFromDb(await prisma.cadMappingRule.create({ data: input as any }));
     },
     async updateMappingRule(id, patch) {
-      const item = await prisma.cadMappingRule.update({ where: { id }, data: patch }).catch(() => null);
+      const item = await prisma.cadMappingRule.update({ where: { id }, data: patch }).catch((error: unknown) => {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "P2025") return null;
+        throw error;
+      });
       return item ? ruleFromDb(item) : null;
     },
     async listMappingRules(filter) {
@@ -337,7 +377,10 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
       );
     },
     async updateSnapshotMapping(id, patch) {
-      const item = await prisma.cadSnapshotMapping.update({ where: { id }, data: patch as any }).catch(() => null);
+      const item = await prisma.cadSnapshotMapping.update({ where: { id }, data: patch as any }).catch((error: unknown) => {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "P2025") return null;
+        throw error;
+      });
       return item ? mappingFromDb(item) : null;
     },
     async listSnapshotMappings(snapshotId) {

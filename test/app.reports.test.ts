@@ -493,6 +493,7 @@ test("web report and task planning contract endpoints persist records", async ()
         taskId: "swerve-sensor-bundle",
         kind: "task",
         refId: "intake-guard",
+        requiredState: "complete",
         dependencyType: "hard",
       },
     });
@@ -528,6 +529,7 @@ test("web report and task planning contract endpoints persist records", async ()
         taskId: "pit-bin-labeling",
         kind: "task",
         refId: "pit-board-refresh",
+        requiredState: "complete",
         dependencyType: "soft",
       },
     });
@@ -538,44 +540,6 @@ test("web report and task planning contract endpoints persist records", async ()
         id: string;
       };
     };
-
-    resetLimits();
-
-    const legacyDependencyCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/task-dependencies",
-      payload: {
-        upstreamTaskId: "intake-guard",
-        downstreamTaskId: "swerve-sensor-bundle",
-        dependencyType: "blocks",
-      },
-    });
-
-    assert.equal(legacyDependencyCreateResponse.statusCode, 201);
-    const legacyDependencyBody = legacyDependencyCreateResponse.json() as {
-      item: {
-        id: string;
-        dependencyType: string;
-        refId: string;
-        taskId: string;
-      };
-    };
-    assert.equal(legacyDependencyBody.item.taskId, "swerve-sensor-bundle");
-    assert.equal(legacyDependencyBody.item.refId, "intake-guard");
-    assert.equal(legacyDependencyBody.item.dependencyType, "hard");
-
-    resetLimits();
-
-    const legacyDependencyUpdateResponse = await app.inject({
-      method: "PATCH",
-      url: `/api/task-dependencies/${legacyDependencyBody.item.id}`,
-      payload: {
-        dependencyType: "finish_to_start",
-      },
-    });
-
-    assert.equal(legacyDependencyUpdateResponse.statusCode, 200);
-    assert.equal(legacyDependencyUpdateResponse.json().item.dependencyType, "hard");
 
     resetLimits();
 
@@ -642,7 +606,7 @@ test("web report and task planning contract endpoints persist records", async ()
 
     const taskDependenciesResponse = await app.inject({
       method: "GET",
-      url: "/api/task-dependencies",
+      url: "/api/task-dependencies?pageSize=60",
     });
     assert.equal(taskDependenciesResponse.statusCode, 200);
     assert.ok(
@@ -708,15 +672,6 @@ test("web report and task planning contract endpoints persist records", async ()
           dependency.taskId === "pit-bin-labeling" &&
           dependency.refId === "pit-board-refresh" &&
           dependency.dependencyType === "soft",
-      ),
-    );
-    assert.ok(
-      bootstrapBody.taskDependencies.some(
-        (dependency) =>
-          dependency.id === legacyDependencyBody.item.id &&
-          dependency.taskId === "swerve-sensor-bundle" &&
-          dependency.refId === "intake-guard" &&
-          dependency.dependencyType === "hard",
       ),
     );
     assert.ok(
@@ -1310,7 +1265,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         summary: "Ensures roster summary task counts stay deduplicated.",
         subsystemId: rosterSummarySubsystemBody.item.id,
         disciplineId: "design",
-        requirementId: null,
         mechanismId: null,
         partInstanceId: null,
         targetMilestoneId: null,
@@ -1320,8 +1274,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         dueDate: "2026-04-01",
         priority: "high",
         status: "waiting-for-qa",
-        dependencyIds: [],
-        blockers: [],
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
@@ -1446,7 +1398,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const googleAuthResponse = await app.inject({
       method: "POST",
-      url: "/api/auth/google",
+      url: "/api/auth/web/google",
       payload: {
         credential: "mock-google-credential",
       },
@@ -1476,7 +1428,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const emailVerifyResponse = await app.inject({
       method: "POST",
-      url: "/api/auth/email/verify",
+      url: "/api/auth/web/email/verify",
       payload: {
         email: "tester@mecorobotics.org",
         code: "123456",
@@ -1487,5 +1439,52 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       emailVerifyResponse.json().message,
       "Email sign-in is not configured on the server yet.",
     );
+  });
+});
+
+test("report derivations retain bootstrap scope and photo policy", async () => {
+  const { snapshot: seed } = await import("../src/data/mockData");
+  const { buildReports } = await import("../src/data/store/reportDerivations");
+  const { buildBootstrapResponse } = await import("../src/routes/helpers/bootstrapSelection");
+  const snapshot = structuredClone(seed);
+  const task = snapshot.tasks[0]!;
+  const milestone = snapshot.milestones[0]!;
+  const otherProject = snapshot.projects.find((project) => project.id !== task.projectId)!;
+  milestone.projectIds = [otherProject.id, task.projectId];
+  snapshot.qaReports = [{ ...snapshot.qaReports[0]!, id: "photo-qa", taskId: task.id, photoUrl: "https://example.test/qa.png" }];
+  snapshot.testResults = [{ ...snapshot.testResults[0]!, id: "photo-test", milestoneId: milestone.id, photoUrl: "https://example.test/test.png" }];
+  snapshot.qaFindings = [{ ...snapshot.qaFindings[0]!, id: "qa-finding", qaReportId: "photo-qa", status: "in-progress" }];
+  snapshot.testFindings = [{ ...snapshot.testFindings[0]!, id: "test-finding", testResultId: "photo-test", status: "resolved" }];
+  const reports = buildReports(snapshot);
+  const bootstrap = buildBootstrapResponse(snapshot, { projectId: task.projectId, seasonId: null, personId: null });
+  assert.equal(reports.find((report) => report.id === "photo-test")!.projectId, otherProject.id);
+  assert.equal(bootstrap.reports.find((report) => report.id === "photo-test")!.projectId, task.projectId);
+  for (const report of reports) {
+    const { photoUrl, ...withoutPhoto } = report;
+    assert.ok(photoUrl);
+    assert.deepEqual(bootstrap.reports.find((item) => item.id === report.id), { ...withoutPhoto, projectId: task.projectId });
+  }
+  assert.deepEqual(bootstrap.reportFindings.map((finding) => [finding.id, finding.status]), [["qa-finding", "open"], ["test-finding", "resolved"]]);
+  snapshot.testResults[0]!.milestoneId = "missing-milestone";
+  snapshot.qaReports[0]!.taskId = "missing-task";
+  assert.equal(buildReports(snapshot)[0]!.projectId, snapshot.projects[0]!.id);
+  const orphanBootstrap = buildBootstrapResponse(snapshot, { projectId: null, seasonId: null, personId: null });
+  assert.deepEqual(orphanBootstrap.reports, []);
+  assert.deepEqual(orphanBootstrap.reportFindings, []);
+});
+
+test("report and finding endpoints match bootstrap projections", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrap.statusCode, 200);
+    for (const [path, collection] of [["reports", "reports"], ["report-findings", "reportFindings"]] as const) {
+      resetLimits();
+      const response = await app.inject({ method: "GET", url: `/api/${path}?pageSize=60` });
+      assert.equal(response.statusCode, 200);
+      const expected = bootstrap.json()[collection];
+      const actual = response.json().items;
+      assert.equal(actual.length, expected.length);
+      for (const item of actual) assert.deepEqual(item, expected.find((entry: { id: string }) => entry.id === item.id));
+    }
   });
 });

@@ -18,13 +18,23 @@ This reference describes the current Fastify route surface for the Mission Contr
 ## Authentication
 
 - `GET /api/auth/config`: public auth configuration for the frontend.
-- `POST /api/auth/google`: exchanges a Google Identity Services credential for a Mission Control session token.
-- `POST /api/auth/dev-bypass`: development-only local sign-in helper. Accepts optional `{ "role": "student" | "mentor" }`; production does not register this route.
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
-- `POST /api/auth/email/verify`: verifies an email code and returns a Mission Control session token.
+- `POST /api/auth/web/google`: verifies a Google credential and creates a revocable HttpOnly-cookie web session.
+- `POST /api/auth/web/email/verify`: verifies an email code and creates a revocable HttpOnly-cookie web session.
+- `POST /api/auth/web/dev-bypass`: non-production web-session development helper.
+- `GET /api/auth/web/session`: restores the current web session and returns the user, expiry, and in-memory CSRF token.
+- `POST /api/auth/web/logout`: revokes the current web session and clears its cookie.
 - `GET /api/auth/me`: returns the current session user, or `{ enabled: false, user: null }` when auth is disabled.
+- `POST /api/auth/mobile/email/verify`: verifies an email code for a mobile installation and returns the opaque access/refresh session envelope.
+- `POST /api/auth/mobile/refresh`: rotates a single-use refresh token and returns a replacement session envelope.
+- `POST /api/auth/mobile/logout`: revokes the current device session. Accepts the current bearer credential and optional refresh-token body.
+- `POST /api/auth/mobile/logout-all`: revokes every mobile device session for the current account.
+- `GET /api/auth/mobile/sessions`: lists active device sessions for the current account without returning credentials.
+- `DELETE /api/auth/mobile/sessions/:sessionId`: revokes one device session owned by the current account.
 - `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
-- `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs and also updates the env-backed `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` roster.
+- `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs.
+
+Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Web sessions are revocable and require an allowed Origin plus `X-CSRF-Token` on unsafe cookie-authenticated requests.
 
 ## Bootstrap And Dashboards
 
@@ -33,6 +43,41 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `GET /api/bootstrap`: selected bootstrap payload for initial frontend hydration.
 - `GET /api/metrics`: workflow and delivery metrics.
 - `GET /api/roster/insights`: roster participation and contribution insights.
+
+### Audit History Retention — Pre-deployment Requirements
+
+The policy below is not implemented. Snapshot actions currently append indefinitely; there is no scheduled purge, anonymization, review-hold registry, or deletion protection. Establish and test these controls before deployment.
+
+Audit actions are operational history for create, update, and delete activity exposed through
+`/api/bootstrap` as `actions`. They support accountability, troubleshooting, and scoped activity
+review; they are not a permanent archive of student activity. This policy is designed to align with
+FTC COPPA guidance that children's personal information should be retained only as long as needed
+and deleted with reasonable safeguards:
+https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions
+
+Retention policy:
+
+- Retain audit actions for 3 years after the end of the season in which the action occurred.
+- After the retention window, delete the audit action or anonymize actor/member references,
+  free-text labels, and messages. Keep only aggregate, non-identifying metrics when needed.
+- Treat student audit references as personal data and likely minor data. Audit messages should
+  avoid sensitive free text, private notes, unnecessary contact details, photos, or precise
+  personal details.
+- Honor verified parent/guardian or admin privacy requests through deletion or anonymization
+  unless a documented safety, legal, or operational reason requires temporary retention.
+- Archive hides a domain record from normal active views but does not shorten audit retention.
+- Delete removes the domain record from normal lists while the audit action remains as a minimal
+  tombstone until retention expires. Deleted-record audit entries must not require the deleted
+  entity to still exist for scoped history display.
+- `/api/bootstrap` returns scoped audit actions to authenticated, non-external users alongside the
+  rest of the scoped workspace payload. Audit messages therefore must stay minimal and
+  non-sensitive. Broad audit browsing is limited to leads, mentors, admins, or other explicitly
+  authorized users with a legitimate operational need. Bulk export, retention override, archive,
+  and manual deletion tools are admin-only operations for maintenance, privacy requests, incident
+  review, and compliance review, not general browsing.
+- `GET /api/audit/export`: admin-only audit action export. Supports `format=json|csv`,
+  `seasonId`, `projectId`, `entityType`, `from`, and `to` query filters. Date filters use ISO
+  datetimes and are inclusive.
 
 ## Tutorial Session
 
@@ -60,6 +105,9 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 - `GET /api/tasks`: list tasks, with filters and pagination handled by route helpers.
 - `POST /api/tasks`: create a task. Requires mentor, lead, or admin when auth is enabled.
+- `POST /api/tasks/:taskId/claim`: claim a task for the signed-in student or lead. Optional `{ "start": true }` starts eligible unblocked work. Returns `409 task_already_claimed` when another owner claimed first.
+- `POST /api/tasks/:taskId/release`: release a task. Students can release their own task; leads, mentors, and admins can release any task.
+- `POST /api/tasks/:taskId/reassign`: assign or unassign a task owner. Requires lead, mentor, or admin when auth is enabled.
 - `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled.
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
@@ -74,20 +122,20 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 ## Work Logs And Meetings
 
-- `POST /api/work-logs`: create a work log.
-- `PATCH /api/work-logs/:workLogId`: update a work log.
-- `DELETE /api/work-logs/:workLogId`: delete a work log.
+- `POST /api/work-logs`: create a work log. Any internal user may create; the authenticated member is recorded as `createdById` when a matching roster profile exists.
+- `PATCH /api/work-logs/:workLogId`: update a work log. Requires mentor or admin; leads are excluded.
+- `DELETE /api/work-logs/:workLogId`: delete a work log. Requires mentor or admin; leads are excluded.
 - `GET /api/meetings`: list meeting-focused workflow data.
 - `POST /api/meetings`: create a meeting. Requires mentor, lead, or admin when auth is enabled.
 
 ## Reports, QA, And Risks
 
 - `GET /api/reports`: list reports.
-- `POST /api/reports`: create a report.
+- `POST /api/reports`: create a report. A QA report with `mentorApproved: true` requires mentor or admin authorization.
 - `GET /api/report-findings`: list report findings.
 - `POST /api/report-findings`: create a report finding.
 - `GET /api/qa-reports`: list QA reports.
-- `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor, lead, or admin when auth is enabled.
+- `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor or admin; leads are excluded.
 - `GET /api/qa-requests`: list QA requests.
 - `POST /api/qa-requests`: create a QA request.
 - `GET /api/test-results`: list test results.
@@ -109,20 +157,26 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `PATCH /api/artifacts/:artifactId`: update an artifact.
 - `DELETE /api/artifacts/:artifactId`: delete an artifact.
 - `GET /api/manufacturing`: list manufacturing items.
-- `POST /api/manufacturing`: create a manufacturing item.
-- `PATCH /api/manufacturing/:itemId`: update a manufacturing item.
-- `DELETE /api/manufacturing/:itemId`: delete a manufacturing item.
+- `POST /api/manufacturing`: create a requested, unreviewed manufacturing item.
+- `PATCH /api/manufacturing/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
+- `PUT /api/manufacturing/:itemId/review`: approve or revoke review with `{ "reviewed": boolean }`. Requires mentor or admin and derives reviewer metadata from the session.
+- `POST /api/manufacturing/:itemId/transition`: advance one step through `approved -> in-progress -> qa -> complete`. Any internal user may advance actively reviewed work.
+- `DELETE /api/manufacturing/:itemId`: delete a manufacturing item. Requires mentor or admin.
 - `GET /api/purchases`: list purchase items.
-- `POST /api/purchases`: create a purchase item.
-- `PATCH /api/purchases/:itemId`: update a purchase item.
-- `DELETE /api/purchases/:itemId`: delete a purchase item.
+- `POST /api/purchases`: create a requested, unapproved purchase item.
+- `PATCH /api/purchases/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
+- `PUT /api/purchases/:itemId/approval`: approve or revoke approval with `{ "approved": boolean }`. Requires mentor or admin and derives approver metadata from the session; approval cannot be revoked after purchasing begins.
+- `POST /api/purchases/:itemId/transition`: advance one step through `approved -> purchased -> shipped -> delivered`. Requires mentor or admin and accepts optional non-negative `finalCost`.
+- `DELETE /api/purchases/:itemId`: delete a purchase item. Requires mentor or admin.
+
+Workflow endpoints return `403` for insufficient role, `404` for a missing item, and `409` for a non-adjacent or otherwise invalid transition.
 
 ## Team And Robot Structure
 
 - `GET /api/members`: list members.
-- `POST /api/members`: create or invite a member. Requires mentor, lead, or admin when auth is enabled.
-- `PATCH /api/members/:memberId`: update a member. Requires mentor, lead, or admin when auth is enabled.
-- `DELETE /api/members/:memberId`: delete a member. Requires mentor, lead, or admin when auth is enabled.
+- `POST /api/members`: create or invite a member. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
+- `PATCH /api/members/:memberId`: update a member. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
+- `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted.
 - `POST /api/subsystems`: create a subsystem.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.
 - `DELETE /api/subsystems/:subsystemId`: delete a subsystem.
@@ -140,8 +194,10 @@ This reference describes the current Fastify route surface for the Mission Contr
 
 ## Media Uploads
 
-- `POST /api/media/presign-upload`: returns a presigned image upload target when S3-compatible storage is configured.
-- `POST /api/media/presign-video-upload`: returns a presigned video upload target when S3-compatible storage is configured.
+- `POST /api/media/presign-upload`: accepts `{ projectId, fileName, contentType, sizeBytes }` and returns an exact-length presigned image PUT in the project's team bucket.
+- `POST /api/media/presign-video-upload`: accepts `{ projectId, fileName, contentType, sizeBytes }` and returns an exact-length presigned video PUT in the project's team bucket.
+
+Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and an hourly identity/team byte quota. The returned URL signs `Content-Length`; clients must upload the exact byte length declared in `sizeBytes`.
 
 ## Iterations And Findings
 
@@ -184,3 +240,13 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `POST /api/onshape/oauth/authorization-url`: create an OAuth authorization URL.
 - `GET /api/onshape/oauth/callback`: receive and exchange an OAuth authorization code.
 - `POST /api/onshape/oauth/refresh`: refresh Onshape OAuth credentials.
+
+
+Task blocker requests and responses keep `blockerType` as the source relationship
+(`task`, `milestone`, `workstream`, `mechanism`, `part_instance`,
+`artifact_instance`, or `external`) and `blockerId` as its validated reference.
+The independent optional `issueType` classifies the problem: `external`,
+`lost-part`, `broken-part`, `lost-tool`, `broken-tool`, `design-issue`,
+`shipping-delay`, `manufacturing-unavailable`, `qa-failed`, or `other`.
+New records default to `external` when no issue category is supplied.
+Changing the issue category does not change or relax source-link validation.

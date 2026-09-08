@@ -29,7 +29,7 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 
 - Fastify + TypeScript API shell with typed route responses
 - Completion-gating logic for work logs, mentor QA approval, and documentation evidence
-- Prisma schema for members, tasks, attendance, manufacturing, purchases, QA reviews, and risks
+- Prisma schema for web/mobile sessions and CAD persistence; core workspace data uses the platform snapshot model
 - `docker-compose.prod.yml` for API + Postgres on one VPS
 - GitHub Actions workflow that deploys over SSH to the VPS
 - `deploy/bootstrap-vps.sh` for first-time Docker setup on Ubuntu
@@ -60,25 +60,20 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 - Email verification still keeps its existing per-address cooldown and wrong-code attempt cap.
 - Tuning knobs live in `API_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`, and `AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS` plus their matching `*_WINDOW_SECONDS` settings.
 
-## Local commands
+## Development and contributions
 
-```bash
-npm install
-npm run dev
-npm run typecheck
-npm run build
-npm run smoke:test
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation and the PR workflow.
+Optional agent tooling is documented in [shared skills](docs/shared-skills.md).
 
 ## Local env example
 
 Use this shape for a local `.env` file when the web app is running on Vite's
-default `http://localhost:5173` origin:
+default `http://127.0.0.1:5173` origin:
 
 ```env
 NODE_ENV=development
 PORT=8080
-CORS_ORIGIN=http://localhost:5173
+CORS_ORIGIN=http://127.0.0.1:5173
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 API_RATE_LIMIT_MAX_REQUESTS=300
 API_RATE_LIMIT_WINDOW_SECONDS=60
@@ -87,12 +82,9 @@ AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
-AUTH_TOKEN_TTL=12h
-AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 # Local SMTP sink for email-code testing.
 AUTH_EMAIL_SMTP_HOST=127.0.0.1
 AUTH_EMAIL_SMTP_PORT=1025
@@ -106,8 +98,16 @@ S3_SECRET_ACCESS_KEY=your-s3-secret-key
 S3_ENDPOINT=https://your-s3-endpoint.example
 S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
-S3_BUCKET=meco-pm
+S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
+MEDIA_IMAGE_UPLOAD_MAX_BYTES=15728640
+MEDIA_VIDEO_UPLOAD_MAX_BYTES=262144000
+MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR=1073741824
+CAD_STEP_UPLOAD_MAX_BYTES=33554432
+CAD_STEP_PARSER_MAX_CONCURRENCY=2
+CAD_STEP_PARSER_MAX_QUEUE=4
+CAD_STEP_PARSER_MAX_OLD_SPACE_MB=256
+CAD_STEP_PARSER_MAX_RESULT_BYTES=16777216
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
 SLACK_CHANNEL_BUILD_ID=C03171JMMB4
@@ -133,9 +133,9 @@ you can copy the sign-in code during local testing.
 
 When the server runs with auth configured outside production, it also exposes a
 development-only `/api/auth/dev-bypass` endpoint that the web app can use for a
-local access button. Send `{ "role": "student" }` or `{ "role": "mentor" }` to
-test both permission modes without an email. Production builds do not register
-that route.
+local access button. Send either an empty request body for the default local
+student session or `{ "role": "student" | "mentor" }` to test a specific local
+role. Production builds do not register that route.
 
 ## Production files
 
@@ -143,7 +143,9 @@ that route.
 - `.env.production`: runtime environment file on the VPS
 - `.github/workflows/deploy-vps.yml`: CI + deployment workflow
 - `deploy/bootstrap-vps.sh`: first-time Docker bootstrap for Ubuntu
+- `docs/platform-deployment-recovery.md`: production env, VPS deploy path, backups, restore expectations, and rollback options
 - `docs/production-smoke-test-checklist.md`: production smoke-test checklist
+- `docs/backup-restore-drill.md`: backup command, disposable restore target, restore verification, and failure handling
 
 ## First-time VPS setup
 
@@ -152,7 +154,7 @@ that route.
 3. SSH into it as your deploy user.
 4. Run `deploy/bootstrap-vps.sh` once.
 5. Make sure `/opt/pm-server` exists and is writable by your deploy user.
-6. Add a DNS record or reverse proxy later if you want a custom domain and TLS.
+6. Configure a TLS reverse proxy and firewall before enabling production traffic. The API container binds only to loopback and must not be exposed directly.
 
 ## Required GitHub secrets
 
@@ -161,6 +163,7 @@ Add these secrets to `MECO-Robotics/meco-mission-control-platform`:
 - `VPS_HOST`: public IP or hostname of the server
 - `VPS_USER`: deploy user, for example `root` or `deploy`
 - `VPS_SSH_KEY`: private SSH key used by GitHub Actions
+- `VPS_SSH_KNOWN_HOSTS`: reviewed `known_hosts` entry for the production VPS
 - `PRODUCTION_ENV_FILE`: full contents of the `.env.production` file, including SMTP settings if you want email sign-in enabled
 - `RESEND_API_KEY`: optional Resend API key for email sign-in
 
@@ -186,11 +189,8 @@ AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
-AUTH_TOKEN_TTL=12h
-AUTH_DEVICE_TOKEN_TTL=3650d
+# Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
-# AUTH_MEMBER_SUBTEAMS_BY_EMAIL=<email>=programming;<email>=media-marketing,business,scouting
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -205,8 +205,16 @@ S3_SECRET_ACCESS_KEY=your-s3-secret-key
 S3_ENDPOINT=https://your-s3-endpoint.example
 S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
-S3_BUCKET=meco-pm
+S3_BUCKET_PREFIX=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
+MEDIA_IMAGE_UPLOAD_MAX_BYTES=15728640
+MEDIA_VIDEO_UPLOAD_MAX_BYTES=262144000
+MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR=1073741824
+CAD_STEP_UPLOAD_MAX_BYTES=33554432
+CAD_STEP_PARSER_MAX_CONCURRENCY=2
+CAD_STEP_PARSER_MAX_QUEUE=4
+CAD_STEP_PARSER_MAX_OLD_SPACE_MB=256
+CAD_STEP_PARSER_MAX_RESULT_BYTES=16777216
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
 SLACK_CHANNEL_BUILD_ID=C03171JMMB4
@@ -218,25 +226,35 @@ SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID=C088N9VC6H4
 
 ## Google SSO
 
-Google Identity Services sends a Google ID token to the web app, and the web app exchanges that token with `POST /api/auth/google`.
+Google Identity Services sends a Google ID token to the web app, and the web app exchanges that token with `POST /api/auth/web/google`.
 
 - The server verifies the Google token against `GOOGLE_CLIENT_ID`.
 - The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
-- The server issues its own signed app session token with `AUTH_JWT_SECRET`.
-- Mobile email sign-in includes a per-install device ID and receives a longer-lived token using `AUTH_DEVICE_TOKEN_TTL`, so users stay signed in on that installed app until the token is cleared or the app is deleted.
-- Put mentor emails in `AUTH_MENTOR_EMAILS` as a comma-separated list. Hosted-domain emails not present in the roster or mentor list are treated as students for task management and QA approval.
-- Put email-to-subteam assignments in server env with `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` using `email=subteam;email=subteam,subteam`. Valid subteam IDs are `programming`, `mechanical`, `electrical`, `media-marketing`, `business`, and `scouting`.
-- When mobile saves `taskSubteamIds` through `PATCH /api/users/me/preferences`, the server also updates the live `AUTH_MEMBER_SUBTEAMS_BY_EMAIL` map and writes that line back to the env file. Set `AUTH_MEMBER_SUBTEAMS_ENV_PATH` only if the env file is not `.env` locally or `.env.production` in production.
+- Browser sign-in creates a 12-hour revocable server session and an HttpOnly, SameSite=Lax cookie. Unsafe cookie-authenticated API requests also require the session CSRF token and an allowed Origin.
+- Mobile email sign-in uses a per-install device ID to create a revocable server-side session. Access tokens last one hour, sessions expire after 30 days without a refresh or after 90 days absolutely, and refresh tokens rotate on every use.
+- Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
+- User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
-- For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
+- For localhost development, add your frontend origin such as `http://127.0.0.1:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
 - If you use separate Google OAuth client IDs for local and production, set `GOOGLE_CLIENT_ID` to a comma-separated list and put the client ID you want the frontend to use first.
 
 For production, the web origin must be configured in the Google Cloud Console OAuth client and served over HTTPS before SSO is enabled on the public site.
 If you only have a static IP, use a mapped HTTPS hostname (for example `178-104-192-162.nip.io` or `178-104-192-162.sslip.io`) while testing and add that exact HTTPS origin in the OAuth client.
 
+## Mobile session API
+
+`POST /api/auth/mobile/email/verify` accepts `{ email, code, deviceId, deviceName? }` and returns the access token as `token`, a single-use `refreshToken`, both expiry timestamps, the device-session summary, and `user`. Refresh with `POST /api/auth/mobile/refresh`; each successful refresh invalidates the previous access and refresh credentials. Reusing an already consumed refresh token revokes the whole device session.
+
+Authenticated mobile clients can use `GET /api/auth/mobile/sessions`, `DELETE /api/auth/mobile/sessions/:sessionId`, `POST /api/auth/mobile/logout`, and `POST /api/auth/mobile/logout-all`. The platform stores only SHA-256 token hashes. Bounded background-on-use cleanup retains invalid token rows for seven days and device-session metadata for 30 days.
+
+
+## Web session API
+
+Browser clients use `POST /api/auth/web/google`, `POST /api/auth/web/email/verify`, `GET /api/auth/web/session`, and `POST /api/auth/web/logout`. Non-production builds also expose `POST /api/auth/web/dev-bypass`. The session token is stored only in an HttpOnly cookie; the response returns an in-memory CSRF token for unsafe API methods. Logout revokes the server record before clearing the cookie.
+
 ## Email sign-in fallback
 
-If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server will also expose `POST /api/auth/email/start` and `POST /api/auth/email/verify`.
+If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server enables `POST /api/auth/email/start` and the dedicated web/mobile email verification endpoints.
 
 Brevo SMTP settings:
 - `AUTH_EMAIL_SMTP_HOST=smtp-relay.brevo.com`
@@ -258,21 +276,30 @@ When `RESEND_API_KEY` is present and no explicit `AUTH_EMAIL_SMTP_HOST` is confi
 
 - The address must end in `@mecorobotics.org` unless you change `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - On localhost, the bundled SMTP sink gives you a no-password listener at `127.0.0.1:1025`.
-- The server sends a one-time code to the entered address and exchanges that code for the same JWT session used by Google sign-in.
+- The server sends a one-time code to the entered address. Supported web and mobile clients exchange it through their dedicated session endpoints.
 - Pending codes are stored in memory, so a server restart clears them.
 
 ## Deployment behavior
+
+Use `docs/platform-deployment-recovery.md` as the canonical operator runbook for
+production env, VPS deploy path, backups, restore expectations, and rollback
+options.
 
 On every push to `main`, GitHub Actions will:
 
 1. install dependencies
 2. typecheck and build the server
 3. validate the Prisma schema
-4. connect to the VPS over SSH
-5. sync the repo to `/opt/pm-server`
-6. write `.env.production`
-7. run `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`
+4. verify the reviewed VPS host key and connect over SSH
+5. create and validate file, environment, and database backups; any required backup failure stops deployment
+6. sync the repo to `/opt/pm-server` and write `.env.production`
+7. start PostgreSQL, build the new application image, apply the Prisma schema from that image, then start the application
+8. check `/health` through the loopback-bound API port
 
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
-The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
+Schema application is an explicit pre-start deployment step. The application container does not use `--accept-data-loss` and does not modify the schema on ordinary restarts.
+
+### Tutorial fixture dates
+
+Fresh seed data and tutorial starts/baseline resets use the current UTC month and Monday–Sunday week. Seasons span the month; fixture activity is scaled chronologically into the part of the week inside that month, including month/year boundaries. Each start/reset reads the clock again; active sessions keep their dates and edits until reset. Session exit still restores the pre-tutorial workspace. Stored application data is not re-dated.

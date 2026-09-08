@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { buildCadHierarchyReview } from "../cadHierarchyReviewService";
-import { getCadStore } from "../cadStoreFactory";
 import { readGroupInstancesQuery, readImportRunListQuery, readSnapshotListQuery } from "./cadRouteQueries";
 import type { RequireApiSession } from "./cadRouteTypes";
 import { registerCadSnapshotActionRoutes } from "./cadSnapshotActionRoutes";
@@ -13,7 +12,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
       return;
     }
     try {
-      return { items: await getCadStore().listImportRuns(readImportRunListQuery(request.query)) };
+      return { items: await app.cadStore.listImportRuns(readImportRunListQuery(request.query)) };
     } catch (error) {
       return handleCadQueryError(error, reply);
     }
@@ -23,7 +22,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     const item = await store.findImportRun(request.params.importRunId);
     if (!item) {
       return reply.code(404).send({ message: "CAD import run was not found." });
@@ -37,7 +36,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
       return;
     }
     try {
-      return { items: await getCadStore().listSnapshots(readSnapshotListQuery(request.query)) };
+      return { items: await app.cadStore.listSnapshots(readSnapshotListQuery(request.query)) };
     } catch (error) {
       return handleCadQueryError(error, reply);
     }
@@ -47,7 +46,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     const item = await store.findSnapshot(request.params.snapshotId);
     if (!item) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
@@ -77,7 +76,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     if (!(await store.findSnapshot(request.params.snapshotId))) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
     }
@@ -88,7 +87,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     if (!(await store.findSnapshot(request.params.snapshotId))) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
     }
@@ -103,7 +102,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const review = await buildCadHierarchyReview({ store: getCadStore(), snapshotId: request.params.snapshotId });
+    const review = await buildCadHierarchyReview({ store: app.cadStore, snapshotId: request.params.snapshotId });
     return review ?? reply.code(404).send({ message: "CAD snapshot was not found." });
   });
 

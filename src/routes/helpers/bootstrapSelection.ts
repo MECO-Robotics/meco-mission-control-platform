@@ -1,17 +1,25 @@
+import {
+  reportFromQaReport,
+  reportFromTestResult,
+  reportFindingFromQaFinding,
+  reportFindingFromTestFinding,
+} from "../../data/store/reportDerivations";
 import type {
   AuditAction,
   Milestone,
   MilestoneRequirement,
   Member,
   PlatformSnapshot,
+  Report,
+  ReportFinding,
   QaFinding,
   QaReport,
   QaRequest,
   TestFinding,
   TestResult,
   Task,
-  TaskDependency,
 } from "../../domain/types";
+import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
 import { uniqueIds } from "./taskTargets";
 
@@ -21,71 +29,8 @@ export interface BootstrapSelection {
   projectId: string | null;
 }
 
-export interface BootstrapReportRecord {
-  id: string;
-  reportType: "QA" | "MilestoneTest";
-  projectId: string;
-  taskId: string | null;
-  milestoneId: string | null;
-  workstreamId: string | null;
-  createdByMemberId: string | null;
-  result: string;
-  summary: string;
-  notes: string;
-  createdAt: string;
-  participantIds?: string[];
-  mentorApproved?: boolean;
-  reviewedAt?: string;
-  title?: string;
-  status?: "pass" | "fail" | "blocked";
-  findings?: string[];
-}
-
-export interface BootstrapReportFindingRecord {
-  id: string;
-  reportId: string;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactInstanceId: string | null;
-  issueType: string;
-  severity: "high" | "medium" | "low";
-  notes: string;
-  spawnedTaskId: string | null;
-  spawnedIterationId: string | null;
-  spawnedRiskId: string | null;
-  title?: string;
-  detail?: string;
-  status?: "open" | "resolved";
-  projectId?: string;
-  workstreamId?: string | null;
-  subsystemId?: string | null;
-  taskId?: string | null;
-  milestoneId?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface BootstrapTaskDependencyRecord {
-  id: string;
-  taskId: string;
-  kind: TaskDependency["kind"];
-  refId: string;
-  requiredState?: string;
-  dependencyType: TaskDependency["dependencyType"];
-  createdAt: string;
-}
-
-export interface BootstrapTaskBlockerRecord {
-  id: string;
-  blockedTaskId: string;
-  blockerType: "external" | "internal";
-  blockerId: string | null;
-  description: string;
-  severity: "critical" | "high" | "medium" | "low";
-  status: "open" | "resolved";
-  createdByMemberId: string | null;
-  createdAt: string;
-  resolvedAt: string | null;
+export interface BootstrapResponseOptions {
+  sanitizeEscalations?: boolean;
 }
 
 function readScopedId(value: unknown) {
@@ -105,57 +50,7 @@ function isPartDefinitionActiveInSeason(
   );
 }
 
-function buildTaskDependencyRecords(tasks: Task[]) {
-  return tasks.flatMap<BootstrapTaskDependencyRecord>((task) =>
-    uniqueIds(task.dependencyIds).map((refId, dependencyIndex) => ({
-      id: `${task.id}:dependency:${dependencyIndex + 1}`,
-      taskId: task.id,
-      kind: "task",
-      refId,
-      requiredState: "complete",
-      dependencyType: "hard",
-      createdAt: task.startDate,
-    })),
-  );
-}
-
-function normalizeTaskDependencyRecord(
-  dependency: Partial<TaskDependency> & {
-    upstreamTaskId?: string;
-    downstreamTaskId?: string;
-    dependencyType?: TaskDependency["dependencyType"] | "blocks" | "finish_to_start";
-  },
-): BootstrapTaskDependencyRecord {
-  const kind = dependency.kind ?? "task";
-
-  return {
-    id: dependency.id ?? "",
-    taskId: dependency.taskId ?? dependency.downstreamTaskId ?? "",
-    kind,
-    refId: dependency.refId ?? dependency.upstreamTaskId ?? "",
-    requiredState: dependency.requiredState ?? (kind === "part_instance" ? "ready" : "complete"),
-    dependencyType: dependency.dependencyType === "soft" ? "soft" : "hard",
-    createdAt: dependency.createdAt ?? new Date().toISOString(),
-  };
-}
-
-function buildTaskBlockerRecords(tasks: Task[]) {
-  return tasks.flatMap<BootstrapTaskBlockerRecord>((task) =>
-    task.blockers.map((description, blockerIndex) => ({
-      id: `${task.id}:blocker:${blockerIndex + 1}`,
-      blockedTaskId: task.id,
-      blockerType: "external",
-      blockerId: null,
-      description,
-      severity: "medium",
-      status: "open",
-      createdByMemberId: null,
-      createdAt: task.startDate,
-      resolvedAt: null,
-    })),
-  );
-}
-
+// Bootstrap chooses an in-scope milestone project and intentionally omits photos.
 function buildReports(args: {
   qaReports: QaReport[];
   tasksById: Map<string, Task>;
@@ -163,64 +58,19 @@ function buildReports(args: {
   milestonesById: Map<string, Milestone>;
   activeProjectIds: Set<string>;
 }) {
-  const qaReports = args.qaReports
-    .map<BootstrapReportRecord | null>((report) => {
+  return [
+    ...args.qaReports.map((report) => {
       const task = args.tasksById.get(report.taskId);
-      if (!task || !args.activeProjectIds.has(task.projectId)) {
-        return null;
-      }
-
-      return {
-        id: report.id,
-        reportType: "QA",
-        projectId: task.projectId,
-        taskId: report.taskId,
-        milestoneId: null,
-        workstreamId: task.workstreamId,
-        createdByMemberId: null,
-        result: report.result,
-        summary: report.notes,
-        notes: report.notes,
-        createdAt: report.reviewedAt,
-        participantIds: report.participantIds,
-        mentorApproved: report.mentorApproved,
-        reviewedAt: report.reviewedAt,
-        title: task.title,
-      };
-    })
-    .filter((report): report is BootstrapReportRecord => report !== null);
-
-  const milestoneTestReports = args.testResults
-    .map<BootstrapReportRecord | null>((result) => {
+      return task && args.activeProjectIds.has(task.projectId)
+        ? reportFromQaReport(task, report, { includePhoto: false })
+        : null;
+    }),
+    ...args.testResults.map((result) => {
       const milestone = args.milestonesById.get(result.milestoneId);
-      const projectId =
-        milestone?.projectIds.find((candidate) => args.activeProjectIds.has(candidate)) ??
-        milestone?.projectIds[0] ??
-        null;
-      if (!projectId || !args.activeProjectIds.has(projectId)) {
-        return null;
-      }
-
-      return {
-        id: result.id,
-        reportType: "MilestoneTest",
-        projectId,
-        taskId: null,
-        milestoneId: result.milestoneId,
-        workstreamId: null,
-        createdByMemberId: null,
-        result: result.status,
-        summary: result.title,
-        notes: result.findings.join("\n"),
-        createdAt: milestone?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-        title: result.title,
-        status: result.status,
-        findings: result.findings,
-      };
-    })
-    .filter((report): report is BootstrapReportRecord => report !== null);
-
-  return [...qaReports, ...milestoneTestReports];
+      const projectId = milestone?.projectIds.find((id) => args.activeProjectIds.has(id)) ?? null;
+      return projectId ? reportFromTestResult(milestone, result, projectId, { includePhoto: false }) : null;
+    }),
+  ].filter((report): report is Report => report !== null);
 }
 
 function buildReportFindings(args: {
@@ -228,73 +78,49 @@ function buildReportFindings(args: {
   testFindings: TestFinding[];
   reportIds: Set<string>;
 }) {
-  const qaFindings = args.qaFindings
-    .map<BootstrapReportFindingRecord | null>((finding) => {
-      if (!finding.qaReportId || !args.reportIds.has(finding.qaReportId)) {
-        return null;
-      }
-
-      return {
-        id: finding.id,
-        reportId: finding.qaReportId,
-        mechanismId: finding.mechanismId,
-        partInstanceId: finding.partInstanceId,
-        artifactInstanceId: finding.artifactId,
-        issueType: finding.title,
-        severity: finding.severity,
-        notes: finding.detail,
-        spawnedTaskId: finding.taskId,
-        spawnedIterationId: null,
-        spawnedRiskId: null,
-        title: finding.title,
-        detail: finding.detail,
-        status: finding.status === "resolved" ? "resolved" : "open",
-        projectId: finding.projectId,
-        workstreamId: finding.workstreamId,
-        subsystemId: finding.subsystemId,
-        taskId: finding.taskId,
-        createdAt: finding.createdAt,
-        updatedAt: finding.updatedAt,
-      };
-    })
-    .filter((finding): finding is BootstrapReportFindingRecord => finding !== null);
-
-  const testFindings = args.testFindings
-    .map<BootstrapReportFindingRecord | null>((finding) => {
-      if (!finding.testResultId || !args.reportIds.has(finding.testResultId)) {
-        return null;
-      }
-
-      return {
-        id: finding.id,
-        reportId: finding.testResultId,
-        mechanismId: finding.mechanismId,
-        partInstanceId: finding.partInstanceId,
-        artifactInstanceId: finding.artifactId,
-        issueType: finding.title,
-        severity: finding.severity,
-        notes: finding.detail,
-        spawnedTaskId: finding.taskId,
-        spawnedIterationId: null,
-        spawnedRiskId: null,
-        title: finding.title,
-        detail: finding.detail,
-        status: finding.status === "resolved" ? "resolved" : "open",
-        projectId: finding.projectId,
-        workstreamId: finding.workstreamId,
-        subsystemId: finding.subsystemId,
-        taskId: finding.taskId,
-        milestoneId: finding.milestoneId,
-        createdAt: finding.createdAt,
-        updatedAt: finding.updatedAt,
-      };
-    })
-    .filter((finding): finding is BootstrapReportFindingRecord => finding !== null);
-
-  return [...qaFindings, ...testFindings];
+  return [
+    ...args.qaFindings.map(reportFindingFromQaFinding),
+    ...args.testFindings.map(reportFindingFromTestFinding),
+  ].filter((finding): finding is ReportFinding => finding !== null && args.reportIds.has(finding.reportId));
 }
 
-export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: BootstrapSelection) {
+function parseDateMs(value: string) {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isSeasonScopedByProjectLinks(args: {
+  selectedSeasonId: string | null;
+  recordSeasonId?: string;
+  projectIds: string[];
+  activeProjectIds: Set<string>;
+}) {
+  if (!args.selectedSeasonId) {
+    return true;
+  }
+
+  if (args.recordSeasonId) {
+    return args.recordSeasonId === args.selectedSeasonId;
+  }
+
+  return (
+    args.projectIds.length > 0 &&
+    args.projectIds.some((projectId) => args.activeProjectIds.has(projectId))
+  );
+}
+
+export function buildBootstrapResponse(
+  snapshot: PlatformSnapshot,
+  selection: BootstrapSelection,
+  options: BootstrapResponseOptions = {},
+) {
+  const selectedSeasonId = selection.seasonId;
+  const selectedSeason = selectedSeasonId
+    ? snapshot.seasons.find((season) => season.id === selectedSeasonId) ?? null
+    : null;
+  const scopedSeasons = selectedSeasonId
+    ? snapshot.seasons.filter((season) => season.id === selectedSeasonId)
+    : snapshot.seasons;
   const seasonScopedProjects = selection.seasonId
     ? snapshot.projects.filter((project) => project.seasonId === selection.seasonId)
     : snapshot.projects;
@@ -311,37 +137,62 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     activeProjectIds.has(workstream.projectId),
   );
   const scopedWorkstreamIds = new Set(scopedWorkstreams.map((workstream) => workstream.id));
-  const scopedSubsystems = snapshot.subsystems.filter((subsystem) =>
-    activeProjectIds.has(subsystem.projectId),
-  );
+  const scopedSubsystems = snapshot.subsystems
+    .filter((subsystem) => activeProjectIds.has(subsystem.projectId))
+    .map(normalizePmCadProvenance);
   const scopedSubsystemIds = new Set(scopedSubsystems.map((subsystem) => subsystem.id));
-  const scopedMechanisms = snapshot.mechanisms.filter((mechanism) =>
-    scopedSubsystemIds.has(mechanism.subsystemId),
-  );
+  const scopedPartDefinitions = (selectedSeasonId
+    ? snapshot.partDefinitions.filter((partDefinition) =>
+        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
+      )
+    : snapshot.partDefinitions).map(normalizePmCadProvenance);
+  const scopedMechanisms = snapshot.mechanisms
+    .filter((mechanism) => scopedSubsystemIds.has(mechanism.subsystemId))
+    .map(normalizePmCadProvenance);
   const scopedMechanismIds = new Set(scopedMechanisms.map((mechanism) => mechanism.id));
   const scopedArtifacts = snapshot.artifacts.filter((artifact) =>
     activeProjectIds.has(artifact.projectId),
   );
-  const scopedPartInstances = snapshot.partInstances.filter(
-    (partInstance) =>
-      scopedSubsystemIds.has(partInstance.subsystemId) &&
-      (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
-  );
+  const scopedPartInstances = snapshot.partInstances
+    .filter(
+      (partInstance) =>
+        scopedSubsystemIds.has(partInstance.subsystemId) &&
+        (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
+    )
+    .map(normalizePmCadProvenance);
   const scopedPartInstanceIds = new Set(
     scopedPartInstances.map((partInstance) => partInstance.id),
   );
   const scopedMilestones = snapshot.milestones.filter((milestone) => {
     const milestoneProjectIds = milestone.projectIds ?? [];
+    if (
+      !isSeasonScopedByProjectLinks({
+        selectedSeasonId,
+        recordSeasonId: milestone.seasonId,
+        projectIds: milestoneProjectIds,
+        activeProjectIds,
+      })
+    ) {
+      return false;
+    }
+
     return milestoneProjectIds.length === 0
       ? true
       : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
   });
   const scopedMeetings = snapshot.meetings.filter((meeting) => {
-    if (selection.seasonId && meeting.seasonId && meeting.seasonId !== selection.seasonId) {
+    const meetingProjectIds = meeting.projectIds ?? [];
+    if (
+      !isSeasonScopedByProjectLinks({
+        selectedSeasonId,
+        recordSeasonId: meeting.seasonId,
+        projectIds: meetingProjectIds,
+        activeProjectIds,
+      })
+    ) {
       return false;
     }
 
-    const meetingProjectIds = meeting.projectIds ?? [];
     return meetingProjectIds.length === 0
       ? true
       : meetingProjectIds.some((projectId) => activeProjectIds.has(projectId));
@@ -401,6 +252,10 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   });
   const isProjectScoped = selection.projectId !== null;
   const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+    if (selectedSeasonId && !request.taskId) {
+      return false;
+    }
+
     const isTaskInScope = request.taskId
       ? scopedTaskIds.has(request.taskId)
       : !isProjectScoped;
@@ -436,6 +291,14 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       return false;
     }
 
+    if (risk.attachmentType === "mechanism" && !scopedMechanismIds.has(risk.attachmentId)) {
+      return false;
+    }
+
+    if (risk.attachmentType === "part-instance" && !scopedPartInstanceIds.has(risk.attachmentId)) {
+      return false;
+    }
+
     if (risk.mitigationTaskId && !scopedTaskIds.has(risk.mitigationTaskId)) {
       return false;
     }
@@ -450,65 +313,38 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
 
     return true;
   });
+  const scopedMembers = selectedSeasonId
+    ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
+    : snapshot.members;
+  const scopedMemberIds = new Set(scopedMembers.map((member) => member.id));
   const scopedAttendanceRecords = snapshot.attendanceRecords.filter((record) => {
     if (selection.personId !== null && record.memberId !== selection.personId) {
       return false;
     }
 
-    return true;
-  });
-  const scopedExplicitTaskDependencies = snapshot.taskDependencies
-    .map((dependency) => normalizeTaskDependencyRecord(dependency as Partial<TaskDependency>))
-    .filter((dependency) => {
-      if (!scopedTaskIds.has(dependency.taskId)) {
+    if (selectedSeasonId && !scopedMemberIds.has(record.memberId)) {
+      return false;
+    }
+
+    if (selectedSeason) {
+      const attendanceDate = parseDateMs(record.date);
+      const seasonStart = parseDateMs(selectedSeason.startDate);
+      const seasonEnd = parseDateMs(selectedSeason.endDate);
+      if (attendanceDate === null || seasonStart === null || seasonEnd === null) {
         return false;
       }
 
-      if (dependency.kind === "task") {
-        return scopedTaskIds.has(dependency.refId);
-      }
+      return attendanceDate >= seasonStart && attendanceDate <= seasonEnd;
+    }
 
-      if (dependency.kind === "milestone") {
-        return scopedMilestoneIds.has(dependency.refId);
-      }
-
-      if (dependency.kind === "part_instance") {
-        return scopedPartInstanceIds.has(dependency.refId);
-      }
-
-      return false;
-    });
-  const explicitTaskDependencyKeys = new Set(
-    scopedExplicitTaskDependencies.map(
-      (dependency) => `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`,
-    ),
+    return true;
+  });
+  const scopedTaskDependencies = snapshot.taskDependencies.filter((dependency) =>
+    scopedTaskIds.has(dependency.taskId),
   );
-  const scopedTaskDependencies = [
-    ...scopedExplicitTaskDependencies,
-    ...buildTaskDependencyRecords(snapshot.tasks).filter(
-      (dependency) =>
-        scopedTaskIds.has(dependency.taskId) &&
-        scopedTaskIds.has(dependency.refId) &&
-        !explicitTaskDependencyKeys.has(
-          `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`,
-        ),
-    ),
-  ];
-  const scopedExplicitTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
+  const scopedTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
     scopedTaskIds.has(blocker.blockedTaskId),
   );
-  const explicitTaskBlockerKeys = new Set(
-    scopedExplicitTaskBlockers.map(
-      (blocker) => `${blocker.blockedTaskId}:${blocker.description}`,
-    ),
-  );
-  const scopedTaskBlockers = [
-    ...scopedExplicitTaskBlockers,
-    ...buildTaskBlockerRecords(scopedTasks).filter(
-      (blocker) =>
-        !explicitTaskBlockerKeys.has(`${blocker.blockedTaskId}:${blocker.description}`),
-    ),
-  ];
   const scopedSnapshot = {
     ...snapshot,
     tasks: scopedTasks,
@@ -533,15 +369,6 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       (manufacturingQaReviewCounts.get(review.subjectId) ?? 0) + 1,
     );
   }
-  const selectedSeasonId = selection.seasonId;
-  const scopedMembers = selectedSeasonId
-    ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
-    : snapshot.members;
-  const scopedPartDefinitions = selectedSeasonId
-    ? snapshot.partDefinitions.filter((partDefinition) =>
-        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
-      )
-    : snapshot.partDefinitions;
   const scopedActions = (snapshot.actions ?? [])
     .filter((action) => {
       const actionProjectIds =
@@ -582,16 +409,34 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
       return true;
     })
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  const scopedMaterialIds = new Set(
+    [
+      ...scopedPartDefinitions.map((partDefinition) => partDefinition.materialId),
+      ...scopedManufacturingItems.map((item) => item.materialId),
+    ].filter((materialId): materialId is string => Boolean(materialId)),
+  );
+  const scopedMaterials = selectedSeasonId
+    ? snapshot.materials.filter((material) => scopedMaterialIds.has(material.id))
+    : snapshot.materials;
+  const scopedDisciplineIds = new Set(
+    [
+      ...scopedTasks.map((task) => task.disciplineId),
+      ...scopedMembers.map((member) => member.disciplineId ?? null),
+    ].filter((disciplineId): disciplineId is string => Boolean(disciplineId)),
+  );
+  const scopedDisciplines = selectedSeasonId
+    ? snapshot.disciplines.filter((discipline) => scopedDisciplineIds.has(discipline.id))
+    : snapshot.disciplines;
 
   return {
-    seasons: snapshot.seasons,
+    seasons: scopedSeasons,
     projects: seasonScopedProjects,
     workstreams: scopedWorkstreams,
     members: scopedMembers,
     subsystems: scopedSubsystems,
-    disciplines: snapshot.disciplines,
+    disciplines: scopedDisciplines,
     mechanisms: scopedMechanisms,
-    materials: snapshot.materials,
+    materials: scopedMaterials,
     artifacts: scopedArtifacts,
     partDefinitions: scopedPartDefinitions,
     partInstances: scopedPartInstances,
@@ -621,7 +466,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     })),
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
-    escalations: snapshot.escalations,
+    escalations: options.sanitizeEscalations ? [] : snapshot.escalations,
     actions: scopedActions as AuditAction[],
   };
 }

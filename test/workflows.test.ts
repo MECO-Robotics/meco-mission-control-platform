@@ -45,7 +45,8 @@ function makeTask(overrides: Partial<Task> = {}) {
     dueDate: "2026-04-05",
     priority: "critical",
     status: "in-progress",
-    dependencyIds: [],
+
+    checklistItems: [],
     blockers: [],
     linkedManufacturingIds: [],
     linkedPurchaseIds: [],
@@ -113,7 +114,8 @@ function makeWorkflowSnapshot() {
       mentorId: "riley",
       status: "in-progress",
       priority: "high",
-      dependencyIds: ["task-a"],
+
+      checklistItems: [],
       blockers: ["Waiting on parts"],
       requiresDocumentation: false,
       documentationLinked: false,
@@ -431,23 +433,28 @@ test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("complete"), "Complete");
 });
 
-test("deploy workflow keeps schema push ahead of milestone normalization", () => {
+test("production compose configures the database connection and private health-checked API", () => {
   const composeFile = readRepoFile("docker-compose.prod.yml");
-  assertOrdered(
-    composeFile,
-    "npm run prisma:deploy:accept-data-loss",
-    "npm run prisma:normalize-event-types",
-    "deploy compose command",
-  );
   assertIncludesAll(
     composeFile,
     [
       'sh -c "if [ -z \\"$${DATABASE_URL:-}\\" ]; then',
       'export DATABASE_URL=\\"postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}?schema=public\\"',
       'wget -qO- http://127.0.0.1:8080/health || exit 1',
+      '127.0.0.1:${PUBLIC_PORT:-8080}:8080',
     ],
     "production compose file",
   );
+  assert.doesNotMatch(composeFile, /prisma:deploy:accept-data-loss/);
+});
+
+test("deploy workflow builds the new application image before schema updates", () => {
+  const workflow = readFileSync(".github/workflows/deploy-vps.yml", "utf8");
+  const buildIndex = workflow.indexOf("docker-compose.prod.yml build app");
+  const deployIndex = workflow.indexOf("run --rm app npm run prisma:deploy");
+
+  assert.ok(buildIndex >= 0);
+  assert.ok(deployIndex > buildIndex);
 });
 
 test("deploy workflow validates secrets and retains the app health gate", () => {
@@ -462,8 +469,12 @@ test("deploy workflow validates secrets and retains the app health gate", () => 
       "name: production",
       "Validate deploy secrets",
       "Missing required deploy secret(s):",
+      "VPS_SSH_KNOWN_HOSTS",
       "Backup existing VPS server deployment",
-      "Production deploy is allowed only from main, release-* tags, or a release manifest.",
+      'test "${GITHUB_EVENT_NAME}" = "push"',
+      'test "${GITHUB_REF}" = "refs/heads/main"',
+      'test "${GITHUB_SHA}" = "$(git rev-parse origin/main)"',
+      "Database backup failed; aborting deployment.",
       "set -euo pipefail",
       "curl --fail --silent http://127.0.0.1:8080/health",
       "Health check passed.",
@@ -473,6 +484,15 @@ test("deploy workflow validates secrets and retains the app health gate", () => 
     ],
     "deploy workflow",
   );
+});
+
+test("deploy workflow backs up durable application state before deployment", () => {
+  const workflow = readFileSync(".github/workflows/deploy-vps.yml", "utf8");
+
+  assert.match(workflow, /pm-server-app-data-\$\{timestamp\}\.tgz/);
+  assert.match(workflow, /if \[ -d \/app\/data \]; then tar -czf - -C \/app data/);
+  assert.match(workflow, /else tar -czf - --files-from \/dev\/null/);
+  assert.match(workflow, /Application data backup failed; aborting deployment/);
 });
 
 test("deploy bootstrap script guards Linux-only execution and installs prerequisites", () => {
@@ -496,6 +516,8 @@ test("deploy bootstrap script guards Linux-only execution and installs prerequis
 test("ci workflow watches deploy artifacts and runs the full validation matrix", () => {
   const ciWorkflow = readRepoFile(".github/workflows/ci.yml");
 
+  const { scripts } = JSON.parse(readFileSync("package.json", "utf8"));
+  assertIncludesAll(scripts.verify, ["npm run prisma:generate", "npm run typecheck:test", "npm test"], "verification suite");
   assertIncludesAll(
     ciWorkflow,
     [
@@ -504,9 +526,6 @@ test("ci workflow watches deploy artifacts and runs the full validation matrix",
       "- development",
       "- main",
       "push:",
-      '"feature/**"',
-      '"fix/**"',
-      '"hotfix/**"',
       "branch-model",
       '".github/workflows/deploy-vps.yml"',
       '"deploy/**"',
@@ -515,8 +534,9 @@ test("ci workflow watches deploy artifacts and runs the full validation matrix",
       '".dockerignore"',
       '"tsconfig.test.json"',
       '"test/**"',
+      '"CONTRIBUTING.md"',
+      '".nvmrc"',
       "npm ci",
-      "npm run typecheck:test",
       "npm run verify",
       "npx prisma validate",
       "snapshot-validate",
@@ -524,4 +544,5 @@ test("ci workflow watches deploy artifacts and runs the full validation matrix",
     ],
     "ci workflow",
   );
+  assert.doesNotMatch(ciWorkflow.split("permissions:")[0], /"(?:feature|fix|hotfix)\/\*\*"/);
 });

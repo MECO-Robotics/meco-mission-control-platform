@@ -1,17 +1,57 @@
+import { testMobileSessionStore } from "./sessionAuth";
+import { MemoryWebSessionStore } from "./webSessionMemoryStore";
+import { saveEnv, restoreEnv } from "./environment";
 import type { FastifyInstance } from "fastify";
 
-import { resetStore } from "../../src/data/store";
+import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
+import type { WebSessionStore } from "../../src/auth/webSessionStore";
+import { createMember, resetStore, type MemberInput } from "../../src/data/store";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resetRequestLimits } from "../../src/security/requestLimits";
+
+const INTEGRATION_ENV_MODULES = [
+  "../../src/app",
+  "../../src/auth/authService",
+  "../../src/auth/mobileSessionPlugin",
+  "../../src/auth/mobileSessionPrismaStore",
+  "../../src/auth/mobileSessionService",
+  "../../src/auth/webSessionPlugin",
+  "../../src/auth/webSessionService",
+  "../../src/auth/webSessionStore",
+  "../../src/cad/cadRoutes",
+  "../../src/cad/cadImportService",
+  "../../src/cad/parsing/stepParserRunner",
+  "../../src/cad/routes/cadStepImportPayload",
+  "../../src/cad/routes/cadStepImportRoutes",
+  "../../src/config/env",
+  "../../src/onshape/services/onshapeOAuthHealth",
+  "../../src/onshape/onshapeOAuthRoutes",
+  "../../src/onshape/services/onshapeOverview",
+  "../../src/onshape/onshapeRoutes",
+  "../../src/routes/authRoutes",
+  "../../src/routes/emailAuthSchemas",
+  "../../src/routes/mobileAuthRoutes",
+  "../../src/routes/mobileAuthSchemas",
+  "../../src/routes/registerRoutes",
+  "../../src/routes/routeSchemas",
+  "../../src/routes/webAuthRoutes",
+  "../../src/slack/client",
+  "../../src/slack/homeService",
+  "../../src/storage/mediaUploadService",
+] as const;
 
 const APP_ENV_KEYS = [
   "NODE_ENV",
   "DATABASE_URL",
-  "AUTH_JWT_SECRET",
   "GOOGLE_CLIENT_ID",
   "AUTH_EMAIL_SMTP_HOST",
   "AUTH_EMAIL_FROM",
   "AUTH_MENTOR_EMAILS",
+  "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
+  "TRUST_PROXY_IPS",
   "API_RATE_LIMIT_MAX_REQUESTS",
   "API_RATE_LIMIT_WINDOW_SECONDS",
   "AUTH_RATE_LIMIT_MAX_REQUESTS",
@@ -23,8 +63,12 @@ const APP_ENV_KEYS = [
   "S3_ENDPOINT",
   "S3_PUBLIC_BASE_URL",
   "S3_REGION",
+  "S3_BUCKET_PREFIX",
   "S3_BUCKET",
   "S3_PRESIGN_TTL_SECONDS",
+  "MEDIA_IMAGE_UPLOAD_MAX_BYTES",
+  "MEDIA_VIDEO_UPLOAD_MAX_BYTES",
+  "MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR",
   "SLACK_BOT_TOKEN",
   "SLACK_ALERT_USERGROUP_HANDLES",
   "SLACK_CHANNEL_BUILD_ID",
@@ -47,37 +91,26 @@ const APP_ENV_KEYS = [
   "CAD_STORE_DRIVER",
   "CAD_STEP_UPLOAD_MAX_BYTES",
   "CAD_STEP_PARSER_MODE",
+  "CAD_STEP_PARSER_TIMEOUT_MS",
+  "CAD_STEP_PARSER_MAX_CONCURRENCY",
+  "CAD_STEP_PARSER_MAX_QUEUE",
+  "CAD_STEP_PARSER_MAX_OLD_SPACE_MB",
+  "CAD_STEP_PARSER_MAX_RESULT_BYTES",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
-type AppEnvSnapshot = Map<AppEnvKey, string | undefined>;
-
-function saveEnv(): AppEnvSnapshot {
-  return new Map(
-    APP_ENV_KEYS.map((key) => [key, process.env[key]] as const),
-  );
-}
-
-function restoreEnv(snapshot: AppEnvSnapshot) {
-  for (const [key, value] of snapshot) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
 
 function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>) {
   process.env.NODE_ENV = "development";
   process.env.DATABASE_URL =
     "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
   delete process.env.CORS_ORIGIN;
-  delete process.env.AUTH_JWT_SECRET;
+  delete process.env.TRUST_PROXY_IPS;
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.AUTH_EMAIL_SMTP_HOST;
   delete process.env.AUTH_EMAIL_FROM;
   delete process.env.AUTH_MENTOR_EMAILS;
+  delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
   process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
   process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -89,8 +122,12 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.S3_ENDPOINT = "https://s3.example.test";
   process.env.S3_PUBLIC_BASE_URL = "https://cdn.example.test";
   process.env.S3_REGION = "us-test-1";
+  process.env.S3_BUCKET_PREFIX = "meco-pm";
   process.env.S3_BUCKET = "meco-pm";
   process.env.S3_PRESIGN_TTL_SECONDS = "300";
+  process.env.MEDIA_IMAGE_UPLOAD_MAX_BYTES = String(15 * 1024 * 1024);
+  process.env.MEDIA_VIDEO_UPLOAD_MAX_BYTES = String(250 * 1024 * 1024);
+  process.env.MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR = String(1024 * 1024 * 1024);
   delete process.env.SLACK_BOT_TOKEN;
   process.env.SLACK_ALERT_USERGROUP_HANDLES = "allmentors,allstudents";
   process.env.SLACK_CHANNEL_BUILD_ID = "C03171JMMB4";
@@ -113,12 +150,29 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.CAD_STORE_DRIVER = "runtime";
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
   delete process.env.CAD_STEP_PARSER_MODE;
+  delete process.env.CAD_STEP_PARSER_TIMEOUT_MS;
+  delete process.env.CAD_STEP_PARSER_MAX_CONCURRENCY;
+  delete process.env.CAD_STEP_PARSER_MAX_QUEUE;
+  delete process.env.CAD_STEP_PARSER_MAX_OLD_SPACE_MB;
+  delete process.env.CAD_STEP_PARSER_MAX_RESULT_BYTES;
 
   for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
     if (value === undefined) {
       delete process.env[key];
     } else {
       process.env[key] = value;
+    }
+  }
+}
+
+function resetIntegrationEnvModuleCache() {
+  for (const modulePath of INTEGRATION_ENV_MODULES) {
+    try {
+      delete require.cache[require.resolve(modulePath)];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND") {
+        throw error;
+      }
     }
   }
 }
@@ -130,16 +184,28 @@ export async function withIntegrationApp(
   }) => Promise<void>,
   options?: {
     env?: Partial<Record<AppEnvKey, string | undefined>>;
+    members?: MemberInput[];
+    mobileSessionStore?: MobileSessionStore;
+    webSessionStore?: WebSessionStore;
   },
 ) {
-  const envSnapshot = saveEnv();
+  const envSnapshot = saveEnv(APP_ENV_KEYS);
+  const preferencesDirectory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
 
   try {
     configureEnv(options?.env);
+    resetIntegrationEnvModuleCache();
     resetStore();
 
-    const { buildApp } = await import("../../src/app");
-    const app = await buildApp();
+    const { buildApp } = require("../../src/app") as typeof import("../../src/app");
+    const app = await buildApp({
+      userPreferencesPath: join(preferencesDirectory, "preferences.json"),
+      mobileSessionStore: options?.mobileSessionStore ?? testMobileSessionStore,
+      webSessionStore: options?.webSessionStore ?? new MemoryWebSessionStore(),
+    });
+    for (const member of options?.members ?? []) {
+      createMember(member);
+    }
 
     try {
       resetRequestLimits();
@@ -149,6 +215,8 @@ export async function withIntegrationApp(
       resetRequestLimits();
     }
   } finally {
+    rmSync(preferencesDirectory, { recursive: true, force: true });
     restoreEnv(envSnapshot);
+    resetIntegrationEnvModuleCache();
   }
 }

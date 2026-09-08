@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { Project } from "../src/domain/types";
+import { createProject, getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("artifact and workstream endpoints preserve seeded, paginated, and CRUD contracts", async () => {
@@ -418,6 +420,7 @@ test("media upload endpoint returns a presigned image upload contract", async ()
         projectId: "project-media-2026",
         fileName: "Robot Reveal Photo.png",
         contentType: "image/png",
+        sizeBytes: 1024,
       },
     });
 
@@ -441,13 +444,17 @@ test("media upload endpoint returns a presigned image upload contract", async ()
       /^projects\/project-media-2026\/images\/\d{4}\/\d{2}\/\d+-[a-f0-9]{12}-robot-reveal-photo\.png$/,
     );
     assert.ok(
-      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm/projects/project-media-2026/images/"),
+      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm-meco-robotics/projects/project-media-2026/images/"),
     );
 
     const uploadUrl = new URL(presignBody.uploadUrl);
     assert.equal(uploadUrl.origin, "https://s3.example.test");
-    assert.ok(uploadUrl.pathname.startsWith("/meco-pm/projects/project-media-2026/images/"));
+    assert.ok(uploadUrl.pathname.startsWith("/meco-pm-meco-robotics/projects/project-media-2026/images/"));
     assert.equal(uploadUrl.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
+    assert.match(
+      uploadUrl.searchParams.get("X-Amz-SignedHeaders") ?? "",
+      /content-length/,
+    );
 
     resetLimits();
 
@@ -458,6 +465,7 @@ test("media upload endpoint returns a presigned image upload contract", async ()
         projectId: "project-media-2026",
         fileName: "not-an-image.pdf",
         contentType: "application/pdf",
+        sizeBytes: 1024,
       },
     });
 
@@ -465,6 +473,141 @@ test("media upload endpoint returns a presigned image upload contract", async ()
     assert.equal(
       invalidTypeResponse.json().message,
       "Only image uploads are supported by the media bucket.",
+    );
+
+    resetLimits();
+
+    const oversizedResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "oversized.png",
+        contentType: "image/png",
+        sizeBytes: 15 * 1024 * 1024 + 1,
+      },
+    });
+    assert.equal(oversizedResponse.statusCode, 413);
+  });
+});
+
+test("media upload endpoint selects buckets from server-owned project team ids", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const otherTeamProject = createProject({
+      teamId: "Team 2468",
+      seasonId: "default-season",
+      name: "Team 2468 Media",
+      projectType: "other",
+      description: "Media workspace for another purchasing team.",
+      status: "active",
+    });
+
+    const presignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        teamId: "meco-robotics",
+        projectId: otherTeamProject.id,
+        fileName: "Sponsor banner.png",
+        contentType: "image/png",
+        sizeBytes: 2048,
+      },
+    });
+
+    assert.equal(presignResponse.statusCode, 200);
+    const presignBody = presignResponse.json() as {
+      key: string;
+      publicUrl: string;
+      uploadUrl: string;
+    };
+
+    assert.match(
+      presignBody.key,
+      new RegExp(`^projects/${otherTeamProject.id}/images/\\d{4}/\\d{2}/\\d+-[a-f0-9]{12}-sponsor-banner\\.png$`),
+    );
+    assert.ok(
+      presignBody.publicUrl.startsWith(
+        `https://cdn.example.test/meco-pm-team-2468/projects/${otherTeamProject.id}/images/`,
+      ),
+    );
+    assert.ok(new URL(presignBody.uploadUrl).pathname.startsWith(`/meco-pm-team-2468/projects/${otherTeamProject.id}/images/`));
+
+    resetLimits();
+
+    const snapshot = getSnapshot();
+    snapshot.projects.push({
+      id: "legacy-media-project",
+      seasonId: "default-season",
+      name: "Legacy Media",
+      projectType: "other",
+      description: "Project record created before team-scoped buckets existed.",
+      status: "active",
+    } as Project);
+
+    const legacyPresignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "legacy-media-project",
+        fileName: "Legacy reveal.png",
+        contentType: "image/png",
+        sizeBytes: 2048,
+      },
+    });
+
+    assert.equal(legacyPresignResponse.statusCode, 200);
+    const legacyPresignBody = legacyPresignResponse.json() as {
+      publicUrl: string;
+    };
+    assert.ok(
+      legacyPresignBody.publicUrl.startsWith(
+        "https://cdn.example.test/meco-pm-default-team/projects/legacy-media-project/images/",
+      ),
+    );
+
+    resetLimits();
+
+    const apiProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        teamId: "Team 1357",
+        seasonId: "default-season",
+        name: "API Media",
+        projectType: "other",
+      },
+    });
+
+    assert.equal(apiProjectResponse.statusCode, 201);
+    const apiProjectBody = apiProjectResponse.json() as {
+      item: {
+        id: string;
+        teamId: string;
+      };
+    };
+    assert.equal(apiProjectBody.item.teamId, "meco-robotics");
+
+    resetLimits();
+
+    const apiProjectPresignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: apiProjectBody.item.id,
+        fileName: "API-created project.png",
+        contentType: "image/png",
+        sizeBytes: 2048,
+      },
+    });
+
+    assert.equal(apiProjectPresignResponse.statusCode, 200);
+    const apiProjectPresignBody = apiProjectPresignResponse.json() as {
+      publicUrl: string;
+    };
+    assert.ok(
+      apiProjectPresignBody.publicUrl.startsWith(
+        `https://cdn.example.test/meco-pm-meco-robotics/projects/${apiProjectBody.item.id}/images/`,
+      ),
     );
   });
 });
@@ -478,6 +621,7 @@ test("video upload endpoint returns a presigned video upload contract", async ()
         projectId: "project-media-2026",
         fileName: "QA review clip.mp4",
         contentType: "video/mp4",
+        sizeBytes: 4096,
       },
     });
 
@@ -500,7 +644,7 @@ test("video upload endpoint returns a presigned video upload contract", async ()
       /^projects\/project-media-2026\/videos\/\d{4}\/\d{2}\/\d+-[a-f0-9]{12}-qa-review-clip\.mp4$/,
     );
     assert.ok(
-      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm/projects/project-media-2026/videos/"),
+      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm-meco-robotics/projects/project-media-2026/videos/"),
     );
 
     resetLimits();
@@ -512,6 +656,7 @@ test("video upload endpoint returns a presigned video upload contract", async ()
         projectId: "project-media-2026",
         fileName: "not-a-video.png",
         contentType: "image/png",
+        sizeBytes: 4096,
       },
     });
 
@@ -520,5 +665,36 @@ test("video upload endpoint returns a presigned video upload contract", async ()
       invalidTypeResponse.json().message,
       "Only video uploads are supported by the media bucket.",
     );
+  });
+});
+
+test("media signing enforces an identity-scoped hourly byte quota", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "first.png",
+        contentType: "image/png",
+        sizeBytes: 800,
+      },
+    });
+    assert.equal(first.statusCode, 200);
+
+    resetLimits();
+    const overQuota = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "second.png",
+        contentType: "image/png",
+        sizeBytes: 800,
+      },
+    });
+    assert.equal(overQuota.statusCode, 429);
+  }, {
+    env: { MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR: "1500" },
   });
 });

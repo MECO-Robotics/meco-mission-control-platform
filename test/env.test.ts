@@ -1,3 +1,4 @@
+import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";
@@ -9,26 +10,11 @@ async function loadEnvModule(_cacheBust: string) {
   return require("../src/config/env.ts");
 }
 
-function saveEnv(keys: string[]) {
-  return new Map(keys.map((key) => [key, process.env[key]] as const));
-}
-
-function restoreEnv(saved: Map<string, string | undefined>) {
-  for (const [key, value] of saved) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
-
 test("production config refuses wildcard CORS and missing auth", async () => {
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
     "CORS_ORIGIN",
-    "AUTH_JWT_SECRET",
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
@@ -39,14 +25,13 @@ test("production config refuses wildcard CORS and missing auth", async () => {
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
     process.env.CORS_ORIGIN = "*";
-    delete process.env.AUTH_JWT_SECRET;
     delete process.env.GOOGLE_CLIENT_ID;
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
 
     await assert.rejects(
       loadEnvModule(`production-denied-${Date.now()}`),
-      /Production deployments must configure AUTH_JWT_SECRET/,
+      /Production deployments must configure either Google or SMTP/,
     );
   } finally {
     restoreEnv(saved);
@@ -58,7 +43,6 @@ test("production config loads when auth and explicit origins are configured", as
     "NODE_ENV",
     "DATABASE_URL",
     "CORS_ORIGIN",
-    "AUTH_JWT_SECRET",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_ALLOWED_HOSTED_DOMAIN",
     "AUTH_EMAIL_SMTP_HOST",
@@ -70,7 +54,6 @@ test("production config loads when auth and explicit origins are configured", as
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
     process.env.CORS_ORIGIN = "https://app.example.com, https://admin.example.com";
-    process.env.AUTH_JWT_SECRET = "a".repeat(32);
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     process.env.GOOGLE_ALLOWED_HOSTED_DOMAIN = "mecorobotics.org";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
@@ -84,6 +67,32 @@ test("production config loads when auth and explicit origins are configured", as
       "https://admin.example.com",
     ]);
     assert.equal(config.corsConfig.allowsAnyOrigin, false);
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
+test("production config rejects cleartext credentialed integration URLs", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "GOOGLE_CLIENT_ID",
+    "S3_ENDPOINT",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "https://app.example.com";
+    process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
+    process.env.S3_ENDPOINT = "http://storage.example.com";
+
+    await assert.rejects(
+      loadEnvModule(`production-cleartext-integration-${Date.now()}`),
+      /Production S3_ENDPOINT must use HTTPS/,
+    );
   } finally {
     restoreEnv(saved);
   }
@@ -199,7 +208,7 @@ test("CAD persistence defaults to Prisma and allows runtime override", async () 
   }
 });
 
-test("STEP upload limit defaults above common CAD export sizes and allows override", async () => {
+test("STEP upload limit defaults to a bounded size and allows a capped override", async () => {
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
@@ -215,7 +224,7 @@ test("STEP upload limit defaults above common CAD export sizes and allows overri
     delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
 
     const defaultConfig = await loadEnvModule(`cad-step-upload-default-${Date.now()}`);
-    assert.equal(defaultConfig.cadStepUploadConfig.maxBytes, 250 * 1024 * 1024);
+    assert.equal(defaultConfig.cadStepUploadConfig.maxBytes, 32 * 1024 * 1024);
 
     delete require.cache[require.resolve("../src/config/env.ts")];
     process.env.CAD_STEP_UPLOAD_MAX_BYTES = String(64 * 1024 * 1024);
@@ -260,7 +269,6 @@ test("production config refuses placeholder STEP parser mode", async () => {
     "NODE_ENV",
     "DATABASE_URL",
     "CORS_ORIGIN",
-    "AUTH_JWT_SECRET",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_ALLOWED_HOSTED_DOMAIN",
     "CAD_STEP_PARSER_MODE",
@@ -271,7 +279,6 @@ test("production config refuses placeholder STEP parser mode", async () => {
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
     process.env.CORS_ORIGIN = "https://app.example.com";
-    process.env.AUTH_JWT_SECRET = "a".repeat(32);
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     process.env.GOOGLE_ALLOWED_HOSTED_DOMAIN = "mecorobotics.org";
     process.env.CAD_STEP_PARSER_MODE = "placeholder";
@@ -283,4 +290,26 @@ test("production config refuses placeholder STEP parser mode", async () => {
   } finally {
     restoreEnv(saved);
   }
+});
+
+test("SMTP uses one credential family and rejects partial canonical credentials", async () => {
+  const saved = saveEnv(["NODE_ENV", "DATABASE_URL", "AUTH_EMAIL_SMTP_HOST", "AUTH_EMAIL_SMTP_USER", "AUTH_EMAIL_SMTP_PASS", "AUTH_EMAIL_FROM", "SMTP_USER", "SMTP_PASS", "RESEND_API_KEY"]);
+  try {
+    process.env.NODE_ENV = "test";
+    process.env.DATABASE_URL = "postgresql://localhost/unused";
+    process.env.AUTH_EMAIL_SMTP_HOST = "smtp.canonical.example";
+    process.env.AUTH_EMAIL_FROM = "team@example.com";
+    delete process.env.AUTH_EMAIL_SMTP_USER; delete process.env.AUTH_EMAIL_SMTP_PASS;
+    delete process.env.RESEND_API_KEY;
+    process.env.SMTP_USER = "unrelated-provider-user"; process.env.SMTP_PASS = "unrelated-provider-password";
+    const { emailSmtpConfig } = await loadEnvModule("one-smtp-family");
+    assert.equal(emailSmtpConfig.host, "smtp.canonical.example");
+    assert.equal(emailSmtpConfig.user, undefined); assert.equal(emailSmtpConfig.pass, undefined);
+    process.env.AUTH_EMAIL_SMTP_USER = "canonical-user";
+    await assert.rejects(loadEnvModule("incomplete-smtp-family"), /must be configured together/);
+    process.env.AUTH_EMAIL_SMTP_PASS = "canonical-password";
+    const complete = await loadEnvModule("complete-smtp-family");
+    assert.equal(complete.emailSmtpConfig.user, "canonical-user");
+    assert.equal(complete.emailSmtpConfig.pass, "canonical-password");
+  } finally { restoreEnv(saved); }
 });

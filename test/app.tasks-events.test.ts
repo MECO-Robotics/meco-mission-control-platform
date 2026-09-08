@@ -61,7 +61,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         summary: "Created from the mobile app's compact task draft.",
         subsystemId: mobileSubsystemCreatedBody.item.id,
         disciplineId: "design",
-        requirementId: null,
         mechanismId: null,
         partInstanceId: null,
         targetMilestoneId: null,
@@ -71,8 +70,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
-        dependencyIds: [],
-        blockers: [],
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 0,
@@ -128,8 +125,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         dueDate: "2026-05-01",
         priority: "medium",
         status: "not-started",
-        dependencyIds: [],
-        blockers: [],
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
@@ -163,8 +158,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         dueDate: "2026-05-08",
         priority: "high",
         status: "not-started",
-        dependencyIds: [],
-        blockers: [],
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
@@ -419,5 +412,74 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         ["outreach-milestone-may-05", createdMilestoneBody.item.id].includes(item.milestoneId),
       ),
     );
+  });
+});
+
+test("task reassign preserves collaborators and removes stale owner assignees", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const taskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Assignment semantics task",
+        summary: "Validates owner assignment list behavior.",
+        subsystemId: "drive",
+        disciplineId: "design",
+        mechanismId: null,
+        partInstanceId: null,
+        targetMilestoneId: null,
+        ownerId: "ava",
+        assigneeIds: ["ava", "priya"],
+        mentorId: "riley",
+        dueDate: "2026-05-06",
+        priority: "medium",
+        status: "not-started",
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 0,
+        actualHours: 0,
+      },
+    });
+
+    assert.equal(taskCreateResponse.statusCode, 201);
+    const taskCreateBody = taskCreateResponse.json() as {
+      item: { id: string; assigneeIds: string[]; ownerId: string | null };
+    };
+    assert.equal(taskCreateBody.item.ownerId, "ava");
+    assert.deepEqual(taskCreateBody.item.assigneeIds, ["ava", "priya"]);
+
+    resetLimits();
+
+    const reassignResponse = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${taskCreateBody.item.id}/reassign`,
+      payload: {
+        ownerId: "lucas",
+      },
+    });
+
+    assert.equal(reassignResponse.statusCode, 200);
+    const reassignBody = reassignResponse.json() as {
+      item: { assigneeIds: string[]; ownerId: string | null };
+    };
+    assert.equal(reassignBody.item.ownerId, "lucas");
+    assert.deepEqual(reassignBody.item.assigneeIds, ["priya", "lucas"]);
+
+    resetLimits();
+
+    const unassignResponse = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${taskCreateBody.item.id}/reassign`,
+      payload: {
+        ownerId: null,
+      },
+    });
+
+    assert.equal(unassignResponse.statusCode, 200);
+    const unassignBody = unassignResponse.json() as {
+      item: { assigneeIds: string[]; ownerId: string | null };
+    };
+    assert.equal(unassignBody.item.ownerId, null);
+    assert.deepEqual(unassignBody.item.assigneeIds, ["priya"]);
   });
 });

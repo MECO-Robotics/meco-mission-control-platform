@@ -1,83 +1,19 @@
-# Shared Skills Workflow
+# Optional shared skills
 
-Mission Control app repos import `skills/` as local ignored files. The shared source of truth is the separate `mission-control-skills` repo, and each app repo hydrates a local copy from that source when needed.
+The [shared skills repository](https://github.com/MECO-Robotics/mission-control-skills) owns agent workflows. Imported `skills/` files are ignored local copies, not application dependencies. No import is required to build, test or contribute.
 
-In this workspace the app repos are `meco-mission-control-web`, `meco-mission-control-platform`, and `meco-mission-control-mobile`. Older shorthand may call them `mission-control-web`, `mission-control-api`, and `mission-control-mobile`.
+From the repository root, explicitly replace the local import with:
 
-## Why Ignored Imports Instead of Submodules
-
-Git submodules embed another repository with separate history and a pinned commit. That adds extra clone, checkout, update, and CI handling. GitHub Actions also needs explicit submodule checkout configuration. For students, mentors, and Codex agents, a script-managed local import is simpler to refresh and keeps app repo diffs focused.
-
-This repo intentionally does not use `.gitmodules`, `git submodule add`, or a nested Git repository under `skills/`.
-
-The app repos track the sync scripts and documentation, not the imported skill files. `skills/` is intentionally ignored by Git.
-
-## Shared Source Layout
-
-The shared `mission-control-skills` repo should contain:
-
-```text
-skills/
-  app-architecture/
-  ui-review/
-  api-review/
-  frc-domain/
-  github-project-management/
-  meco-writing-style/
-```
-
-## Update Shared Source
-
-```bash
-cd mission-control-skills
-git add skills
-git commit -m "Update shared skills"
-git push
-```
-
-## Import Into an App Repo
-
-```bash
-cd meco-mission-control-web
+```sh
 bash scripts/sync-skills.sh
 ```
 
-Do not `git add skills`. The imported directory is intentionally ignored and should stay out of app repo commits.
+PowerShell users can run `./scripts/sync-skills.ps1`. Both entrypoints accept `SKILLS_REPO` (Git URL or local repository path) and `SKILLS_REF` (branch, tag or commit), defaulting to the shared repository and `main`. Select a reviewed commit for reproducibility. Synchronization replaces local edits in `skills/`; make shared changes in the canonical repository through a PR.
 
-## Override the Shared Repo
+Check without changing the import:
 
-The scripts default to:
-
-```text
-https://github.com/MECO-Robotics/mission-control-skills.git
-```
-
-Use `SKILLS_REPO` to point at a fork, local test repo, or alternate remote.
-
-```bash
-SKILLS_REPO=git@github.com:MECO-Robotics/mission-control-skills.git bash scripts/sync-skills.sh
-```
-
-```powershell
-$env:SKILLS_REPO = "git@github.com:MECO-Robotics/mission-control-skills.git"
-.\scripts\sync-skills.ps1
-```
-
-## Import Check
-
-```bash
+```sh
 bash scripts/check-skills-current.sh
 ```
 
-The check delegates to `scripts/sync-skills.sh`, imports the shared skills into ignored local state, and exits nonzero if the import fails.
-CI runs the same import check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
-
-## Review Imported Files Locally
-
-Inspect the local imported files when changing shared skill behavior:
-
-```bash
-find skills -maxdepth 2 -type f | sort
-```
-
-CI runs the same import check on pull requests and pushes. Configure the source URL with a `SKILLS_REPO` repository variable or secret when the default is not correct. If the shared repo is private, configure access with a deploy key or token through GitHub secrets; do not hardcode credentials in scripts or workflow files.
+Use the same `SKILLS_REPO` and `SKILLS_REF` for sync and check. The check fetches into a disposable system temporary directory and compares file contents recursively. Missing imports, differences, unavailable revisions and missing source directories exit nonzero. It never hydrates or repairs the import. CI checks shell syntax without importing skills or requiring shared-repository credentials.

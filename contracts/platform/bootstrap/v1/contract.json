@@ -1,10 +1,841 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://contracts.meco.ai/platform/bootstrap-v1.schema.json",
-  "title": "MissionControlPlatformBootstrapContract",
-  "description": "Canonical payload schema for POST /api/bootstrap in meco-mission-control-platform.",
   "type": "object",
-  "additionalProperties": false,
+  "properties": {
+    "seasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "workstreams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "subsystems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "layoutX": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "layoutY": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "layoutZone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "front",
+                  "rear",
+                  "left",
+                  "right",
+                  "center",
+                  "top",
+                  "unplaced"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "layoutView": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "top"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sortOrder": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport",
+          "id"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "disciplines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "mechanisms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "materials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "partDefinitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "partInstances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cadSource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "step",
+              "onshape"
+            ]
+          },
+          "cadImportSource": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "STEP_UPLOAD",
+              "ONSHAPE_API",
+              "ONSHAPE_BOM_CSV",
+              "MANUAL_BOM_CSV"
+            ]
+          },
+          "cadEditedAfterImport": {
+            "type": "boolean"
+          },
+          "cadSourceLabel": {
+            "type": "string"
+          },
+          "cadUpdatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cadSource",
+          "cadImportSource",
+          "cadEditedAfterImport"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "milestones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "milestoneRequirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "reports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "targetRiskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedRiskSeverity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedRiskStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "partial-mitigation",
+                  "full-mitigation"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string",
+            "enum": [
+              "QA",
+              "MilestoneTest"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "reportType"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "reportFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "qaReports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "targetRiskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedRiskSeverity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedRiskStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "partial-mitigation",
+                  "full-mitigation"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "mentorApproved": {
+            "type": "boolean"
+          },
+          "reviewedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "mentorApproved",
+          "reviewedAt"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "qaRequests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "testResults": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not-started",
+              "in-progress",
+              "waiting-for-qa",
+              "complete"
+            ]
+          },
+          "checklistItems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isBlocked": {
+            "type": "boolean"
+          },
+          "isWaitingOnDependency": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "checklistItems",
+          "blockers",
+          "isBlocked",
+          "isWaitingOnDependency"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "taskDependencies": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependencyType": {
+                "type": "string",
+                "enum": [
+                  "hard",
+                  "soft"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "task"
+              },
+              "requiredState": {
+                "type": "string",
+                "enum": [
+                  "not-started",
+                  "in-progress",
+                  "waiting-for-qa",
+                  "complete"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "refId",
+              "dependencyType",
+              "kind",
+              "requiredState",
+              "id",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependencyType": {
+                "type": "string",
+                "enum": [
+                  "hard",
+                  "soft"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "milestone"
+              },
+              "requiredState": {
+                "type": "string",
+                "enum": [
+                  "not ready",
+                  "blocked",
+                  "qa",
+                  "ready"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "refId",
+              "dependencyType",
+              "kind",
+              "requiredState",
+              "id",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependencyType": {
+                "type": "string",
+                "enum": [
+                  "hard",
+                  "soft"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "part_instance"
+              },
+              "requiredState": {
+                "type": "string",
+                "enum": [
+                  "not ready",
+                  "blocked",
+                  "qa",
+                  "ready"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "refId",
+              "dependencyType",
+              "kind",
+              "requiredState",
+              "id",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "taskBlockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "workLogs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "meetings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "attendanceRecords": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "manufacturingItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "purchaseItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "qaReviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "escalations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "favoriteViews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "designIterations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    }
+  },
   "required": [
     "seasons",
     "projects",
@@ -38,237 +869,1308 @@
     "actions",
     "favoriteViews"
   ],
-  "properties": {
-    "seasons": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "projects": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "workstreams": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "members": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "subsystems": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "disciplines": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "mechanisms": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "materials": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "artifacts": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "partDefinitions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "partInstances": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "milestones": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "milestoneRequirements": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "reports": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "reportFindings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "qaReports": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "qaRequests": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "testResults": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "risks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "tasks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "taskDependencies": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "taskBlockers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "workLogs": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "meetings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "attendanceRecords": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "manufacturingItems": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "purchaseItems": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "qaReviews": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "escalations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "actions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "favoriteViews": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "designIterations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    }
-  },
-  "$comment": "meco-mission-control-platform v1 bootstrap contract. Bump MAJOR on breaking shape changes.",
+  "additionalProperties": false,
+  "$id": "https://contracts.meco.ai/platform/bootstrap-v1.schema.json",
+  "title": "MissionControlPlatformBootstrapContract",
+  "description": "Current bootstrap contract. Task/dependency and QA/layout records are validated; remaining collections retain collection-shape agreement.",
   "x_contract": {
     "contractName": "meco-mission-control-platform-bootstrap",
     "contractVersion": 1,
     "resource": "/api/bootstrap",
-    "migrationPolicy": "Breaking shape changes require a MAJOR version bump and coordinated web/mobile updates."
+    "migrationPolicy": "Prototype contracts are replaced in coordination with both clients; no legacy payload support."
+  },
+  "x_commands": {
+    "task": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workstreamId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workstreamIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 3
+        },
+        "subsystemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subsystemIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "disciplineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mechanismId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mechanismIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "partInstanceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "partInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "artifactId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "targetMilestoneId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assigneeIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mentorId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "dueDate": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "not-started",
+            "in-progress",
+            "waiting-for-qa",
+            "complete"
+          ]
+        },
+        "estimatedHours": {
+          "type": "number",
+          "minimum": 0
+        },
+        "actualHours": {
+          "type": "number",
+          "minimum": 0
+        },
+        "checklistItems": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "linkedManufacturingIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "linkedPurchaseIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "requiresDocumentation": {
+          "default": false,
+          "type": "boolean"
+        },
+        "documentationLinked": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "title",
+        "summary",
+        "disciplineId",
+        "targetMilestoneId",
+        "ownerId",
+        "mentorId",
+        "dueDate",
+        "priority",
+        "status",
+        "estimatedHours",
+        "actualHours"
+      ],
+      "additionalProperties": false
+    },
+    "taskPatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workstreamId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workstreamIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 3
+        },
+        "subsystemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subsystemIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "disciplineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mechanismId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mechanismIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "partInstanceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "partInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "artifactId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "targetMilestoneId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assigneeIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mentorId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "dueDate": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "not-started",
+            "in-progress",
+            "waiting-for-qa",
+            "complete"
+          ]
+        },
+        "estimatedHours": {
+          "type": "number",
+          "minimum": 0
+        },
+        "actualHours": {
+          "type": "number",
+          "minimum": 0
+        },
+        "checklistItems": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "linkedManufacturingIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "linkedPurchaseIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "requiresDocumentation": {
+          "default": false,
+          "type": "boolean"
+        },
+        "documentationLinked": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "subsystem": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "layoutX": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutY": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutZone": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "front",
+                "rear",
+                "left",
+                "right",
+                "center",
+                "top",
+                "unplaced"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutView": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "top"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sortOrder": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cadSource": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "step",
+            "onshape"
+          ]
+        },
+        "cadImportSource": {
+          "type": "string",
+          "enum": [
+            "MANUAL",
+            "STEP_UPLOAD",
+            "ONSHAPE_API",
+            "ONSHAPE_BOM_CSV",
+            "MANUAL_BOM_CSV"
+          ]
+        },
+        "cadEditedAfterImport": {
+          "type": "boolean"
+        },
+        "cadSourceLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cadUpdatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "serialAlias": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{1,8}$"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 3
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "iteration": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "isArchived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "parentSubsystemId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responsibleEngineerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mentorIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "risks": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "responsibleEngineerId"
+      ],
+      "additionalProperties": false
+    },
+    "subsystemPatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "layoutX": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutY": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutZone": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "front",
+                "rear",
+                "left",
+                "right",
+                "center",
+                "top",
+                "unplaced"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layoutView": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "top"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sortOrder": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cadSource": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "step",
+            "onshape"
+          ]
+        },
+        "cadImportSource": {
+          "type": "string",
+          "enum": [
+            "MANUAL",
+            "STEP_UPLOAD",
+            "ONSHAPE_API",
+            "ONSHAPE_BOM_CSV",
+            "MANUAL_BOM_CSV"
+          ]
+        },
+        "cadEditedAfterImport": {
+          "type": "boolean"
+        },
+        "cadSourceLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cadUpdatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "serialAlias": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{1,8}$"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 3
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "iteration": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "isArchived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "parentSubsystemId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responsibleEngineerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mentorIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "risks": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "report": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "targetRiskId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedRiskSeverity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedRiskStatus": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "partial-mitigation",
+                "full-mitigation"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reportType": {
+          "type": "string",
+          "enum": [
+            "QA",
+            "MilestoneTest"
+          ]
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "milestoneId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workstreamId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdByMemberId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "default": "",
+          "type": "string"
+        },
+        "notes": {
+          "default": "",
+          "type": "string"
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "participantIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mentorApproved": {
+          "type": "boolean"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "blocked"
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "reportType",
+        "projectId",
+        "taskId",
+        "milestoneId",
+        "workstreamId",
+        "createdByMemberId",
+        "result",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "qaReport": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "targetRiskId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedRiskSeverity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedRiskStatus": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "partial-mitigation",
+                "full-mitigation"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "participantIds": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "minor-fix",
+            "iteration-worthy"
+          ]
+        },
+        "mentorApproved": {
+          "default": false,
+          "type": "boolean"
+        },
+        "notes": {
+          "default": "",
+          "type": "string"
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        }
+      },
+      "required": [
+        "taskId",
+        "participantIds",
+        "result",
+        "reviewedAt"
+      ],
+      "additionalProperties": false
+    },
+    "taskDependency": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependencyType": {
+              "type": "string",
+              "enum": [
+                "hard",
+                "soft"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "task"
+            },
+            "requiredState": {
+              "type": "string",
+              "enum": [
+                "not-started",
+                "in-progress",
+                "waiting-for-qa",
+                "complete"
+              ]
+            }
+          },
+          "required": [
+            "taskId",
+            "refId",
+            "dependencyType",
+            "kind",
+            "requiredState"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependencyType": {
+              "type": "string",
+              "enum": [
+                "hard",
+                "soft"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "milestone"
+            },
+            "requiredState": {
+              "type": "string",
+              "enum": [
+                "not ready",
+                "blocked",
+                "qa",
+                "ready"
+              ]
+            }
+          },
+          "required": [
+            "taskId",
+            "refId",
+            "dependencyType",
+            "kind",
+            "requiredState"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependencyType": {
+              "type": "string",
+              "enum": [
+                "hard",
+                "soft"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "part_instance"
+            },
+            "requiredState": {
+              "type": "string",
+              "enum": [
+                "not ready",
+                "blocked",
+                "qa",
+                "ready"
+              ]
+            }
+          },
+          "required": [
+            "taskId",
+            "refId",
+            "dependencyType",
+            "kind",
+            "requiredState"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "taskBlocker": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "issueType": {
+          "type": "string",
+          "enum": [
+            "external",
+            "lost-part",
+            "broken-part",
+            "lost-tool",
+            "broken-tool",
+            "design-issue",
+            "shipping-delay",
+            "manufacturing-unavailable",
+            "qa-failed",
+            "other"
+          ]
+        },
+        "blockedTaskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blockerType": {
+          "type": "string",
+          "enum": [
+            "task",
+            "milestone",
+            "workstream",
+            "mechanism",
+            "part_instance",
+            "artifact_instance",
+            "external"
+          ]
+        },
+        "blockerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "status": {
+          "default": "open",
+          "type": "string",
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        },
+        "createdByMemberId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "blockedTaskId",
+        "blockerType",
+        "blockerId",
+        "description",
+        "severity"
+      ],
+      "additionalProperties": false
+    }
   }
 }

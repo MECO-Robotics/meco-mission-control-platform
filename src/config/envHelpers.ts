@@ -8,16 +8,6 @@ export function pickFirstString(...candidates: Array<string | undefined>) {
   return undefined;
 }
 
-export function pickFirstNumber(...candidates: Array<number | undefined>) {
-  for (const candidate of candidates) {
-    if (typeof candidate === "number" && Number.isFinite(candidate)) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
 export function parseGoogleClientIds(value: string | undefined) {
   if (!value) {
     return [];

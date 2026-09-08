@@ -11,6 +11,7 @@ import type {
   OnshapeDocumentRef,
   OnshapeOAuthTokenSet,
   OnshapeReference,
+  OnshapeSyncJob,
   OnshapeUrlParseResult,
   SyncLevel,
 } from "./onshapeTypes";
@@ -18,6 +19,7 @@ import type {
 export interface OnshapeRuntimeState {
   documentRefs: OnshapeDocumentRef[];
   importRuns: CadImportRun[];
+  syncJobs: OnshapeSyncJob[];
   requestLogs: OnshapeApiRequestLog[];
   cacheEntries: OnshapeApiCacheEntry[];
   snapshots: CadSnapshot[];
@@ -52,6 +54,15 @@ export interface OnshapeRuntimeStore {
   updateImportRun(id: string, patch: Partial<Omit<CadImportRun, "id" | "createdAt">>): CadImportRun | null;
   findImportRun(id: string): CadImportRun | null;
   listImportRuns(documentRefId?: string): CadImportRun[];
+  createSyncJob(input: {
+    importRunId: string;
+    documentRef: OnshapeDocumentRef;
+    actor?: string | null;
+  }): OnshapeSyncJob;
+  updateSyncJob(id: string, patch: Partial<Omit<OnshapeSyncJob, "id" | "importRunId" | "onshapeDocumentRefId" | "sourceReferenceJson" | "createdAt">>): OnshapeSyncJob | null;
+  findSyncJob(id: string): OnshapeSyncJob | null;
+  findSyncJobByImportRunId(importRunId: string): OnshapeSyncJob | null;
+  listSyncJobs(filter?: { documentRefId?: string; status?: OnshapeSyncJob["status"] }): OnshapeSyncJob[];
   appendRequestLog(input: Omit<OnshapeApiRequestLog, "id">): OnshapeApiRequestLog;
   listRequestLogs(importRunId?: string): OnshapeApiRequestLog[];
   findCacheEntry(cacheKey: string): OnshapeApiCacheEntry | null;
@@ -121,6 +132,7 @@ export interface OnshapeRuntimeStore {
   createOAuthState(input: { sessionKey: string }): { state: string; createdAt: string; sessionKey: string };
   consumeOAuthState(state: string, input: { sessionKey: string }): boolean;
   getOAuthTokenSet(): OnshapeOAuthTokenSet | null;
+  refreshOAuthTokenSet(refresh: () => Promise<OnshapeOAuthTokenSet>): Promise<OnshapeOAuthTokenSet>;
   setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null): OnshapeOAuthTokenSet | null;
   reset(): void;
 }
