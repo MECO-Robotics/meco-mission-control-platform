@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 
-import { snapshot as initialSnapshot } from "./mockData";
+import { createTutorialSnapshot } from "./tutorialSnapshot";
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import type {
   AuditAction,
@@ -627,7 +627,7 @@ const persistedProductionSnapshot = process.env.NODE_ENV === "production"
   ? loadPlatformSnapshotFile(platformSnapshotPath)
   : null;
 const globalSnapshotState: SnapshotState = {
-  current: cloneSnapshot(persistedProductionSnapshot ?? initialSnapshot),
+  current: cloneSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot()),
   interactive: null,
 };
 const tutorialSnapshotStates = new Map<string, SnapshotState>();
@@ -1728,7 +1728,7 @@ export function resetStore() {
     return;
   }
 
-  globalSnapshotState.current = cloneSnapshot(initialSnapshot);
+  globalSnapshotState.current = cloneSnapshot(createTutorialSnapshot());
   globalSnapshotState.interactive = null;
   tutorialSnapshotStates.clear();
 }
@@ -1737,22 +1737,22 @@ export function resetTutorialBaseline(userKey?: string) {
   if (userKey) {
     const state = tutorialSnapshotStates.get(userKey);
     if (!state) {
-      return buildTutorialBaselineState(initialSnapshot);
+      return buildTutorialBaselineState(createTutorialSnapshot());
     }
 
-    state.current = cloneSnapshot(initialSnapshot);
+    state.current = cloneSnapshot(createTutorialSnapshot());
     return buildTutorialBaselineState(state.current);
   }
 
   const tutorialSnapshot = getInteractiveTutorialSnapshot();
-  replaceCurrentSnapshot(cloneSnapshot(initialSnapshot));
+  replaceCurrentSnapshot(cloneSnapshot(createTutorialSnapshot()));
   setInteractiveTutorialSnapshot(tutorialSnapshot);
   return getTutorialBaselineState();
 }
 
 export function startInteractiveTutorialSession(userKey?: string) {
   if (userKey) {
-    const current = cloneSnapshot(initialSnapshot);
+    const current = cloneSnapshot(createTutorialSnapshot());
     tutorialSnapshotStates.set(userKey, {
       current,
       interactive: cloneSnapshot(current),
@@ -1761,6 +1761,7 @@ export function startInteractiveTutorialSession(userKey?: string) {
   }
 
   setInteractiveTutorialSnapshot(cloneSnapshot(activeSnapshotState().current));
+  replaceCurrentSnapshot(cloneSnapshot(createTutorialSnapshot()));
 }
 
 export function resetInteractiveTutorialSession(userKey?: string) {
