@@ -431,16 +431,8 @@ test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("complete"), "Complete");
 });
 
-test("deploy workflow runs non-destructive schema sync before milestone normalization", () => {
+test("production compose configures the database connection and private health-checked API", () => {
   const composeFile = readRepoFile("docker-compose.prod.yml");
-  const deployWorkflow = readRepoFile(".github/workflows/deploy-vps.yml");
-
-  assertOrdered(
-    deployWorkflow,
-    "docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy",
-    "npm run prisma:normalize-event-types",
-    "deploy workflow",
-  );
   assertIncludesAll(
     composeFile,
     [
@@ -452,7 +444,6 @@ test("deploy workflow runs non-destructive schema sync before milestone normaliz
     "production compose file",
   );
   assert.doesNotMatch(composeFile, /prisma:deploy:accept-data-loss/);
-  assert.doesNotMatch(composeFile, /prisma:normalize-event-types/);
 });
 
 test("deploy workflow builds the new application image before schema updates", () => {

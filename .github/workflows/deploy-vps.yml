@@ -343,7 +343,6 @@ jobs:
           docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres
           docker compose --env-file .env.production -f docker-compose.prod.yml build app
           docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy
-          docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:normalize-event-types
           docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
           docker image prune -f
           for attempt in $(seq 1 30); do

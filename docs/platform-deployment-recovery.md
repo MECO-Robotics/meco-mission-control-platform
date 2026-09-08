@@ -123,12 +123,11 @@ The workflow deploy path is:
     docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres
     docker compose --env-file .env.production -f docker-compose.prod.yml build app
     docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:deploy
-    docker compose --env-file .env.production -f docker-compose.prod.yml run --rm app npm run prisma:normalize-event-types
     docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
     ```
 
     Building `app` before `prisma:deploy` ensures schema updates run with the
-    same revision that will be started after normalization.
+    same revision that will be started after schema synchronization.
 
 15. Run `docker image prune -f`.
 16. Poll `http://127.0.0.1:8080/health` for up to 30 attempts.
@@ -142,12 +141,11 @@ The app port is published on `127.0.0.1` only. A TLS reverse proxy and firewall
 are mandatory before production traffic is enabled; do not expose port 8080
 directly to the public network.
 
-The deploy workflow starts PostgreSQL, applies compatible Prisma state, and
-normalizes event types before starting the application:
+The deploy workflow starts PostgreSQL and applies the session/CAD Prisma schema
+before starting the application:
 
 ```bash
 npm run prisma:deploy
-npm run prisma:normalize-event-types
 ```
 
 Ordinary application startup runs only `npm run start`; it does not perform a
@@ -242,8 +240,8 @@ Disposable restore expectation:
      < ./tmp/restore-drill/pm-server-db-YYYYMMDDTHHMMSSZ.sql
    ```
 
-5. Verify table counts against real Prisma table names, for example `Member`,
-   `Task`, `Subsystem`, and `CadImportRun`.
+5. Verify table counts against real Prisma table names, for example `WebSession`,
+   `MobileDeviceSession`, `CadSnapshot`, and `CadImportRun`.
 6. Clean up the disposable Compose project and volume after the drill.
 
 Production incident restore outline:

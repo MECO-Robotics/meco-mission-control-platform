@@ -35,23 +35,33 @@ When adding a route:
    auth restrictions.
 6. Update `docs/api-reference.md` when the public route surface changes.
 
-## Prisma Migration Flow
+## Storage model ownership
 
-Prisma schema lives in `prisma/schema.prisma`. The current production-oriented
-workflow uses `prisma db push` scripts rather than checked-in SQL migration
-folders.
+Core workspace entities (tasks, members, attendance, manufacturing, purchases,
+reports and risks) are defined by `src/domain/types.ts` and written through
+`src/data/store.ts`. The production snapshot file is their persistence authority.
+Prisma owns web/mobile sessions and the CAD database graph only. Do not add a
+second unused SQL representation of a snapshot-owned entity.
 
-Use this flow for data-model changes:
+For session/CAD schema changes, update `prisma/schema.prisma`, regenerate the
+client and validate the affected adapters. `npm run prisma:deploy` is the explicit
+pre-start schema synchronization step; ordinary restarts never push schemas.
 
-1. Update `prisma/schema.prisma`.
-2. Run `npm run prisma:generate` if generated client types are needed locally.
-3. Use `npm run prisma:deploy` for compatible schema pushes.
-4. Never add `--accept-data-loss` to routine deployment or application startup. A destructive schema change requires a separately reviewed maintenance procedure and a verified restore point.
-5. Document backfill, deploy order, rollback, and validation notes in the PR.
-6. Add or update tests that prove runtime and Prisma-backed paths stay aligned.
+### Removing the obsolete prototype SQL tables
 
-Do not rely on runtime stores as a substitute for persisted behavior when the
-feature is expected to survive restart or production deploys.
+The unused core SQL models and orphan manual CAD DDL have been removed. A fresh
+database now bootstraps from the single Prisma schema. On an existing disposable
+development database, run:
+
+```sh
+npm run prisma:generate
+npm run prisma:deploy -- --accept-data-loss
+```
+
+This deliberately drops obsolete core SQL tables and enums; it does not import
+or preserve their records. Session/CAD model definitions and the core snapshot
+file are unchanged. The routine deployment command still stops on destructive
+changes. Establish recovery requirements before any real deployment.
 
 ## Test And Verification Commands
 
