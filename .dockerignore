@@ -7,3 +7,6 @@ dist
 .env.production
 npm-debug.log
 coverage
+
+.codex/
+.codex_*.json
