@@ -6,9 +6,9 @@ import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowA
 
 test("manufacturing review is protected while internal users can make adjacent progress", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const studentHeaders = createWorkflowAuthHeaders("student");
-    const leadHeaders = createWorkflowAuthHeaders("lead");
-    const mentorHeaders = createWorkflowAuthHeaders("mentor");
+    const studentHeaders = await createWorkflowAuthHeaders("student");
+    const leadHeaders = await createWorkflowAuthHeaders("lead");
+    const mentorHeaders = await createWorkflowAuthHeaders("mentor");
 
     const pendingEdit = await app.inject({ method: "PATCH", url: "/api/manufacturing/frame-weldment", headers: studentHeaders, payload: { quantity: 2 } });
     assert.equal(pendingEdit.statusCode, 200);

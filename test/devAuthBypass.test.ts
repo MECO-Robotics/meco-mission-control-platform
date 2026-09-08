@@ -1,3 +1,6 @@
+import { testMobileSessionStore } from "./helpers/sessionAuth";
+import { MemoryWebSessionStore, readWebSessionCookie } from "./helpers/webSessionMemoryStore";
+import { issueTestMobileToken } from "./helpers/sessionAuth";
 import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -8,14 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
-
 test("buildApp exposes a development-only sign-in bypass", async () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
     "CORS_ORIGIN",
-    "AUTH_JWT_SECRET",
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
@@ -33,7 +34,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
     process.env.CORS_ORIGIN = "http://localhost:5173";
-    process.env.AUTH_JWT_SECRET = "replace-with-a-long-random-secret-123456";
     process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
@@ -47,8 +47,8 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     process.env.AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS = "60";
 
     const { buildApp } = await import("../src/app");
-    const { signSessionToken } = await import("../src/auth/authService");
-    const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json") });
+
+    const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json"), mobileSessionStore: testMobileSessionStore, webSessionStore: new MemoryWebSessionStore() });
 
     try {
       resetRequestLimits();
@@ -71,12 +71,12 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       const bypassResponse = await app.inject({
         method: "POST",
-        url: "/api/auth/dev-bypass",
+        url: "/api/auth/web/dev-bypass",
       });
 
       assert.equal(bypassResponse.statusCode, 200);
       const bypassBody = bypassResponse.json() as {
-        token: string;
+        csrfToken: string;
         user: {
           accountId: string;
           authProvider: string;
@@ -97,13 +97,13 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       assert.equal(bypassBody.user.picture, null);
       assert.equal(bypassBody.user.role, "student");
       assert.deepEqual(bypassBody.user.taskSubteamIds, ["scouting"]);
-      assert.ok(bypassBody.token.length > 0);
+      assert.ok(bypassBody.csrfToken.length > 0);
 
       resetRequestLimits();
 
       const roleBypassResponse = await app.inject({
         method: "POST",
-        url: "/api/auth/dev-bypass",
+        url: "/api/auth/web/dev-bypass",
         payload: {
           role: "mentor",
         },
@@ -111,7 +111,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       assert.equal(roleBypassResponse.statusCode, 200);
       const roleBypassBody = roleBypassResponse.json() as {
-        token: string;
+        csrfToken: string;
         user: {
           accountId: string;
           authProvider: string;
@@ -131,7 +131,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       assert.equal(roleBypassBody.user.picture, null);
       assert.equal(roleBypassBody.user.role, "mentor");
       assert.deepEqual(roleBypassBody.user.taskSubteamIds, []);
-      assert.ok(roleBypassBody.token.length > 0);
+      assert.ok(roleBypassBody.csrfToken.length > 0);
 
       resetRequestLimits();
 
@@ -139,7 +139,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/auth/me",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -166,7 +168,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/users/me/preferences",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -182,7 +186,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "PATCH",
         url: "/api/users/me/preferences",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           themeMode: "dark",
@@ -201,7 +207,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/auth/me",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -219,7 +227,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "PATCH",
         url: "/api/users/me/preferences",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           taskSubteamIds: ["programming"],
@@ -239,7 +249,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/users/me/preferences",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -255,7 +267,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/auth/me",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -273,7 +287,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "PATCH",
         url: "/api/users/me/preferences",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           taskSubteamIds: [],
@@ -293,7 +309,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/auth/me",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -311,7 +329,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "GET",
         url: "/api/dashboard",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -323,7 +343,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: "/api/tasks",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           title: "Student-created task",
@@ -338,8 +360,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           dueDate: "2026-05-06",
           priority: "medium",
           status: "not-started",
-          dependencyIds: [],
-          blockers: [],
           linkedManufacturingIds: [],
           linkedPurchaseIds: [],
           estimatedHours: 0,
@@ -355,7 +375,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "PATCH",
         url: "/api/tasks/swerve-sensor-bundle",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           title: "Student-edited task",
@@ -370,7 +392,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "DELETE",
         url: "/api/tasks/swerve-sensor-bundle",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -378,8 +402,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
       resetRequestLimits();
 
-      const { signSessionToken } = await import("../src/auth/authService");
-      const mentorToken = signSessionToken({
+      const mentorToken = await issueTestMobileToken({
         accountId: "local-dev-mentor",
         authProvider: "email",
         email: "mentor@mecorobotics.org",
@@ -403,8 +426,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
-        dependencyIds: [],
-        blockers: [],
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 0,
@@ -429,7 +450,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: `/api/tasks/${claimableTask.item.id}/claim`,
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {},
       });
@@ -443,7 +466,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       });
       assert.equal(localDevStudent.id, "local-dev-student");
 
-      const spoofedNameToken = signSessionToken({
+      const spoofedNameToken = await issueTestMobileToken({
         accountId: "not-local-dev-student",
         authProvider: "email",
         email: "display-name-spoof@mecorobotics.org",
@@ -473,7 +496,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: `/api/tasks/${claimableTask.item.id}/claim`,
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {},
       });
@@ -490,7 +515,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: `/api/tasks/${claimableTask.item.id}/release`,
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -519,7 +546,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: `/api/tasks/${startClaimTask.item.id}/claim`,
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           start: true,
@@ -555,7 +584,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: `/api/tasks/${startClaimTask.item.id}/release`,
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -567,7 +598,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: `/api/tasks/${startClaimTask.item.id}/claim`,
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {},
       });
@@ -603,7 +636,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: "/api/qa-reports",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           taskId: "swerve-sensor-bundle",
@@ -623,7 +658,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: "/api/members",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           email: "new.student@mecorobotics.org",
@@ -640,7 +677,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "PATCH",
         url: "/api/members/ava",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           name: "Student Edited Ava",
@@ -655,7 +694,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "DELETE",
         url: "/api/members/ava",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 
@@ -667,7 +708,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "POST",
         url: "/api/meetings",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           title: "Student meeting",
@@ -684,7 +727,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "PATCH",
         url: "/api/meetings/design-review",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
         payload: {
           title: "Student edited meeting",
@@ -699,7 +744,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         method: "DELETE",
         url: "/api/meetings/design-review",
         headers: {
-          authorization: `Bearer ${bypassBody.token}`,
+          cookie: readWebSessionCookie(bypassResponse.headers["set-cookie"]),
+          "x-csrf-token": bypassBody.csrfToken,
+          origin: "http://localhost:5173",
         },
       });
 

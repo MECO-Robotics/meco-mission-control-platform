@@ -1,3 +1,4 @@
+import { issueTestMobileToken } from "./helpers/sessionAuth";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -5,8 +6,8 @@ import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("tutorial mutations remain isolated to the authenticated user", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const { signSessionToken } = await import("../src/auth/authService");
-    const tokenFor = (accountId: string, email: string) => signSessionToken({
+
+    const tokenFor = async (accountId: string, email: string) => await issueTestMobileToken({
       accountId,
       authProvider: "email",
       email,
@@ -16,8 +17,8 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
       role: "mentor",
       taskSubteamIds: [],
     });
-    const firstHeaders = { authorization: `Bearer ${tokenFor("jordan", "jordan.lee@mecorobotics.org")}` };
-    const secondHeaders = { authorization: `Bearer ${tokenFor("riley", "riley.kim@mecorobotics.org")}` };
+    const firstHeaders = { authorization: `Bearer ${await tokenFor("jordan", "jordan.lee@mecorobotics.org")}` };
+    const secondHeaders = { authorization: `Bearer ${await tokenFor("riley", "riley.kim@mecorobotics.org")}` };
 
     const start = await app.inject({
       method: "POST",
@@ -117,7 +118,6 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     ));
   }, {
     env: {
-      AUTH_JWT_SECRET: "test-secret-that-is-long-enough-for-auth",
       AUTH_EMAIL_SMTP_HOST: "smtp.example.test",
       AUTH_EMAIL_FROM: "noreply@mecorobotics.org",
     },

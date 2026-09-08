@@ -54,8 +54,7 @@ export interface TaskInput {
   status: TaskStatus;
   estimatedHours: number;
   actualHours: number;
-  blockers: string[];
-  dependencyIds: string[];
+  checklistItems?: string[];
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];
   requiresDocumentation: boolean;
@@ -183,6 +182,11 @@ export interface WorkstreamInput {
 }
 
 export interface SubsystemInput extends PmCadProvenanceInput {
+  layoutX?: number | null;
+  layoutY?: number | null;
+  layoutZone?: "front" | "rear" | "left" | "right" | "center" | "top" | "unplaced" | null;
+  layoutView?: "top" | null;
+  sortOrder?: number | null;
   projectId: string;
   name: string;
   serialAlias?: string;
@@ -247,6 +251,9 @@ export interface MilestoneInput {
 }
 
 export interface QaReportInput {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   taskId: string;
   participantIds: string[];
   result: QaResult;
@@ -272,6 +279,9 @@ export interface TestResultInput {
 }
 
 export interface ReportInput {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   reportType: ReportType;
   projectId: string;
   taskId: string | null;
@@ -308,7 +318,7 @@ export interface TaskDependencyInput {
   taskId: string;
   kind: "task" | "milestone" | "part_instance";
   refId: string;
-  requiredState?: string;
+  requiredState: string;
   dependencyType: TaskDependencyType;
 }
 

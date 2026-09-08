@@ -1,3 +1,4 @@
+import { emailSignInVerifySchema } from "./emailAuthSchemas";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -15,7 +16,6 @@ import { webSessionCookieOptions } from "../auth/webSessionPlugin";
 import { authConfig, env } from "../config/env";
 import {
   devBypassSchema,
-  emailSignInVerifySchema,
 } from "./routeSchemas";
 
 type RequestGuard = (request: FastifyRequest, reply: FastifyReply) => boolean;

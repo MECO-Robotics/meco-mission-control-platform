@@ -2,12 +2,10 @@ import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-
 test("external roster role whitelists non-team email for email sign-in", async () => {
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
-    "AUTH_JWT_SECRET",
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
@@ -17,7 +15,6 @@ test("external roster role whitelists non-team email for email sign-in", async (
     process.env.NODE_ENV = "development";
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
-    process.env.AUTH_JWT_SECRET = "replace-with-a-long-random-secret-123456";
     delete process.env.GOOGLE_CLIENT_ID;
     process.env.AUTH_EMAIL_SMTP_HOST = "127.0.0.1";
     process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
@@ -26,9 +23,8 @@ test("external roster role whitelists non-team email for email sign-in", async (
     const {
       AuthError,
       requestEmailSignInCode,
-      signSessionToken,
       verifyEmailSignInCode,
-      verifySessionToken,
+      refreshSessionUser,
     } = await import("../src/auth/authService");
 
     resetStore();
@@ -75,7 +71,7 @@ test("external roster role whitelists non-team email for email sign-in", async (
       assert.notEqual(error.statusCode, 403);
     }
 
-    const mentorToken = signSessionToken({
+    const mentorUser: import("../src/auth/authService").SessionUser = {
       accountId: "mentor@sponsor.example",
       authProvider: "email",
       email: "mentor@sponsor.example",
@@ -84,8 +80,8 @@ test("external roster role whitelists non-team email for email sign-in", async (
       picture: null,
       role: "student",
       taskSubteamIds: [],
-    });
-    assert.equal(verifySessionToken(mentorToken).role, "mentor");
+    };
+    assert.equal(refreshSessionUser(mentorUser).role, "mentor");
 
     assert.throws(
       () => verifyEmailSignInCode("VIEWER@sponsor.example", "123456"),

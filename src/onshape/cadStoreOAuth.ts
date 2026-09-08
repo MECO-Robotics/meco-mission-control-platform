@@ -12,7 +12,23 @@ function pruneExpiredStates(state: OnshapeRuntimeState) {
 }
 
 export function buildCadOAuthStore(state: OnshapeRuntimeState) {
+  let generation = 0;
+  let refreshInFlight: Promise<OnshapeOAuthTokenSet> | null = null;
   return {
+    refreshOAuthTokenSet(refresh: () => Promise<OnshapeOAuthTokenSet>) {
+      if (refreshInFlight) return refreshInFlight;
+      const startedGeneration = generation;
+      const pending = Promise.resolve().then(refresh).then((tokenSet) => {
+        if (generation !== startedGeneration) throw new Error("Onshape credentials changed while refreshing.");
+        state.oauthTokenSet = clone(tokenSet);
+        generation += 1;
+        return clone(tokenSet);
+      }).finally(() => {
+        if (refreshInFlight === pending) refreshInFlight = null;
+      });
+      refreshInFlight = pending;
+      return pending;
+    },
     createOAuthState(input: { sessionKey: string }) {
       pruneExpiredStates(state);
       const item = { state: randomUUID(), createdAt: nowIso(), sessionKey: input.sessionKey };
@@ -34,6 +50,8 @@ export function buildCadOAuthStore(state: OnshapeRuntimeState) {
       return state.oauthTokenSet ? clone(state.oauthTokenSet) : null;
     },
     setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null) {
+      generation += 1;
+      refreshInFlight = null;
       state.oauthTokenSet = tokenSet ? clone(tokenSet) : null;
       return state.oauthTokenSet ? clone(state.oauthTokenSet) : null;
     },

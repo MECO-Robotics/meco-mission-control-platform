@@ -193,8 +193,7 @@ export function registerOnshapeOAuthRoutes(app: FastifyInstance, requireApiSessi
       return reply.code(409).send({ message: "No Onshape OAuth refresh token is available." });
     }
 
-    const tokenSet = await refreshOnshapeOAuthToken({ config, refreshToken });
-    store.setOAuthTokenSet(tokenSet);
+    const tokenSet = await store.refreshOAuthTokenSet(() => refreshOnshapeOAuthToken({ config, refreshToken }));
     return { item: { connected: true, tokenExpiresAt: tokenSet.expiresAt } };
   });
 }

@@ -9,7 +9,6 @@ import {
   runStepImport,
   stepParserUsedPlaceholder,
 } from "../cadImportService";
-import { getCadStore } from "../cadStoreFactory";
 import { createStepParserClient } from "../stepParserClient";
 import { readStepImportPayload } from "./cadStepImportPayload";
 import type { RequireApiSession } from "./cadRouteTypes";
@@ -81,7 +80,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
         throw new CadImportError(message, 500);
       }
       const result = await runStepImport({
-        store: getCadStore(),
+        store: app.cadStore,
         parserClient: createStepParserClient({ mode: parserMode }),
         parserMode,
         parseInWorker: true,

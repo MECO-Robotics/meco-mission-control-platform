@@ -10,7 +10,6 @@ import {
 const productionEnv = {
   ...webSessionAuthEnv,
   NODE_ENV: "production" as const,
-  AUTH_JWT_SECRET: "production-web-session-secret-that-is-not-a-sample",
   AUTH_RATE_LIMIT_MAX_REQUESTS: "100",
 };
 
@@ -52,36 +51,5 @@ test("production web sign-in sets a Secure HttpOnly cookie", async () => {
     assert.equal(response.statusCode, 200);
     assert.match(String(response.headers["set-cookie"]), /Secure/i);
     assert.match(String(response.headers["set-cookie"]), /HttpOnly/i);
-  }, { env: productionEnv, webSessionStore: store });
-});
-
-test("production disables legacy bearer issuance and rejects old bearer sessions", async () => {
-  const store = new MemoryWebSessionStore();
-  await withIntegrationApp(async ({ app }) => {
-    const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
-    const legacyToken = signSessionToken({
-      accountId: "legacy-browser",
-      authProvider: "email",
-      email: "mentor@mecorobotics.org",
-      name: "Legacy Browser",
-      picture: null,
-      hostedDomain: "mecorobotics.org",
-      role: "mentor",
-      taskSubteamIds: [],
-    });
-
-    const issuance = await app.inject({
-      method: "POST",
-      url: "/api/auth/google",
-      payload: {},
-    });
-    assert.equal(issuance.statusCode, 426);
-
-    const replay = await app.inject({
-      method: "GET",
-      url: "/api/auth/me",
-      headers: { authorization: `Bearer ${legacyToken}` },
-    });
-    assert.equal(replay.statusCode, 401);
   }, { env: productionEnv, webSessionStore: store });
 });

@@ -18,7 +18,6 @@ import type {
   TestFinding,
   TestResult,
   Task,
-  TaskDependency,
 } from "../../domain/types";
 import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
@@ -32,29 +31,6 @@ export interface BootstrapSelection {
 
 export interface BootstrapResponseOptions {
   sanitizeEscalations?: boolean;
-}
-
-export interface BootstrapTaskDependencyRecord {
-  id: string;
-  taskId: string;
-  kind: TaskDependency["kind"];
-  refId: string;
-  requiredState?: string;
-  dependencyType: TaskDependency["dependencyType"];
-  createdAt: string;
-}
-
-export interface BootstrapTaskBlockerRecord {
-  id: string;
-  blockedTaskId: string;
-  blockerType: "external" | "internal";
-  blockerId: string | null;
-  description: string;
-  severity: "critical" | "high" | "medium" | "low";
-  status: "open" | "resolved";
-  createdByMemberId: string | null;
-  createdAt: string;
-  resolvedAt: string | null;
 }
 
 function readScopedId(value: unknown) {
@@ -71,57 +47,6 @@ function isPartDefinitionActiveInSeason(
 ) {
   return uniqueIds([...(partDefinition.activeSeasonIds ?? []), partDefinition.seasonId]).includes(
     seasonId,
-  );
-}
-
-function buildTaskDependencyRecords(tasks: Task[]) {
-  return tasks.flatMap<BootstrapTaskDependencyRecord>((task) =>
-    uniqueIds(task.dependencyIds).map((refId, dependencyIndex) => ({
-      id: `${task.id}:dependency:${dependencyIndex + 1}`,
-      taskId: task.id,
-      kind: "task",
-      refId,
-      requiredState: "complete",
-      dependencyType: "hard",
-      createdAt: task.startDate,
-    })),
-  );
-}
-
-function normalizeTaskDependencyRecord(
-  dependency: Partial<TaskDependency> & {
-    upstreamTaskId?: string;
-    downstreamTaskId?: string;
-    dependencyType?: TaskDependency["dependencyType"] | "blocks" | "finish_to_start";
-  },
-): BootstrapTaskDependencyRecord {
-  const kind = dependency.kind ?? "task";
-
-  return {
-    id: dependency.id ?? "",
-    taskId: dependency.taskId ?? dependency.downstreamTaskId ?? "",
-    kind,
-    refId: dependency.refId ?? dependency.upstreamTaskId ?? "",
-    requiredState: dependency.requiredState ?? (kind === "part_instance" ? "ready" : "complete"),
-    dependencyType: dependency.dependencyType === "soft" ? "soft" : "hard",
-    createdAt: dependency.createdAt ?? new Date().toISOString(),
-  };
-}
-
-function buildTaskBlockerRecords(tasks: Task[]) {
-  return tasks.flatMap<BootstrapTaskBlockerRecord>((task) =>
-    task.blockers.map((description, blockerIndex) => ({
-      id: `${task.id}:blocker:${blockerIndex + 1}`,
-      blockedTaskId: task.id,
-      blockerType: "external",
-      blockerId: null,
-      description,
-      severity: "medium",
-      status: "open",
-      createdByMemberId: null,
-      createdAt: task.startDate,
-      resolvedAt: null,
-    })),
   );
 }
 
@@ -414,58 +339,12 @@ export function buildBootstrapResponse(
 
     return true;
   });
-  const scopedExplicitTaskDependencies = snapshot.taskDependencies
-    .map((dependency) => normalizeTaskDependencyRecord(dependency as Partial<TaskDependency>))
-    .filter((dependency) => {
-      if (!scopedTaskIds.has(dependency.taskId)) {
-        return false;
-      }
-
-      if (dependency.kind === "task") {
-        return scopedTaskIds.has(dependency.refId);
-      }
-
-      if (dependency.kind === "milestone") {
-        return scopedMilestoneIds.has(dependency.refId);
-      }
-
-      if (dependency.kind === "part_instance") {
-        return scopedPartInstanceIds.has(dependency.refId);
-      }
-
-      return false;
-    });
-  const explicitTaskDependencyKeys = new Set(
-    scopedExplicitTaskDependencies.map(
-      (dependency) => `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`,
-    ),
+  const scopedTaskDependencies = snapshot.taskDependencies.filter((dependency) =>
+    scopedTaskIds.has(dependency.taskId),
   );
-  const scopedTaskDependencies = [
-    ...scopedExplicitTaskDependencies,
-    ...buildTaskDependencyRecords(snapshot.tasks).filter(
-      (dependency) =>
-        scopedTaskIds.has(dependency.taskId) &&
-        scopedTaskIds.has(dependency.refId) &&
-        !explicitTaskDependencyKeys.has(
-          `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`,
-        ),
-    ),
-  ];
-  const scopedExplicitTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
+  const scopedTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
     scopedTaskIds.has(blocker.blockedTaskId),
   );
-  const explicitTaskBlockerKeys = new Set(
-    scopedExplicitTaskBlockers.map(
-      (blocker) => `${blocker.blockedTaskId}:${blocker.description}`,
-    ),
-  );
-  const scopedTaskBlockers = [
-    ...scopedExplicitTaskBlockers,
-    ...buildTaskBlockerRecords(scopedTasks).filter(
-      (blocker) =>
-        !explicitTaskBlockerKeys.has(`${blocker.blockedTaskId}:${blocker.description}`),
-    ),
-  ];
   const scopedSnapshot = {
     ...snapshot,
     tasks: scopedTasks,

@@ -1,3 +1,4 @@
+import { issueTestMobileToken } from "./helpers/sessionAuth";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -38,8 +39,8 @@ test("Onshape import audit actor is derived from the authenticated session", asy
 
   try {
     await withIntegrationApp(async ({ app, resetLimits }) => {
-      const { signSessionToken } = await import("../src/auth/authService");
-      const token = signSessionToken({
+
+      const token = await issueTestMobileToken({
         accountId: "jordan",
         authProvider: "email",
         email: "jordan.lee@mecorobotics.org",
@@ -85,7 +86,6 @@ test("Onshape import audit actor is derived from the authenticated session", asy
       assert.equal(auditAction.detailsJson?.actor, "jordan");
     }, {
       env: {
-        AUTH_JWT_SECRET: "test-secret-that-is-long-enough-for-auth",
         AUTH_EMAIL_SMTP_HOST: "smtp.example.test",
         AUTH_EMAIL_FROM: "noreply@mecorobotics.org",
       },

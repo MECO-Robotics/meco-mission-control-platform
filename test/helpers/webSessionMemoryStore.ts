@@ -56,7 +56,6 @@ export class MemoryWebSessionStore implements WebSessionStore {
 }
 
 export const webSessionAuthEnv = {
-  AUTH_JWT_SECRET: "test-web-session-secret-that-is-long-enough",
   GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
   CORS_ORIGIN: "http://localhost:5173",
   AUTH_MENTOR_EMAILS: "mentor@mecorobotics.org",

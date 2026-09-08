@@ -89,10 +89,23 @@ export function buildMemberInsights(args: {
 }) {
   const attendanceRecords = args.source.attendanceRecords ?? [];
 
+  const tasksByMember = new Map<string, typeof args.openTasks>();
+  for (const task of args.openTasks) {
+    for (const memberId of new Set([task.ownerId, ...task.assigneeIds])) {
+      if (!memberId) continue;
+      const bucket = tasksByMember.get(memberId) ?? [];
+      bucket.push(task);
+      tasksByMember.set(memberId, bucket);
+    }
+  }
+  const attendanceByMember = new Map<string, typeof attendanceRecords>();
+  for (const record of attendanceRecords) {
+    const bucket = attendanceByMember.get(record.memberId) ?? [];
+    bucket.push(record);
+    attendanceByMember.set(record.memberId, bucket);
+  }
   return args.source.members.map<RosterInsightsMember>((member) => {
-    const assignedTasks = args.openTasks.filter(
-      (task) => task.ownerId === member.id || task.assigneeIds.includes(member.id),
-    );
+    const assignedTasks = tasksByMember.get(member.id) ?? [];
     const topTasks = assignedTasks
       .map<RosterInsightsTaskPreview>((task) => ({
         id: task.id,
@@ -133,7 +146,7 @@ export function buildMemberInsights(args: {
       0,
     );
 
-    const memberAttendanceRecords = attendanceRecords.filter((record) => record.memberId === member.id);
+    const memberAttendanceRecords = attendanceByMember.get(member.id) ?? [];
     const plannedWeeklyAttendanceHours = Number(
       Math.max(0, member.plannedWeeklyAttendanceHours ?? 0).toFixed(1),
     );
@@ -200,4 +213,3 @@ export function buildMemberInsights(args: {
     };
   });
 }
-

@@ -6,9 +6,9 @@ import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowA
 
 test("purchase approval and transitions are mentor/admin-only adjacent operations", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const studentHeaders = createWorkflowAuthHeaders("student");
-    const leadHeaders = createWorkflowAuthHeaders("lead");
-    const mentorHeaders = createWorkflowAuthHeaders("mentor");
+    const studentHeaders = await createWorkflowAuthHeaders("student");
+    const leadHeaders = await createWorkflowAuthHeaders("lead");
+    const mentorHeaders = await createWorkflowAuthHeaders("mentor");
 
     const pendingEdit = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: studentHeaders, payload: { quantity: 2 } });
     assert.equal(pendingEdit.statusCode, 200);
@@ -76,9 +76,9 @@ test("purchase approval and transitions are mentor/admin-only adjacent operation
 
 test("purchase creation cannot self-approve and missing workflow records return 404", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const studentHeaders = createWorkflowAuthHeaders("student");
-    const mentorHeaders = createWorkflowAuthHeaders("mentor");
-    const adminHeaders = createWorkflowAuthHeaders("admin");
+    const studentHeaders = await createWorkflowAuthHeaders("student");
+    const mentorHeaders = await createWorkflowAuthHeaders("mentor");
+    const adminHeaders = await createWorkflowAuthHeaders("admin");
     const forgedCreate = await app.inject({
       method: "POST",
       url: "/api/purchases",

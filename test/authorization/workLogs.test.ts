@@ -6,10 +6,10 @@ import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowA
 
 test("work-log mutation requires mentor or admin and records the authenticated actor", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const studentHeaders = createWorkflowAuthHeaders("student");
-    const leadHeaders = createWorkflowAuthHeaders("lead");
-    const mentorHeaders = createWorkflowAuthHeaders("mentor");
-    const adminHeaders = createWorkflowAuthHeaders("admin");
+    const studentHeaders = await createWorkflowAuthHeaders("student");
+    const leadHeaders = await createWorkflowAuthHeaders("lead");
+    const mentorHeaders = await createWorkflowAuthHeaders("mentor");
+    const adminHeaders = await createWorkflowAuthHeaders("admin");
 
     const created = await app.inject({
       method: "POST",

@@ -1,12 +1,15 @@
 import Fastify from "fastify";
+import { PrismaClient } from "@prisma/client";
+import { createPrismaCadStore } from "./cad/cadPrismaStore";
+import { getCadRuntimeStore } from "./cad/cadStore";
+import type { CadStore } from "./cad/cadStoreTypes";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 
 import { registerMobileSessionSupport } from "./auth/mobileSessionPlugin";
 import {
-  disconnectMobileSessionStore,
-  getPrismaMobileSessionStore,
+  createPrismaMobileSessionStore,
 } from "./auth/mobileSessionPrismaStore";
 import { MobileSessionService } from "./auth/mobileSessionService";
 import type { MobileSessionStore } from "./auth/mobileSessionStoreTypes";
@@ -14,33 +17,36 @@ import { registerWebSessionSupport } from "./auth/webSessionPlugin";
 import { getSessionFromRequest, isAuthEnabled } from "./auth/authService";
 import { WebSessionService } from "./auth/webSessionService";
 import {
-  disconnectWebSessionStore,
-  getPrismaWebSessionStore,
+  createPrismaWebSessionStore,
   type WebSessionStore,
 } from "./auth/webSessionStore";
 import { resetCadRuntimeStore } from "./cad/cadStore";
-import { disconnectCadStore } from "./cad/cadStoreFactory";
-import { cadStepUploadConfig, corsConfig, env } from "./config/env";
+import { cadPersistenceConfig, cadStepUploadConfig, corsConfig, env } from "./config/env";
 import {
   acquireGlobalSnapshotMutation,
   hasInteractiveTutorialSession,
   resetStore,
   runWithInteractiveTutorialSession,
 } from "./data/store";
-import { isSnapshotMutationRequest } from "./data/snapshotMutationRoutes";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
 import { createUserPreferencesStore, type UserPreferencesStore } from "./data/userPreferencesStore";
 
 declare module "fastify" {
+  interface FastifyContextConfig {
+    snapshotMutation?: boolean;
+  }
   interface FastifyInstance {
     userPreferences: UserPreferencesStore;
+    cadStore: CadStore;
   }
 }
 
 export interface BuildAppOptions {
   userPreferencesPath?: string;
+  prisma?: PrismaClient;
+  cadStore?: CadStore;
   mobileSessionStore?: MobileSessionStore;
   webSessionStore?: WebSessionStore;
 }
@@ -52,11 +58,14 @@ export async function buildApp(options: BuildAppOptions = {}) {
     resetOnshapeRuntimeStore();
   }
 
+  const prisma = options.prisma ?? new PrismaClient();
   const app = Fastify({
     logger: true,
     bodyLimit: 2 * 1024 * 1024,
+    trustProxy: env.TRUST_PROXY_IPS ? env.TRUST_PROXY_IPS.split(",").map((ip) => ip.trim()) : false,
   });
 
+  app.decorate("cadStore", options.cadStore ?? (cadPersistenceConfig.storeDriver === "runtime" ? getCadRuntimeStore() : createPrismaCadStore(prisma)));
   app.decorate("userPreferences", createUserPreferencesStore(options.userPreferencesPath));
 
   await app.register(cors, {
@@ -72,11 +81,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   const mobileSessionService = new MobileSessionService(
-    options.mobileSessionStore ?? getPrismaMobileSessionStore(),
+    options.mobileSessionStore ?? createPrismaMobileSessionStore(prisma),
   );
   registerMobileSessionSupport(app, mobileSessionService);
   const webSessionService = new WebSessionService(
-    options.webSessionStore ?? getPrismaWebSessionStore(),
+    options.webSessionStore ?? createPrismaWebSessionStore(prisma),
   );
   registerWebSessionSupport(app, webSessionService);
   const mutationTransactions = new WeakMap<
@@ -92,7 +101,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return;
     }
 
-    if (!isSnapshotMutationRequest(request.method, request.url)) {
+    if (!request.routeOptions.config.snapshotMutation) {
       done();
       return;
     }
@@ -130,7 +139,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
     const transaction = mutationTransactions.get(request);
     try {
-      if (transaction?.hasChanges()) {
+      if (reply.statusCode < 400 && transaction?.hasChanges()) {
         await transaction.commit();
       }
     } finally {
@@ -144,11 +153,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.addHook("onResponse", async (request) => releaseMutationTransaction(request));
 
   app.addHook("onClose", async () => {
-    await Promise.all([
-      disconnectCadStore(),
-      disconnectMobileSessionStore(),
-      disconnectWebSessionStore(),
-    ]);
+    await prisma.$disconnect();
   });
 
   await registerRoutes(app, { mobileSessionService, webSessionService });

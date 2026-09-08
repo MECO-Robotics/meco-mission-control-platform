@@ -165,6 +165,11 @@ export interface Member {
 }
 
 export interface Subsystem extends PmCadProvenance {
+  layoutX?: number | null;
+  layoutY?: number | null;
+  layoutZone?: "front" | "rear" | "left" | "right" | "center" | "top" | "unplaced" | null;
+  layoutView?: "top" | null;
+  sortOrder?: number | null;
   id: string;
   projectId: string;
   name: string;
@@ -280,7 +285,7 @@ export interface Task {
   dueDate: string;
   priority: TaskPriority;
   status: TaskStatus;
-  dependencyIds: string[];
+  checklistItems: string[];
   blockers: string[];
   isBlocked?: boolean;
   isWaitingOnDependency?: boolean;
@@ -393,6 +398,9 @@ export interface ManufacturingItem {
 }
 
 export interface Report {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   id: string;
   reportType: ReportType;
   projectId: string;
@@ -442,7 +450,7 @@ export interface TaskDependency {
   taskId: string;
   kind: TaskDependencyKind;
   refId: string;
-  requiredState?: string;
+  requiredState: string;
   dependencyType: TaskDependencyType;
   createdAt: string;
 }
@@ -508,6 +516,9 @@ export interface Workstream {
 }
 
 export interface QaReport {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   id: string;
   taskId: string;
   participantIds: string[];

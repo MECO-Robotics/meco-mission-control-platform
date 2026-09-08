@@ -1,3 +1,4 @@
+import { issueTestMobileToken } from "./helpers/sessionAuth";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -33,8 +34,8 @@ function createRouteFakeClient(): CadImportOnshapeClient {
 }
 
 async function createAuthHeadersFor(email: string, role: "student" | "lead" | "mentor" | "admin") {
-  const { signSessionToken } = await import("../src/auth/authService");
-  const token = signSessionToken({
+
+  const token = await issueTestMobileToken({
     accountId: email,
     authProvider: "email",
     email,
@@ -62,7 +63,6 @@ test("Onshape OAuth credential routes allow configured bootstrap mentors outside
     },
     {
       env: {
-        AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
         AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
       },
@@ -100,7 +100,6 @@ test("Onshape OAuth credential routes keep external roster members from inheriti
     },
     {
       env: {
-        AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
         AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
       },
@@ -164,7 +163,6 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
     },
     {
       env: {
-        AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
       },
     },
@@ -208,7 +206,6 @@ test("Onshape deep release sync honors mentor sessions", async () => {
       },
       {
         env: {
-          AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
           GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
         },
       },

@@ -1,7 +1,7 @@
+import { issueTestMobileToken } from "./sessionAuth";
 import type { MemberRole } from "../../src/domain/types";
 
 export const workflowAuthEnv = {
-  AUTH_JWT_SECRET: "test-workflow-authorization-secret-123456",
   GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
 } as const;
 
@@ -12,10 +12,10 @@ const identities: Record<Exclude<MemberRole, "external">, { accountId: string; e
   admin: { accountId: "maya", email: "maya.ortiz@mecorobotics.org" },
 };
 
-export function createWorkflowAuthHeaders(role: Exclude<MemberRole, "external">) {
-  const { signSessionToken } = require("../../src/auth/authService") as typeof import("../../src/auth/authService");
+export async function createWorkflowAuthHeaders(role: Exclude<MemberRole, "external">) {
+
   const identity = identities[role];
-  const token = signSessionToken({
+  const token = await issueTestMobileToken({
     accountId: identity.accountId,
     authProvider: "email",
     email: identity.email,
