@@ -241,3 +241,13 @@ Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and 
 - `POST /api/onshape/oauth/authorization-url`: create an OAuth authorization URL.
 - `GET /api/onshape/oauth/callback`: receive and exchange an OAuth authorization code.
 - `POST /api/onshape/oauth/refresh`: refresh Onshape OAuth credentials.
+
+
+Task blocker requests and responses keep `blockerType` as the source relationship
+(`task`, `milestone`, `workstream`, `mechanism`, `part_instance`,
+`artifact_instance`, or `external`) and `blockerId` as its validated reference.
+The independent optional `issueType` classifies the problem: `external`,
+`lost-part`, `broken-part`, `lost-tool`, `broken-tool`, `design-issue`,
+`shipping-delay`, `manufacturing-unavailable`, `qa-failed`, or `other`.
+New records default to `external` when no issue category is supplied.
+Changing the issue category does not change or relax source-link validation.

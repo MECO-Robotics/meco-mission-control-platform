@@ -343,6 +343,8 @@ export const taskDependencyPatchSchema = taskDependencyPatchInputSchema.transfor
 );
 
 export const taskBlockerSchema = z.object({
+  issueType: z.enum(["external", "lost-part", "broken-part", "lost-tool", "broken-tool",
+    "design-issue", "shipping-delay", "manufacturing-unavailable", "qa-failed", "other"]).optional(),
   blockedTaskId: z.string().trim().min(1),
   blockerType: z.enum([
     "task",

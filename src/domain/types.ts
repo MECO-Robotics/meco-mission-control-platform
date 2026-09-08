@@ -121,6 +121,9 @@ export type TaskBlockerType =
   | "part_instance"
   | "artifact_instance"
   | "external";
+export type TaskBlockerIssueType =
+  | "external" | "lost-part" | "broken-part" | "lost-tool" | "broken-tool"
+  | "design-issue" | "shipping-delay" | "manufacturing-unavailable" | "qa-failed" | "other";
 export type TaskBlockerSeverity = "low" | "medium" | "high" | "critical";
 export type TaskBlockerStatus = "open" | "resolved";
 export type AuditActionOperation = "create" | "update" | "delete";
@@ -448,6 +451,7 @@ export interface TaskBlocker {
   id: string;
   blockedTaskId: string;
   blockerType: TaskBlockerType;
+  issueType?: TaskBlockerIssueType;
   blockerId: string | null;
   description: string;
   severity: TaskBlockerSeverity;

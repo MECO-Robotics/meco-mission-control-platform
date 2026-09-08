@@ -12,6 +12,40 @@ const authEnv = {
   AUTH_MENTOR_EMAILS: "mentor@mecorobotics.org",
 } as const;
 
+test("CAD finalize audit actor ignores a client-supplied identity", async () => {
+  await withIntegrationApp(async () => {
+    const { createMember } = require("../src/data/store") as typeof import("../src/data/store");
+    const { resolveCadFinalizeActor } = require("../src/cad/routes/cadSnapshotActionRoutes") as typeof import("../src/cad/routes/cadSnapshotActionRoutes");
+    const member = createMember({
+      name: "Authenticated CAD Mentor",
+      email: "cad.actor@mecorobotics.org",
+      role: "mentor",
+      seasonId: "default-season",
+    });
+    const request = {
+      headers: {},
+      mobileSession: null,
+      webSession: {
+        csrfToken: "csrf",
+        csrfTokenHash: "hash",
+        expiresAt: new Date(Date.now() + 60_000),
+        id: "session-1",
+        user: {
+          accountId: "account-1",
+          authProvider: "email",
+          email: member.email!,
+          hostedDomain: "mecorobotics.org",
+          name: member.name,
+          picture: null,
+          role: "mentor",
+          taskSubteamIds: [],
+        },
+      },
+    };
+    assert.equal(resolveCadFinalizeActor(request as never, "victim-member-id"), member.id);
+  }, { env: authEnv });
+});
+
 async function signTestToken(args: {
   email: string;
   role: MemberRole;

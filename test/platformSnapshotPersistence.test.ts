@@ -46,6 +46,11 @@ test("production platform state survives a fresh process", () => {
           description: "Persists across process restarts",
           status: "active",
       });
+      store.createTaskBlocker({
+        blockedTaskId: store.getTasks()[0].id,
+        blockerType: "external", blockerId: null, issueType: "broken-part",
+        description: "Durable issue category", severity: "high",
+      });
       await transaction.commit();
       transaction.release();
       process.exit(0);
@@ -59,6 +64,14 @@ test("production platform state survives a fresh process", () => {
     `);
 
     assert.equal(loadedProjectName, "Durable restart project");
+    const loadedIssue = runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts");
+      const store = imported.default ?? imported;
+      const blocker = store.getTaskBlockers().find((item) => item.description === "Durable issue category");
+      process.stdout.write(JSON.stringify([blocker.issueType, blocker.blockerType, blocker.blockerId]));
+      process.exit(0);
+    `);
+    assert.deepEqual(JSON.parse(loadedIssue), ["broken-part", "external", null]);
     assert.doesNotThrow(() => JSON.parse(readFileSync(snapshotPath, "utf8")));
   } finally {
     rmSync(directory, { recursive: true, force: true });

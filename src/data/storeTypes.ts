@@ -16,6 +16,7 @@ import type {
   RiskSeverity,
   PurchaseStatus,
   Season,
+  TaskBlockerIssueType,
   TaskBlockerSeverity,
   TaskBlockerStatus,
   TaskBlockerType,
@@ -314,6 +315,7 @@ export interface TaskDependencyInput {
 export interface TaskBlockerInput {
   blockedTaskId: string;
   blockerType: TaskBlockerType;
+  issueType?: TaskBlockerIssueType;
   blockerId: string | null;
   description: string;
   severity: TaskBlockerSeverity;

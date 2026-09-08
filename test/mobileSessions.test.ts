@@ -310,3 +310,18 @@ test("legacy mobile JWT flag is bounded by its configured cutoff", async () => {
     mobileSessionStore: new MobileSessionMemoryStore(),
   });
 });
+
+test("mobile API traffic uses the API quota across sessions sharing an IP", async () => {
+  const store = new MobileSessionMemoryStore();
+  const issuer = new MobileSessionService(store);
+  const first = await issuer.create(user, "quota-phone", "Phone");
+  const second = await issuer.create(user, "quota-tablet", "Tablet");
+  await withIntegrationApp(async ({ app }) => {
+    for (const token of [first.token, second.token, first.token]) {
+      const response = await app.inject({ method: "GET", url: "/api/dashboard", headers: { authorization: `Bearer ${token}` } });
+      assert.equal(response.statusCode, 200, response.body);
+    }
+    const excess = await app.inject({ method: "GET", url: "/api/dashboard", headers: { authorization: `Bearer ${second.token}` } });
+    assert.equal(excess.statusCode, 429);
+  }, { env: { ...authEnv(), AUTH_RATE_LIMIT_MAX_REQUESTS: "1", API_RATE_LIMIT_MAX_REQUESTS: "3" }, mobileSessionStore: store });
+});
