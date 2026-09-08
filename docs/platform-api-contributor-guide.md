@@ -67,9 +67,13 @@ npm run build
 npm run verify
 ```
 
-`npm run verify` runs bootstrap contract verification, TypeScript checks, the
-Node test suite, and the production build. Route-specific changes should include
-focused tests in `test/` before running the full suite.
+`npm test` discovers every `test/**/*.test.ts` file, including web-session and
+workflow tests. No filename list needs updating when adding a test. To filter by
+name, use `npm test -- --test-name-pattern="your scenario"`.
+
+`npm run verify` runs bootstrap contract verification, Prisma client generation,
+test TypeScript checks, the complete test suite, and the production build
+(which checks source types as it compiles). Route-specific changes should include focused tests before the full suite.
 
 For bootstrap contract changes, run:
 
