@@ -83,32 +83,6 @@ function getTaskDependencies(snapshot: PlatformSnapshot) {
   ];
 }
 
-function getTaskBlockers(snapshot: PlatformSnapshot) {
-  const explicitBlockers = snapshot.taskBlockers ?? [];
-  const fallbackBlockers = snapshot.tasks.flatMap((task) =>
-    task.blockers.map((description, blockerIndex) => ({
-      id: `${task.id}:blocker:${blockerIndex + 1}`,
-      blockedTaskId: task.id,
-      blockerType: "external" as const,
-      blockerId: null,
-      description,
-      severity: "medium" as const,
-      status: "open" as const,
-      createdByMemberId: null,
-      createdAt: task.startDate ? `${task.startDate}T00:00:00.000Z` : new Date().toISOString(),
-      resolvedAt: null,
-    })),
-  );
-  const blockerKey = (blocker: { blockedTaskId: string; description: string; status: string }) =>
-    `${blocker.blockedTaskId}:${blocker.description}:${blocker.status}`;
-  const explicitKeys = new Set(explicitBlockers.map(blockerKey));
-
-  return [
-    ...explicitBlockers,
-    ...fallbackBlockers.filter((blocker) => !explicitKeys.has(blockerKey(blocker))),
-  ];
-}
-
 function getTaskById(snapshot: PlatformSnapshot, taskId: string) {
   return snapshot.tasks.find((task) => task.id === taskId) ?? null;
 }
@@ -211,12 +185,6 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Platfor
   return false;
 }
 
-export function getTaskDependencyRecords(task: Task, snapshot: PlatformSnapshot) {
-  return getTaskDependencies(snapshot).filter(
-    (dependency) => dependency.taskId === task.id || dependency.refId === task.id,
-  );
-}
-
 export function getTaskWaitingOnDependencyRecords(
   taskId: string,
   snapshot: PlatformSnapshot,
@@ -237,29 +205,5 @@ export function isTaskWaitingOnDependencies(
 ) {
   return (
     task.status !== "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot, now).length > 0
-  );
-}
-
-export function getTaskBlocksDependencyRecords(taskId: string, snapshot: PlatformSnapshot) {
-  return getTaskDependencies(snapshot).filter(
-    (dependency) =>
-      dependency.refId === taskId && dependency.dependencyType !== "soft" && dependency.kind === "task",
-  );
-}
-
-export function getTaskWaitingOnTasks(taskId: string, snapshot: PlatformSnapshot) {
-  return getTaskWaitingOnDependencyRecords(taskId, snapshot)
-    .filter((dependency) => dependency.kind === "task")
-    .map((dependency) => dependency.refId)
-    .filter((candidate) => getTaskById(snapshot, candidate)?.status !== "complete");
-}
-
-export function getTaskBlocksTasks(taskId: string, snapshot: PlatformSnapshot) {
-  return getTaskBlocksDependencyRecords(taskId, snapshot).map((dependency) => dependency.taskId);
-}
-
-export function getOpenTaskBlockers(taskId: string, snapshot: PlatformSnapshot) {
-  return getTaskBlockers(snapshot).filter(
-    (blocker) => blocker.blockedTaskId === taskId && blocker.status === "open",
   );
 }

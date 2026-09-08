@@ -523,6 +523,8 @@ test("deploy bootstrap script guards Linux-only execution and installs prerequis
 test("ci workflow watches deploy artifacts and runs the full validation matrix", () => {
   const ciWorkflow = readRepoFile(".github/workflows/ci.yml");
 
+  const { scripts } = JSON.parse(readFileSync("package.json", "utf8"));
+  assertIncludesAll(scripts.verify, ["npm run prisma:generate", "npm run typecheck:test", "npm test"], "verification suite");
   assertIncludesAll(
     ciWorkflow,
     [
@@ -543,7 +545,6 @@ test("ci workflow watches deploy artifacts and runs the full validation matrix",
       '"tsconfig.test.json"',
       '"test/**"',
       "npm ci",
-      "npm run prisma:generate",
       "npm run typecheck:test",
       "npm run verify",
       "npx prisma validate",

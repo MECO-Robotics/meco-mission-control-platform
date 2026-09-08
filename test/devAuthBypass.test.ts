@@ -1,3 +1,4 @@
+import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -5,19 +6,6 @@ import { createMember } from "../src/data/store";
 import { resetUserPreferencesStoreForTests } from "../src/data/userPreferencesStore";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
-function saveEnv(keys: string[]) {
-  return new Map(keys.map((key) => [key, process.env[key]] as const));
-}
-
-function restoreEnv(saved: Map<string, string | undefined>) {
-  for (const [key, value] of saved) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
 
 test("buildApp exposes a development-only sign-in bypass", async () => {
   const saved = saveEnv([

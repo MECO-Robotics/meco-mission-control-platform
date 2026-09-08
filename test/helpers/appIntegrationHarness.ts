@@ -1,3 +1,4 @@
+import { saveEnv, restoreEnv } from "./environment";
 import type { FastifyInstance } from "fastify";
 
 import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
@@ -95,23 +96,6 @@ const APP_ENV_KEYS = [
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
-type AppEnvSnapshot = Map<AppEnvKey, string | undefined>;
-
-function saveEnv(): AppEnvSnapshot {
-  return new Map(
-    APP_ENV_KEYS.map((key) => [key, process.env[key]] as const),
-  );
-}
-
-function restoreEnv(snapshot: AppEnvSnapshot) {
-  for (const [key, value] of snapshot) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
 
 function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>) {
   process.env.NODE_ENV = "development";
@@ -206,7 +190,7 @@ export async function withIntegrationApp(
     webSessionStore?: WebSessionStore;
   },
 ) {
-  const envSnapshot = saveEnv();
+  const envSnapshot = saveEnv(APP_ENV_KEYS);
 
   try {
     configureEnv(options?.env);

@@ -1,22 +1,10 @@
+import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
 
-function saveEnv(keys: string[]) {
-  return new Map(keys.map((key) => [key, process.env[key]] as const));
-}
-
-function restoreEnv(saved: Map<string, string | undefined>) {
-  for (const [key, value] of saved) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
 
 function clearCadStoreModules() {
   for (const modulePath of [

@@ -1489,3 +1489,50 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     );
   });
 });
+
+test("report derivations retain bootstrap scope and photo policy", async () => {
+  const { snapshot: seed } = await import("../src/data/mockData");
+  const { buildReports } = await import("../src/data/store/reportDerivations");
+  const { buildBootstrapResponse } = await import("../src/routes/helpers/bootstrapSelection");
+  const snapshot = structuredClone(seed);
+  const task = snapshot.tasks[0]!;
+  const milestone = snapshot.milestones[0]!;
+  const otherProject = snapshot.projects.find((project) => project.id !== task.projectId)!;
+  milestone.projectIds = [otherProject.id, task.projectId];
+  snapshot.qaReports = [{ ...snapshot.qaReports[0]!, id: "photo-qa", taskId: task.id, photoUrl: "https://example.test/qa.png" }];
+  snapshot.testResults = [{ ...snapshot.testResults[0]!, id: "photo-test", milestoneId: milestone.id, photoUrl: "https://example.test/test.png" }];
+  snapshot.qaFindings = [{ ...snapshot.qaFindings[0]!, id: "qa-finding", qaReportId: "photo-qa", status: "in-progress" }];
+  snapshot.testFindings = [{ ...snapshot.testFindings[0]!, id: "test-finding", testResultId: "photo-test", status: "resolved" }];
+  const reports = buildReports(snapshot);
+  const bootstrap = buildBootstrapResponse(snapshot, { projectId: task.projectId, seasonId: null, personId: null });
+  assert.equal(reports.find((report) => report.id === "photo-test")!.projectId, otherProject.id);
+  assert.equal(bootstrap.reports.find((report) => report.id === "photo-test")!.projectId, task.projectId);
+  for (const report of reports) {
+    const { photoUrl, ...withoutPhoto } = report;
+    assert.ok(photoUrl);
+    assert.deepEqual(bootstrap.reports.find((item) => item.id === report.id), { ...withoutPhoto, projectId: task.projectId });
+  }
+  assert.deepEqual(bootstrap.reportFindings.map((finding) => [finding.id, finding.status]), [["qa-finding", "open"], ["test-finding", "resolved"]]);
+  snapshot.testResults[0]!.milestoneId = "missing-milestone";
+  snapshot.qaReports[0]!.taskId = "missing-task";
+  assert.equal(buildReports(snapshot)[0]!.projectId, snapshot.projects[0]!.id);
+  const orphanBootstrap = buildBootstrapResponse(snapshot, { projectId: null, seasonId: null, personId: null });
+  assert.deepEqual(orphanBootstrap.reports, []);
+  assert.deepEqual(orphanBootstrap.reportFindings, []);
+});
+
+test("report and finding endpoints match bootstrap projections", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrap.statusCode, 200);
+    for (const [path, collection] of [["reports", "reports"], ["report-findings", "reportFindings"]] as const) {
+      resetLimits();
+      const response = await app.inject({ method: "GET", url: `/api/${path}?pageSize=60` });
+      assert.equal(response.statusCode, 200);
+      const expected = bootstrap.json()[collection];
+      const actual = response.json().items;
+      assert.equal(actual.length, expected.length);
+      for (const item of actual) assert.deepEqual(item, expected.find((entry: { id: string }) => entry.id === item.id));
+    }
+  });
+});
