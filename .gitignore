@@ -3,7 +3,7 @@ dist/
 coverage/
 .turbo/
 .prisma/
-data/
+/data/
 .tmp-skills-sync/
 
 # Imported shared skills
