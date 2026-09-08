@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { saveEnv, restoreEnv } from "./helpers/environment";
 
 test("buildApp advertises email sign-in when localhost SMTP is configured", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
@@ -76,10 +77,17 @@ test("buildApp advertises email sign-in when localhost SMTP is configured", asyn
 });
 
 test("SMTP timeout reports uncertain delivery without waiting for the send to settle", async () => {
-  const { awaitEmailDelivery } = await import("../src/auth/authService");
-  let resolveDelivery!: () => void;
-  const delivery = new Promise<void>((resolve) => { resolveDelivery = resolve; });
-  assert.equal(await awaitEmailDelivery(delivery, 1), "uncertain");
-  resolveDelivery();
-  await delivery;
+  const saved = saveEnv(["NODE_ENV", "DATABASE_URL"]);
+  process.env.NODE_ENV = "test";
+  process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/meco_platform";
+  try {
+    const { awaitEmailDelivery } = await import("../src/auth/authService");
+    let resolveDelivery!: () => void;
+    const delivery = new Promise<void>((resolve) => { resolveDelivery = resolve; });
+    assert.equal(await awaitEmailDelivery(delivery, 1), "uncertain");
+    resolveDelivery();
+    await delivery;
+  } finally {
+    restoreEnv(saved);
+  }
 });

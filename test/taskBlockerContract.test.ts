@@ -22,9 +22,16 @@ test("task blocker issue categories round-trip separately from validated source 
     assert.equal(blocker.blockerType, "task");
     assert.equal(blocker.blockerId, tasks[1].id);
     resetLimits();
+    const resolved = await app.inject({ method: "PATCH", url: `/api/task-blockers/${blocker.id}`, payload: { status: "resolved" } });
+    assert.equal(resolved.statusCode, 200, resolved.body);
+    const resolvedAt = resolved.json().item.resolvedAt;
+    assert.ok(resolvedAt);
+    resetLimits();
     const edited = await app.inject({ method: "PATCH", url: `/api/task-blockers/${blocker.id}`, payload: { issueType: "shipping-delay" } });
     assert.equal(edited.statusCode, 200, edited.body);
     assert.equal(edited.json().item.blockerId, tasks[1].id);
+    assert.equal(edited.json().item.status, "resolved");
+    assert.equal(edited.json().item.resolvedAt, resolvedAt);
     resetLimits();
     const read = await app.inject({ method: "GET", url: "/api/task-blockers?seasonId=default-season" });
     assert.equal(read.statusCode, 200, read.body);

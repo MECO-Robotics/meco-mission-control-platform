@@ -342,7 +342,7 @@ export const taskDependencyPatchSchema = taskDependencyPatchInputSchema.transfor
   normalizeTaskDependencyPatchInput(input),
 );
 
-export const taskBlockerSchema = z.object({
+const taskBlockerFieldsSchema = z.object({
   issueType: z.enum(["external", "lost-part", "broken-part", "lost-tool", "broken-tool",
     "design-issue", "shipping-delay", "manufacturing-unavailable", "qa-failed", "other"]).optional(),
   blockedTaskId: z.string().trim().min(1),
@@ -358,11 +358,14 @@ export const taskBlockerSchema = z.object({
   blockerId: z.string().trim().min(1).nullable(),
   description: z.string().trim().min(1),
   severity: z.enum(["low", "medium", "high", "critical"]),
-  status: z.enum(["open", "resolved"]).default("open"),
+  status: z.enum(["open", "resolved"]),
   createdByMemberId: z.string().trim().min(1).nullable().optional(),
 });
 
-export const taskBlockerPatchSchema = taskBlockerSchema.partial();
+export const taskBlockerSchema = taskBlockerFieldsSchema.extend({
+  status: taskBlockerFieldsSchema.shape.status.default("open"),
+});
+export const taskBlockerPatchSchema = taskBlockerFieldsSchema.partial();
 
 export const riskSchema = z.object({
   title: z.string().trim().min(2),
