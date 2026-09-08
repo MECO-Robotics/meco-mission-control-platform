@@ -4,6 +4,14 @@ import { subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, task
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
 export const BOOTSTRAP_CONTRACT_VERSION = 1;
 
+const [taskDependencyOption, milestoneDependencyOption, partDependencyOption] = taskDependencySchema.options;
+const dependencyRecordFields = { id: z.string(), createdAt: z.string() };
+const taskDependencyRecordSchema = z.discriminatedUnion("kind", [
+  taskDependencyOption.extend(dependencyRecordFields),
+  milestoneDependencyOption.extend(dependencyRecordFields),
+  partDependencyOption.extend(dependencyRecordFields),
+]);
+
 const bootstrapCollectionSchema = z.array(z.record(z.string(), z.unknown()));
 const pmCadSourceValues = ["manual", "step", "onshape"] as const;
 const pmCadImportSourceValues = [
@@ -46,7 +54,7 @@ export const bootstrapPayloadSchema = z
     testResults: bootstrapCollectionSchema,
     risks: bootstrapCollectionSchema,
     tasks: z.array(z.object({ id: z.string(), status: taskSchema.shape.status, checklistItems: z.array(z.string()), blockers: z.array(z.string()), isBlocked: z.boolean(), isWaitingOnDependency: z.boolean() }).passthrough()),
-    taskDependencies: z.array(taskDependencySchema.extend({ id: z.string(), createdAt: z.string() })),
+    taskDependencies: z.array(taskDependencyRecordSchema),
     taskBlockers: bootstrapCollectionSchema,
     workLogs: bootstrapCollectionSchema,
     meetings: bootstrapCollectionSchema,

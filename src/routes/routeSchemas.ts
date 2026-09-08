@@ -240,14 +240,23 @@ export const reportFindingSchema = z.object({
   spawnedRiskId: z.string().trim().min(1).nullable(),
 });
 
-export const taskDependencySchema = z.object({
+const taskDependencyFields = {
   taskId: z.string().trim().min(1),
-  kind: z.enum(["task", "milestone", "part_instance"]),
   refId: z.string().trim().min(1),
-  requiredState: z.string().trim().min(1),
   dependencyType: z.enum(["hard", "soft"]),
-}).strict();
-export const taskDependencyPatchSchema = taskDependencySchema.partial();
+};
+const dependencyTaskStateSchema = z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]);
+const dependencyReadinessStateSchema = z.enum(["not ready", "blocked", "qa", "ready"]);
+export const taskDependencySchema = z.discriminatedUnion("kind", [
+  z.object({ ...taskDependencyFields, kind: z.literal("task"), requiredState: dependencyTaskStateSchema }).strict(),
+  z.object({ ...taskDependencyFields, kind: z.literal("milestone"), requiredState: dependencyReadinessStateSchema }).strict(),
+  z.object({ ...taskDependencyFields, kind: z.literal("part_instance"), requiredState: dependencyReadinessStateSchema }).strict(),
+]);
+export const taskDependencyPatchSchema = z.object({
+  ...taskDependencyFields,
+  kind: z.enum(["task", "milestone", "part_instance"]),
+  requiredState: z.union([dependencyTaskStateSchema, dependencyReadinessStateSchema]),
+}).strict().partial();
 
 const taskBlockerFieldsSchema = z.object({
   issueType: z.enum(["external", "lost-part", "broken-part", "lost-tool", "broken-tool",

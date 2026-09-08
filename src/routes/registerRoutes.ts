@@ -2546,12 +2546,20 @@ export async function registerRoutes(
         });
       }
 
-      const dependency = updateTaskDependency(request.params.dependencyId, {
-        ...parsed.data,
+      const merged = taskDependencySchema.safeParse({
         taskId: nextTaskId,
         kind: nextKind,
         refId: nextRefId,
+        requiredState: parsed.data.requiredState ?? currentDependency.requiredState,
+        dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,
       });
+      if (!merged.success) {
+        return reply.code(400).send({
+          message: "Task dependency update payload is invalid.",
+          issues: merged.error.flatten(),
+        });
+      }
+      const dependency = updateTaskDependency(request.params.dependencyId, merged.data);
       return {
         item: dependency,
       };

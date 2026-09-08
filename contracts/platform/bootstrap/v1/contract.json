@@ -574,52 +574,155 @@
     "taskDependencies": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "taskId": {
-            "type": "string",
-            "minLength": 1
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependencyType": {
+                "type": "string",
+                "enum": [
+                  "hard",
+                  "soft"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "task"
+              },
+              "requiredState": {
+                "type": "string",
+                "enum": [
+                  "not-started",
+                  "in-progress",
+                  "waiting-for-qa",
+                  "complete"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "refId",
+              "dependencyType",
+              "kind",
+              "requiredState",
+              "id",
+              "createdAt"
+            ],
+            "additionalProperties": false
           },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "task",
-              "milestone",
-              "part_instance"
-            ]
+          {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependencyType": {
+                "type": "string",
+                "enum": [
+                  "hard",
+                  "soft"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "milestone"
+              },
+              "requiredState": {
+                "type": "string",
+                "enum": [
+                  "not ready",
+                  "blocked",
+                  "qa",
+                  "ready"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "refId",
+              "dependencyType",
+              "kind",
+              "requiredState",
+              "id",
+              "createdAt"
+            ],
+            "additionalProperties": false
           },
-          "refId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "requiredState": {
-            "type": "string",
-            "minLength": 1
-          },
-          "dependencyType": {
-            "type": "string",
-            "enum": [
-              "hard",
-              "soft"
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string"
+          {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependencyType": {
+                "type": "string",
+                "enum": [
+                  "hard",
+                  "soft"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "part_instance"
+              },
+              "requiredState": {
+                "type": "string",
+                "enum": [
+                  "not ready",
+                  "blocked",
+                  "qa",
+                  "ready"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "refId",
+              "dependencyType",
+              "kind",
+              "requiredState",
+              "id",
+              "createdAt"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "taskId",
-          "kind",
-          "refId",
-          "requiredState",
-          "dependencyType",
-          "id",
-          "createdAt"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "taskBlockers": {
@@ -1855,44 +1958,131 @@
     },
     "taskDependency": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "taskId": {
-          "type": "string",
-          "minLength": 1
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependencyType": {
+              "type": "string",
+              "enum": [
+                "hard",
+                "soft"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "task"
+            },
+            "requiredState": {
+              "type": "string",
+              "enum": [
+                "not-started",
+                "in-progress",
+                "waiting-for-qa",
+                "complete"
+              ]
+            }
+          },
+          "required": [
+            "taskId",
+            "refId",
+            "dependencyType",
+            "kind",
+            "requiredState"
+          ],
+          "additionalProperties": false
         },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "task",
-            "milestone",
-            "part_instance"
-          ]
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependencyType": {
+              "type": "string",
+              "enum": [
+                "hard",
+                "soft"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "milestone"
+            },
+            "requiredState": {
+              "type": "string",
+              "enum": [
+                "not ready",
+                "blocked",
+                "qa",
+                "ready"
+              ]
+            }
+          },
+          "required": [
+            "taskId",
+            "refId",
+            "dependencyType",
+            "kind",
+            "requiredState"
+          ],
+          "additionalProperties": false
         },
-        "refId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "requiredState": {
-          "type": "string",
-          "minLength": 1
-        },
-        "dependencyType": {
-          "type": "string",
-          "enum": [
-            "hard",
-            "soft"
-          ]
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependencyType": {
+              "type": "string",
+              "enum": [
+                "hard",
+                "soft"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "part_instance"
+            },
+            "requiredState": {
+              "type": "string",
+              "enum": [
+                "not ready",
+                "blocked",
+                "qa",
+                "ready"
+              ]
+            }
+          },
+          "required": [
+            "taskId",
+            "refId",
+            "dependencyType",
+            "kind",
+            "requiredState"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "taskId",
-        "kind",
-        "refId",
-        "requiredState",
-        "dependencyType"
-      ],
-      "additionalProperties": false
+      ]
     },
     "taskBlocker": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

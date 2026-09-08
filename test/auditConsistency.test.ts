@@ -38,6 +38,34 @@ test("canonical dependency required state round-trips without a contradictory co
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 
+test("dependency commands reject impossible states and validate the full merged patch", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    const snapshot = getSnapshot();
+    const [task, upstream] = snapshot.tasks;
+    const milestone = snapshot.milestones[0];
+    const payload = { taskId: task.id, kind: "task", refId: upstream.id, requiredState: "complete", dependencyType: "hard" };
+    for (const invalid of [
+      { ...payload, requiredState: "ready" },
+      { ...payload, kind: "milestone", refId: milestone.id, requiredState: "typo-ready" },
+      { ...payload, kind: "part_instance", requiredState: "complete" },
+    ]) {
+      assert.equal(taskDependencySchema.safeParse(invalid).success, false);
+      assert.equal((await app.inject({ method: "POST", url: "/api/task-dependencies", payload: invalid })).statusCode, 400);
+    }
+    const created = await app.inject({ method: "POST", url: "/api/task-dependencies", payload });
+    assert.equal(created.statusCode, 201, created.body);
+    const id = created.json().item.id;
+    const url = `/api/task-dependencies/${id}`;
+    const invalid = await app.inject({ method: "PATCH", url, payload: { kind: "milestone", refId: milestone.id } });
+    assert.equal(invalid.statusCode, 400, invalid.body);
+    assert.equal(getSnapshot().taskDependencies.find((edge) => edge.id === id)?.kind, "task");
+    const valid = await app.inject({ method: "PATCH", url, payload: { kind: "milestone", refId: milestone.id, requiredState: "ready" } });
+    assert.equal(valid.statusCode, 200, valid.body);
+    assert.equal(valid.json().item.requiredState, "ready");
+    assert.equal(valid.json().item.id, id);
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
+});
+
 test("duplicate blocker descriptions stay visible until the last open record resolves", async () => {
   await withIntegrationApp(async ({ app }) => {
     const task = getSnapshot().tasks[0];
