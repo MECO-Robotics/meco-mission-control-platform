@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SKILLS_REPO="${SKILLS_REPO:-https://github.com/MECO-Robotics/mission-control-skills.git}"
-TMP_DIR=".tmp-skills-sync"
+SKILLS_REF="${SKILLS_REF:-main}"
 
 fail() {
   echo "Error: $*" >&2
@@ -27,14 +27,15 @@ require_repo_root() {
 }
 
 require_repo_root
+TMP_DIR="$(mktemp -d)"
 trap cleanup EXIT
 
 echo "Syncing skills from: $SKILLS_REPO"
 
-cleanup
-
-if ! git clone --depth 1 "$SKILLS_REPO" "$TMP_DIR"; then
-  fail "failed to clone shared skills repo: $SKILLS_REPO"
+if ! git -C "$TMP_DIR" init -q ||
+   ! git -C "$TMP_DIR" fetch --quiet --depth 1 "$SKILLS_REPO" "$SKILLS_REF" ||
+   ! git -C "$TMP_DIR" checkout --quiet --detach FETCH_HEAD; then
+  fail "failed to fetch shared skills revision: $SKILLS_REF"
 fi
 
 if [ ! -d "$TMP_DIR/skills" ]; then
