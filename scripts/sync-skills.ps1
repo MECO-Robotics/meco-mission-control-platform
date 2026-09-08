@@ -6,6 +6,11 @@ $SkillsRepo = if ([string]::IsNullOrWhiteSpace($env:SKILLS_REPO)) {
     $env:SKILLS_REPO
 }
 
+# Resolve local sources before Git changes its working directory.
+if (Test-Path -LiteralPath $SkillsRepo -PathType Container -ErrorAction SilentlyContinue) {
+    $SkillsRepo = (Resolve-Path -LiteralPath $SkillsRepo).ProviderPath
+}
+
 $SkillsRef = if ([string]::IsNullOrWhiteSpace($env:SKILLS_REF)) { "main" } else { $env:SKILLS_REF }
 $TmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
 

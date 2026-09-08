@@ -3,6 +3,10 @@ set -euo pipefail
 
 SKILLS_REPO="${SKILLS_REPO:-https://github.com/MECO-Robotics/mission-control-skills.git}"
 SKILLS_REF="${SKILLS_REF:-main}"
+# Resolve local sources before Git changes its working directory.
+if [ -d "$SKILLS_REPO" ]; then
+  SKILLS_REPO="$(cd "$SKILLS_REPO" && pwd -P)"
+fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 if [ "$(pwd -P)" != "$(cd "$REPO_ROOT" && pwd -P)" ]; then
   echo "Run this script from the repository root." >&2
