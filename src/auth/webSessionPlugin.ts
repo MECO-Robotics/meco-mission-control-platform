@@ -23,7 +23,7 @@ const WEB_LOGIN_PATHS = new Set([
 ]);
 const allowWebSessionResolutionRequest = createRequestLimitGuard({
   scope: "web-session-resolution",
-  ...requestLimitConfig.auth,
+  ...requestLimitConfig.api,
 });
 
 function isAllowedOrigin(origin: string | undefined) {

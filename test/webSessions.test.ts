@@ -190,7 +190,7 @@ test("malformed and explicitly revoked web session cookies fail closed", async (
   }, { env: webSessionAuthEnv, webSessionStore: store });
 });
 
-test("web session resolution is API-scoped and rate limited before store lookup", async () => {
+test("web session resolution is API-scoped without applying the lower shared auth quota", async () => {
   const store = new MemoryWebSessionStore();
   await withIntegrationApp(async ({ app }) => {
     const plausibleCookie = `meco_web_session=${"a".repeat(43)}.${"b".repeat(43)}`;
@@ -204,22 +204,29 @@ test("web session resolution is API-scoped and rate limited before store lookup"
 
     const first = await app.inject({
       method: "GET",
-      url: "/api/auth/web/session",
+      url: "/api/dashboard",
       headers: { cookie: plausibleCookie },
     });
     assert.equal(first.statusCode, 401);
     assert.equal(store.findActiveCalls, 1);
 
-    const excess = await app.inject({
+    const second = await app.inject({
       method: "GET",
-      url: "/api/auth/web/session",
+      url: "/api/dashboard",
       headers: {
         cookie: `meco_web_session=${"c".repeat(43)}.${"d".repeat(43)}`,
       },
     });
-    assert.equal(excess.statusCode, 429);
-    assert.equal(store.findActiveCalls, 1);
-  }, { env: webSessionAuthEnv, webSessionStore: store });
+    assert.equal(second.statusCode, 401);
+    assert.equal(store.findActiveCalls, 2);
+  }, {
+    env: {
+      ...webSessionAuthEnv,
+      API_RATE_LIMIT_MAX_REQUESTS: "3",
+      AUTH_RATE_LIMIT_MAX_REQUESTS: "1",
+    },
+    webSessionStore: store,
+  });
 });
 
 test("Authorization headers take precedence over web cookies and fail closed", async () => {

@@ -126,8 +126,8 @@ jobs:
           set -euo pipefail
           immutable_ref="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}-sha-${GITHUB_SHA}"
           channel_ref="${CONTRACT_IMAGE}:v1-${GITHUB_REF_NAME}"
-          immutable_digest=$(docker buildx imagetools inspect "${immutable_ref}" | awk '$1 == "Digest:" { print $2; exit }')
-          channel_digest=$(docker buildx imagetools inspect "${channel_ref}" | awk '$1 == "Digest:" { print $2; exit }')
+          immutable_digest=$(docker buildx imagetools inspect "${immutable_ref}" | awk '$1 == "Digest:" && !found { print $2; found=1 }')
+          channel_digest=$(docker buildx imagetools inspect "${channel_ref}" | awk '$1 == "Digest:" && !found { print $2; found=1 }')
           test -n "${immutable_digest}"
           test "${channel_digest}" = "${immutable_digest}"
           gh attestation verify "oci://${CONTRACT_IMAGE}@${immutable_digest}" \
