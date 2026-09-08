@@ -55,7 +55,6 @@ import {
 } from "./store/meetingSchedule";
 import {
   buildFindings,
-  buildReportFindings,
   buildReports,
   reportFindingFromQaFinding,
   reportFindingFromTestFinding,
@@ -2018,10 +2017,6 @@ export function getMembers() {
   return currentSnapshot.members;
 }
 
-export function getMeetings() {
-  return currentSnapshot.meetings;
-}
-
 export function getSubsystems() {
   return currentSnapshot.subsystems;
 }
@@ -2082,24 +2077,12 @@ export function getTestResults() {
   return currentSnapshot.testResults;
 }
 
-export function getQaFindings() {
-  return currentSnapshot.qaFindings;
-}
-
-export function getTestFindings() {
-  return currentSnapshot.testFindings;
-}
-
 export function getDesignIterations(): DesignIteration[] {
   return currentSnapshot.designIterations;
 }
 
 export function getReports(): Report[] {
   return buildReports(currentSnapshot);
-}
-
-export function getReportFindings(): ReportFinding[] {
-  return buildReportFindings(currentSnapshot);
 }
 
 export function getFindings(): FindingListItem[] {
@@ -3677,7 +3660,7 @@ export function createReport(input: ReportInput) {
       reviewedAt: input.reviewedAt ?? input.createdAt.slice(0, 10),
     });
 
-    return reportFromQaReport(currentSnapshot, report);
+    return reportFromQaReport(currentSnapshot.tasks.find((task) => task.id === report.taskId), report);
   }
 
   if (!input.milestoneId) {
@@ -3692,7 +3675,8 @@ export function createReport(input: ReportInput) {
     photoUrl: input.photoUrl,
   });
 
-  return reportFromTestResult(currentSnapshot, testResult);
+  const milestone = currentSnapshot.milestones.find((item) => item.id === testResult.milestoneId);
+  return reportFromTestResult(milestone, testResult, milestone?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? null);
 }
 
 export function createReportFinding(input: ReportFindingInput) {

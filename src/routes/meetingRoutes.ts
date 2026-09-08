@@ -8,7 +8,7 @@ import {
   removeMeeting,
   updateMeeting,
 } from "../data/store";
-import { validateMilestoneProjectLinks } from "./routeHelpers";
+import { validateMilestoneProjectLinks } from "./helpers/linkValidation";
 import { meetingPatchSchema, meetingSchema } from "./routeSchemas";
 
 type ApiSessionGuard = (request: FastifyRequest, reply: FastifyReply) => boolean;

@@ -1,9 +1,17 @@
+import {
+  reportFromQaReport,
+  reportFromTestResult,
+  reportFindingFromQaFinding,
+  reportFindingFromTestFinding,
+} from "../../data/store/reportDerivations";
 import type {
   AuditAction,
   Milestone,
   MilestoneRequirement,
   Member,
   PlatformSnapshot,
+  Report,
+  ReportFinding,
   QaFinding,
   QaReport,
   QaRequest,
@@ -24,50 +32,6 @@ export interface BootstrapSelection {
 
 export interface BootstrapResponseOptions {
   sanitizeEscalations?: boolean;
-}
-
-export interface BootstrapReportRecord {
-  id: string;
-  reportType: "QA" | "MilestoneTest";
-  projectId: string;
-  taskId: string | null;
-  milestoneId: string | null;
-  workstreamId: string | null;
-  createdByMemberId: string | null;
-  result: string;
-  summary: string;
-  notes: string;
-  createdAt: string;
-  participantIds?: string[];
-  mentorApproved?: boolean;
-  reviewedAt?: string;
-  title?: string;
-  status?: "pass" | "fail" | "blocked";
-  findings?: string[];
-}
-
-export interface BootstrapReportFindingRecord {
-  id: string;
-  reportId: string;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactInstanceId: string | null;
-  issueType: string;
-  severity: "high" | "medium" | "low";
-  notes: string;
-  spawnedTaskId: string | null;
-  spawnedIterationId: string | null;
-  spawnedRiskId: string | null;
-  title?: string;
-  detail?: string;
-  status?: "open" | "resolved";
-  projectId?: string;
-  workstreamId?: string | null;
-  subsystemId?: string | null;
-  taskId?: string | null;
-  milestoneId?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface BootstrapTaskDependencyRecord {
@@ -161,6 +125,7 @@ function buildTaskBlockerRecords(tasks: Task[]) {
   );
 }
 
+// Bootstrap chooses an in-scope milestone project and intentionally omits photos.
 function buildReports(args: {
   qaReports: QaReport[];
   tasksById: Map<string, Task>;
@@ -168,64 +133,19 @@ function buildReports(args: {
   milestonesById: Map<string, Milestone>;
   activeProjectIds: Set<string>;
 }) {
-  const qaReports = args.qaReports
-    .map<BootstrapReportRecord | null>((report) => {
+  return [
+    ...args.qaReports.map((report) => {
       const task = args.tasksById.get(report.taskId);
-      if (!task || !args.activeProjectIds.has(task.projectId)) {
-        return null;
-      }
-
-      return {
-        id: report.id,
-        reportType: "QA",
-        projectId: task.projectId,
-        taskId: report.taskId,
-        milestoneId: null,
-        workstreamId: task.workstreamId,
-        createdByMemberId: null,
-        result: report.result,
-        summary: report.notes,
-        notes: report.notes,
-        createdAt: report.reviewedAt,
-        participantIds: report.participantIds,
-        mentorApproved: report.mentorApproved,
-        reviewedAt: report.reviewedAt,
-        title: task.title,
-      };
-    })
-    .filter((report): report is BootstrapReportRecord => report !== null);
-
-  const milestoneTestReports = args.testResults
-    .map<BootstrapReportRecord | null>((result) => {
+      return task && args.activeProjectIds.has(task.projectId)
+        ? reportFromQaReport(task, report, { includePhoto: false })
+        : null;
+    }),
+    ...args.testResults.map((result) => {
       const milestone = args.milestonesById.get(result.milestoneId);
-      const projectId =
-        milestone?.projectIds.find((candidate) => args.activeProjectIds.has(candidate)) ??
-        milestone?.projectIds[0] ??
-        null;
-      if (!projectId || !args.activeProjectIds.has(projectId)) {
-        return null;
-      }
-
-      return {
-        id: result.id,
-        reportType: "MilestoneTest",
-        projectId,
-        taskId: null,
-        milestoneId: result.milestoneId,
-        workstreamId: null,
-        createdByMemberId: null,
-        result: result.status,
-        summary: result.title,
-        notes: result.findings.join("\n"),
-        createdAt: milestone?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-        title: result.title,
-        status: result.status,
-        findings: result.findings,
-      };
-    })
-    .filter((report): report is BootstrapReportRecord => report !== null);
-
-  return [...qaReports, ...milestoneTestReports];
+      const projectId = milestone?.projectIds.find((id) => args.activeProjectIds.has(id)) ?? null;
+      return projectId ? reportFromTestResult(milestone, result, projectId, { includePhoto: false }) : null;
+    }),
+  ].filter((report): report is Report => report !== null);
 }
 
 function buildReportFindings(args: {
@@ -233,70 +153,10 @@ function buildReportFindings(args: {
   testFindings: TestFinding[];
   reportIds: Set<string>;
 }) {
-  const qaFindings = args.qaFindings
-    .map<BootstrapReportFindingRecord | null>((finding) => {
-      if (!finding.qaReportId || !args.reportIds.has(finding.qaReportId)) {
-        return null;
-      }
-
-      return {
-        id: finding.id,
-        reportId: finding.qaReportId,
-        mechanismId: finding.mechanismId,
-        partInstanceId: finding.partInstanceId,
-        artifactInstanceId: finding.artifactId,
-        issueType: finding.title,
-        severity: finding.severity,
-        notes: finding.detail,
-        spawnedTaskId: finding.taskId,
-        spawnedIterationId: null,
-        spawnedRiskId: null,
-        title: finding.title,
-        detail: finding.detail,
-        status: finding.status === "resolved" ? "resolved" : "open",
-        projectId: finding.projectId,
-        workstreamId: finding.workstreamId,
-        subsystemId: finding.subsystemId,
-        taskId: finding.taskId,
-        createdAt: finding.createdAt,
-        updatedAt: finding.updatedAt,
-      };
-    })
-    .filter((finding): finding is BootstrapReportFindingRecord => finding !== null);
-
-  const testFindings = args.testFindings
-    .map<BootstrapReportFindingRecord | null>((finding) => {
-      if (!finding.testResultId || !args.reportIds.has(finding.testResultId)) {
-        return null;
-      }
-
-      return {
-        id: finding.id,
-        reportId: finding.testResultId,
-        mechanismId: finding.mechanismId,
-        partInstanceId: finding.partInstanceId,
-        artifactInstanceId: finding.artifactId,
-        issueType: finding.title,
-        severity: finding.severity,
-        notes: finding.detail,
-        spawnedTaskId: finding.taskId,
-        spawnedIterationId: null,
-        spawnedRiskId: null,
-        title: finding.title,
-        detail: finding.detail,
-        status: finding.status === "resolved" ? "resolved" : "open",
-        projectId: finding.projectId,
-        workstreamId: finding.workstreamId,
-        subsystemId: finding.subsystemId,
-        taskId: finding.taskId,
-        milestoneId: finding.milestoneId,
-        createdAt: finding.createdAt,
-        updatedAt: finding.updatedAt,
-      };
-    })
-    .filter((finding): finding is BootstrapReportFindingRecord => finding !== null);
-
-  return [...qaFindings, ...testFindings];
+  return [
+    ...args.qaFindings.map(reportFindingFromQaFinding),
+    ...args.testFindings.map(reportFindingFromTestFinding),
+  ].filter((finding): finding is ReportFinding => finding !== null && args.reportIds.has(finding.reportId));
 }
 
 function parseDateMs(value: string) {

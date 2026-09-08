@@ -122,14 +122,22 @@ import {
   filterPurchaseItemsForPerson,
   filterTasksForPerson,
   filterWorkLogsForPerson,
-  getDefaultProjectId,
-  normalizeTaskTargets,
   paginateItems,
   readPersonFilter,
+  withManufacturingQaReviewCounts,
+} from "./helpers/paginationFilters";
+
+import {
+  getDefaultProjectId,
+  normalizeTaskTargets,
   resolveProjectId,
   resolveWorkstreamId,
   uniqueIds,
+} from "./helpers/taskTargets";
+
+import {
   validateArtifactLinks,
+  validateMilestoneProjectLinks,
   validateManufacturingItemLinks,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
@@ -137,15 +145,13 @@ import {
   validateQaReportLinks,
   validateQaRequestLinks,
   validateRiskLinks,
-  validateMilestoneProjectLinks,
   validateSubsystemPeople,
   validateTaskBlockerLinks,
   validateTaskLinks,
   validateTestResultLinks,
   validateWorkLogLinks,
-  withManufacturingQaReviewCounts,
   wouldCreateSubsystemCycle,
-} from "./routeHelpers";
+} from "./helpers/linkValidation";
 import {
   buildBootstrapResponse,
   readBootstrapSelection,
