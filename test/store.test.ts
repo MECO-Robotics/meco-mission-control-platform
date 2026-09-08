@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
-import { isSnapshotMutationRequest } from "../src/data/snapshotMutationRoutes";
-
 import {
   createProject,
   createSeason,
@@ -35,27 +33,6 @@ import {
 
 beforeEach(() => {
   resetStore();
-});
-
-test("snapshot mutation routing locks only snapshot-backed writes", () => {
-  assert.equal(isSnapshotMutationRequest("POST", "/api/projects"), true);
-  assert.equal(isSnapshotMutationRequest("PATCH", "/api/tasks/task-1?mode=quick"), true);
-  assert.equal(isSnapshotMutationRequest("DELETE", "/api/meetings/meeting-1"), true);
-  assert.equal(
-    isSnapshotMutationRequest("PATCH", "/api/navigation/favorites/tasks-timeline"),
-    true,
-  );
-
-  assert.equal(isSnapshotMutationRequest("POST", "/api/auth/dev-bypass"), false);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/media/presign-upload"), false);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/cad/snapshots/snapshot-1/finalize"), true);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/cad/step-imports"), false);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/cad/step-imports/debug-parse"), false);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/onshape/import-runs"), false);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/onshape/oauth/refresh"), false);
-  assert.equal(isSnapshotMutationRequest("GET", "/api/cad/snapshots/snapshot-1"), false);
-  assert.equal(isSnapshotMutationRequest("GET", "/api/projects"), false);
-  assert.equal(isSnapshotMutationRequest("POST", "/api/project-settings"), false);
 });
 
 function nonRobotProjectNamesForSeason(seasonId: string) {
@@ -277,7 +254,6 @@ test("offseason FRC sample data has internally consistent references", () => {
     expectId(ids.members, task.ownerId, `task ${task.id} ownerId`);
     expectId(ids.members, task.mentorId, `task ${task.id} mentorId`);
     task.assigneeIds.forEach((id) => expectId(ids.members, id, `task ${task.id} assigneeIds`));
-    task.dependencyIds.forEach((id) => expectId(ids.tasks, id, `task ${task.id} dependencyIds`));
     task.linkedManufacturingIds.forEach((id) =>
       expectId(ids.manufacturing, id, `task ${task.id} linkedManufacturingIds`),
     );

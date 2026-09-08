@@ -493,6 +493,7 @@ test("web report and task planning contract endpoints persist records", async ()
         taskId: "swerve-sensor-bundle",
         kind: "task",
         refId: "intake-guard",
+        requiredState: "complete",
         dependencyType: "hard",
       },
     });
@@ -528,6 +529,7 @@ test("web report and task planning contract endpoints persist records", async ()
         taskId: "pit-bin-labeling",
         kind: "task",
         refId: "pit-board-refresh",
+        requiredState: "complete",
         dependencyType: "soft",
       },
     });
@@ -538,44 +540,6 @@ test("web report and task planning contract endpoints persist records", async ()
         id: string;
       };
     };
-
-    resetLimits();
-
-    const legacyDependencyCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/task-dependencies",
-      payload: {
-        upstreamTaskId: "intake-guard",
-        downstreamTaskId: "swerve-sensor-bundle",
-        dependencyType: "blocks",
-      },
-    });
-
-    assert.equal(legacyDependencyCreateResponse.statusCode, 201);
-    const legacyDependencyBody = legacyDependencyCreateResponse.json() as {
-      item: {
-        id: string;
-        dependencyType: string;
-        refId: string;
-        taskId: string;
-      };
-    };
-    assert.equal(legacyDependencyBody.item.taskId, "swerve-sensor-bundle");
-    assert.equal(legacyDependencyBody.item.refId, "intake-guard");
-    assert.equal(legacyDependencyBody.item.dependencyType, "hard");
-
-    resetLimits();
-
-    const legacyDependencyUpdateResponse = await app.inject({
-      method: "PATCH",
-      url: `/api/task-dependencies/${legacyDependencyBody.item.id}`,
-      payload: {
-        dependencyType: "finish_to_start",
-      },
-    });
-
-    assert.equal(legacyDependencyUpdateResponse.statusCode, 200);
-    assert.equal(legacyDependencyUpdateResponse.json().item.dependencyType, "hard");
 
     resetLimits();
 
@@ -642,7 +606,7 @@ test("web report and task planning contract endpoints persist records", async ()
 
     const taskDependenciesResponse = await app.inject({
       method: "GET",
-      url: "/api/task-dependencies",
+      url: "/api/task-dependencies?pageSize=60",
     });
     assert.equal(taskDependenciesResponse.statusCode, 200);
     assert.ok(
@@ -708,15 +672,6 @@ test("web report and task planning contract endpoints persist records", async ()
           dependency.taskId === "pit-bin-labeling" &&
           dependency.refId === "pit-board-refresh" &&
           dependency.dependencyType === "soft",
-      ),
-    );
-    assert.ok(
-      bootstrapBody.taskDependencies.some(
-        (dependency) =>
-          dependency.id === legacyDependencyBody.item.id &&
-          dependency.taskId === "swerve-sensor-bundle" &&
-          dependency.refId === "intake-guard" &&
-          dependency.dependencyType === "hard",
       ),
     );
     assert.ok(
@@ -1310,7 +1265,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         summary: "Ensures roster summary task counts stay deduplicated.",
         subsystemId: rosterSummarySubsystemBody.item.id,
         disciplineId: "design",
-        requirementId: null,
         mechanismId: null,
         partInstanceId: null,
         targetMilestoneId: null,
@@ -1320,8 +1274,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         dueDate: "2026-04-01",
         priority: "high",
         status: "waiting-for-qa",
-        dependencyIds: [],
-        blockers: [],
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
@@ -1446,7 +1398,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const googleAuthResponse = await app.inject({
       method: "POST",
-      url: "/api/auth/google",
+      url: "/api/auth/web/google",
       payload: {
         credential: "mock-google-credential",
       },
@@ -1476,7 +1428,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const emailVerifyResponse = await app.inject({
       method: "POST",
-      url: "/api/auth/email/verify",
+      url: "/api/auth/web/email/verify",
       payload: {
         email: "tester@mecorobotics.org",
         code: "123456",

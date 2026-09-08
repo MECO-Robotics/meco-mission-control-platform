@@ -1,3 +1,5 @@
+import { testMobileSessionStore } from "./sessionAuth";
+import { MemoryWebSessionStore } from "./webSessionMemoryStore";
 import { saveEnv, restoreEnv } from "./environment";
 import type { FastifyInstance } from "fastify";
 
@@ -18,7 +20,9 @@ const INTEGRATION_ENV_MODULES = [
   "../../src/auth/webSessionPlugin",
   "../../src/auth/webSessionService",
   "../../src/auth/webSessionStore",
-  "../../src/cad/cadStoreFactory",
+  "../../src/cad/cadRoutes",
+  "../../src/cad/cadImportService",
+  "../../src/cad/parsing/stepParserRunner",
   "../../src/cad/routes/cadStepImportPayload",
   "../../src/cad/routes/cadStepImportRoutes",
   "../../src/config/env",
@@ -27,6 +31,7 @@ const INTEGRATION_ENV_MODULES = [
   "../../src/onshape/services/onshapeOverview",
   "../../src/onshape/onshapeRoutes",
   "../../src/routes/authRoutes",
+  "../../src/routes/emailAuthSchemas",
   "../../src/routes/mobileAuthRoutes",
   "../../src/routes/mobileAuthSchemas",
   "../../src/routes/registerRoutes",
@@ -40,17 +45,13 @@ const INTEGRATION_ENV_MODULES = [
 const APP_ENV_KEYS = [
   "NODE_ENV",
   "DATABASE_URL",
-  "AUTH_JWT_SECRET",
   "GOOGLE_CLIENT_ID",
   "AUTH_EMAIL_SMTP_HOST",
   "AUTH_EMAIL_FROM",
-  "AUTH_LEGACY_MOBILE_JWT_ENABLED",
-  "AUTH_LEGACY_MOBILE_JWT_CUTOFF",
-  "AUTH_LEGACY_BEARER_ENABLED",
-  "AUTH_LEGACY_BEARER_CUTOFF",
   "AUTH_MENTOR_EMAILS",
   "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
   "CORS_ORIGIN",
+  "TRUST_PROXY_IPS",
   "API_RATE_LIMIT_MAX_REQUESTS",
   "API_RATE_LIMIT_WINDOW_SECONDS",
   "AUTH_RATE_LIMIT_MAX_REQUESTS",
@@ -104,14 +105,10 @@ function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>
   process.env.DATABASE_URL =
     "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
   delete process.env.CORS_ORIGIN;
-  delete process.env.AUTH_JWT_SECRET;
+  delete process.env.TRUST_PROXY_IPS;
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.AUTH_EMAIL_SMTP_HOST;
   delete process.env.AUTH_EMAIL_FROM;
-  delete process.env.AUTH_LEGACY_MOBILE_JWT_ENABLED;
-  delete process.env.AUTH_LEGACY_MOBILE_JWT_CUTOFF;
-  delete process.env.AUTH_LEGACY_BEARER_ENABLED;
-  delete process.env.AUTH_LEGACY_BEARER_CUTOFF;
   delete process.env.AUTH_MENTOR_EMAILS;
   delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
   process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
@@ -203,8 +200,8 @@ export async function withIntegrationApp(
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp({
       userPreferencesPath: join(preferencesDirectory, "preferences.json"),
-      mobileSessionStore: options?.mobileSessionStore,
-      webSessionStore: options?.webSessionStore,
+      mobileSessionStore: options?.mobileSessionStore ?? testMobileSessionStore,
+      webSessionStore: options?.webSessionStore ?? new MemoryWebSessionStore(),
     });
     for (const member of options?.members ?? []) {
       createMember(member);

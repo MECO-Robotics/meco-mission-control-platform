@@ -6,7 +6,6 @@ import type { StepParseResult } from "../cadTypes";
 import { CadImportError } from "../errors/cadImportErrors";
 import type { StepParserClient, StepParserMode } from "./stepParserTypes";
 
-const defaultStepParserTimeoutMs = 30_000;
 const builtInWorkerParserModes = new Set<StepParserMode>(["auto", "step_text", "json_fixture"]);
 let activeParserProcesses = 0;
 const parserWaiters: Array<{
@@ -75,17 +74,6 @@ function releaseParserSlot() {
     clearTimeout(next.timer);
     next.resolve();
   }
-}
-
-function resolveStepParserTimeoutMs() {
-  const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
-  if (requestedTimeout) {
-    const parsed = Number(requestedTimeout);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return defaultStepParserTimeoutMs;
 }
 
 function resolveParserProcessPath() {
@@ -215,7 +203,7 @@ export async function parseStepFileWithTimeout(args: {
   parserMode?: StepParserMode;
   runInWorker?: boolean;
 }) {
-  const timeoutMs = resolveStepParserTimeoutMs();
+  const timeoutMs = cadStepParserConfig.timeoutMs;
   const deadline = Date.now() + timeoutMs;
   const controller = new AbortController();
   const parsePromise = args.runInWorker && args.parserMode && builtInWorkerParserModes.has(args.parserMode)

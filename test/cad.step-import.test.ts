@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { resetCadRuntimeStore, setCadRuntimeStoreFinalizeFailureForTest } from "../src/cad/cadStore";
+import { getCadRuntimeStore, resetCadRuntimeStore, setCadRuntimeStoreFinalizeFailureForTest } from "../src/cad/cadStore";
 import { runStepImport } from "../src/cad/cadImportService";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
@@ -1430,11 +1430,10 @@ test("normal STEP upload rejects placeholder parser mode instead of creating a p
 test("allowPlaceholder cannot create placeholder snapshots outside test mode", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
-    const { getCadStore } = await import("../src/cad/cadStoreFactory");
 
     await assert.rejects(
       runStepImport({
-        store: getCadStore(),
+        store: getCadRuntimeStore(),
         parserClient: createPlaceholderStepParserClient(),
         parserMode: "placeholder",
         allowPlaceholder: true,
@@ -1543,7 +1542,6 @@ test("unauthenticated STEP JSON uploads are rejected before large body parsing",
       NODE_ENV: "development",
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public",
       GOOGLE_CLIENT_ID: "test-google-client",
-      AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
       CAD_STORE_DRIVER: "runtime",
     },
     timeout: 20_000,
@@ -1559,23 +1557,25 @@ test("authenticated STEP uploads still accept JSON payloads", async (t) => {
     import assert from "node:assert/strict";
 
     const { buildApp } = (await import("./src/app.ts")).default;
-    const app = await buildApp({ userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
+    const { MemoryWebSessionStore } = (await import("./test/helpers/webSessionMemoryStore.ts")).default;
+    const app = await buildApp({ webSessionStore: new MemoryWebSessionStore(), userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
     try {
       const signInResponse = await app.inject({
         method: "POST",
-        url: "/api/auth/dev-bypass",
+        url: "/api/auth/web/dev-bypass",
         payload: {
           role: "mentor",
         },
       });
       assert.equal(signInResponse.statusCode, 200, signInResponse.body);
-      const token = signInResponse.json().token;
+      const cookie = signInResponse.headers["set-cookie"].split(";", 1)[0];
+      const csrfToken = signInResponse.json().csrfToken;
 
       const response = await app.inject({
         method: "POST",
         url: "/api/cad/step-imports",
         headers: {
-          authorization: "Bearer " + token,
+          cookie, "x-csrf-token": csrfToken, origin: "http://127.0.0.1:5173",
         },
         payload: {
           fileName: "authenticated.step",
@@ -1597,7 +1597,6 @@ test("authenticated STEP uploads still accept JSON payloads", async (t) => {
       NODE_ENV: "development",
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public",
       GOOGLE_CLIENT_ID: "test-google-client",
-      AUTH_JWT_SECRET: "replace-with-a-long-random-secret-123456",
       CAD_STORE_DRIVER: "runtime",
       API_RATE_LIMIT_MAX_REQUESTS: "5",
       AUTH_RATE_LIMIT_MAX_REQUESTS: "5",
@@ -1707,12 +1706,13 @@ test("STEP upload validation enforces configured file size limit", () => {
 test("STEP import reports parser timeout as a safe user-readable error", async () => {
   await withIntegrationApp(async () => {
     resetCadRuntimeStore();
-    const { getCadStore } = await import("../src/cad/cadStoreFactory");
+    const { runStepImport } = require("../src/cad/cadImportService") as typeof import("../src/cad/cadImportService");
+
     let queuedWorkStarted = false;
 
     await assert.rejects(
       runStepImport({
-        store: getCadStore(),
+        store: getCadRuntimeStore(),
         parserClient: {
           parseStepFile: ({ signal }) => new Promise((_resolve, reject) => {
             const queuedWork = setTimeout(() => {

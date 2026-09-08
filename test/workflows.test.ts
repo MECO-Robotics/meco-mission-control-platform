@@ -45,7 +45,8 @@ function makeTask(overrides: Partial<Task> = {}) {
     dueDate: "2026-04-05",
     priority: "critical",
     status: "in-progress",
-    dependencyIds: [],
+
+    checklistItems: [],
     blockers: [],
     linkedManufacturingIds: [],
     linkedPurchaseIds: [],
@@ -113,7 +114,8 @@ function makeWorkflowSnapshot() {
       mentorId: "riley",
       status: "in-progress",
       priority: "high",
-      dependencyIds: ["task-a"],
+
+      checklistItems: [],
       blockers: ["Waiting on parts"],
       requiresDocumentation: false,
       documentationLinked: false,

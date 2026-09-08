@@ -53,6 +53,9 @@ export function reportFromQaReport(
     participantIds: report.participantIds,
     mentorApproved: report.mentorApproved,
     reviewedAt: report.reviewedAt,
+    targetRiskId: report.targetRiskId ?? null,
+    proposedRiskSeverity: report.proposedRiskSeverity ?? null,
+    proposedRiskStatus: report.proposedRiskStatus ?? null,
     title: task.title,
   };
 }

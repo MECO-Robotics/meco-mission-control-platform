@@ -5,26 +5,14 @@ import {
   parseCorsOrigins,
   parseCsv,
   parseGoogleClientIds,
-  pickFirstNumber,
   pickFirstString,
 } from "./envHelpers";
-
-const optionalJwtSecret = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim().length === 0 ? undefined : value,
-  z.string().min(32).optional(),
-);
-
-const optionalDateTime = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim().length === 0 ? undefined : value,
-  z.string().datetime({ offset: true }).optional(),
-);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
   DATABASE_URL: z.string().min(1),
+  TRUST_PROXY_IPS: z.string().refine((value) => value.split(",").every((ip) => z.ipv4().safeParse(ip.trim()).success || z.ipv6().safeParse(ip.trim()).success), "TRUST_PROXY_IPS must contain IP addresses").optional(),
   CORS_ORIGIN: z.string().min(1).default("*"),
   API_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(300),
   API_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
@@ -34,43 +22,17 @@ const envSchema = z.object({
   AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ALLOWED_HOSTED_DOMAIN: z.string().min(1).default("mecorobotics.org"),
-  AUTH_JWT_SECRET: optionalJwtSecret,
-  AUTH_TOKEN_TTL: z.string().min(2).default("1h"),
-  AUTH_LEGACY_BEARER_ENABLED: z.enum(["true", "false"]).default("false"),
-  AUTH_LEGACY_BEARER_CUTOFF: optionalDateTime,
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
   AUTH_EMAIL_SMTP_NAME: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_USER: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PASS: z.string().min(1).optional(),
-  AUTH_EMAIL_SMTP_FROM: z.string().min(1).optional(),
   AUTH_EMAIL_FROM: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
-  SMTP_HOST: z.string().min(1).optional(),
-  SMTP_PORT: z.coerce.number().int().positive().optional(),
-  SMTP_NAME: z.string().min(1).optional(),
-  SMTP_USER: z.string().min(1).optional(),
-  SMTP_PASS: z.string().min(1).optional(),
-  SMTP_FROM: z.string().min(1).optional(),
-  EMAIL_SMTP_HOST: z.string().min(1).optional(),
-  EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
-  EMAIL_SMTP_NAME: z.string().min(1).optional(),
-  EMAIL_SMTP_USER: z.string().min(1).optional(),
-  EMAIL_SMTP_PASS: z.string().min(1).optional(),
-  EMAIL_FROM: z.string().min(1).optional(),
-  MAIL_HOST: z.string().min(1).optional(),
-  MAIL_PORT: z.coerce.number().int().positive().optional(),
-  MAIL_NAME: z.string().min(1).optional(),
-  MAIL_USER: z.string().min(1).optional(),
-  MAIL_PASS: z.string().min(1).optional(),
-  MAIL_FROM: z.string().min(1).optional(),
   AUTH_EMAIL_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   AUTH_EMAIL_CODE_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
   AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
   AUTH_EMAIL_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  AUTH_DEVICE_TOKEN_TTL: z.string().min(2).default("3650d"),
-  AUTH_LEGACY_MOBILE_JWT_ENABLED: z.enum(["true", "false"]).default("false"),
-  AUTH_LEGACY_MOBILE_JWT_CUTOFF: optionalDateTime,
   AUTH_MENTOR_EMAILS: z.string().min(1).optional(),
   AUTH_MEMBER_SUBTEAMS_BY_EMAIL: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
@@ -115,61 +77,25 @@ const envSchema = z.object({
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
-const sampleJwtSecrets = new Set([
-  "replace-with-a-long-random-secret",
-  "replace-with-a-long-random-secret-123456",
-]);
 
 export const env = envSchema.parse(process.env);
 
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
 const resolvedResendApiKey = pickFirstString(env.RESEND_API_KEY);
-const resolvedExplicitEmailSmtpHost = pickFirstString(
-  env.AUTH_EMAIL_SMTP_HOST,
-  env.SMTP_HOST,
-  env.EMAIL_SMTP_HOST,
-  env.MAIL_HOST,
-);
+const resolvedExplicitEmailSmtpHost = env.AUTH_EMAIL_SMTP_HOST;
 const usesExplicitEmailSmtp = Boolean(resolvedExplicitEmailSmtpHost);
-const resolvedEmailSmtpHost = resolvedResendApiKey
-  ? (resolvedExplicitEmailSmtpHost ?? "smtp.resend.com")
-  : resolvedExplicitEmailSmtpHost;
-const resolvedEmailSmtpPort =
-  pickFirstNumber(
-    env.AUTH_EMAIL_SMTP_PORT,
-    env.SMTP_PORT,
-    env.EMAIL_SMTP_PORT,
-    env.MAIL_PORT,
-  ) ?? 587;
-const resolvedEmailSmtpUser = pickFirstString(
-  usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_USER : undefined,
-  usesExplicitEmailSmtp ? env.SMTP_USER : undefined,
-  usesExplicitEmailSmtp ? env.EMAIL_SMTP_USER : undefined,
-  usesExplicitEmailSmtp ? env.MAIL_USER : undefined,
-  resolvedResendApiKey && !usesExplicitEmailSmtp ? "resend" : undefined,
-);
-const resolvedEmailSmtpName = pickFirstString(
-  env.AUTH_EMAIL_SMTP_NAME,
-  env.SMTP_NAME,
-  env.EMAIL_SMTP_NAME,
-  env.MAIL_NAME,
-);
-const resolvedEmailSmtpPass = pickFirstString(
-  usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_PASS : undefined,
-  usesExplicitEmailSmtp ? env.SMTP_PASS : undefined,
-  usesExplicitEmailSmtp ? env.EMAIL_SMTP_PASS : undefined,
-  usesExplicitEmailSmtp ? env.MAIL_PASS : undefined,
-  resolvedResendApiKey && !usesExplicitEmailSmtp
-    ? resolvedResendApiKey
-    : undefined,
-);
-const resolvedEmailFrom = pickFirstString(
-  env.AUTH_EMAIL_FROM,
-  env.AUTH_EMAIL_SMTP_FROM,
-  env.SMTP_FROM,
-  env.EMAIL_FROM,
-  env.MAIL_FROM,
-);
+if (Boolean(env.AUTH_EMAIL_SMTP_USER) !== Boolean(env.AUTH_EMAIL_SMTP_PASS)) {
+  throw new Error("AUTH_EMAIL_SMTP_USER and AUTH_EMAIL_SMTP_PASS must be configured together.");
+}
+if (!usesExplicitEmailSmtp && (env.AUTH_EMAIL_SMTP_USER || env.AUTH_EMAIL_SMTP_PASS)) {
+  throw new Error("SMTP credentials require AUTH_EMAIL_SMTP_HOST.");
+}
+const resolvedEmailSmtpHost = resolvedExplicitEmailSmtpHost ?? (resolvedResendApiKey ? "smtp.resend.com" : undefined);
+const resolvedEmailSmtpPort = env.AUTH_EMAIL_SMTP_PORT ?? 587;
+const resolvedEmailSmtpUser = usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_USER : resolvedResendApiKey ? "resend" : undefined;
+const resolvedEmailSmtpPass = usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_PASS : resolvedResendApiKey;
+const resolvedEmailSmtpName = env.AUTH_EMAIL_SMTP_NAME;
+const resolvedEmailFrom = env.AUTH_EMAIL_FROM;
 const s3Endpoint = normalizeUrl(env.S3_ENDPOINT);
 const s3PublicBaseUrl = normalizeUrl(env.S3_PUBLIC_BASE_URL) ?? s3Endpoint;
 const s3BucketPrefix = env.S3_BUCKET_PREFIX;
@@ -217,22 +143,11 @@ function parseMemberSubteamsByEmail(value: string | undefined) {
 
 export const authConfig = {
   enabled: Boolean(
-    env.AUTH_JWT_SECRET &&
-      (googleClientIds.length > 0 || hasEmailDeliveryConfig),
+    googleClientIds.length > 0 || hasEmailDeliveryConfig,
   ),
   googleClientId: googleClientIds[0] ?? null,
   googleClientIds,
   hostedDomain: env.GOOGLE_ALLOWED_HOSTED_DOMAIN.toLowerCase(),
-  tokenTtl: env.AUTH_TOKEN_TTL,
-  legacyBearerEnabled: env.AUTH_LEGACY_BEARER_ENABLED === "true",
-  legacyBearerCutoff: env.AUTH_LEGACY_BEARER_CUTOFF
-    ? new Date(env.AUTH_LEGACY_BEARER_CUTOFF)
-    : null,
-  deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
-  legacyMobileJwtEnabled: env.AUTH_LEGACY_MOBILE_JWT_ENABLED === "true",
-  legacyMobileJwtCutoff: env.AUTH_LEGACY_MOBILE_JWT_CUTOFF
-    ? new Date(env.AUTH_LEGACY_MOBILE_JWT_CUTOFF)
-    : null,
   mentorEmails: new Set(parseCsv(env.AUTH_MENTOR_EMAILS).map((email) => email.toLowerCase())),
   memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   emailEnabled: hasEmailDeliveryConfig,
@@ -252,23 +167,13 @@ function assertProductionSecurityConfig() {
     return;
   }
 
-  if (env.AUTH_JWT_SECRET && sampleJwtSecrets.has(env.AUTH_JWT_SECRET)) {
-    throw new Error(
-      "Production deployments must replace the sample AUTH_JWT_SECRET with a generated secret.",
-    );
-  }
 
   if (!authConfig.enabled) {
     throw new Error(
-      "Production deployments must configure AUTH_JWT_SECRET and either Google or SMTP sign-in before the server starts.",
+      "Production deployments must configure either Google or SMTP sign-in before the server starts.",
     );
   }
 
-  if (env.AUTH_TOKEN_TTL !== "1h") {
-    throw new Error(
-      "Production AUTH_TOKEN_TTL must be 1h during the legacy bearer migration.",
-    );
-  }
 
   if (corsConfig.allowsAnyOrigin) {
     throw new Error(
@@ -405,15 +310,4 @@ export function resolveCadStepParserMode() {
     return requestedMode as (typeof cadStepParserModes)[number];
   }
   return cadStepParserConfig.mode;
-}
-
-export function resolveCadStepParserTimeoutMs() {
-  const requestedTimeout = process.env.CAD_STEP_PARSER_TIMEOUT_MS;
-  if (requestedTimeout) {
-    const parsed = Number(requestedTimeout);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return cadStepParserConfig.timeoutMs;
 }

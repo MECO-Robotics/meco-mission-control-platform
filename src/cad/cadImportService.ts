@@ -224,13 +224,13 @@ export async function runStepImport(args: {
     const unresolved = mappings.some((mapping) => mapping.status === "NEEDS_REVIEW");
     const nextStatus = unresolved ? "MAPPING_REVIEW" : "MAPPED";
     const snapshotStatus = unresolved ? "mapping_review" : "mapped";
-    const updatedSnapshot = (await args.store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? snapshot;
+    const updatedSnapshot = (await args.store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? missingCadTransition("snapshot");
     const updatedRun = (await args.store.updateImportRun(importRun.id, {
       status: nextStatus,
       parserVersion: parsed.parserVersion,
       parseCompletedAt,
       rawSummaryJson: diagnostics,
-    })) ?? importRun;
+    })) ?? missingCadTransition("import run");
 
     return {
       importRun: updatedRun,
@@ -271,4 +271,8 @@ export async function runStepImport(args: {
     });
     throw new CadImportError(failedRun?.errorMessage ?? message, statusCode);
   }
+}
+
+function missingCadTransition(record: string): never {
+  throw new Error(`CAD ${record} disappeared during a required state transition.`);
 }

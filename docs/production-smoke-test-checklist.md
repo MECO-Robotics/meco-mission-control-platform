@@ -9,7 +9,7 @@ to verify the Platform API is truly reachable through the expected web path.
   (or `https://api.example.com`).
 - `WEB_BASE_URL` (optional): web frontend origin that should proxy API calls, for example
   `https://app.mecorobotics.org`.
-- `PLATFORM_TEST_TOKEN` (optional): valid JWT for a production user session if you need
+- `PLATFORM_TEST_TOKEN` (optional): valid opaque mobile access token for a production user session if you need
   auth-protected endpoint checks.
 - `SMOKE_REQUIRE_AUTH_ENABLED=1`: required for production smoke runs so disabled auth
   fails the check; local/dev runs default this to off.
@@ -47,7 +47,7 @@ curl -i "${PLATFORM_API_BASE_URL}/api/auth/config"
     - `googleClientId` (null only if Google flow intentionally off)
 - Failure to expect:
   - 500: auth config was rejected at runtime (often missing production auth vars)
-  - `enabled:false` in production: `AUTH_JWT_SECRET` or OAuth/SMTP settings are not set
+  - `enabled:false` in production: Google/SMTP sign-in settings are not set
 
 ## 3) DB reachability (production-impacting evidence)
 
@@ -120,7 +120,7 @@ curl -i -H "Authorization: Bearer ${PLATFORM_TEST_TOKEN}" \
   - `HTTP 200`
   - JSON object with core keys: `seasons`, `projects`, `members`, `tasks`, `actions`
 - Failure to expect:
-  - `HTTP 401` with valid token: token/session mismatch or `AUTH_JWT_SECRET` drift
+  - `HTTP 401` with valid token: expired or revoked access credential
   - `HTTP 500`: runtime dependency failure while hydrating bootstrap payload
 
 Quick auth behavior check (production should be enabled):

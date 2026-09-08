@@ -26,7 +26,6 @@ const user: SessionUser = {
 
 function authEnv() {
   return {
-    AUTH_JWT_SECRET: "a".repeat(32),
     GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
     AUTH_RATE_LIMIT_MAX_REQUESTS: "20",
     AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS: "20",
@@ -226,89 +225,6 @@ test("refresh route rotates once and malformed access tokens never reach storage
     });
     assert.equal(revoked.statusCode, 401);
   }, { env: authEnv(), mobileSessionStore: store });
-});
-
-test("legacy device JWT issuance and verification stop without affecting web JWTs", async () => {
-  const store = new MobileSessionMemoryStore();
-  await withIntegrationApp(async ({ app, resetLimits }) => {
-    const legacy = await app.inject({
-      method: "POST", url: "/api/auth/email/verify",
-      payload: {
-        email: "student@mecorobotics.org", code: "123456", deviceId: "old-install",
-      },
-    });
-    assert.equal(legacy.statusCode, 426);
-    assert.deepEqual(legacy.json(), {
-      error: "mobile_client_upgrade_required",
-      message: "Update MECO Mission Control Mobile to continue signing in.",
-      code: "mobile_client_upgrade_required",
-    });
-
-    resetLimits();
-    const web = await app.inject({
-      method: "POST", url: "/api/auth/email/verify",
-      payload: { email: "student@mecorobotics.org", code: "123456" },
-    });
-    assert.equal(web.statusCode, 401);
-
-    const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
-    const oldMobileToken = signSessionToken(user, { deviceId: "old-install" });
-    resetLimits();
-    const oldMobileSession = await app.inject({
-      method: "GET", url: "/api/auth/me",
-      headers: { authorization: `Bearer ${oldMobileToken}` },
-    });
-    assert.equal(oldMobileSession.statusCode, 401);
-
-    const webToken = signSessionToken(user);
-    resetLimits();
-    const webSession = await app.inject({
-      method: "GET", url: "/api/auth/me",
-      headers: { authorization: `Bearer ${webToken}` },
-    });
-    assert.equal(webSession.statusCode, 200);
-  }, {
-    env: {
-      ...authEnv(),
-      AUTH_EMAIL_SMTP_HOST: "127.0.0.1",
-      AUTH_EMAIL_FROM: "MECO <no-reply@mecorobotics.org>",
-    },
-    mobileSessionStore: store,
-  });
-});
-
-test("legacy mobile JWT flag is bounded by its configured cutoff", async () => {
-  const baseEnv = {
-    ...authEnv(),
-    AUTH_EMAIL_SMTP_HOST: "127.0.0.1",
-    AUTH_EMAIL_FROM: "MECO <no-reply@mecorobotics.org>",
-    AUTH_LEGACY_MOBILE_JWT_ENABLED: "true" as const,
-  };
-  await withIntegrationApp(async ({ app }) => {
-    const beforeCutoff = await app.inject({
-      method: "POST", url: "/api/auth/email/verify",
-      payload: {
-        email: "student@mecorobotics.org", code: "123456", deviceId: "old-install",
-      },
-    });
-    assert.equal(beforeCutoff.statusCode, 401);
-  }, {
-    env: { ...baseEnv, AUTH_LEGACY_MOBILE_JWT_CUTOFF: "2099-01-01T00:00:00Z" },
-    mobileSessionStore: new MobileSessionMemoryStore(),
-  });
-
-  await withIntegrationApp(async ({ app }) => {
-    const afterCutoff = await app.inject({
-      method: "POST", url: "/api/auth/email/verify",
-      payload: {
-        email: "student@mecorobotics.org", code: "123456", deviceId: "old-install",
-      },
-    });
-    assert.equal(afterCutoff.statusCode, 426);
-  }, {
-    env: { ...baseEnv, AUTH_LEGACY_MOBILE_JWT_CUTOFF: "2020-01-01T00:00:00Z" },
-    mobileSessionStore: new MobileSessionMemoryStore(),
-  });
 });
 
 test("mobile API traffic uses the API quota across sessions sharing an IP", async () => {

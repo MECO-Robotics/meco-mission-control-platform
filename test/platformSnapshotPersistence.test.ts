@@ -17,8 +17,6 @@ function runProductionStoreScript(snapshotPath: string, source: string) {
         NODE_ENV: "production",
         DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public",
         CORS_ORIGIN: "https://mission-control.example.test",
-        AUTH_JWT_SECRET: "production-test-secret-that-is-long-enough",
-        AUTH_TOKEN_TTL: "1h",
         AUTH_EMAIL_SMTP_HOST: "smtp.example.test",
         AUTH_EMAIL_FROM: "noreply@example.test",
         PLATFORM_SNAPSHOT_PATH: snapshotPath,
@@ -46,6 +44,10 @@ test("production platform state survives a fresh process", () => {
           description: "Persists across process restarts",
           status: "active",
       });
+      const subsystem = store.getSnapshot().subsystems[0];
+      store.updateSubsystem(subsystem.id, { layoutX: 0.25, layoutY: 0.75, layoutZone: "front", layoutView: "top", sortOrder: 7 });
+      const source = store.getSnapshot();
+      store.createQaReport({ taskId: source.tasks[0].id, participantIds: [source.members[0].id], result: "pass", mentorApproved: true, notes: "Persistent proposal", reviewedAt: "2026-09-08", targetRiskId: source.risks[0].id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" });
       store.createTaskBlocker({
         blockedTaskId: store.getTasks()[0].id,
         blockerType: "external", blockerId: null, issueType: "broken-part",
@@ -72,7 +74,17 @@ test("production platform state survives a fresh process", () => {
       process.exit(0);
     `);
     assert.deepEqual(JSON.parse(loadedIssue), ["broken-part", "external", null]);
-    assert.doesNotThrow(() => JSON.parse(readFileSync(snapshotPath, "utf8")));
+    const persisted = JSON.parse(readFileSync(snapshotPath, "utf8"));
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      const report = snapshot.qaReports.find((item) => item.notes === "Persistent proposal");
+      process.stdout.write(JSON.stringify({ layout: snapshot.subsystems[0], report, risk: snapshot.risks.find((risk) => risk.id === report.targetRiskId) }));
+    `));
+    assert.equal(restored.layout.layoutX, 0.25); assert.equal(restored.layout.layoutY, 0.75);
+    assert.equal(restored.layout.layoutZone, "front"); assert.equal(restored.layout.layoutView, "top"); assert.equal(restored.layout.sortOrder, 7);
+    assert.equal(restored.report.proposedRiskStatus, "full-mitigation"); assert.equal(restored.risk.severity, "low");
+    assert.equal(restored.report.id, persisted.qaReports.find((item: {notes: string}) => item.notes === "Persistent proposal").id);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

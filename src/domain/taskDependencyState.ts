@@ -1,15 +1,5 @@
 import type { MilestoneStatus, PlatformSnapshot, Task, TaskDependency } from "./types";
 
-type LegacyTaskDependencyRecord = {
-  id: string;
-  upstreamTaskId: string;
-  downstreamTaskId: string;
-  dependencyType: "blocks" | "soft" | "finish_to_start";
-  createdAt: string;
-};
-
-type DependencyLike = TaskDependency | LegacyTaskDependencyRecord | Partial<TaskDependency & LegacyTaskDependencyRecord>;
-
 const MILESTONE_STATUS_ORDER: Record<MilestoneStatus, number> = {
   "not ready": 0,
   blocked: 1,
@@ -24,65 +14,6 @@ const PART_INSTANCE_STATUS_ORDER: Record<MilestoneStatus, number> = {
   ready: 3,
 };
 
-function uniqueIds(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
-}
-
-function normalizeDependencyRecord(dependency: DependencyLike, index: number): TaskDependency {
-  const dependencyRecord = dependency as {
-    id?: string;
-    kind?: TaskDependency["kind"];
-    taskId?: string;
-    downstreamTaskId?: string;
-    refId?: string;
-    upstreamTaskId?: string;
-    requiredState?: string;
-    dependencyType?: TaskDependency["dependencyType"] | "blocks" | "finish_to_start";
-    createdAt?: string;
-  };
-  const kind = dependencyRecord.kind ?? "task";
-  const dependencyType = dependencyRecord.dependencyType === "soft" ? "soft" : "hard";
-  const taskId = dependencyRecord.taskId ?? dependencyRecord.downstreamTaskId ?? "";
-  const refId = dependencyRecord.refId ?? dependencyRecord.upstreamTaskId ?? "";
-
-  return {
-    id: dependencyRecord.id ?? `${taskId || "task"}:dependency:${index + 1}`,
-    taskId,
-    kind,
-    refId,
-      requiredState:
-      dependencyRecord.requiredState ?? (kind === "part_instance" ? "ready" : "complete"),
-    dependencyType,
-    createdAt: dependencyRecord.createdAt ?? new Date().toISOString(),
-  };
-}
-
-function getTaskDependencies(snapshot: PlatformSnapshot) {
-  const explicitDependencies = (snapshot.taskDependencies ?? []).map((dependency, index) =>
-    normalizeDependencyRecord(dependency as DependencyLike, index),
-  );
-  const fallbackDependencies = snapshot.tasks.flatMap((task, taskIndex) =>
-    uniqueIds(task.dependencyIds).map<TaskDependency>((refId, dependencyIndex) => ({
-      id: `${task.id}:dependency:${taskIndex + dependencyIndex + 1}`,
-      taskId: task.id,
-      kind: "task",
-      refId,
-      requiredState: "complete",
-      dependencyType: "hard",
-      createdAt: task.startDate ? `${task.startDate}T00:00:00.000Z` : new Date().toISOString(),
-    })),
-  );
-
-  const dependencyKey = (dependency: TaskDependency) =>
-    `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`;
-
-  const explicitKeys = new Set(explicitDependencies.map(dependencyKey));
-  return [
-    ...explicitDependencies,
-    ...fallbackDependencies.filter((dependency) => !explicitKeys.has(dependencyKey(dependency))),
-  ];
-}
-
 function getTaskById(snapshot: PlatformSnapshot, taskId: string) {
   return snapshot.tasks.find((task) => task.id === taskId) ?? null;
 }
@@ -95,40 +26,6 @@ function getPartInstanceById(snapshot: PlatformSnapshot, partInstanceId: string)
   return snapshot.partInstances.find((partInstance) => partInstance.id === partInstanceId) ?? null;
 }
 
-function normalizeMilestoneRequiredState(requiredState: string | undefined) {
-  const normalized = (requiredState ?? "ready").trim().toLowerCase();
-  if (
-    normalized === "started" ||
-    normalized === "available" ||
-    normalized === "installed" ||
-    normalized === "complete"
-  ) {
-    return "ready" as const;
-  }
-
-  if (normalized === "not-ready" || normalized === "not_ready") {
-    return "not ready" as const;
-  }
-
-  if (normalized === "planned" || normalized === "retired") {
-    return "not ready" as const;
-  }
-
-  if (normalized === "needed") {
-    return "blocked" as const;
-  }
-
-  if (normalized === "in-qa" || normalized === "waiting-for-qa") {
-    return "qa" as const;
-  }
-
-  if (normalized === "in-progress") {
-    return "blocked" as const;
-  }
-
-  return normalized as MilestoneStatus;
-}
-
 function isMilestoneDependencySatisfied(
   snapshot: PlatformSnapshot,
   milestoneId: string,
@@ -139,8 +36,8 @@ function isMilestoneDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = MILESTONE_STATUS_ORDER[normalizeMilestoneRequiredState(requiredState)];
-  const targetOrder = MILESTONE_STATUS_ORDER[normalizeMilestoneRequiredState(milestone.status ?? "not ready")];
+  const requiredOrder = MILESTONE_STATUS_ORDER[requiredState as MilestoneStatus];
+  const targetOrder = MILESTONE_STATUS_ORDER[milestone.status ?? "not ready"];
 
   return targetOrder >= requiredOrder;
 }
@@ -155,12 +52,8 @@ function isPartInstanceDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = PART_INSTANCE_STATUS_ORDER[normalizeMilestoneRequiredState(requiredState)];
+  const requiredOrder = PART_INSTANCE_STATUS_ORDER[requiredState as MilestoneStatus];
   const targetOrder = PART_INSTANCE_STATUS_ORDER[partInstance.status];
-
-  if (requiredOrder === undefined || targetOrder === undefined) {
-    return partInstance.status === normalizeMilestoneRequiredState(requiredState);
-  }
 
   return targetOrder >= requiredOrder;
 }
@@ -171,7 +64,7 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Platfor
   }
 
   if (dependency.kind === "task") {
-    return getTaskById(snapshot, dependency.refId)?.status === (dependency.requiredState ?? "complete");
+    return getTaskById(snapshot, dependency.refId)?.status === dependency.requiredState;
   }
 
   if (dependency.kind === "part_instance") {
@@ -190,7 +83,7 @@ export function getTaskWaitingOnDependencyRecords(
   snapshot: PlatformSnapshot,
   now: Date = new Date(),
 ) {
-  return getTaskDependencies(snapshot).filter(
+  return snapshot.taskDependencies.filter(
     (dependency) =>
       dependency.taskId === taskId &&
       dependency.dependencyType !== "soft" &&

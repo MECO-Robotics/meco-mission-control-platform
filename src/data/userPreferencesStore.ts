@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 
 export type ThemePreference = "light" | "dark";
@@ -34,9 +36,10 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
-function isPreferencesRecord(value: unknown): value is Record<string, StoredUserPreferences> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const storedPreferencesSchema = z.record(z.string(), z.object({
+  taskSubteamIds: z.array(z.enum(["programming", "mechanical", "electrical", "media-marketing", "business", "scouting"])).optional(),
+  themeMode: z.enum(["light", "dark"]).nullable().optional(),
+}).strict());
 
 function normalizePreferences(value: StoredUserPreferences | undefined): UserPreferences {
   return {
@@ -68,15 +71,8 @@ function normalizeStoredPreferences(value: StoredUserPreferences | undefined): S
 }
 
 function loadPreferences(preferencesPath: string) {
-  if (!existsSync(preferencesPath)) {
-    return {} as Record<string, StoredUserPreferences>;
-  }
-
   try {
-    const parsed = JSON.parse(readFileSync(preferencesPath, "utf8")) as unknown;
-    if (!isPreferencesRecord(parsed)) {
-      return {};
-    }
+    const parsed = storedPreferencesSchema.parse(JSON.parse(readFileSync(preferencesPath, "utf8")));
 
     return Object.fromEntries(
       Object.entries(parsed).map(([email, preferences]) => [
@@ -84,8 +80,9 @@ function loadPreferences(preferencesPath: string) {
         normalizeStoredPreferences(preferences),
       ]),
     ) as Record<string, StoredUserPreferences>;
-  } catch {
-    return {};
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
   }
 }
 
@@ -112,7 +109,13 @@ export function createUserPreferencesStore(
       });
       const next = { ...preferencesByEmail, [normalizedEmail]: storedPreferences };
       mkdirSync(dirname(preferencesPath), { recursive: true });
-      writeFileSync(preferencesPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+      const temporaryPath = `${preferencesPath}.${randomUUID()}.tmp`;
+      try {
+        writeFileSync(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+        renameSync(temporaryPath, preferencesPath);
+      } finally {
+        rmSync(temporaryPath, { force: true });
+      }
       preferencesByEmail = next;
       return normalizePreferences(storedPreferences);
     },

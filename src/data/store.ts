@@ -485,7 +485,20 @@ function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnaps
   };
 }
 
-function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
+function deriveTaskBlockerSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
+  const summaries = new Map<string, Set<string>>();
+  for (const blocker of snapshot.taskBlockers) {
+    if (blocker.status !== "open") continue;
+    const descriptions = summaries.get(blocker.blockedTaskId) ?? new Set<string>();
+    descriptions.add(blocker.description);
+    summaries.set(blocker.blockedTaskId, descriptions);
+  }
+  return { ...snapshot, tasks: snapshot.tasks.map((task) => ({
+    ...task, checklistItems: task.checklistItems ?? [], blockers: [...(summaries.get(task.id) ?? [])],
+  })) };
+}
+
+function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
   const normalizedProjects = clonedSnapshot.projects.map((project) => ({
@@ -520,40 +533,6 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     };
   });
 
-  const buildLegacyScopeRequirements = (milestones: Milestone[]): MilestoneRequirement[] => {
-    const requirements: MilestoneRequirement[] = [];
-    const seen = new Set<string>();
-
-    for (const milestone of milestones) {
-      let sortOrder = 1;
-      for (const projectId of uniqueIds(milestone.projectIds ?? [])) {
-        const id = `${milestone.id}:scope:project:${projectId}`;
-        if (seen.has(id)) {
-          continue;
-        }
-        seen.add(id);
-        requirements.push({
-          id,
-          milestoneId: milestone.id,
-          targetType: "project",
-          targetId: projectId,
-          conditionType: "custom",
-          conditionValue: "in_scope",
-          required: true,
-          sortOrder: sortOrder++,
-          notes: "",
-        });
-      }
-    }
-
-    return requirements;
-  };
-
-  const normalizedMilestoneRequirements =
-    clonedSnapshot.milestoneRequirements && Array.isArray(clonedSnapshot.milestoneRequirements)
-      ? clonedSnapshot.milestoneRequirements
-      : buildLegacyScopeRequirements(normalizedMilestones);
-
   const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
     projects: normalizedProjects,
@@ -582,7 +561,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
       ...normalizePmCadProvenance(partInstance),
     })),
     milestones: normalizedMilestones,
-    milestoneRequirements: normalizedMilestoneRequirements,
+    milestoneRequirements: clonedSnapshot.milestoneRequirements,
     qaRequests: clonedSnapshot.qaRequests ?? [],
     workLogs: clonedSnapshot.workLogs.map((workLog) => ({
       ...workLog,
@@ -605,11 +584,11 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     ),
   });
 
-  return normalizeSnapshotTaskSerials({
+  return deriveTaskBlockerSummaries(normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
     favoriteViews: normalizedSnapshot.favoriteViews ?? [],
     actions: normalizedSnapshot.actions ?? [],
-  });
+  }));
 }
 
 interface SnapshotState {
@@ -627,7 +606,7 @@ const persistedProductionSnapshot = process.env.NODE_ENV === "production"
   ? loadPlatformSnapshotFile(platformSnapshotPath)
   : null;
 const globalSnapshotState: SnapshotState = {
-  current: cloneSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot()),
+  current: canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot()),
   interactive: null,
 };
 const tutorialSnapshotStates = new Map<string, SnapshotState>();
@@ -655,11 +634,12 @@ const currentSnapshot = new Proxy({} as PlatformSnapshot, {
 
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   const state = activeSnapshotState();
-  state.current = snapshot;
+  if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
+    throw new Error("Production platform mutations require a durable request transaction.");
+  }
+  state.current = deriveTaskBlockerSummaries(snapshot);
   if (state.isGlobalTransaction) {
     state.dirty = true;
-  } else if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
-    throw new Error("Production platform mutations require a durable request transaction.");
   }
 }
 
@@ -672,7 +652,7 @@ export async function acquireGlobalSnapshotMutation() {
   await previous;
 
   const state: SnapshotState = {
-    current: cloneSnapshot(globalSnapshotState.current),
+    current: structuredClone(globalSnapshotState.current),
     interactive: null,
     isGlobalTransaction: true,
     dirty: false,
@@ -1361,8 +1341,9 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     status: "not-started",
     estimatedHours: 4,
     actualHours: 0,
+    checklistItems: [],
     blockers: [],
-    dependencyIds: [],
+
     linkedManufacturingIds: [],
     linkedPurchaseIds: [],
     requiresDocumentation: true,
@@ -1424,8 +1405,9 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     status: "not-started",
     estimatedHours: 4,
     actualHours: 0,
+    checklistItems: [],
     blockers: [],
-    dependencyIds: [],
+
     linkedManufacturingIds: [],
     linkedPurchaseIds: [],
     requiresDocumentation: true,
@@ -1728,7 +1710,7 @@ export function resetStore() {
     return;
   }
 
-  globalSnapshotState.current = cloneSnapshot(createTutorialSnapshot());
+  globalSnapshotState.current = canonicalizeSnapshot(createTutorialSnapshot());
   globalSnapshotState.interactive = null;
   tutorialSnapshotStates.clear();
 }
@@ -1740,28 +1722,28 @@ export function resetTutorialBaseline(userKey?: string) {
       return buildTutorialBaselineState(createTutorialSnapshot());
     }
 
-    state.current = cloneSnapshot(createTutorialSnapshot());
+    state.current = canonicalizeSnapshot(createTutorialSnapshot());
     return buildTutorialBaselineState(state.current);
   }
 
   const tutorialSnapshot = getInteractiveTutorialSnapshot();
-  replaceCurrentSnapshot(cloneSnapshot(createTutorialSnapshot()));
+  replaceCurrentSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
   setInteractiveTutorialSnapshot(tutorialSnapshot);
   return getTutorialBaselineState();
 }
 
 export function startInteractiveTutorialSession(userKey?: string) {
   if (userKey) {
-    const current = cloneSnapshot(createTutorialSnapshot());
+    const current = canonicalizeSnapshot(createTutorialSnapshot());
     tutorialSnapshotStates.set(userKey, {
       current,
-      interactive: cloneSnapshot(current),
+      interactive: structuredClone(current),
     });
     return;
   }
 
-  setInteractiveTutorialSnapshot(cloneSnapshot(activeSnapshotState().current));
-  replaceCurrentSnapshot(cloneSnapshot(createTutorialSnapshot()));
+  setInteractiveTutorialSnapshot(structuredClone(activeSnapshotState().current));
+  replaceCurrentSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
 }
 
 export function resetInteractiveTutorialSession(userKey?: string) {
@@ -1771,7 +1753,7 @@ export function resetInteractiveTutorialSession(userKey?: string) {
       return false;
     }
 
-    state.current = cloneSnapshot(state.interactive);
+    state.current = structuredClone(state.interactive);
     state.interactive = null;
     tutorialSnapshotStates.delete(userKey);
     return true;
@@ -1782,7 +1764,7 @@ export function resetInteractiveTutorialSession(userKey?: string) {
     return false;
   }
 
-  replaceCurrentSnapshot(cloneSnapshot(tutorialSnapshot));
+  replaceCurrentSnapshot(structuredClone(tutorialSnapshot));
   setInteractiveTutorialSnapshot(null);
   return true;
 }
@@ -2600,6 +2582,11 @@ export function createSubsystem(input: SubsystemInput) {
   const subsystem: Subsystem = {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
     ...normalizePmCadProvenance(input),
+    layoutX: input.layoutX ?? null,
+    layoutY: input.layoutY ?? null,
+    layoutZone: input.layoutZone ?? "unplaced",
+    layoutView: input.layoutView ?? "top",
+    sortOrder: input.sortOrder ?? null,
     projectId: input.projectId,
     name: input.name,
     serialAlias: normalizeSubsystemSerialAlias(input.serialAlias),
@@ -2800,9 +2787,6 @@ export function removeSubsystem(subsystemId: string) {
       .filter((task) => !taskIdsToRemove.has(task.id))
       .map((task) => ({
         ...task,
-        dependencyIds: task.dependencyIds.filter(
-          (dependencyId) => !taskIdsToRemove.has(dependencyId),
-        ),
         linkedManufacturingIds: task.linkedManufacturingIds.filter(
           (itemId) => !manufacturingItemIdsToRemove.has(itemId),
         ),
@@ -3437,8 +3421,9 @@ export function createTask(input: TaskInput) {
     dueDate: input.dueDate,
     priority: input.priority,
     status: input.status,
-    blockers: input.blockers,
-    dependencyIds: input.dependencyIds,
+    checklistItems: input.checklistItems ?? [],
+    blockers: [],
+
     linkedManufacturingIds: input.linkedManufacturingIds,
     linkedPurchaseIds: input.linkedPurchaseIds,
     estimatedHours: input.estimatedHours,
@@ -3556,11 +3541,18 @@ export function createQaReport(input: QaReportInput) {
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
     reviewedAt: input.reviewedAt,
+    targetRiskId: input.targetRiskId ?? null,
+    proposedRiskSeverity: input.proposedRiskSeverity ?? null,
+    proposedRiskStatus: input.proposedRiskStatus ?? null,
   };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
     qaReports: [...currentSnapshot.qaReports, report],
+    risks: currentSnapshot.risks.map((risk) => report.mentorApproved && risk.id === report.targetRiskId
+      ? { ...risk, severity: report.proposedRiskStatus === "full-mitigation" ? "low" : report.proposedRiskSeverity ?? risk.severity,
+          mitigationTaskId: risk.mitigationTaskId ?? report.taskId }
+      : risk),
   });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
@@ -3659,6 +3651,9 @@ export function createReport(input: ReportInput) {
       notes: input.notes || input.summary,
       photoUrl: input.photoUrl,
       reviewedAt: input.reviewedAt ?? input.createdAt.slice(0, 10),
+      targetRiskId: input.targetRiskId,
+      proposedRiskSeverity: input.proposedRiskSeverity,
+      proposedRiskStatus: input.proposedRiskStatus,
     });
 
     return reportFromQaReport(currentSnapshot.tasks.find((task) => task.id === report.taskId), report);
@@ -3776,14 +3771,6 @@ export function createTaskDependency(input: TaskDependencyInput) {
   replaceCurrentSnapshot({
     ...currentSnapshot,
     taskDependencies: [...currentSnapshot.taskDependencies, dependency],
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === input.taskId && input.kind === "task" && input.dependencyType !== "soft"
-        ? {
-            ...task,
-            dependencyIds: uniqueIds([...task.dependencyIds, input.refId]),
-          }
-        : task,
-    ),
   });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
@@ -3822,30 +3809,6 @@ export function updateTaskDependency(
     ),
   });
 
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    tasks: currentSnapshot.tasks.map((task) => {
-      let dependencyIds = task.dependencyIds;
-      if (
-        task.id === originalDependency.taskId &&
-        originalDependency.kind === "task" &&
-        originalDependency.dependencyType !== "soft"
-      ) {
-        dependencyIds = dependencyIds.filter((dependencyId) => dependencyId !== originalDependency.refId);
-      }
-
-      return {
-        ...task,
-        dependencyIds:
-          task.id === savedDependency.taskId &&
-          savedDependency.kind === "task" &&
-          savedDependency.dependencyType !== "soft"
-            ? uniqueIds([...dependencyIds, savedDependency.refId])
-            : dependencyIds,
-      };
-    }),
-  });
-
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.taskId);
   recordAuditAction({
     operation: "update",
@@ -3876,16 +3839,6 @@ export function removeTaskDependency(dependencyId: string) {
     ...currentSnapshot,
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (candidate) => candidate.id !== dependencyId,
-    ),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === dependency.taskId && dependency.kind === "task" && dependency.dependencyType !== "soft"
-        ? {
-            ...task,
-            dependencyIds: task.dependencyIds.filter(
-              (candidate) => candidate !== dependency.refId,
-            ),
-          }
-        : task,
     ),
   });
 
@@ -3922,14 +3875,6 @@ export function createTaskBlocker(input: TaskBlockerInput) {
   replaceCurrentSnapshot({
     ...currentSnapshot,
     taskBlockers: [...currentSnapshot.taskBlockers, blocker],
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === input.blockedTaskId && blocker.status === "open"
-        ? {
-            ...task,
-            blockers: uniqueIds([...task.blockers, input.description]),
-          }
-        : task,
-    ),
   });
 
   const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
@@ -3967,23 +3912,6 @@ export function updateTaskBlocker(blockerId: string, input: Partial<TaskBlockerI
     ),
   });
 
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    tasks: currentSnapshot.tasks.map((task) => {
-      const blockers = task.id === originalBlocker.blockedTaskId
-        ? task.blockers.filter((description) => description !== originalBlocker.description)
-        : task.blockers;
-
-      return {
-        ...task,
-        blockers:
-          task.id === savedBlocker.blockedTaskId && savedBlocker.status === "open"
-            ? uniqueIds([...blockers, savedBlocker.description])
-            : blockers,
-      };
-    }),
-  });
-
   const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === savedBlocker.blockedTaskId);
   recordAuditAction({
     operation: "update",
@@ -4014,16 +3942,6 @@ export function removeTaskBlocker(blockerId: string) {
   replaceCurrentSnapshot({
     ...currentSnapshot,
     taskBlockers: currentSnapshot.taskBlockers.filter((candidate) => candidate.id !== blockerId),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === blocker.blockedTaskId
-        ? {
-            ...task,
-            blockers: task.blockers.filter(
-              (candidate) => candidate !== blocker.description,
-            ),
-          }
-        : task,
-    ),
   });
 
   const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
@@ -4495,14 +4413,7 @@ export function removeTask(taskId: string) {
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    tasks: currentSnapshot.tasks
-      .filter((candidate) => candidate.id !== taskId)
-      .map((candidate) => ({
-        ...candidate,
-        dependencyIds: candidate.dependencyIds.filter(
-          (dependencyId) => dependencyId !== taskId,
-        ),
-      })),
+    tasks: currentSnapshot.tasks.filter((candidate) => candidate.id !== taskId),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
     qaRequests: getQaRequests().filter(

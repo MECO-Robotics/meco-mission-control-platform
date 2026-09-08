@@ -132,6 +132,7 @@ export interface OnshapeRuntimeStore {
   createOAuthState(input: { sessionKey: string }): { state: string; createdAt: string; sessionKey: string };
   consumeOAuthState(state: string, input: { sessionKey: string }): boolean;
   getOAuthTokenSet(): OnshapeOAuthTokenSet | null;
+  refreshOAuthTokenSet(refresh: () => Promise<OnshapeOAuthTokenSet>): Promise<OnshapeOAuthTokenSet>;
   setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null): OnshapeOAuthTokenSet | null;
   reset(): void;
 }

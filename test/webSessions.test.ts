@@ -1,3 +1,4 @@
+import { issueTestMobileToken } from "./helpers/sessionAuth";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -238,8 +239,8 @@ test("Authorization headers take precedence over web cookies and fail closed", a
       payload: { role: "mentor" },
     });
     const validCookie = readWebSessionCookie(signIn.headers["set-cookie"]);
-    const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
-    const validBearer = signSessionToken({
+
+    const validBearer = await issueTestMobileToken({
       accountId: "mobile-mentor",
       authProvider: "email",
       email: "mentor@mecorobotics.org",
@@ -271,29 +272,5 @@ test("Authorization headers take precedence over web cookies and fail closed", a
       },
     });
     assert.equal(invalidBearerDoesNotFallBack.statusCode, 401);
-  }, { env: webSessionAuthEnv, webSessionStore: store });
-});
-
-test("existing non-mobile bearer sessions remain usable without browser CSRF headers", async () => {
-  const store = new MemoryWebSessionStore();
-  await withIntegrationApp(async ({ app }) => {
-    const { signSessionToken } = require("../src/auth/authService") as typeof import("../src/auth/authService");
-    const token = signSessionToken({
-      accountId: "mobile-mentor",
-      authProvider: "email",
-      email: "mentor@mecorobotics.org",
-      name: "Mobile Mentor",
-      picture: null,
-      hostedDomain: "mecorobotics.org",
-      role: "mentor",
-      taskSubteamIds: [],
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/tutorial/session/start",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.statusCode, 200);
   }, { env: webSessionAuthEnv, webSessionStore: store });
 });

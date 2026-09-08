@@ -5,7 +5,6 @@ import nodemailer from "nodemailer";
 test("uncertain SMTP delivery retains a usable code and resend cooldown", async (context) => {
   process.env.NODE_ENV = "development";
   process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/meco_platform";
-  process.env.AUTH_JWT_SECRET = "a".repeat(32);
   process.env.AUTH_EMAIL_SMTP_HOST = "127.0.0.1";
   process.env.AUTH_EMAIL_FROM = "no-reply@mecorobotics.org";
   let deliveredText = "";

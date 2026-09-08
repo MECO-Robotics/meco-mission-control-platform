@@ -12,15 +12,13 @@ export interface WebSessionStore {
   revoke(id: string, revokedAt: Date): Promise<boolean>;
 }
 
-let prisma: PrismaClient | null = null;
 
-export function getPrismaWebSessionStore(): WebSessionStore {
-  prisma ??= new PrismaClient();
+export function createPrismaWebSessionStore(prisma: PrismaClient): WebSessionStore {
 
   return {
-    create: (record) => prisma!.webSession.create({ data: record }),
+    create: (record) => prisma.webSession.create({ data: record }),
     async deleteInactiveBefore(cutoff) {
-      const result = await prisma!.webSession.deleteMany({
+      const result = await prisma.webSession.deleteMany({
         where: {
           OR: [
             { expiresAt: { lte: cutoff } },
@@ -31,7 +29,7 @@ export function getPrismaWebSessionStore(): WebSessionStore {
       return result.count;
     },
     findActiveByTokenHash: (tokenHash, now) =>
-      prisma!.webSession.findFirst({
+      prisma.webSession.findFirst({
         where: {
           tokenHash,
           revokedAt: null,
@@ -39,20 +37,11 @@ export function getPrismaWebSessionStore(): WebSessionStore {
         },
       }),
     async revoke(id, revokedAt) {
-      const result = await prisma!.webSession.updateMany({
+      const result = await prisma.webSession.updateMany({
         where: { id, revokedAt: null },
         data: { revokedAt },
       });
       return result.count === 1;
     },
   };
-}
-
-export async function disconnectWebSessionStore() {
-  if (!prisma) {
-    return;
-  }
-
-  await prisma.$disconnect();
-  prisma = null;
 }

@@ -2,15 +2,12 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import nodemailer from "nodemailer";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
-import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
 import type { UserPreferencesStore } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
-const SESSION_ISSUER = "meco-platform";
-const SESSION_AUDIENCE = "meco-apps";
 const PUBLIC_DEMO_SEASON_ID = "default-season";
 const EMAIL_DELIVERY_TIMEOUT_MS = 12_000;
 
@@ -59,16 +56,6 @@ const emailTransport =
       })
     : null;
 
-interface SessionClaims extends JwtPayload {
-  deviceId?: string;
-  email: string;
-  name: string;
-  picture?: string | null;
-  hd: string;
-  googleHostedDomainVerified?: boolean;
-  provider?: "google" | "email";
-  role?: MemberRole;
-}
 
 interface PendingEmailCodeRecord {
   codeHash: Buffer;
@@ -89,9 +76,6 @@ export interface SessionUser {
   isPublicDemo?: boolean;
 }
 
-interface SessionTokenOptions {
-  deviceId?: string | null;
-}
 
 type DevelopmentSessionRole = Extract<MemberRole, "student" | "mentor">;
 
@@ -128,13 +112,6 @@ export function isAuthEnabled() {
   return authConfig.enabled;
 }
 
-function getJwtSecret() {
-  if (!env.AUTH_JWT_SECRET) {
-    throw new AuthError("MECO sign-in is not configured on the server yet.", 503);
-  }
-
-  return env.AUTH_JWT_SECRET;
-}
 
 function assertGoogleAuthReady() {
   if (!authConfig.enabled || !googleClient || authConfig.googleClientIds.length === 0) {
@@ -584,119 +561,6 @@ function requestEmailDeliveryFailure(error?: unknown): never {
   );
 }
 
-function normalizeDeviceId(value: string | null | undefined) {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : null;
-}
-
-export function signSessionToken(user: SessionUser, options: SessionTokenOptions = {}) {
-  const secret = getJwtSecret();
-  const deviceId = normalizeDeviceId(options.deviceId);
-  const googleHostedDomainVerified =
-    user.authProvider === "google" &&
-    isAllowedHostedDomain(user.email) &&
-    user.hostedDomain.toLowerCase() === authConfig.hostedDomain;
-
-  return jwt.sign(
-    {
-      ...(deviceId ? { deviceId } : null),
-      ...(googleHostedDomainVerified ? { googleHostedDomainVerified: true } : null),
-      email: user.email,
-      name: user.name,
-      picture: user.picture,
-      hd: user.hostedDomain,
-      provider: user.authProvider,
-      role: user.role,
-    },
-    secret,
-    {
-      algorithm: "HS256",
-      subject: user.accountId,
-      expiresIn: (deviceId ? authConfig.deviceTokenTtl : authConfig.tokenTtl) as SignOptions["expiresIn"],
-      issuer: SESSION_ISSUER,
-      audience: SESSION_AUDIENCE,
-    },
-  );
-}
-
-export function verifySessionToken(token: string, preferences?: UserPreferencesStore): SessionUser {
-  const secret = getJwtSecret();
-  const payload = jwt.verify(token, secret, {
-    issuer: SESSION_ISSUER,
-    audience: SESSION_AUDIENCE,
-    algorithms: ["HS256"],
-  }) as SessionClaims;
-
-  if (
-    typeof payload.sub !== "string" ||
-    typeof payload.email !== "string" ||
-    typeof payload.name !== "string" ||
-    typeof payload.hd !== "string"
-  ) {
-    throw new AuthError("The session token is missing required identity fields.", 401);
-  }
-
-  const provider = payload.provider ?? "google";
-  if (provider !== "google" && provider !== "email") {
-    throw new AuthError("The session token uses an unknown sign-in provider.", 401);
-  }
-
-  if (
-    typeof payload.deviceId === "string" &&
-    payload.deviceId.trim().length > 0 &&
-    !isLegacyMobileJwtIssuanceAllowed()
-  ) {
-    throw new AuthError(
-      "Update MECO Mission Control Mobile to continue signing in.",
-      426,
-    );
-  }
-
-  if (
-    (typeof payload.deviceId !== "string" || payload.deviceId.trim().length === 0) &&
-    !isLegacyBearerIssuanceAllowed()
-  ) {
-    throw new AuthError(
-      "Use a supported web or mobile session to continue signing in.",
-      426,
-    );
-  }
-
-  const email = normalizeEmailAddress(payload.email);
-  const hostedDomain = payload.hd.toLowerCase();
-  const requiresGoogleHostedDomainProof =
-    provider === "google" && isAllowedHostedDomain(email);
-  if (
-    requiresGoogleHostedDomainProof &&
-    (hostedDomain !== authConfig.hostedDomain ||
-      payload.googleHostedDomainVerified !== true)
-  ) {
-    throw new AuthError("Google sessions require a verified hosted domain claim.", 403);
-  }
-
-  if (!isAllowedSignInEmail(email)) {
-    throw new AuthError(buildSignInAccessMessage(), 403);
-  }
-
-  const developmentRole =
-    env.NODE_ENV !== "production" &&
-    payload.sub.startsWith("local-dev-") &&
-    isDevelopmentSessionRole(payload.role)
-      ? payload.role
-      : null;
-
-  return {
-    accountId: payload.sub,
-    authProvider: provider,
-    email,
-    name: payload.name,
-    picture: typeof payload.picture === "string" ? payload.picture : null,
-    hostedDomain,
-    role: developmentRole ?? getRoleForEmail(email),
-    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
-  };
-}
-
 export function refreshSessionUser(user: SessionUser, preferences?: UserPreferencesStore): SessionUser {
   const email = normalizeEmailAddress(user.email);
   if (!isAllowedSignInEmail(email)) {
@@ -718,21 +582,6 @@ export function refreshSessionUser(user: SessionUser, preferences?: UserPreferen
   };
 }
 
-export function isLegacyMobileJwtIssuanceAllowed(now = new Date()) {
-  return (
-    authConfig.legacyMobileJwtEnabled &&
-    (!authConfig.legacyMobileJwtCutoff || now < authConfig.legacyMobileJwtCutoff)
-  );
-}
-
-export function isLegacyBearerIssuanceAllowed(now = new Date()) {
-  return (
-    env.NODE_ENV !== "production" ||
-    (authConfig.legacyBearerEnabled &&
-      (!authConfig.legacyBearerCutoff || now < authConfig.legacyBearerCutoff))
-  );
-}
-
 export function readBearerToken(headerValue: string | undefined) {
   if (!headerValue) {
     return null;
@@ -751,14 +600,7 @@ export function getSessionFromRequest(request: FastifyRequest) {
     return request.mobileSession.user;
   }
 
-  const token = readBearerToken(request.headers.authorization);
-  if (token) {
-    try {
-      return verifySessionToken(token, request.server.userPreferences);
-    } catch {
-      return null;
-    }
-  }
+  if (request.headers.authorization) return null;
 
   if (request.webSession) {
     return request.webSession.user;

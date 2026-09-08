@@ -96,7 +96,7 @@ the required environment is available and document any environment assumptions.
 
 ## Auth And Session Model
 
-Auth is enabled when `AUTH_JWT_SECRET` is configured and at least one supported
+Auth is enabled when at least one supported
 sign-in path is configured. Production requires enabled auth and explicit CORS
 origins.
 
@@ -160,3 +160,13 @@ For documentation-only PRs, confirm the diff is scoped:
 ```bash
 git diff -- docs
 ```
+
+## Current task and reporting contract
+
+The affected command objects reject unknown fields. `taskDependencies` and `taskBlockers` are the authoritative relation collections; task commands do not accept `dependencyIds` or `blockers`. Dependency commands require explicit `taskId`, `kind`, `refId`, `requiredState`, and `dependencyType`; legacy upstream/downstream aliases are rejected. Task blocker descriptions and readiness booleans are derived for bootstrap. Task `checklistItems` round-trip as a string array, defaulting to empty.
+
+Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports retain `targetRiskId`, `proposedRiskSeverity`, and `proposedRiskStatus`; authorized approved proposals update the risk severity and missing mitigation-task link in the same snapshot transaction. Full mitigation selects low severity. Pending proposals do not change risks.
+
+Route registrations that write snapshot state declare `config.snapshotMutation: true`. Their successful responses commit one staged snapshot; errors discard it. Production mutation outside that boundary fails before replacement. Snapshot loading/seed initialization canonicalizes once; ordinary transaction copies are pure clones. Persistence stores share the application's Prisma client and its close lifecycle. CAD backend selection is explicit and never changes after a database failure.
+
+This replaces disposable prototype contracts and seeds without migration or old-client support. Stop the local server, remove only `data/platform-snapshot.json` (or the configured `PLATFORM_SNAPSHOT_PATH`), and restart to reseed. Existing prototype snapshot changes are discarded. Session/CAD database schema is unchanged; no database reset is required. The obsolete JWT secret, lifetime and migration flags and `/api/auth/google`, `/api/auth/email/verify`, `/api/auth/dev-bypass` routes are removed. Use current web-cookie or opaque-mobile-session endpoints.

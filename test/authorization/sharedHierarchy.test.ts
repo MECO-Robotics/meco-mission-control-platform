@@ -6,7 +6,7 @@ import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowA
 
 test("students cannot mutate shared planning or CAD hierarchy", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const studentHeaders = createWorkflowAuthHeaders("student");
+    const studentHeaders = await createWorkflowAuthHeaders("student");
     const attempts = [
       ["POST", "/api/subsystems"],
       ["PATCH", "/api/subsystems/manipulator"],
@@ -32,7 +32,7 @@ test("mentors retain legitimate shared hierarchy mutation access", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/subsystems",
-      headers: createWorkflowAuthHeaders("mentor"),
+      headers: await createWorkflowAuthHeaders("mentor"),
       payload: {
         name: "Authorization fixture subsystem",
         projectId: "project-robot-2026",

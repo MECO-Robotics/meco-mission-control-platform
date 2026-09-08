@@ -750,7 +750,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { viewId: string } }>(
     "/api/navigation/favorites/:viewId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -868,7 +868,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/seasons", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/seasons", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -919,7 +919,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/projects", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/projects", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -950,7 +950,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { projectId: string } }>(
     "/api/projects/:projectId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -993,7 +993,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/workstreams", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/workstreams", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1024,7 +1024,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { workstreamId: string } }>(
     "/api/workstreams/:workstreamId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1082,7 +1082,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/reports", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/reports", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1111,6 +1111,7 @@ export async function registerRoutes(
       parsed.data.reportType === "QA"
         ? parsed.data.taskId
           ? validateQaReportLinks({
+              ...parsed.data,
               taskId: parsed.data.taskId,
               participantIds: parsed.data.participantIds ?? [],
             })
@@ -1153,7 +1154,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/report-findings", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/report-findings", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1192,7 +1193,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/qa-reports", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/qa-reports", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1247,7 +1248,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/qa-requests", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/qa-requests", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1291,7 +1292,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/test-results", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/test-results", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1336,7 +1337,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/risks", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/risks", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1372,7 +1373,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { riskId: string } }>(
     "/api/risks/:riskId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1432,8 +1433,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { riskId: string } }>(
-    "/api/risks/:riskId",
-    async (request, reply) => {
+    "/api/risks/:riskId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1451,7 +1451,7 @@ export async function registerRoutes(
     },
   );
 
-  app.post<{ Body: unknown }>("/api/work-logs", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/work-logs", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1485,7 +1485,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { workLogId: string } }>(
     "/api/work-logs/:workLogId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1545,8 +1545,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { workLogId: string } }>(
-    "/api/work-logs/:workLogId",
-    async (request, reply) => {
+    "/api/work-logs/:workLogId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1609,9 +1608,7 @@ export async function registerRoutes(
       priority: task.priority,
       estimatedHours: task.estimatedHours,
       actualHours: task.actualHours,
-      dependencyIds: task.dependencyIds,
       gate: evaluateTaskCompletion(task, snapshot),
-      blockers: task.blockers,
       isBlocked: (task.blockers ?? []).length > 0,
       isWaitingOnDependency: isTaskWaitingOnDependencies(task, snapshot),
       linkedManufacturingIds: task.linkedManufacturingIds,
@@ -1715,7 +1712,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/milestones", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/milestones", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1751,7 +1748,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { milestoneId: string } }>(
     "/api/milestones/:milestoneId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1806,8 +1803,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { milestoneId: string } }>(
-    "/api/milestones/:milestoneId",
-    async (request, reply) => {
+    "/api/milestones/:milestoneId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1838,7 +1834,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/materials", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/materials", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -1863,7 +1859,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { materialId: string } }>(
     "/api/materials/:materialId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -1891,8 +1887,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { materialId: string } }>(
-    "/api/materials/:materialId",
-    async (request, reply) => {
+    "/api/materials/:materialId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2009,7 +2004,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post<{ Body: unknown }>("/api/artifacts", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/artifacts", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -2049,7 +2044,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { artifactId: string } }>(
     "/api/artifacts/:artifactId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2098,8 +2093,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { artifactId: string } }>(
-    "/api/artifacts/:artifactId",
-    async (request, reply) => {
+    "/api/artifacts/:artifactId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2117,7 +2111,7 @@ export async function registerRoutes(
     },
   );
 
-  app.post<{ Body: unknown }>("/api/tasks", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/tasks", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -2185,7 +2179,7 @@ export async function registerRoutes(
 
   app.post<{ Body: unknown; Params: { taskId: string } }>(
     "/api/tasks/:taskId/claim",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2237,8 +2231,7 @@ export async function registerRoutes(
   );
 
   app.post<{ Params: { taskId: string } }>(
-    "/api/tasks/:taskId/release",
-    async (request, reply) => {
+    "/api/tasks/:taskId/release", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2279,7 +2272,7 @@ export async function registerRoutes(
 
   app.post<{ Body: unknown; Params: { taskId: string } }>(
     "/api/tasks/:taskId/reassign",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2334,7 +2327,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { taskId: string } }>(
     "/api/tasks/:taskId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2428,8 +2421,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { taskId: string } }>(
-    "/api/tasks/:taskId",
-    async (request, reply) => {
+    "/api/tasks/:taskId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2472,7 +2464,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/task-dependencies", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/task-dependencies", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -2511,7 +2503,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { dependencyId: string } }>(
     "/api/task-dependencies/:dependencyId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2554,12 +2546,20 @@ export async function registerRoutes(
         });
       }
 
-      const dependency = updateTaskDependency(request.params.dependencyId, {
-        ...parsed.data,
+      const merged = taskDependencySchema.safeParse({
         taskId: nextTaskId,
         kind: nextKind,
         refId: nextRefId,
+        requiredState: parsed.data.requiredState ?? currentDependency.requiredState,
+        dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,
       });
+      if (!merged.success) {
+        return reply.code(400).send({
+          message: "Task dependency update payload is invalid.",
+          issues: merged.error.flatten(),
+        });
+      }
+      const dependency = updateTaskDependency(request.params.dependencyId, merged.data);
       return {
         item: dependency,
       };
@@ -2567,8 +2567,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { dependencyId: string } }>(
-    "/api/task-dependencies/:dependencyId",
-    async (request, reply) => {
+    "/api/task-dependencies/:dependencyId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2603,7 +2602,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/task-blockers", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/task-blockers", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -2631,7 +2630,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { blockerId: string } }>(
     "/api/task-blockers/:blockerId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2676,8 +2675,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { blockerId: string } }>(
-    "/api/task-blockers/:blockerId",
-    async (request, reply) => {
+    "/api/task-blockers/:blockerId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2708,7 +2706,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/members", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/members", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -2771,7 +2769,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { memberId: string } }>(
     "/api/members/:memberId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2867,8 +2865,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { memberId: string } }>(
-    "/api/members/:memberId",
-    async (request, reply) => {
+    "/api/members/:memberId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -2902,7 +2899,7 @@ export async function registerRoutes(
     },
   );
 
-  app.post<{ Body: unknown }>("/api/subsystems", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/subsystems", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -2962,7 +2959,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { subsystemId: string } }>(
     "/api/subsystems/:subsystemId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3057,8 +3054,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { subsystemId: string } }>(
-    "/api/subsystems/:subsystemId",
-    async (request, reply) => {
+    "/api/subsystems/:subsystemId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3087,7 +3083,7 @@ export async function registerRoutes(
     },
   );
 
-  app.post<{ Body: unknown }>("/api/mechanisms", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/mechanisms", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -3114,7 +3110,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { mechanismId: string } }>(
     "/api/mechanisms/:mechanismId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3149,8 +3145,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { mechanismId: string } }>(
-    "/api/mechanisms/:mechanismId",
-    async (request, reply) => {
+    "/api/mechanisms/:mechanismId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3181,7 +3176,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/part-definitions", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/part-definitions", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -3214,7 +3209,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { partDefinitionId: string } }>(
     "/api/part-definitions/:partDefinitionId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3258,8 +3253,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { partDefinitionId: string } }>(
-    "/api/part-definitions/:partDefinitionId",
-    async (request, reply) => {
+    "/api/part-definitions/:partDefinitionId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3290,7 +3284,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/part-instances", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/part-instances", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -3322,7 +3316,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { partInstanceId: string } }>(
     "/api/part-instances/:partInstanceId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3375,8 +3369,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { partInstanceId: string } }>(
-    "/api/part-instances/:partInstanceId",
-    async (request, reply) => {
+    "/api/part-instances/:partInstanceId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3459,7 +3452,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/manufacturing", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/manufacturing", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -3548,7 +3541,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { itemId: string } }>(
     "/api/manufacturing/:itemId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3663,7 +3656,7 @@ export async function registerRoutes(
 
   app.put<{ Body: unknown; Params: { itemId: string } }>(
     "/api/manufacturing/:itemId/review",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3719,7 +3712,7 @@ export async function registerRoutes(
 
   app.post<{ Body: unknown; Params: { itemId: string } }>(
     "/api/manufacturing/:itemId/transition",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3752,8 +3745,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId",
-    async (request, reply) => {
+    "/api/manufacturing/:itemId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3796,7 +3788,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/purchases", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/purchases", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -3862,7 +3854,7 @@ export async function registerRoutes(
 
   app.patch<{ Body: unknown; Params: { itemId: string } }>(
     "/api/purchases/:itemId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -3947,7 +3939,7 @@ export async function registerRoutes(
 
   app.put<{ Body: unknown; Params: { itemId: string } }>(
     "/api/purchases/:itemId/approval",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -4002,7 +3994,7 @@ export async function registerRoutes(
 
   app.post<{ Body: unknown; Params: { itemId: string } }>(
     "/api/purchases/:itemId/transition",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -4049,8 +4041,7 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { itemId: string } }>(
-    "/api/purchases/:itemId",
-    async (request, reply) => {
+    "/api/purchases/:itemId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }

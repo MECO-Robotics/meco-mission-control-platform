@@ -14,7 +14,6 @@ import type {
   MobileSessionStore,
 } from "./mobileSessionStoreTypes";
 
-let prisma: PrismaClient | null = null;
 
 export function createPrismaMobileSessionStore(
   client: PrismaClient,
@@ -178,15 +177,4 @@ export function createPrismaMobileSessionStore(
       );
     },
   };
-}
-
-export function getPrismaMobileSessionStore() {
-  prisma ??= new PrismaClient();
-  return createPrismaMobileSessionStore(prisma);
-}
-
-export async function disconnectMobileSessionStore() {
-  if (!prisma) return;
-  await prisma.$disconnect();
-  prisma = null;
 }

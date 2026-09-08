@@ -1,26 +1,14 @@
+import { emailSignInRequestSchema } from "./emailAuthSchemas";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   AuthError,
-  buildDevelopmentSessionUser,
   getPublicAuthConfig,
-  isLegacyBearerIssuanceAllowed,
-  isLegacyMobileJwtIssuanceAllowed,
   isAuthEnabled,
   requestEmailSignInCode,
   requireSession,
-  signSessionToken,
-  verifyEmailSignInCode,
-  verifyGoogleCredential,
 } from "../auth/authService";
 import {
-  authConfig as runtimeAuthConfig,
-  env,
-} from "../config/env";
-import {
-  devBypassSchema,
-  emailSignInRequestSchema,
-  emailSignInVerifySchema,
   userPreferencesPatchSchema,
 } from "./routeSchemas";
 
@@ -60,68 +48,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     return getPublicAuthConfig();
   });
 
-  app.post<{ Body: { credential?: string } }>("/api/auth/google", async (request, reply) => {
-    if (!allowAuthRouteRequest(request, reply)) {
-      return;
-    }
-    if (!isLegacyBearerIssuanceAllowed()) {
-      return reply.code(426).send({
-        code: "session_client_upgrade_required",
-        message: "Use the supported web or mobile sign-in flow.",
-      });
-    }
-
-    const credential = request.body?.credential;
-    if (!credential) {
-      return reply.code(400).send({
-        message: "Google did not provide a credential to exchange.",
-      });
-    }
-
-    try {
-      const user = await verifyGoogleCredential(credential, app.userPreferences);
-      const token = signSessionToken(user);
-
-      return { token, user };
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({ message: error.message });
-      }
-
-      request.log.error({ err: error }, "Google authentication failed");
-      return reply.code(500).send({
-        message: "Google authentication failed unexpectedly.",
-      });
-    }
-  });
-
-  if (env.NODE_ENV !== "production") {
-    app.post<{ Body: unknown }>("/api/auth/dev-bypass", async (request, reply) => {
-      if (!allowAuthRouteRequest(request, reply)) {
-        return;
-      }
-
-      if (!runtimeAuthConfig.enabled) {
-        return reply.code(503).send({
-          message: "Development sign-in is not available until auth is configured.",
-        });
-      }
-
-      const parsed = devBypassSchema.safeParse(request.body ?? {});
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Development sign-in payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
-      }
-
-      const user = buildDevelopmentSessionUser(parsed.data.role, app.userPreferences);
-      const token = signSessionToken(user);
-
-      return { token, user };
-    });
-  }
-
   app.post<{ Body: unknown }>("/api/auth/email/start", async (request, reply) => {
     if (!allowAuthEmailRouteRequest(request, reply)) {
       return;
@@ -145,50 +71,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       request.log.error({ err: error }, "Email sign-in code request failed");
       return reply.code(500).send({
         message: "Email sign-in failed unexpectedly.",
-      });
-    }
-  });
-
-  app.post<{ Body: unknown }>("/api/auth/email/verify", async (request, reply) => {
-    if (!allowAuthEmailRouteRequest(request, reply)) {
-      return;
-    }
-
-    const parsed = emailSignInVerifySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Email verification payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    if (parsed.data.deviceId && !isLegacyMobileJwtIssuanceAllowed()) {
-      return reply.code(426).send({
-        error: "mobile_client_upgrade_required",
-        message: "Update MECO Mission Control Mobile to continue signing in.",
-        code: "mobile_client_upgrade_required",
-      });
-    }
-    if (!parsed.data.deviceId && !isLegacyBearerIssuanceAllowed()) {
-      return reply.code(426).send({
-        code: "session_client_upgrade_required",
-        message: "Use the supported web or mobile sign-in flow.",
-      });
-    }
-
-    try {
-      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code, app.userPreferences);
-      const token = signSessionToken(user, { deviceId: parsed.data.deviceId });
-
-      return { token, user };
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return reply.code(error.statusCode).send({ message: error.message });
-      }
-
-      request.log.error({ err: error }, "Email authentication failed");
-      return reply.code(500).send({
-        message: "Email authentication failed unexpectedly.",
       });
     }
   });
