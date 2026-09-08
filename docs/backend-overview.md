@@ -15,7 +15,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - `src/routes/` contains the main Mission Control route registration, route schemas, route helpers, and small helper modules for bootstrap selection, pagination, task targets, link validation, and roster insights.
 - `src/data/` contains the current seeded snapshot store and TypeScript input types for core platform entities.
 - `src/domain/` contains shared workflow, task dependency, discipline, and platform type logic.
-- `src/auth/` contains Google and email verification, revocable web and mobile sessions, legacy bearer migration checks, and development-bypass auth behavior.
+- `src/auth/` contains Google and email verification, revocable web and mobile sessions, development-bypass auth behavior.
 - `src/security/` contains request limit guards.
 - `src/storage/` contains S3-compatible presigned upload support.
 - `src/slack/` contains Slack home and alert-adjacent service logic.
@@ -39,7 +39,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Authentication And Security
 
-- Auth is enabled when `AUTH_JWT_SECRET` is configured and either Google client IDs or email delivery config are available.
+- Auth is enabled when either Google client IDs or email delivery config are available.
 - Production startup requires enabled auth and explicit `CORS_ORIGIN` values.
 - Google sign-in verifies Google Identity Services ID tokens against `GOOGLE_CLIENT_ID` and `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - Email sign-in can use explicit SMTP settings or Resend SMTP via `RESEND_API_KEY`.
@@ -49,7 +49,9 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - API responses get no-store cache headers, content sniffing protection, frame denial, referrer policy, permissions policy, and production HSTS.
 - Work-log mutation and purchase/manufacturing approval or deletion require mentor/admin roles; leads do not inherit these safety and financial permissions. Manufacturing progress may be advanced by any internal user only after active mentor review.
 
-## Audit Retention
+## Audit Retention — Pre-deployment Requirements
+
+The following policy is proposed and is not implemented. Current audit actions are appended to the platform snapshot; there is no age-based purge, anonymization, review-hold mechanism, or protected season-deletion workflow. Establish and validate these controls before deployment. Disposable prototype data may be reset today.
 
 Mission Control audit history is a safety and accountability record for team operations. It should remain available long enough to support season reviews, incident follow-up, and mentor oversight while avoiding indefinite retention of student activity records.
 

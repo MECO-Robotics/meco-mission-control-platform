@@ -68,12 +68,12 @@ Optional agent tooling is documented in [shared skills](docs/shared-skills.md).
 ## Local env example
 
 Use this shape for a local `.env` file when the web app is running on Vite's
-default `http://localhost:5173` origin:
+default `http://127.0.0.1:5173` origin:
 
 ```env
 NODE_ENV=development
 PORT=8080
-CORS_ORIGIN=http://localhost:5173
+CORS_ORIGIN=http://127.0.0.1:5173
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 API_RATE_LIMIT_MAX_REQUESTS=300
 API_RATE_LIMIT_WINDOW_SECONDS=60
@@ -82,15 +82,7 @@ AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_CLIENT_ID=your-local-or-primary-google-client-id.apps.googleusercontent.com
-# AUTH_JWT_SECRET=
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
-AUTH_TOKEN_TTL=1h
-AUTH_LEGACY_BEARER_ENABLED=false
-# AUTH_LEGACY_BEARER_CUTOFF=2026-09-01T00:00:00Z
-# Legacy mobile JWT issuance is disabled unless explicitly enabled for a bounded migration.
-AUTH_DEVICE_TOKEN_TTL=3650d
-AUTH_LEGACY_MOBILE_JWT_ENABLED=false
-# AUTH_LEGACY_MOBILE_JWT_CUTOFF=2026-09-01T00:00:00Z
 # Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 # Local SMTP sink for email-code testing.
@@ -197,14 +189,6 @@ AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS=10
 AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-# AUTH_JWT_SECRET=
-AUTH_TOKEN_TTL=1h
-AUTH_LEGACY_BEARER_ENABLED=false
-# AUTH_LEGACY_BEARER_CUTOFF=2026-09-01T00:00:00Z
-# Legacy mobile JWT issuance is disabled unless explicitly enabled for a bounded migration.
-AUTH_DEVICE_TOKEN_TTL=3650d
-AUTH_LEGACY_MOBILE_JWT_ENABLED=false
-# AUTH_LEGACY_MOBILE_JWT_CUTOFF=2026-09-01T00:00:00Z
 # Manage member roles, external access, and subteam preferences through the apps.
 # AUTH_MENTOR_EMAILS=mentor.one@mecorobotics.org,mentor.two@mecorobotics.org
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
@@ -251,7 +235,7 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - Manage mentor/admin roles, external access emails, and member details through the roster Config/Directory UI. Hosted-domain users not present in the roster default to student access unless listed in `AUTH_MENTOR_EMAILS` for first-operator bootstrap access.
 - User subteam choices are stored through `PATCH /api/users/me/preferences` in `data/user-preferences.json`; they are no longer configured through server env email maps.
 - The server does not need a Google client secret for this flow.
-- For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
+- For localhost development, add your frontend origin such as `http://127.0.0.1:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
 - If you use separate Google OAuth client IDs for local and production, set `GOOGLE_CLIENT_ID` to a comma-separated list and put the client ID you want the frontend to use first.
 
 For production, the web origin must be configured in the Google Cloud Console OAuth client and served over HTTPS before SSO is enabled on the public site.
@@ -263,7 +247,6 @@ If you only have a static IP, use a mapped HTTPS hostname (for example `178-104-
 
 Authenticated mobile clients can use `GET /api/auth/mobile/sessions`, `DELETE /api/auth/mobile/sessions/:sessionId`, `POST /api/auth/mobile/logout`, and `POST /api/auth/mobile/logout-all`. The platform stores only SHA-256 token hashes. Bounded background-on-use cleanup retains invalid token rows for seven days and device-session metadata for 30 days.
 
-Legacy `/api/auth/email/verify` requests containing `deviceId` receive HTTP 426 with code `mobile_client_upgrade_required` unless `AUTH_LEGACY_MOBILE_JWT_ENABLED=true` and the optional `AUTH_LEGACY_MOBILE_JWT_CUTOFF` is still in the future. Legacy non-mobile bearer issuance and replay are disabled in production unless `AUTH_LEGACY_BEARER_ENABLED=true` and its optional UTC cutoff is still active. Keep either exception time-bounded.
 
 ## Web session API
 
@@ -271,7 +254,7 @@ Browser clients use `POST /api/auth/web/google`, `POST /api/auth/web/email/verif
 
 ## Email sign-in fallback
 
-If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server will also expose `POST /api/auth/email/start` and `POST /api/auth/email/verify`.
+If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server enables `POST /api/auth/email/start` and the dedicated web/mobile email verification endpoints.
 
 Brevo SMTP settings:
 - `AUTH_EMAIL_SMTP_HOST=smtp-relay.brevo.com`

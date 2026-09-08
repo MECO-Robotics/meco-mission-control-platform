@@ -23,6 +23,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      PORT: "8080"
+      TRUST_PROXY_IPS: "172.30.0.1"
     env_file:
       - .env.production
     volumes:
@@ -47,3 +50,10 @@ services:
 volumes:
   postgres-data:
   user-preferences-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

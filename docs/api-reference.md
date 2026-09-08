@@ -18,10 +18,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 ## Authentication
 
 - `GET /api/auth/config`: public auth configuration for the frontend.
-- `POST /api/auth/google`: legacy non-mobile bearer exchange. Production returns `426 session_client_upgrade_required` unless the bounded compatibility flag is enabled.
-- `POST /api/auth/dev-bypass`: development-only local sign-in helper. Accepts optional `{ "role": "student" | "mentor" }`; production does not register this route.
 - `POST /api/auth/email/start`: sends an email sign-in code when email delivery is configured.
-- `POST /api/auth/email/verify`: legacy bearer exchange. Supported clients use the dedicated web or mobile verification endpoint.
 - `POST /api/auth/web/google`: verifies a Google credential and creates a revocable HttpOnly-cookie web session.
 - `POST /api/auth/web/email/verify`: verifies an email code and creates a revocable HttpOnly-cookie web session.
 - `POST /api/auth/web/dev-bypass`: non-production web-session development helper.
@@ -37,7 +34,7 @@ This reference describes the current Fastify route surface for the Mission Contr
 - `GET /api/users/me/preferences`: returns authenticated user preferences such as `themeMode` and `taskSubteamIds`.
 - `PATCH /api/users/me/preferences`: updates authenticated user preferences. `themeMode` accepts `"light"`, `"dark"`, or `null`; `taskSubteamIds` accepts valid task subteam IDs.
 
-Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Legacy mobile JWT requests receive `426 mobile_client_upgrade_required` after the configured compatibility window. Legacy non-mobile bearer issuance and replay are disabled by default in production; web sessions are revocable and require an allowed Origin plus `X-CSRF-Token` on unsafe cookie-authenticated requests.
+Mobile access credentials expire after one hour. Device sessions expire after 30 days without refresh activity or 90 days absolutely, and successful refresh rotates the refresh token exactly once. Web sessions are revocable and require an allowed Origin plus `X-CSRF-Token` on unsafe cookie-authenticated requests.
 
 ## Bootstrap And Dashboards
 
@@ -47,7 +44,9 @@ Mobile access credentials expire after one hour. Device sessions expire after 30
 - `GET /api/metrics`: workflow and delivery metrics.
 - `GET /api/roster/insights`: roster participation and contribution insights.
 
-### Audit History Retention
+### Audit History Retention — Pre-deployment Requirements
+
+The policy below is not implemented. Snapshot actions currently append indefinitely; there is no scheduled purge, anonymization, review-hold registry, or deletion protection. Establish and test these controls before deployment.
 
 Audit actions are operational history for create, update, and delete activity exposed through
 `/api/bootstrap` as `actions`. They support accountability, troubleshooting, and scoped activity

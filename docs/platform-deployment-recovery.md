@@ -25,7 +25,6 @@ The deploy workflow can also inject these optional email secrets at deploy time:
 - `AUTH_EMAIL_SMTP_PORT`
 - `AUTH_EMAIL_SMTP_USER`
 - `AUTH_EMAIL_SMTP_PASS`
-- `AUTH_EMAIL_SMTP_FROM`
 - `AUTH_EMAIL_FROM`
 
 Production runtime values come from `.env.production` on the VPS. Keep the shape
@@ -39,7 +38,6 @@ Required production values:
 - `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`
 - `DATABASE_URL`, usually pointing at the Compose `postgres` service.
 - `CORS_ORIGIN`, set to explicit web origins. Do not use `*` in production.
-- `AUTH_JWT_SECRET`, generated uniquely with at least 32 characters.
 - At least one sign-in provider:
   - Google: `GOOGLE_CLIENT_ID`
   - Email: SMTP settings plus `AUTH_EMAIL_FROM`, or `RESEND_API_KEY` plus `AUTH_EMAIL_FROM`
@@ -49,15 +47,8 @@ Common production knobs:
 - Rate limits: `API_RATE_LIMIT_MAX_REQUESTS`, `API_RATE_LIMIT_WINDOW_SECONDS`,
   `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`,
   `AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS`, and `AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS`.
-- Auth lifetime/domain: `GOOGLE_ALLOWED_HOSTED_DOMAIN`, `AUTH_TOKEN_TTL`,
-  `AUTH_LEGACY_BEARER_ENABLED`, optional `AUTH_LEGACY_BEARER_CUTOFF`,
-  legacy-only `AUTH_DEVICE_TOKEN_TTL`, `AUTH_LEGACY_MOBILE_JWT_ENABLED`, optional
-  `AUTH_LEGACY_MOBILE_JWT_CUTOFF`, and optional `AUTH_MENTOR_EMAILS`.
-- Mobile session records are deployed from `prisma/schema.prisma` through the
-  repository's existing `prisma db push` deployment step. Keep legacy mobile
-  JWT issuance disabled after supported clients use the opaque refresh flow;
-  if a transition window is required, set both the enable flag and an explicit
-  UTC cutoff.
+- Auth domain and initial operator access: `GOOGLE_ALLOWED_HOSTED_DOMAIN` and optional `AUTH_MENTOR_EMAILS`.
+- Web cookies and mobile opaque access/refresh credentials are revocable database-backed sessions. No legacy JWT issuance, verification, or migration flags remain.
 - Email code behavior: `AUTH_EMAIL_CODE_TTL_MINUTES`,
   `AUTH_EMAIL_CODE_LENGTH`, `AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS`, and
   `AUTH_EMAIL_MAX_VERIFY_ATTEMPTS`.
@@ -76,11 +67,9 @@ Common production knobs:
 
 Production startup refuses these states:
 
-- `AUTH_JWT_SECRET` is missing, blank, or one of the sample values.
 - Neither Google nor email sign-in is configured.
 - `CORS_ORIGIN=*`.
 - `CAD_STEP_PARSER_MODE=placeholder`.
-- `AUTH_TOKEN_TTL` is not `1h` during the legacy bearer migration.
 - A configured S3 or Onshape credentialed URL does not use HTTPS.
 
 ## VPS Deployment Flow
@@ -139,7 +128,7 @@ The Compose stack contains:
 
 The app port is published on `127.0.0.1` only. A TLS reverse proxy and firewall
 are mandatory before production traffic is enabled; do not expose port 8080
-directly to the public network.
+directly to the public network. Compose fixes the container listener and health check at port 8080; `PUBLIC_PORT` changes only the host publication. Its bridge is `172.30.0.0/24`, with the host ingress gateway `172.30.0.1` set as the only trusted proxy IP. The ingress must overwrite `X-Forwarded-For` with its actual client address. Direct Node deployments default to no proxy trust; set `TRUST_PROXY_IPS` to the exact immediate ingress addresses only. Update the bridge and trust value together if this subnet conflicts with local networking.
 
 The deploy workflow starts PostgreSQL and applies the session/CAD Prisma schema
 before starting the application:

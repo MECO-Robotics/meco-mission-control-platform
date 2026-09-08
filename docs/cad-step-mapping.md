@@ -60,7 +60,7 @@ Do not parse large native CAD geometry inside the main request path.
 
 ## Persistence
 
-Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVER=prisma`. Tests and local compatibility flows can opt into `CAD_STORE_DRIVER=runtime`. The store selection is centralized in `src/cad/cadStoreFactory.ts`, while legacy runtime state remains available for isolated tests and local smoke paths.
+Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVER=prisma`. Tests and local compatibility flows can opt into `CAD_STORE_DRIVER=runtime`. `src/app.ts` selects the CAD store once at startup, sharing its Prisma client with session stores. Runtime storage is an explicit test/local mode; database failures never switch backends.
 
 Snapshots are historical evidence. Do not rewrite old snapshots when mappings change. Use snapshot mappings for one-off decisions and create/supersede mapping rules for future-import behavior.
 
