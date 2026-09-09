@@ -50,7 +50,7 @@ export const offseasonMembers = [
       email: "mika.tanaka@mecorobotics.org",
       role: "lead",
       elevated: true,
-      disciplineId: "strategy",
+      disciplineId: "game_analysis",
       seasonId: "default-season",
       plannedWeeklyAttendanceHours: 5,
       plannedAttendanceDays: ["thursday", "saturday"],

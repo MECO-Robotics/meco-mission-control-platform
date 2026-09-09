@@ -296,6 +296,9 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     role: member.role === "mentor" || member.role === "admin"
       ? "mentor"
       : member.role === "external" ? "external" : "student",
+    // Synthetic availability supports local demo planning without revealing schedules.
+    plannedWeeklyAttendanceHours: 6,
+    plannedAttendanceDays: ["tuesday", "thursday"],
     seasonId: member.seasonId,
     activeSeasonIds: member.activeSeasonIds,
     ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
@@ -314,6 +317,8 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     })),
     reports: selectedBootstrap.reports.map((report) => ({
       ...report,
+      mentorId: rewriteDemoMemberId(report.mentorId, memberIdsByOriginalId),
+      requestedById: rewriteDemoMemberId(report.requestedById, memberIdsByOriginalId),
       createdByMemberId: rewriteDemoMemberId(report.createdByMemberId, memberIdsByOriginalId),
       participantIds:
         report.participantIds === undefined
@@ -354,6 +359,8 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     })),
     qaReports: selectedBootstrap.qaReports.map((report) => ({
       ...report,
+      mentorId: rewriteDemoMemberId(report.mentorId, memberIdsByOriginalId),
+      requestedById: rewriteDemoMemberId(report.requestedById, memberIdsByOriginalId),
       participantIds: rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
     })),
     qaRequests: selectedBootstrap.qaRequests.map((request) => ({
