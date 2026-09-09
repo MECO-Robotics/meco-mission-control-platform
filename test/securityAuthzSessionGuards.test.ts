@@ -366,6 +366,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         demoBody.projects.every((project) => project.seasonId === "default-season"),
         true,
       );
+      assert.equal(new Set(demoBody.members.map((member) => member.name)).size, demoBody.members.length);
       const demoMemberIds = new Set(demoBody.members.map((member) => String(member.id)));
       assert.equal(demoMemberIds.has(publicProbeMember.id), false);
       assert.equal(
@@ -377,7 +378,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         false,
       );
       assert.equal(
-        demoBody.members.every((member) => /^Demo Member \d+$/.test(String(member.name))),
+        demoBody.members.every((member) => /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(String(member.name))),
         true,
       );
       assert.equal(
