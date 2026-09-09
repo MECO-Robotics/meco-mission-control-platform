@@ -16,6 +16,7 @@ import {
   createReport,
   createReportFinding,
   createQaReport,
+  submitQaReport,
   createQaRequest,
   createPartDefinition,
   createPartInstance,
@@ -188,6 +189,7 @@ import {
   projectPatchSchema,
   projectSchema,
   qaReportSchema,
+  qaSubmitSchema,
   qaRequestSchema,
   reportFindingSchema,
   reportSchema,
@@ -1233,6 +1235,19 @@ export async function registerRoutes(
     return reply.code(201).send({
       item: report,
     });
+  });
+
+  app.post<{ Body: unknown }>("/api/qa-reports/submit", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only leads, mentors or admins can submit task QA.")) return;
+    const parsed = qaSubmitSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ message: "QA submission is invalid.", issues: parsed.error.flatten() });
+    if (parsed.data.mentorApproved && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
+    const validationError = validateQaReportLinks(parsed.data);
+    if (validationError) return reply.code(400).send({ message: validationError });
+    const result = submitQaReport({ ...parsed.data, participantIds: Array.from(new Set(parsed.data.participantIds)) });
+    if (result.error) return reply.code(409).send({ message: result.error });
+    return reply.code(201).send({ item: result.item });
   });
 
   app.get("/api/qa-requests", async (request, reply) => {

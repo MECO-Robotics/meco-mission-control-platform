@@ -131,3 +131,36 @@ test("production startup rejects a corrupt durable snapshot instead of reseeding
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("QA workflow effects survive restart and roll back together when persistence fails", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-qa-durable-"));
+  const path = join(directory, "snapshot.json");
+  const submit = `
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const before = JSON.stringify(store.getSnapshot());
+    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const source = store.getSnapshot(); const task = source.tasks[0];
+    store.createQaRequest({ taskId: task.id, subject: task.title, mentorId: source.members[0].id });
+    const result = store.submitQaReport({ taskId: task.id, participantIds: [source.members[0].id], result: "iteration-worthy", mentorApproved: false, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: "2026-09-09" });
+    if (result.error) throw new Error(result.error);
+    let failed = false;
+    try { await transaction.commit(); } catch { failed = true; } finally { transaction.release(); }
+    if (failed && JSON.stringify(store.getSnapshot()) !== before) throw new Error("Partial QA effects published");
+    process.stdout.write(failed ? "rolled-back" : "saved");
+  `;
+  try {
+    assert.equal(runProductionStoreScript(path, submit), "saved");
+    const restored = JSON.parse(runProductionStoreScript(path, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      const report = snapshot.qaReports.find(item => item.notes === "Durable QA");
+      process.stdout.write(JSON.stringify({ report, followup: snapshot.tasks.find(item => item.title === "Durable repair"), blockers: snapshot.taskBlockers.filter(item => item.blockedTaskId === report.taskId && item.issueType === "qa-failed"), requests: snapshot.qaRequests.filter(item => item.taskId === report.taskId) }));
+    `));
+    assert.equal(restored.report.evidenceNotes, "Broken lead");
+    assert.equal(restored.followup.status, "not-started");
+    assert.ok(restored.blockers.length > 0);
+    assert.deepEqual(restored.requests, []);
+    assert.equal(runProductionStoreScript("/dev/null/qa-snapshot.json", submit), "rolled-back");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});

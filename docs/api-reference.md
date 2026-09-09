@@ -136,6 +136,7 @@ Retention policy:
 - `POST /api/report-findings`: create a report finding.
 - `GET /api/qa-reports`: list QA reports.
 - `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor or admin; leads are excluded.
+- `POST /api/qa-reports/submit`: submit the task QA workflow atomically. Requires lead, mentor or admin task-edit authority regardless of result or approval flag. Accepts the QA report fields plus `evidenceNotes`, optional `followUpTaskTitle`, and optional `qaRequestId`. Pass requires `waiting-for-qa` and no open blockers or unsatisfied hard dependencies, then completes the task. A failed result creates a follow-up task; `iteration-worthy` also creates a QA blocker. All pending QA requests for the task are removed on success. A stale/mismatched request or unready pass returns 409 without writes. Mentor approval has the same authorization as report creation. Report, evidence, request provenance, task effects and approved risk reassessment persist together; disk failures publish none of them. Record-only report creation endpoints do not execute task workflow effects.
 - `GET /api/qa-requests`: list QA requests.
 - `POST /api/qa-requests`: create a QA request.
 - `GET /api/test-results`: list test results.

@@ -1,3 +1,4 @@
+import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 
@@ -3541,6 +3542,10 @@ export function createQaReport(input: QaReportInput) {
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
     reviewedAt: input.reviewedAt,
+    evidenceNotes: input.evidenceNotes ?? "",
+    qaRequestId: input.qaRequestId ?? null,
+    mentorId: input.mentorId ?? null,
+    requestedById: input.requestedById ?? null,
     targetRiskId: input.targetRiskId ?? null,
     proposedRiskSeverity: input.proposedRiskSeverity ?? null,
     proposedRiskStatus: input.proposedRiskStatus ?? null,
@@ -3568,6 +3573,47 @@ export function createQaReport(input: QaReportInput) {
   });
 
   return report;
+}
+
+// Called inside the route's snapshot transaction: the report and its workflow
+// effects must become durable together, or none of them may be published.
+export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }) {
+  const task = currentSnapshot.tasks.find((item) => item.id === input.taskId);
+  if (!task) return { error: "The selected task does not exist." };
+  const request = input.qaRequestId
+    ? getQaRequests().find((item) => item.id === input.qaRequestId)
+    : getQaRequests().find((item) => item.taskId === task.id);
+  if (input.qaRequestId && (!request || request.taskId !== task.id)) {
+    return { error: "The selected QA request is no longer pending for this task." };
+  }
+  if (input.result === "pass" && (task.status !== "waiting-for-qa" ||
+      task.blockers.length > 0 || isTaskWaitingOnDependencies(task, currentSnapshot))) {
+    return { error: "A pass requires a task waiting for QA with no blockers or unfinished dependencies." };
+  }
+  const report = createQaReport({ ...input, qaRequestId: request?.id ?? null,
+    mentorId: request?.mentorId ?? task.mentorId,
+    requestedById: request?.requestedById ?? null });
+  if (input.result === "pass") {
+    updateTask(task.id, { status: "complete" });
+  } else {
+    createTask({ ...task,
+      title: input.followUpTaskTitle?.trim() || `${input.result === "iteration-worthy" ? "Iterate after QA" : "Fix QA finding"}: ${task.title}`,
+      summary: [`Created from QA on "${task.title}".`, `Result: ${input.result}.`, input.notes,
+        input.evidenceNotes ? `Evidence: ${input.evidenceNotes}` : ""].filter(Boolean).join("\n"),
+      startDate: input.reviewedAt, dueDate: input.reviewedAt,
+      status: "not-started", priority: input.result === "iteration-worthy" ? "high" : "medium",
+      checklistItems: [], estimatedHours: 0, actualHours: 0,
+      documentationLinked: false,
+    });
+    if (input.result === "iteration-worthy") {
+      createTaskBlocker({ blockedTaskId: task.id, blockerType: "external", blockerId: null,
+        issueType: "qa-failed", description: "QA identified iteration-worthy follow-up.",
+        severity: "medium", status: "open" });
+    }
+  }
+  replaceCurrentSnapshot({ ...currentSnapshot,
+    qaRequests: getQaRequests().filter((item) => item.taskId !== task.id) });
+  return { item: report };
 }
 
 export function createQaRequest(input: QaRequestInput) {

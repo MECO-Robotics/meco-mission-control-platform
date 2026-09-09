@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, taskBlockerSchema } from "../routes/routeSchemas";
+import { subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, taskBlockerSchema } from "../routes/routeSchemas";
 
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
 export const BOOTSTRAP_CONTRACT_VERSION = 1;
@@ -49,7 +49,7 @@ export const bootstrapPayloadSchema = z
     milestoneRequirements: bootstrapCollectionSchema,
     reports: z.array(qaReassessmentSchema.extend({ id: z.string(), reportType: z.enum(["QA", "MilestoneTest"]) }).passthrough()),
     reportFindings: bootstrapCollectionSchema,
-    qaReports: z.array(qaReassessmentSchema.extend({ id: z.string(), taskId: z.string(), mentorApproved: z.boolean(), reviewedAt: z.string() }).passthrough()),
+    qaReports: z.array(qaReassessmentSchema.extend({ id: z.string(), taskId: z.string(), evidenceNotes: z.string().optional(), qaRequestId: z.string().nullable().optional(), mentorId: z.string().nullable().optional(), requestedById: z.string().nullable().optional(), mentorApproved: z.boolean(), reviewedAt: z.string() }).passthrough()),
     qaRequests: bootstrapCollectionSchema,
     testResults: bootstrapCollectionSchema,
     risks: bootstrapCollectionSchema,
@@ -80,7 +80,7 @@ export const bootstrapContractDocument = {
     resource: "/api/bootstrap",
     migrationPolicy: "Prototype contracts are replaced in coordination with both clients; no legacy payload support.",
   },
-  x_commands: Object.fromEntries(Object.entries({ task: taskSchema, taskPatch: taskPatchSchema, subsystem: subsystemSchema, subsystemPatch: subsystemPatchSchema, report: reportSchema, qaReport: qaReportSchema, taskDependency: taskDependencySchema, taskBlocker: taskBlockerSchema }).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: "input" })])),
+  x_commands: Object.fromEntries(Object.entries({ task: taskSchema, taskPatch: taskPatchSchema, subsystem: subsystemSchema, subsystemPatch: subsystemPatchSchema, report: reportSchema, qaReport: qaReportSchema, qaSubmit: qaSubmitSchema, taskDependency: taskDependencySchema, taskBlocker: taskBlockerSchema }).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: "input" })])),
 };
 
 export function toBootstrapContractDocument() {
