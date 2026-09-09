@@ -300,6 +300,10 @@ The server refuses to start in production unless authentication is configured an
 
 Schema application is an explicit pre-start deployment step. The application container does not use `--accept-data-loss` and does not modify the schema on ordinary restarts.
 
+### Demo roster
+
+Fresh seed data includes eight fictional members marked `(Demo)`, with `example.com` emails, disciplines, and planned attendance. They are part of the Tutorial Season and return on development startup or tutorial baseline reset. Development resets discard local edits; an existing production snapshot is not modified or backfilled. No schema migration is needed.
+
 ### Tutorial fixture dates
 
 Fresh seed data and tutorial starts/baseline resets use the current UTC month and Monday–Sunday week. Seasons span the month; fixture activity is scaled chronologically into the part of the week inside that month, including month/year boundaries. Each start/reset reads the clock again; active sessions keep their dates and edits until reset. Session exit still restores the pre-tutorial workspace. Stored application data is not re-dated.
