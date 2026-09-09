@@ -1239,6 +1239,7 @@ export async function registerRoutes(
 
   app.post<{ Body: unknown }>("/api/qa-reports/submit", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only leads, mentors or admins can submit task QA.")) return;
     const parsed = qaSubmitSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ message: "QA submission is invalid.", issues: parsed.error.flatten() });
     if (parsed.data.mentorApproved && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;

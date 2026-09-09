@@ -214,19 +214,35 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
   );
 });
 
-test("QA workflow submission requires a session and reserves approval for mentors", async () => {
+test("QA workflow submission requires task mutation authority independently of approval", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const payload = { taskId: "swerve-sensor-bundle", participantIds: ["priya"], result: "minor-fix", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: true };
+    const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
+    const task = getSnapshot().tasks.find((item) => !item.blockers.length && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
+    updateTask(task.id, { status: "waiting-for-qa" });
+    const payload = { taskId: task.id, participantIds: ["priya"], result: "pass", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: false };
     const url = "/api/qa-reports/submit";
     assert.equal((await app.inject({ method: "POST", url, payload })).statusCode, 401);
     resetLimits();
     const studentToken = await signTestToken({ email: "student@mecorobotics.org", role: "student" });
-    assert.equal((await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${studentToken}` } })).statusCode, 403);
+    for (const result of ["pass", "minor-fix", "iteration-worthy"]) {
+      const before = JSON.stringify(getSnapshot());
+      assert.equal((await app.inject({ method: "POST", url, payload: { ...payload, result }, headers: { authorization: `Bearer ${studentToken}` } })).statusCode, 403);
+      assert.equal(JSON.stringify(getSnapshot()), before);
+      resetLimits();
+    }
+    const leadToken = await signTestToken({ email: "lead@mecorobotics.org", role: "lead" });
+    const before = JSON.stringify(getSnapshot());
+    assert.equal((await app.inject({ method: "POST", url, payload: { ...payload, mentorApproved: true }, headers: { authorization: `Bearer ${leadToken}` } })).statusCode, 403);
+    assert.equal(JSON.stringify(getSnapshot()), before);
+    resetLimits();
+    const allowed = await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${leadToken}` } });
+    assert.equal(allowed.statusCode, 201, allowed.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
     resetLimits();
     const mentorToken = await signTestToken({ email: "mentor@mecorobotics.org", role: "mentor" });
-    const allowed = await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${mentorToken}` } });
-    assert.equal(allowed.statusCode, 201, allowed.body);
-  }, { env: authEnv });
+    const approved = await app.inject({ method: "POST", url, payload: { ...payload, result: "minor-fix", mentorApproved: true }, headers: { authorization: `Bearer ${mentorToken}` } });
+    assert.equal(approved.statusCode, 201, approved.body);
+  }, { env: authEnv, members: [{ name: "QA Lead", email: "lead@mecorobotics.org", role: "lead" }] });
 });
 
 test("student sessions cannot reset global tutorial state", async () => {

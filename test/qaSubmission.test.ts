@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { createQaRequest, getSnapshot, updateTask, createTaskDependency, createTaskBlocker } from "../src/data/store";
+import { createQaRequest, getSnapshot, updateTask, createTaskDependency, removeTaskDependency, createTaskBlocker } from "../src/data/store";
 
 const env = { API_RATE_LIMIT_MAX_REQUESTS: "100" };
 test("QA submission persists evidence, completes ready task and closes its pending requests", async () => {
@@ -60,8 +60,9 @@ test("QA pass uses authoritative readiness and rejects stale task/request links 
     await reject();
     updateTask(task.id, { status: "waiting-for-qa" });
     await reject({ qaRequestId: "missing" });
-    createTaskDependency({ taskId: task.id, kind: "task", refId: "missing", requiredState: "complete", dependencyType: "hard" });
+    const dependency = createTaskDependency({ taskId: task.id, kind: "task", refId: "missing", requiredState: "complete", dependencyType: "hard" });
     await reject();
+    removeTaskDependency(dependency.id);
     createTaskBlocker({ blockedTaskId: task.id, blockerType: "external", blockerId: null, description: "Open issue", severity: "high" });
     await reject();
   }, { env });
