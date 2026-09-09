@@ -478,6 +478,39 @@
           "taskId": {
             "type": "string"
           },
+          "evidenceNotes": {
+            "type": "string"
+          },
+          "qaRequestId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mentorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestedById": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mentorApproved": {
             "type": "boolean"
           },
@@ -1946,6 +1979,114 @@
           "type": "string",
           "format": "date",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        }
+      },
+      "required": [
+        "taskId",
+        "participantIds",
+        "result",
+        "reviewedAt"
+      ],
+      "additionalProperties": false
+    },
+    "qaSubmit": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "targetRiskId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedRiskSeverity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedRiskStatus": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "partial-mitigation",
+                "full-mitigation"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "participantIds": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "minor-fix",
+            "iteration-worthy"
+          ]
+        },
+        "mentorApproved": {
+          "default": false,
+          "type": "boolean"
+        },
+        "notes": {
+          "default": "",
+          "type": "string"
+        },
+        "photoUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "evidenceNotes": {
+          "default": "",
+          "type": "string"
+        },
+        "followUpTaskTitle": {
+          "type": "string"
+        },
+        "qaRequestId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

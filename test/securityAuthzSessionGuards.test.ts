@@ -214,6 +214,21 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
   );
 });
 
+test("QA workflow submission requires a session and reserves approval for mentors", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const payload = { taskId: "swerve-sensor-bundle", participantIds: ["priya"], result: "minor-fix", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: true };
+    const url = "/api/qa-reports/submit";
+    assert.equal((await app.inject({ method: "POST", url, payload })).statusCode, 401);
+    resetLimits();
+    const studentToken = await signTestToken({ email: "student@mecorobotics.org", role: "student" });
+    assert.equal((await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${studentToken}` } })).statusCode, 403);
+    resetLimits();
+    const mentorToken = await signTestToken({ email: "mentor@mecorobotics.org", role: "mentor" });
+    const allowed = await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${mentorToken}` } });
+    assert.equal(allowed.statusCode, 201, allowed.body);
+  }, { env: authEnv });
+});
+
 test("student sessions cannot reset global tutorial state", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {

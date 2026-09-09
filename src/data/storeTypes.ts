@@ -251,6 +251,10 @@ export interface MilestoneInput {
 }
 
 export interface QaReportInput {
+  evidenceNotes?: string;
+  qaRequestId?: string | null;
+  mentorId?: string | null;
+  requestedById?: string | null;
   targetRiskId?: string | null;
   proposedRiskSeverity?: RiskSeverity | null;
   proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;

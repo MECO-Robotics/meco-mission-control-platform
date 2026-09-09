@@ -169,6 +169,12 @@ export const qaReportSchema = z.object({
   reviewedAt: z.string().date(),
 }).strict();
 
+export const qaSubmitSchema = qaReportSchema.extend({
+  evidenceNotes: z.string().trim().default(""),
+  followUpTaskTitle: z.string().trim().optional(),
+  qaRequestId: z.string().trim().min(1).nullable().optional(),
+});
+
 export const qaRequestSchema = z.object({
   taskId: z.string().trim().min(1).nullable().optional(),
   subject: z.string().trim().min(2),
