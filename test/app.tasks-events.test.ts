@@ -73,7 +73,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 0,
-        actualHours: 0,
         photoUrl: "https://cdn.example.test/tasks/mobile-task.png",
       },
     });
@@ -128,7 +127,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
-        actualHours: 0,
       },
     });
 
@@ -161,7 +159,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
-        actualHours: 0,
         photoUrl: "https://cdn.example.test/tasks/multi-target-task.png",
       },
     });
@@ -437,7 +434,6 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 0,
-        actualHours: 0,
       },
     });
 

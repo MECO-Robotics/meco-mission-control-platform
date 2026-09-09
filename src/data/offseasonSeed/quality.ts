@@ -11,15 +11,6 @@ export const offseasonQaReports = [
       reviewedAt: "2026-05-30T11:40:00-04:00",
     },
     {
-      id: "qa-scouting-schema-normalization",
-      taskId: "scouting-schema-normalization",
-      participantIds: ["noah", "riley"],
-      result: "pass",
-      mentorApproved: true,
-      notes: "Normalized export includes every scrimmage row and matches the strategy dashboard import contract.",
-      reviewedAt: "2026-05-30T09:50:00-04:00",
-    },
-    {
       id: "qa-spare-radio-bench-check",
       taskId: "spare-radio-bench-check",
       participantIds: ["jamal", "riley"],

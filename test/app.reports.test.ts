@@ -1277,7 +1277,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 2,
-        actualHours: 0,
       },
     });
     assert.equal(rosterSummaryTaskCreateResponse.statusCode, 201);

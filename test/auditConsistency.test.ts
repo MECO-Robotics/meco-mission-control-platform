@@ -16,7 +16,8 @@ import type { OnshapeOAuthTokenSet } from "../src/onshape/onshapeTypes";
 test("canonical dependency required state round-trips without a contradictory complete mirror", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const [task, upstream] = snapshot.tasks.slice(0, 2);
+    const task = { ...snapshot.tasks[0], status: "in-progress" as const };
+    const upstream = snapshot.tasks[1];
     const requiredState = upstream.status;
     const response = await app.inject({ method: "POST", url: "/api/task-dependencies", payload: {
       taskId: task.id, kind: "task", refId: upstream.id, requiredState, dependencyType: "hard",

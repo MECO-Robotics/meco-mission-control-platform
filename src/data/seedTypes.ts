@@ -20,6 +20,7 @@ export type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Works
 
 export type SeedTask = Omit<
   Task,
+  | "actualHours"
   | "workstreamIds"
   | "subsystemIds"
   | "mechanismIds"

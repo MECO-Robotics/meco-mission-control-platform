@@ -363,7 +363,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           linkedManufacturingIds: [],
           linkedPurchaseIds: [],
           estimatedHours: 0,
-          actualHours: 0,
         },
       });
 
@@ -429,7 +428,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         linkedManufacturingIds: [],
         linkedPurchaseIds: [],
         estimatedHours: 0,
-        actualHours: 0,
       };
       const claimableTaskResponse = await app.inject({
         method: "POST",

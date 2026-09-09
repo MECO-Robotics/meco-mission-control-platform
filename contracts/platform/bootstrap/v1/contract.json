@@ -1093,10 +1093,6 @@
           "type": "number",
           "minimum": 0
         },
-        "actualHours": {
-          "type": "number",
-          "minimum": 0
-        },
         "checklistItems": {
           "default": [],
           "type": "array",
@@ -1140,8 +1136,7 @@
         "dueDate",
         "priority",
         "status",
-        "estimatedHours",
-        "actualHours"
+        "estimatedHours"
       ],
       "additionalProperties": false
     },
@@ -1322,10 +1317,6 @@
           ]
         },
         "estimatedHours": {
-          "type": "number",
-          "minimum": 0
-        },
-        "actualHours": {
           "type": "number",
           "minimum": 0
         },

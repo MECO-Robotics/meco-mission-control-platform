@@ -138,17 +138,6 @@ export const offseasonQaReviews = [
       reviewedAt: "2026-05-30T11:30:00-04:00",
     },
     {
-      id: "qa-review-scouting-schema",
-      subjectId: "scouting-schema-normalization",
-      subjectType: "task",
-      subjectTitle: "Normalize scouting export schema",
-      participantIds: ["noah", "riley"],
-      result: "pass",
-      mentorApproved: true,
-      notes: "Clean import contract and realistic rubric examples for the training pass.",
-      reviewedAt: "2026-05-30T09:50:00-04:00",
-    },
-    {
       id: "qa-review-spare-radio-bench",
       subjectId: "spare-radio-bench-check",
       subjectType: "task",
