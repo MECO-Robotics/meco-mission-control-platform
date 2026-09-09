@@ -486,7 +486,9 @@ function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnaps
   };
 }
 
-function deriveTaskBlockerSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
+function deriveTaskSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
+  const hours = new Map<string, number>();
+  for (const log of snapshot.workLogs) hours.set(log.taskId, (hours.get(log.taskId) ?? 0) + log.hours);
   const summaries = new Map<string, Set<string>>();
   for (const blocker of snapshot.taskBlockers) {
     if (blocker.status !== "open") continue;
@@ -495,7 +497,7 @@ function deriveTaskBlockerSummaries(snapshot: PlatformSnapshot): PlatformSnapsho
     summaries.set(blocker.blockedTaskId, descriptions);
   }
   return { ...snapshot, tasks: snapshot.tasks.map((task) => ({
-    ...task, checklistItems: task.checklistItems ?? [], blockers: [...(summaries.get(task.id) ?? [])],
+    ...task, actualHours: hours.get(task.id) ?? 0, checklistItems: task.checklistItems ?? [], blockers: [...(summaries.get(task.id) ?? [])],
   })) };
 }
 
@@ -585,7 +587,7 @@ function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     ),
   });
 
-  return deriveTaskBlockerSummaries(normalizeSnapshotTaskSerials({
+  return deriveTaskSummaries(normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
     favoriteViews: normalizedSnapshot.favoriteViews ?? [],
     actions: normalizedSnapshot.actions ?? [],
@@ -638,7 +640,7 @@ function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
     throw new Error("Production platform mutations require a durable request transaction.");
   }
-  state.current = deriveTaskBlockerSummaries(snapshot);
+  state.current = deriveTaskSummaries(snapshot);
   if (state.isGlobalTransaction) {
     state.dirty = true;
   }
@@ -3428,7 +3430,7 @@ export function createTask(input: TaskInput) {
     linkedManufacturingIds: input.linkedManufacturingIds,
     linkedPurchaseIds: input.linkedPurchaseIds,
     estimatedHours: input.estimatedHours,
-    actualHours: input.actualHours,
+    actualHours: 0,
     requiresDocumentation: input.requiresDocumentation,
     documentationLinked: input.documentationLinked,
   };
@@ -3602,7 +3604,7 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
         input.evidenceNotes ? `Evidence: ${input.evidenceNotes}` : ""].filter(Boolean).join("\n"),
       startDate: input.reviewedAt, dueDate: input.reviewedAt,
       status: "not-started", priority: input.result === "iteration-worthy" ? "high" : "medium",
-      checklistItems: [], estimatedHours: 0, actualHours: 0,
+      checklistItems: [], estimatedHours: 0,
       documentationLinked: false,
     });
     if (input.result === "iteration-worthy") {

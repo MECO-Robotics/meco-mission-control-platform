@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  createWorkLog,
+  updateWorkLog,
+  removeWorkLog,
   createProject,
   createSeason,
   createManufacturingItem,
@@ -545,14 +548,13 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
 test("updateTask patches an existing task in place", () => {
   updateTask("intake-guard", {
     status: "complete",
-    actualHours: 8,
     assigneeIds: ["ava", "ethan"],
   });
 
   const updatedTask = getSnapshot().tasks.find((task) => task.id === "intake-guard");
   assert.ok(updatedTask);
   assert.equal(updatedTask.status, "complete");
-  assert.equal(updatedTask.actualHours, 8);
+  assert.equal(updatedTask.actualHours, getSnapshot().workLogs.filter((log) => log.taskId === updatedTask.id).reduce((sum, log) => sum + log.hours, 0));
   assert.deepEqual(updatedTask.assigneeIds, ["ava", "ethan"]);
 });
 
@@ -563,7 +565,7 @@ test("task updates append an audit action entry", () => {
 
   const updatedTask = updateTask("intake-guard", {
     status: "complete",
-    actualHours: 7,
+    estimatedHours: 7,
   }, {
     actorMemberId: "jordan",
     requestId: "req-audit-task-update",
@@ -583,12 +585,12 @@ test("task updates append an audit action entry", () => {
   assert.equal(lastAction.entityLabel, updatedTask.title);
   assert.equal(lastAction.actorMemberId, "jordan");
   assert.equal(lastAction.requestId, "req-audit-task-update");
-  assert.ok(lastAction.changedFields.includes("actualHours"));
+  assert.ok(lastAction.changedFields.includes("estimatedHours"));
   assert.ok(lastAction.changedFields.includes("status"));
   assert.equal(lastAction.beforeJson?.status, "in-progress");
   assert.equal(lastAction.afterJson?.status, "complete");
-  assert.equal(lastAction.beforeJson?.actualHours, originalTask.actualHours);
-  assert.equal(lastAction.afterJson?.actualHours, 7);
+  assert.equal(lastAction.beforeJson?.estimatedHours, originalTask.estimatedHours);
+  assert.equal(lastAction.afterJson?.estimatedHours, 7);
 });
 
 test("audit summaries redact sensitive before and after fields", () => {
@@ -1168,4 +1170,22 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
   assert.ok(legacyTaskMatch);
   assert.equal(legacyTaskMatch.isLegacyLink, true);
   assert.deepEqual(legacyTaskMatch.matchedRequirementIds, []);
+});
+
+
+test("task hours follow work log create, resize, move and delete", () => {
+  const hours = (id: string) => getSnapshot().tasks.find((task) => task.id === id)!.actualHours;
+  const first = "intake-guard";
+  const second = "swerve-sensor-bundle";
+  const beforeFirst = hours(first);
+  const beforeSecond = hours(second);
+  const log = createWorkLog({ taskId: first, date: "2026-09-09", hours: 2, participantIds: ["ava"], notes: "Evidence" });
+  assert.equal(hours(first), beforeFirst + 2);
+  updateWorkLog(log.id, { hours: 3 });
+  assert.equal(hours(first), beforeFirst + 3);
+  updateWorkLog(log.id, { taskId: second });
+  assert.equal(hours(first), beforeFirst);
+  assert.equal(hours(second), beforeSecond + 3);
+  removeWorkLog(log.id);
+  assert.equal(hours(second), beforeSecond);
 });

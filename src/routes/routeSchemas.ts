@@ -89,7 +89,6 @@ export const taskSchema = z.object({
   priority: z.enum(["critical", "high", "medium", "low"]),
   status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]),
   estimatedHours: z.coerce.number().min(0),
-  actualHours: z.coerce.number().min(0),
   checklistItems: z.array(z.string().trim().min(1)).default([]),
   linkedManufacturingIds: z.array(z.string().trim().min(1)).default([]),
   linkedPurchaseIds: z.array(z.string().trim().min(1)).default([]),

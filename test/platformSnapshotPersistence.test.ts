@@ -47,6 +47,7 @@ test("production platform state survives a fresh process", () => {
       const subsystem = store.getSnapshot().subsystems[0];
       store.updateSubsystem(subsystem.id, { layoutX: 0.25, layoutY: 0.75, layoutZone: "front", layoutView: "top", sortOrder: 7 });
       const source = store.getSnapshot();
+      store.createWorkLog({ taskId: source.tasks[0].id, date: "2026-09-09", hours: 1.25, participantIds: [source.members[0].id], notes: "Durable hours" });
       store.createQaReport({ taskId: source.tasks[0].id, participantIds: [source.members[0].id], result: "pass", mentorApproved: true, notes: "Persistent proposal", reviewedAt: "2026-09-08", targetRiskId: source.risks[0].id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" });
       store.createTaskBlocker({
         blockedTaskId: store.getTasks()[0].id,
@@ -79,8 +80,10 @@ test("production platform state survives a fresh process", () => {
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
       const snapshot = store.getSnapshot();
       const report = snapshot.qaReports.find((item) => item.notes === "Persistent proposal");
-      process.stdout.write(JSON.stringify({ layout: snapshot.subsystems[0], report, risk: snapshot.risks.find((risk) => risk.id === report.targetRiskId) }));
+      process.stdout.write(JSON.stringify({ task: snapshot.tasks[0], hours: snapshot.workLogs.filter((log) => log.taskId === snapshot.tasks[0].id).reduce((sum, log) => sum + log.hours, 0), layout: snapshot.subsystems[0], report, risk: snapshot.risks.find((risk) => risk.id === report.targetRiskId) }));
     `));
+    assert.equal(restored.task.actualHours, restored.hours);
+    assert.ok(persisted.workLogs.some((log: { notes: string }) => log.notes === "Durable hours"));
     assert.equal(restored.layout.layoutX, 0.25); assert.equal(restored.layout.layoutY, 0.75);
     assert.equal(restored.layout.layoutZone, "front"); assert.equal(restored.layout.layoutView, "top"); assert.equal(restored.layout.sortOrder, 7);
     assert.equal(restored.report.proposedRiskStatus, "full-mitigation"); assert.equal(restored.risk.severity, "low");

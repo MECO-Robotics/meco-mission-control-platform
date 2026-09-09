@@ -53,7 +53,6 @@ export interface TaskInput {
   priority: TaskPriority;
   status: TaskStatus;
   estimatedHours: number;
-  actualHours: number;
   checklistItems?: string[];
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];

@@ -15,7 +15,12 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
       } else if (value && typeof value === "object") Object.values(value).forEach(checkDates);
     };
     for (const [key, value] of Object.entries(data)) if (key !== "seasons") checkDates(value);
-    for (const task of data.tasks) assert.ok(task.startDate <= task.dueDate);
+    for (const task of data.tasks) {
+      assert.ok(task.startDate <= task.dueDate);
+      assert.equal(task.actualHours, data.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0));
+    }
+    for (const recorded of [...data.workLogs.map((log) => log.date), ...data.qaReports.map((report) => report.reviewedAt), ...data.attendanceRecords.map((record) => record.date)]) assert.ok(Date.parse(recorded) <= now.getTime(), recorded);
+    for (const report of data.qaReports.filter((report) => report.result === "pass" && report.mentorApproved)) assert.equal(data.tasks.find((task) => task.id === report.taskId)?.status, "complete");
     for (const milestone of data.milestones) {
       if (milestone.endDateTime) assert.ok(Date.parse(milestone.startDateTime) <= Date.parse(milestone.endDateTime));
     }
