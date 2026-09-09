@@ -40,3 +40,33 @@ test("new tutorial data rolls forward without mutating an earlier session", () =
   assert.deepEqual(old, before);
   assert.notEqual(next.tasks[0].startDate, old.tasks[0].startDate);
 });
+
+test("tutorial roster categories and all member references resolve within the seed", () => {
+  const data = createTutorialSnapshot();
+  const members = new Set(data.members.map((member) => member.id));
+  const disciplines = new Set(data.disciplines.map((discipline) => discipline.id));
+  const seasons = new Set(data.seasons.map((season) => season.id));
+  assert.equal(members.size, data.members.length);
+  for (const member of data.members) {
+    assert.ok(["student", "lead", "mentor", "admin", "external"].includes(member.role));
+    if (member.disciplineId) assert.ok(disciplines.has(member.disciplineId), `${member.id}: ${member.disciplineId}`);
+    if (member.seasonId) assert.ok(seasons.has(member.seasonId));
+    for (const seasonId of member.activeSeasonIds ?? []) assert.ok(seasons.has(seasonId));
+  }
+  const memberFields = new Set([
+    "memberId", "ownerId", "mentorId", "responsibleEngineerId", "createdByMemberId",
+    "createdById", "requestedById", "reviewedById", "approvedById", "actorMemberId",
+    "participantIds", "assigneeIds", "mentorIds", "memberIds",
+  ]);
+  const inspect = (value: unknown, path: string): void => {
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      if (memberFields.has(key)) {
+        for (const id of Array.isArray(child) ? child : [child]) {
+          if (id != null && id !== "") assert.ok(members.has(id), `${path}.${key}: ${id}`);
+        }
+      } else inspect(child, `${path}.${key}`);
+    }
+  };
+  inspect(data, "tutorial");
+});

@@ -301,7 +301,7 @@ test("student sessions cannot reset global tutorial state", async () => {
 test("unsigned users can read only the demo season bootstrap", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createMember, createTaskBlocker } = await import("../src/data/store");
+      const { createMember, createTaskBlocker, createQaReport } = await import("../src/data/store");
       const publicProbeMember = createMember({
         name: "Public Demo Global Audit Probe",
         email: "public-demo-audit-probe@mecorobotics.org",
@@ -327,6 +327,12 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         createdByMemberId: staleReferenceMember.id,
       });
 
+      createQaReport({
+        taskId: "swerve-sensor-bundle", participantIds: ["ava"], result: "pass",
+        mentorApproved: false, notes: "Demo roster reference probe",
+        reviewedAt: new Date().toISOString(), mentorId: "jordan", requestedById: "ava",
+      });
+
       const demoResponse = await app.inject({
         method: "GET",
         url: "/api/bootstrap?seasonId=default-season",
@@ -334,6 +340,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       assert.equal(demoResponse.statusCode, 200);
       const demoBody = demoResponse.json() as {
+        disciplines: Array<{ id: string }>;
         actions: unknown[];
         attendanceRecords: Array<{ date: string; memberId: string }>;
         escalations: unknown[];
@@ -343,10 +350,10 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         manufacturingItems: Array<{ requestedById: string | null; reviewedById: string | null }>;
         projects: Array<{ id: string; seasonId: string }>;
         purchaseItems: Array<{ requestedById: string | null; approvedById: string | null }>;
-        qaReports: Array<{ participantIds: string[] }>;
+        qaReports: Array<{ participantIds: string[]; mentorId?: string | null; requestedById?: string | null }>;
         qaRequests: Array<{ mentorId: string; requestedById: string | null; taskId: string | null }>;
         qaReviews: Array<{ participantIds: string[] }>;
-        reports: Array<{ createdByMemberId: string | null; participantIds?: string[] }>;
+        reports: Array<{ createdByMemberId: string | null; participantIds?: string[]; mentorId?: string | null; requestedById?: string | null }>;
         seasons: Array<{ id: string; startDate: string; endDate: string }>;
         subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
         taskBlockers: Array<{ createdByMemberId: string | null; description: string }>;
@@ -384,12 +391,18 @@ test("unsigned users can read only the demo season bootstrap", async () => {
             ["student", "mentor", "external"].includes(String(member.role)) &&
             !("elevated" in member) &&
             !("photoUrl" in member) &&
-            !("plannedWeeklyAttendanceHours" in member) &&
-            !("plannedAttendanceDays" in member) &&
+            member.plannedWeeklyAttendanceHours === 6 &&
+            JSON.stringify(member.plannedAttendanceDays) === JSON.stringify(["tuesday", "thursday"]) &&
             !("plannedAttendanceNotes" in member),
         ),
         true,
       );
+      const disciplineIds = new Set(demoBody.disciplines.map((discipline) => discipline.id));
+      for (const member of demoBody.members) {
+        assert.equal(member.seasonId, "default-season");
+        if (member.disciplineId) assert.ok(disciplineIds.has(String(member.disciplineId)));
+        if (Array.isArray(member.activeSeasonIds)) assert.ok(member.activeSeasonIds.every((id) => id === "default-season"));
+      }
       assert.ok(demoBody.members.length > 0);
       assert.ok(demoBody.members.some((member) => member.role === "student"));
       assert.ok(demoBody.members.some((member) => member.role === "mentor"));
@@ -433,7 +446,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
           ...subsystem.mentorIds,
         ]),
         ...demoBody.reports.flatMap((report) => [
-          report.createdByMemberId,
+          report.createdByMemberId, report.mentorId, report.requestedById,
           ...(report.participantIds ?? []),
         ]),
         ...demoBody.tasks.flatMap((task) => [task.ownerId, task.mentorId, ...task.assigneeIds]),
@@ -442,7 +455,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         ...demoBody.attendanceRecords.map((record) => record.memberId),
         ...demoBody.manufacturingItems.flatMap((item) => [item.requestedById, item.reviewedById]),
         ...demoBody.purchaseItems.flatMap((item) => [item.requestedById, item.approvedById]),
-        ...demoBody.qaReports.flatMap((report) => report.participantIds),
+        ...demoBody.qaReports.flatMap((report) => [report.mentorId, report.requestedById, ...report.participantIds]),
         ...demoBody.qaRequests.flatMap((request) => [request.mentorId, request.requestedById]),
         ...demoBody.qaReviews.flatMap((review) => review.participantIds),
       ].filter((memberId): memberId is string => typeof memberId === "string" && memberId.length > 0);
