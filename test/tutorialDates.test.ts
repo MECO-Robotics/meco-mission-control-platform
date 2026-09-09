@@ -21,6 +21,14 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
     }
     assert.equal(data.seasons[0].startDate, `${date.slice(0, 7)}-01`);
     assert.equal(data.seasons[0].endDate.slice(0, 7), date.slice(0, 7));
+    const demoMembers = data.members.filter((member) => member.id.startsWith("demo-"));
+    assert.equal(demoMembers.length, 8);
+    for (const member of demoMembers) {
+      assert.ok(data.attendanceRecords.some((record) =>
+        record.memberId === member.id && record.date === date && record.totalHours > 0,
+      ), `${member.name} must appear in today's availability roster`);
+    }
+    assert.equal(new Set(data.attendanceRecords.map((record) => record.id)).size, data.attendanceRecords.length);
     assert.deepEqual(createTutorialSnapshot(now), data);
   });
 }
