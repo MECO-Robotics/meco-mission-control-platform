@@ -292,6 +292,10 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
   const members = selectedBootstrap.members.map((member, memberIndex) => ({
     id: rewriteDemoMemberId(member.id, memberIdsByOriginalId),
     name: `Demo Member ${memberIndex + 1}`,
+    // Public roster categories support directory grouping, never elevated permissions.
+    role: member.role === "mentor" || member.role === "admin"
+      ? "mentor"
+      : member.role === "external" ? "external" : "student",
     seasonId: member.seasonId,
     activeSeasonIds: member.activeSeasonIds,
     ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
