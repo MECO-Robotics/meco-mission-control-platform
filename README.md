@@ -302,7 +302,7 @@ Schema application is an explicit pre-start deployment step. The application con
 
 ### Demo roster
 
-Fresh seed data includes eight fictional members marked `(Demo)`, with `example.com` emails, disciplines, and planned attendance. They are part of the Tutorial Season and return on development startup or tutorial baseline reset. Development resets discard local edits; an existing production snapshot is not modified or backfilled. No schema migration is needed.
+Fresh seed data includes eight fictional members marked `(Demo)`, with `example.com` emails, disciplines, and planned attendance. They are part of the Tutorial Season and return on development startup or tutorial baseline reset. Development resets discard local edits; an existing production snapshot is not modified or backfilled. No schema migration is needed. Public demo responses anonymize names and omit contact/attendance details, but include non-privileged student/mentor/external categories so the directory can group and display the roster.
 
 ### Tutorial fixture dates
 

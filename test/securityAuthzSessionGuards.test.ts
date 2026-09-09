@@ -381,7 +381,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         demoBody.members.every(
           (member) =>
             !("email" in member) &&
-            !("role" in member) &&
+            ["student", "mentor", "external"].includes(String(member.role)) &&
             !("elevated" in member) &&
             !("photoUrl" in member) &&
             !("plannedWeeklyAttendanceHours" in member) &&
@@ -390,6 +390,9 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         ),
         true,
       );
+      assert.ok(demoBody.members.length > 0);
+      assert.ok(demoBody.members.some((member) => member.role === "student"));
+      assert.ok(demoBody.members.some((member) => member.role === "mentor"));
       assert.equal(demoBody.escalations.length, 0);
       const demoSeason = demoBody.seasons[0];
       assert.ok(demoSeason);
