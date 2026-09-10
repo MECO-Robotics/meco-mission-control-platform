@@ -156,7 +156,7 @@ test("navigation favorites are saved and included with bootstrap", async () => {
 
     const addFavoriteResponse = await app.inject({
       method: "PATCH",
-      url: "/api/navigation/favorites/tasks-timeline",
+      url: "/api/navigation/favorites/work-schedule",
       payload: {
         isFavorite: true,
       },
@@ -168,7 +168,7 @@ test("navigation favorites are saved and included with bootstrap", async () => {
     };
     assert.deepEqual(
       addFavoriteBody.favoriteViews.map((favorite) => favorite.viewId),
-      ["tasks-timeline"],
+      ["work-schedule"],
     );
 
     resetLimits();
@@ -184,14 +184,14 @@ test("navigation favorites are saved and included with bootstrap", async () => {
     };
     assert.deepEqual(
       savedBootstrapBody.favoriteViews.map((favorite) => favorite.viewId),
-      ["tasks-timeline"],
+      ["work-schedule"],
     );
 
     resetLimits();
 
     const removeFavoriteResponse = await app.inject({
       method: "PATCH",
-      url: "/api/navigation/favorites/tasks-timeline",
+      url: "/api/navigation/favorites/work-schedule",
       payload: {
         isFavorite: false,
       },
@@ -205,22 +205,23 @@ test("navigation favorites are saved and included with bootstrap", async () => {
   });
 });
 
-test("navigation favorites accept the STEP import navigation view", async () => {
-  await withIntegrationApp(async ({ app }) => {
-    const addFavoriteResponse = await app.inject({
-      method: "PATCH",
-      url: "/api/navigation/favorites/config-cad",
-      payload: {
-        isFavorite: true,
-      },
-    });
-
-    assert.equal(addFavoriteResponse.statusCode, 200);
-    assert.deepEqual(
-      (addFavoriteResponse.json() as { favoriteViews: Array<{ viewId: string }> }).favoriteViews.map(
-        (favorite) => favorite.viewId,
-      ),
-      ["config-cad"],
-    );
+test("navigation favorites accept every consolidated view and reject retired destinations", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const views = ["home", "work-tasks", "work-schedule", "work-risks", "work-activity", "resources-materials", "resources-documents", "resources-parts", "resources-purchases", "resources-manufacturing", "resources-structure", "team-people", "team-attendance"];
+    for (const viewId of views) {
+      resetLimits();
+      const response = await app.inject({ method: "PATCH", url: `/api/navigation/favorites/${viewId}`, payload: { isFavorite: true } });
+      assert.equal(response.statusCode, 200, viewId);
+      assert.ok(response.json().favoriteViews.some((favorite: { viewId: string }) => favorite.viewId === viewId));
+    }
+    for (const viewId of ["tasks-timeline", "config-cad", "reports-qa-forms", "roster-attendance", "unknown"]) {
+      resetLimits();
+      const response = await app.inject({ method: "PATCH", url: `/api/navigation/favorites/${viewId}`, payload: { isFavorite: true } });
+      assert.equal(response.statusCode, 400, viewId);
+    }
+    resetLimits();
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrap.statusCode, 200);
+    assert.deepEqual(bootstrap.json().favoriteViews.map((favorite: { viewId: string }) => favorite.viewId).sort(), views.sort());
   });
 });

@@ -167,3 +167,35 @@ test("QA workflow effects survive restart and roll back together when persistenc
     assert.equal(runProductionStoreScript("/dev/null/qa-snapshot.json", submit), "rolled-back");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("favorite destinations discard retired IDs and persist canonical IDs per user across restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-navigation-snapshot-"));
+  const path = join(directory, "snapshot.json");
+  try {
+    runProductionStoreScript(path, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+      store.setFavoriteView("first@example.test", "work-tasks", true);
+      store.setFavoriteView("second@example.test", "team-people", true);
+      await transaction.commit(); transaction.release();
+    `);
+    const persisted = JSON.parse(readFileSync(path, "utf8"));
+    persisted.favoriteViews.push({ id: "retired", userKey: "first@example.test", viewId: "tasks-board", createdAt: "2026-09-10T00:00:00Z" });
+    writeFileSync(path, JSON.stringify(persisted));
+    const readFavorites = `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      process.stdout.write(JSON.stringify([store.getFavoriteViews("first@example.test").map(item => item.viewId), store.getFavoriteViews("second@example.test").map(item => item.viewId), store.getFavoriteViews("third@example.test")]));
+    `;
+    assert.deepEqual(JSON.parse(runProductionStoreScript(path, readFavorites)), [["work-tasks"], ["team-people"], []]);
+    runProductionStoreScript(path, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+      store.setFavoriteView("first@example.test", "work-schedule", true);
+      await transaction.commit(); transaction.release();
+    `);
+    const restored = JSON.parse(runProductionStoreScript(path, readFavorites));
+    assert.deepEqual(restored[0].sort(), ["work-schedule", "work-tasks"]);
+    assert.deepEqual(restored.slice(1), [["team-people"], []]);
+    assert.ok(JSON.parse(readFileSync(path, "utf8")).favoriteViews.every((item: { viewId: string }) => item.viewId !== "tasks-board"));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});

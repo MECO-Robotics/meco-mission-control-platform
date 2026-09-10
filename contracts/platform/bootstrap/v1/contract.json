@@ -852,10 +852,42 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userKey": {
+            "type": "string"
+          },
+          "viewId": {
+            "type": "string",
+            "enum": [
+              "home",
+              "work-tasks",
+              "work-schedule",
+              "work-risks",
+              "work-activity",
+              "resources-materials",
+              "resources-documents",
+              "resources-parts",
+              "resources-purchases",
+              "resources-manufacturing",
+              "resources-structure",
+              "team-people",
+              "team-attendance"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
         },
-        "additionalProperties": {}
+        "required": [
+          "id",
+          "userKey",
+          "viewId",
+          "createdAt"
+        ],
+        "additionalProperties": false
       }
     },
     "designIterations": {

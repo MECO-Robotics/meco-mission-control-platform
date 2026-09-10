@@ -1,3 +1,4 @@
+import type { NavigationViewId } from "./navigation";
 export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
 export type MilestoneType =
   | "practice"
@@ -643,7 +644,7 @@ export interface Escalation {
 export interface FavoriteView {
   id: string;
   userKey: string;
-  viewId: string;
+  viewId: NavigationViewId;
   createdAt: string;
 }
 

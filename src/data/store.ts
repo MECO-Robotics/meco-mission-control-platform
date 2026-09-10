@@ -1,3 +1,4 @@
+import { isNavigationViewId, type NavigationViewId } from "../domain/navigation";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
@@ -589,7 +590,7 @@ function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
   return deriveTaskSummaries(normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
-    favoriteViews: normalizedSnapshot.favoriteViews ?? [],
+    favoriteViews: (normalizedSnapshot.favoriteViews ?? []).filter((favorite) => isNavigationViewId(favorite.viewId)),
     actions: normalizedSnapshot.actions ?? [],
   }));
 }
@@ -1628,7 +1629,7 @@ export function getFavoriteViews(userKey: string) {
 
 export function setFavoriteView(
   userKey: string,
-  viewId: string,
+  viewId: NavigationViewId,
   isFavorite: boolean,
 ) {
   const favoriteViews = currentSnapshot.favoriteViews ?? [];
