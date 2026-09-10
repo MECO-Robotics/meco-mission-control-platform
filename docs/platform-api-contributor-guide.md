@@ -1,0 +1,172 @@
+# Platform API Contributor Guide
+
+This guide orients contributors to the Mission Control platform API route
+layout, Prisma workflow, validation commands, auth/session model, and bootstrap
+payload contract. Use `docs/backend-overview.md` for the wider backend map and
+`docs/api-reference.md` for route lookup.
+
+## Route Layout
+
+The platform API is a Fastify TypeScript service. `src/server.ts` starts the
+process, and `src/app.ts` builds the Fastify instance, registers global plugins
+and security headers, resets runtime stores, and attaches route modules.
+
+Core Mission Control routes live under `src/routes/`:
+
+- `registerRoutes.ts` and adjacent route modules register the main planning,
+  manufacturing, roster, report, risk, and bootstrap endpoints.
+- `routeSchemas.ts` keeps shared request and response validation shapes.
+- Helper modules in `src/routes/` handle pagination, selected bootstrap scope,
+  task targets, task dependencies, roster insights, and link validation.
+
+Auth routes live in `src/routes/authRoutes.ts` and use services under
+`src/auth/`. CAD and Onshape routes live under `src/cad/` and `src/onshape/`
+because their parsing, sync, and persistence logic is larger than a simple route
+file.
+
+When adding a route:
+
+1. Define or reuse a Zod schema for the request and response shape.
+2. Register the endpoint in the smallest relevant route module.
+3. Enforce role/session requirements before mutating data.
+4. Return the repo's standard envelopes, such as `{ item }` for creates and
+   `{ items, pagination }` for collections.
+5. Add route tests that cover success, validation failure, missing records, and
+   auth restrictions.
+6. Update `docs/api-reference.md` when the public route surface changes.
+
+## Storage model ownership
+
+Core workspace entities (tasks, members, attendance, manufacturing, purchases,
+reports and risks) are defined by `src/domain/types.ts` and written through
+`src/data/store.ts`. The production snapshot file is their persistence authority.
+Prisma owns web/mobile sessions and the CAD database graph only. Do not add a
+second unused SQL representation of a snapshot-owned entity.
+
+For session/CAD schema changes, update `prisma/schema.prisma`, regenerate the
+client and validate the affected adapters. `npm run prisma:deploy` is the explicit
+pre-start schema synchronization step; ordinary restarts never push schemas.
+
+### Removing the obsolete prototype SQL tables
+
+The unused core SQL models and orphan manual CAD DDL have been removed. A fresh
+database now bootstraps from the single Prisma schema. On an existing disposable
+development database, run:
+
+```sh
+npm run prisma:generate
+npm run prisma:deploy -- --accept-data-loss
+```
+
+This deliberately drops obsolete core SQL tables and enums; it does not import
+or preserve their records. Session/CAD model definitions and the core snapshot
+file are unchanged. The routine deployment command still stops on destructive
+changes. Establish recovery requirements before any real deployment.
+
+## Test And Verification Commands
+
+Use targeted tests while developing, then run broader validation before handoff.
+
+Common commands:
+
+```bash
+npm run typecheck
+npm run typecheck:test
+npm run test
+npm run build
+npm run verify
+```
+
+`npm test` discovers every `test/**/*.test.ts` file, including web-session and
+workflow tests. No filename list needs updating when adding a test. To filter by
+name, use `npm test -- --test-name-pattern="your scenario"`.
+
+`npm run verify` runs bootstrap contract verification, Prisma client generation,
+test TypeScript checks, the complete test suite, and the production build
+(which checks source types as it compiles). Route-specific changes should include focused tests before the full suite.
+
+For bootstrap contract changes, run:
+
+```bash
+npm run contracts:verify
+```
+
+When changing production health or deploy behavior, use `npm run smoke:test` if
+the required environment is available and document any environment assumptions.
+
+## Auth And Session Model
+
+Auth is enabled when at least one supported
+sign-in path is configured. Production requires enabled auth and explicit CORS
+origins.
+
+Supported auth paths include:
+
+- Google ID token exchange through `POST /api/auth/google`.
+- Email-code start and verify through `/api/auth/email/*`.
+- Non-production development bypass through `POST /api/auth/dev-bypass`.
+
+API requests use bearer tokens. Protected routes should reject missing, expired,
+or unauthorized sessions instead of returning partial data. Permission checks
+must be enforced on the platform even when the web or mobile clients hide a
+control.
+
+Use the existing role model for mentor, lead, admin, and student behavior.
+The current development bypass creates the fixed local student session and
+rejects custom payload fields; it is not a production authorization mechanism.
+
+When adding auth-sensitive behavior:
+
+- Test missing session, expired session, insufficient role, and allowed role.
+- Keep raw tokens, secrets, and refresh credentials out of responses.
+- Return user-readable validation and auth errors without leaking secret state.
+- Coordinate frontend session-expiry behavior when a route can return `401`.
+
+## Bootstrap Payload Shape
+
+`GET /api/bootstrap` is the primary hydration contract for web and mobile. It
+returns selected season/project workspace data and must remain internally
+consistent.
+
+The bootstrap payload can include seasons, projects, members, subsystems,
+disciplines, mechanisms, part definitions, part instances, materials,
+manufacturing items, purchases, tasks, dependencies, blockers, events,
+milestones, work logs, QA records, reports, risks, audit actions, and supporting
+metadata.
+
+When changing bootstrap data:
+
+1. Update the platform source data, selectors, and response shape together.
+2. Preserve existing tutorial IDs and compatibility fields unless the consuming
+   clients are updated in the same release path.
+3. Run `npm run contracts:verify`.
+4. Update web and mobile types or normalization where needed.
+5. Add tests for selected season/project scope and empty or newly-created
+   season behavior.
+
+The platform should be the source of truth. Client-side bootstrap normalization
+is useful for compatibility, but new backend work should tighten and document
+the server contract instead of expanding client-side patching indefinitely.
+
+## Documentation Updates
+
+Update `docs/api-reference.md` for route, method, auth, or response changes.
+Update `docs/backend-overview.md` for source layout, runtime, environment, or
+deployment assumptions. Update CAD and Onshape docs when those integration
+contracts change.
+
+For documentation-only PRs, confirm the diff is scoped:
+
+```bash
+git diff -- docs
+```
+
+## Current task and reporting contract
+
+The affected command objects reject unknown fields. `taskDependencies` and `taskBlockers` are the authoritative relation collections; task commands do not accept `dependencyIds` or `blockers`. Dependency commands require explicit `taskId`, `kind`, `refId`, `requiredState`, and `dependencyType`; legacy upstream/downstream aliases are rejected. Task blocker descriptions and readiness booleans are derived for bootstrap. Task `checklistItems` round-trip as a string array, defaulting to empty.
+
+Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports retain `targetRiskId`, `proposedRiskSeverity`, and `proposedRiskStatus`; authorized approved proposals update the risk severity and missing mitigation-task link in the same snapshot transaction. Full mitigation selects low severity. Pending proposals do not change risks.
+
+Route registrations that write snapshot state declare `config.snapshotMutation: true`. Their successful responses commit one staged snapshot; errors discard it. Production mutation outside that boundary fails before replacement. Snapshot loading/seed initialization canonicalizes once; ordinary transaction copies are pure clones. Persistence stores share the application's Prisma client and its close lifecycle. CAD backend selection is explicit and never changes after a database failure.
+
+This replaces disposable prototype contracts and seeds without migration or old-client support. Stop the local server, remove only `data/platform-snapshot.json` (or the configured `PLATFORM_SNAPSHOT_PATH`), and restart to reseed. Existing prototype snapshot changes are discarded. Session/CAD database schema is unchanged; no database reset is required. The obsolete JWT secret, lifetime and migration flags and `/api/auth/google`, `/api/auth/email/verify`, `/api/auth/dev-bypass` routes are removed. Use current web-cookie or opaque-mobile-session endpoints.

@@ -21,6 +21,7 @@ COPY prisma ./prisma
 COPY prisma.config.ts ./
 RUN npm ci
 COPY --chown=node:node --from=build /app/dist ./dist
+RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 8080
 CMD ["npm", "run", "start"]

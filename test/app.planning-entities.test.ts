@@ -24,6 +24,90 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
 
     resetLimits();
 
+    const ownershipBootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?projectId=project-robot-2026",
+    });
+    assert.equal(ownershipBootstrapResponse.statusCode, 200);
+    const ownershipBootstrapBody = ownershipBootstrapResponse.json() as {
+      mechanisms: Array<{ id: string; subsystemId?: string; name?: string }>;
+      partDefinitions: Array<{
+        id: string;
+        name?: string;
+        partNumber?: string;
+        revision?: string;
+        source?: string;
+        type?: string;
+      }>;
+      partInstances: Array<{
+        id: string;
+        mechanismId?: string | null;
+        partDefinitionId?: string;
+        quantity?: number;
+        status?: string;
+        subsystemId?: string;
+        trackIndividually?: boolean;
+      }>;
+    };
+    const bootstrapMechanism = ownershipBootstrapBody.mechanisms.find(
+      (mechanism) => mechanism.id === "swerve-module",
+    );
+    const bootstrapPartDefinition = ownershipBootstrapBody.partDefinitions.find(
+      (partDefinition) => partDefinition.id === "pd-swerve-encoder-bracket",
+    );
+    const bootstrapPartInstance = ownershipBootstrapBody.partInstances.find(
+      (partInstance) => partInstance.id === "pi-swerve-encoder-bracket-front-left",
+    );
+
+    assert.deepEqual(
+      {
+        id: bootstrapMechanism?.id,
+        subsystemId: bootstrapMechanism?.subsystemId,
+      },
+      {
+        id: "swerve-module",
+        subsystemId: "drive",
+      },
+    );
+    assert.deepEqual(
+      {
+        id: bootstrapPartDefinition?.id,
+        partNumber: bootstrapPartDefinition?.partNumber,
+        revision: bootstrapPartDefinition?.revision,
+        source: bootstrapPartDefinition?.source,
+        type: bootstrapPartDefinition?.type,
+      },
+      {
+        id: "pd-swerve-encoder-bracket",
+        partNumber: "DRV-101",
+        revision: "B",
+        source: "Onshape",
+        type: "custom",
+      },
+    );
+    assert.deepEqual(
+      {
+        id: bootstrapPartInstance?.id,
+        mechanismId: bootstrapPartInstance?.mechanismId,
+        partDefinitionId: bootstrapPartInstance?.partDefinitionId,
+        quantity: bootstrapPartInstance?.quantity,
+        status: bootstrapPartInstance?.status,
+        subsystemId: bootstrapPartInstance?.subsystemId,
+        trackIndividually: bootstrapPartInstance?.trackIndividually,
+      },
+      {
+        id: "pi-swerve-encoder-bracket-front-left",
+        mechanismId: "swerve-module",
+        partDefinitionId: "pd-swerve-encoder-bracket",
+        quantity: 1,
+        status: "ready",
+        subsystemId: "drive",
+        trackIndividually: true,
+      },
+    );
+
+    resetLimits();
+
     const partDefinitionResponse = await app.inject({
       method: "POST",
       url: "/api/part-definitions",

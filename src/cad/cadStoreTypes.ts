@@ -17,6 +17,11 @@ export type CadImportRunCreateInput = Omit<CadImportRun, "id" | "createdAt" | "u
 export type CadImportRunPatchInput = Partial<Omit<CadImportRun, "id" | "createdAt">>;
 export type CadSnapshotCreateInput = Omit<CadSnapshot, "id" | "createdAt" | "previousSnapshotId">;
 export type CadSnapshotPatchInput = Partial<Omit<CadSnapshot, "id" | "createdAt">>;
+export type CadSnapshotFinalizeInput = Pick<CadSnapshot, "finalizedAt" | "finalizedBy">;
+export interface CadSnapshotFinalizeResult {
+  snapshot: CadSnapshot;
+  importRun: CadImportRun;
+}
 export type CadAssemblyCreateInput = Omit<
   CadAssemblyNode,
   "id" | "snapshotId" | "createdAt" | "normalizedName" | "parentAssemblyNodeId"
@@ -50,6 +55,7 @@ export interface CadStore {
   findImportRun(id: string): Awaitable<CadImportRun | null>;
   createSnapshot(input: CadSnapshotCreateInput): Awaitable<CadSnapshot>;
   updateSnapshot(id: string, patch: CadSnapshotPatchInput): Awaitable<CadSnapshot | null>;
+  finalizeSnapshot(id: string, input: CadSnapshotFinalizeInput): Awaitable<CadSnapshotFinalizeResult | null>;
   listSnapshots(filter?: {
     projectId?: string | null;
     seasonId?: string | null;

@@ -260,7 +260,6 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
       payload: {
         title: "Custom Welded Intake Frame Rev B",
         materialId: "mat-1-8-polycarbonate",
-        status: "in-progress",
       },
     });
 
@@ -278,7 +277,27 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
     assert.equal(fabricationUpdatedBody.item.materialId, "mat-1-8-polycarbonate");
     assert.equal(fabricationUpdatedBody.item.partDefinitionId, null);
     assert.equal(fabricationUpdatedBody.item.title, "Custom Welded Intake Frame Rev B");
-    assert.equal(fabricationUpdatedBody.item.status, "in-progress");
+    assert.equal(fabricationUpdatedBody.item.status, "requested");
+
+    resetLimits();
+
+    const fabricationReviewResponse = await app.inject({
+      method: "PUT",
+      url: `/api/manufacturing/${fabricationCreatedBody.item.id}/review`,
+      payload: { reviewed: true },
+    });
+    assert.equal(fabricationReviewResponse.statusCode, 200);
+    assert.equal(fabricationReviewResponse.json().item.status, "approved");
+
+    resetLimits();
+
+    const fabricationTransitionResponse = await app.inject({
+      method: "POST",
+      url: `/api/manufacturing/${fabricationCreatedBody.item.id}/transition`,
+      payload: { status: "in-progress" },
+    });
+    assert.equal(fabricationTransitionResponse.statusCode, 200);
+    assert.equal(fabricationTransitionResponse.json().item.status, "in-progress");
 
     resetLimits();
 

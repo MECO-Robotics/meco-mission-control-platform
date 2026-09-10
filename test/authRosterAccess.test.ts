@@ -1,25 +1,11 @@
+import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
-function saveEnv(keys: string[]) {
-  return new Map(keys.map((key) => [key, process.env[key]] as const));
-}
-
-function restoreEnv(saved: Map<string, string | undefined>) {
-  for (const [key, value] of saved) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
 
 test("external roster role whitelists non-team email for email sign-in", async () => {
   const saved = saveEnv([
     "NODE_ENV",
     "DATABASE_URL",
-    "AUTH_JWT_SECRET",
     "GOOGLE_CLIENT_ID",
     "AUTH_EMAIL_SMTP_HOST",
     "AUTH_EMAIL_FROM",
@@ -29,7 +15,6 @@ test("external roster role whitelists non-team email for email sign-in", async (
     process.env.NODE_ENV = "development";
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
-    process.env.AUTH_JWT_SECRET = "replace-with-a-long-random-secret-123456";
     delete process.env.GOOGLE_CLIENT_ID;
     process.env.AUTH_EMAIL_SMTP_HOST = "127.0.0.1";
     process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
@@ -39,6 +24,7 @@ test("external roster role whitelists non-team email for email sign-in", async (
       AuthError,
       requestEmailSignInCode,
       verifyEmailSignInCode,
+      refreshSessionUser,
     } = await import("../src/auth/authService");
 
     resetStore();
@@ -52,6 +38,12 @@ test("external roster role whitelists non-team email for email sign-in", async (
       name: "Sponsor Invitee",
       email: "invitee@sponsor.example",
       role: "external",
+      seasonId: "default-season",
+    });
+    createMember({
+      name: "Sponsor Mentor",
+      email: "mentor@sponsor.example",
+      role: "mentor",
       seasonId: "default-season",
     });
 
@@ -71,6 +63,25 @@ test("external roster role whitelists non-team email for email sign-in", async (
         return true;
       },
     );
+
+    try {
+      await requestEmailSignInCode(" MENTOR@SPONSOR.EXAMPLE ");
+    } catch (error) {
+      assert.ok(error instanceof AuthError);
+      assert.notEqual(error.statusCode, 403);
+    }
+
+    const mentorUser: import("../src/auth/authService").SessionUser = {
+      accountId: "mentor@sponsor.example",
+      authProvider: "email",
+      email: "mentor@sponsor.example",
+      hostedDomain: "sponsor.example",
+      name: "Sponsor Mentor",
+      picture: null,
+      role: "student",
+      taskSubteamIds: [],
+    };
+    assert.equal(refreshSessionUser(mentorUser).role, "mentor");
 
     assert.throws(
       () => verifyEmailSignInCode("VIEWER@sponsor.example", "123456"),

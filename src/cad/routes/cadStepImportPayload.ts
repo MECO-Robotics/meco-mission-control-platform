@@ -3,13 +3,9 @@ import type { FastifyRequest } from "fastify";
 import { cadStepUploadConfig } from "../../config/env";
 import { CadImportError } from "../cadImportService";
 import { cadStepImportJsonSchema } from "../cadRouteSchemas";
+import { assertValidStepUpload, formatStepUploadLimit } from "../validation/stepUploadValidation";
 
 const maxStepUploadBytes = cadStepUploadConfig.maxBytes;
-
-function formatUploadLimit(bytes: number) {
-  const mib = bytes / (1024 * 1024);
-  return `${Number.isInteger(mib) ? mib : mib.toFixed(1)} MiB`;
-}
 
 function isMultipartFileTooLargeError(error: unknown) {
   return (
@@ -52,6 +48,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
     if (!parsed.success) {
       throw new CadImportError("STEP import payload is invalid.");
     }
+    assertValidStepUpload({ fileName: parsed.data.fileName, fileText: parsed.data.fileText, maxBytes: maxStepUploadBytes });
     return parsed.data;
   }
 
@@ -60,6 +57,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
       type: "file" | "field";
       fieldname: string;
       filename: string;
+      mimetype?: string;
       value?: unknown;
       toBuffer?: () => Promise<Buffer>;
     }>;
@@ -68,6 +66,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
   try {
     const fields: Record<string, string> = {};
     let fileName: string | null = null;
+    let mimeType: string | undefined;
     let fileText: string | null = null;
 
     for await (const part of multipartRequest.parts({ limits: { fileSize: maxStepUploadBytes, files: 1 } })) {
@@ -81,6 +80,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
         await consumeMultipartFile(part);
         continue;
       }
+      mimeType = part.mimetype;
       const buffer = await part.toBuffer();
       fileName = part.filename;
       fileText = buffer.toString("utf8");
@@ -102,11 +102,12 @@ export async function readStepImportPayload(request: FastifyRequest) {
     if (!parsed.success) {
       throw new CadImportError("STEP import payload is invalid.");
     }
+    assertValidStepUpload({ fileName: parsed.data.fileName, fileText: parsed.data.fileText, mimeType, maxBytes: maxStepUploadBytes });
     return parsed.data;
   } catch (error) {
     if (isMultipartFileTooLargeError(error)) {
       throw new CadImportError(
-        `STEP file is larger than the ${formatUploadLimit(maxStepUploadBytes)} upload limit. Export a smaller assembly or ask an admin to raise CAD_STEP_UPLOAD_MAX_BYTES.`,
+        `STEP file is larger than the ${formatStepUploadLimit(maxStepUploadBytes)} upload limit. Export a smaller assembly or ask an admin to raise CAD_STEP_UPLOAD_MAX_BYTES.`,
         413,
       );
     }

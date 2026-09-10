@@ -803,6 +803,31 @@ test("does not replace the latest snapshot when BOM import fails", async () => {
   assert.equal(store.findImportRun(failed.importRunId)?.errorMessage, "bom unavailable");
 });
 
+test("keeps a completed import successful when durable audit persistence fails", async () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+
+  await assert.rejects(
+    runCadImport({
+      store,
+      documentRefId: ref.id,
+      syncLevel: "shallow",
+      requestedBy: "test-user",
+      client: createFakeClient({}),
+      auditRecorder: async () => {
+        throw new Error("snapshot volume is unavailable");
+      },
+    }),
+    /snapshot volume is unavailable/,
+  );
+
+  const [importRun] = store.listImportRuns();
+  const [syncJob] = store.listSyncJobs();
+  assert.equal(importRun.status, "completed");
+  assert.equal(syncJob.status, "completed");
+  assert.equal(importRun.errorMessage, null);
+});
+
 test("marks imports partial when API budget is reached", async () => {
   const store = createOnshapeRuntimeStore();
   const ref = createLinkedRef(store, workspaceUrl);

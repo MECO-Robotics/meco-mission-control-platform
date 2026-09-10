@@ -6,7 +6,8 @@ import { getMembers } from "../data/store";
 import { getOnshapeRuntimeStore } from "./cadStore";
 import { runCadImport } from "./cadImporter";
 import { createConfiguredOnshapeCadClient } from "./onshapeClientFactory";
-import { getOAuthStatus, registerOnshapeOAuthRoutes } from "./onshapeOAuthRoutes";
+import { getOnshapeOverview } from "./services/onshapeOverview";
+import { registerOnshapeOAuthRoutes } from "./onshapeOAuthRoutes";
 import {
   onshapeDocumentRefSchema,
   onshapeImportEstimateQuerySchema,
@@ -14,10 +15,16 @@ import {
   onshapeListQuerySchema,
 } from "./onshapeRouteSchemas";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "./onshapeSyncPolicy";
+import { registerOnshapeSyncJobRoutes } from "./routes/onshapeSyncJobRoutes";
 import { parseOnshapeUrl } from "./onshapeUrlParser";
 import type { CadImportOnshapeClient } from "./onshapeTypes";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
+type RequireMentorPermission = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  message: string,
+) => boolean;
 
 function createNoopClient(): CadImportOnshapeClient {
   return {
@@ -66,40 +73,35 @@ function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyRep
   return false;
 }
 
-function getOverview() {
-  const store = getOnshapeRuntimeStore();
-  const snapshots = store.listSnapshots();
-  const latestSnapshot = snapshots[0] ?? null;
-  return {
-    connection: {
-      authMode: "oauth",
-      baseUrl: onshapeConfig.baseUrl,
-      configured: onshapeConfig.enabled,
-      credentialReference: onshapeConfig.credentialReference,
-      oauth: getOAuthStatus(store),
-      lastError: null,
-    },
-    documentRefs: store.listDocumentRefs(),
-    importRuns: store.listImportRuns(),
-    snapshots,
-    latestSnapshot,
-    assemblyNodes: latestSnapshot ? store.listAssemblyNodes(latestSnapshot.id) : [],
-    partDefinitions: latestSnapshot ? store.listPartDefinitions(latestSnapshot.id) : [],
-    partInstances: latestSnapshot ? store.listPartInstances(latestSnapshot.id) : [],
-    warnings: store.listWarnings(),
-    budget: store.getBudget(),
-  };
+function resolveImportActor(request: FastifyRequest, requestedBy: string | null | undefined) {
+  if (!isAuthEnabled()) {
+    return requestedBy ?? null;
+  }
+
+  const session = getSessionFromRequest(request);
+  const accountId = session?.accountId?.trim().toLowerCase();
+  const email = session?.email?.trim().toLowerCase();
+  const member = getMembers().find((candidate) =>
+    candidate.id.trim().toLowerCase() === accountId ||
+    candidate.email?.trim().toLowerCase() === email);
+
+  return member?.id ?? session?.accountId ?? session?.email ?? null;
 }
 
-export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+export async function registerOnshapeRoutes(
+  app: FastifyInstance,
+  requireApiSession: RequireApiSession,
+  requireMentorPermission: RequireMentorPermission,
+) {
   registerOnshapeOAuthRoutes(app, requireApiSession);
+  registerOnshapeSyncJobRoutes(app, requireApiSession);
 
   app.get("/api/onshape/overview", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
     }
 
-    return getOverview();
+    return getOnshapeOverview();
   });
 
   app.get("/api/onshape/document-refs", async (request, reply) => {
@@ -139,6 +141,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     if (!requireApiSession(request, reply)) {
       return;
     }
+    if (!requireMentorPermission(request, reply, "Only mentors can create Onshape references.")) {
+      return;
+    }
 
     const parsedBody = onshapeDocumentRefSchema.safeParse(request.body);
     if (!parsedBody.success) {
@@ -159,7 +164,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     const item = getOnshapeRuntimeStore().createDocumentRef({
       label: parsedBody.data.label ?? parsedUrl.elementId ?? parsedUrl.documentId ?? "Onshape reference",
       parsed: parsedUrl,
-      createdBy: parsedBody.data.createdBy ?? null,
+      createdBy: resolveImportActor(request, parsedBody.data.createdBy),
       projectId: parsedBody.data.projectId ?? null,
       seasonId: parsedBody.data.seasonId ?? null,
       subsystemId: parsedBody.data.subsystemId ?? null,
@@ -171,6 +176,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
 
   app.post("/api/onshape/import-runs", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
+      return;
+    }
+    if (!requireMentorPermission(request, reply, "Only mentors can run Onshape imports.")) {
       return;
     }
 
@@ -191,14 +199,22 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       return;
     }
 
-    const client = parsedBody.data.syncLevel === "link_only"
-      ? createNoopClient()
-      : await createConfiguredOnshapeCadClient(store, onshapeConfig);
+    let client: CadImportOnshapeClient;
+    try {
+      client = parsedBody.data.syncLevel === "link_only"
+        ? createNoopClient()
+        : await createConfiguredOnshapeCadClient(store, onshapeConfig);
+    } catch {
+      return reply.code(502).send({
+        message: "Onshape sync client could not be configured. Check the Onshape OAuth connection and try again.",
+      });
+    }
+
     const result = await runCadImport({
       store,
       documentRefId: documentRef.id,
       syncLevel: parsedBody.data.syncLevel,
-      requestedBy: parsedBody.data.requestedBy ?? null,
+      requestedBy: resolveImportActor(request, parsedBody.data.requestedBy),
       client,
     });
 
@@ -275,15 +291,6 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       partDefinitions: snapshotId ? store.listPartDefinitions(snapshotId) : [],
       partInstances: snapshotId ? store.listPartInstances(snapshotId) : [],
     };
-  });
-
-  app.get("/api/onshape/warnings", async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
-
-    const query = readListQuery(request.query);
-    return { items: getOnshapeRuntimeStore().listWarnings({ snapshotId: query.snapshotId }) };
   });
 
   app.get("/api/onshape/budget", async (request, reply) => {

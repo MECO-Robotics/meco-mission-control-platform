@@ -6,7 +6,13 @@ $SkillsRepo = if ([string]::IsNullOrWhiteSpace($env:SKILLS_REPO)) {
     $env:SKILLS_REPO
 }
 
-$TmpDir = ".tmp-skills-sync"
+# Resolve local sources before Git changes its working directory.
+if (Test-Path -LiteralPath $SkillsRepo -PathType Container -ErrorAction SilentlyContinue) {
+    $SkillsRepo = (Resolve-Path -LiteralPath $SkillsRepo).ProviderPath
+}
+
+$SkillsRef = if ([string]::IsNullOrWhiteSpace($env:SKILLS_REF)) { "main" } else { $env:SKILLS_REF }
+$TmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
 
 function Fail {
     param([string] $Message)
@@ -38,10 +44,12 @@ try {
 
     Remove-Tmp
 
-    & git clone --depth 1 $SkillsRepo $TmpDir
-    if ($LASTEXITCODE -ne 0) {
-        Fail "failed to clone shared skills repo: $SkillsRepo"
-    }
+    & git init --quiet $TmpDir
+    if ($LASTEXITCODE -ne 0) { Fail "failed to initialize temporary checkout" }
+    & git -C $TmpDir fetch --quiet --depth 1 $SkillsRepo $SkillsRef
+    if ($LASTEXITCODE -ne 0) { Fail "failed to fetch shared skills revision: $SkillsRef" }
+    & git -C $TmpDir checkout --quiet --detach FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) { Fail "failed to check out shared skills revision: $SkillsRef" }
 
     $SharedSkills = Join-Path $TmpDir "skills"
     if (-not (Test-Path -LiteralPath $SharedSkills -PathType Container)) {

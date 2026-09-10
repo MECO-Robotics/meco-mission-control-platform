@@ -1,11 +1,15 @@
-import { snapshot as initialSnapshot } from "./mockData";
+import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { resolve } from "node:path";
+
+import { createTutorialSnapshot } from "./tutorialSnapshot";
+import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import type {
   AuditAction,
   AuditActionOperation,
   Artifact,
   DesignIteration,
   Discipline,
-  FavoriteView,
   MilestoneRequirement,
   Milestone,
   MilestoneStatus,
@@ -40,13 +44,17 @@ import {
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
 import {
+  isManualPmCadImportSource,
+  markPmCadEditedAfterImport,
+  normalizePmCadProvenance,
+} from "../domain/pmCadProvenance";
+import {
   dateOnlyFromDateTime,
   formatTimeFromDateTime,
   normalizeMeetingSchedule,
 } from "./store/meetingSchedule";
 import {
   buildFindings,
-  buildReportFindings,
   buildReports,
   reportFindingFromQaFinding,
   reportFindingFromTestFinding,
@@ -54,6 +62,7 @@ import {
   reportFromTestResult,
   type FindingListItem,
 } from "./store/reportDerivations";
+import { loadPlatformSnapshotFile, savePlatformSnapshotFile } from "./platformSnapshotFile";
 import type {
   ArtifactInput,
   MilestoneInput,
@@ -119,6 +128,15 @@ export interface TaskMilestoneMatch {
   matchedRequirementIds: string[];
   isLegacyLink: boolean;
 }
+
+export interface AuditMutationContext {
+  actorMemberId?: string | null;
+  requestId?: string | null;
+}
+
+const REDACTED_AUDIT_VALUE = "[redacted]";
+const SENSITIVE_AUDIT_FIELD_PATTERN =
+  /(password|passcode|secret|token|credential|authorization|authHeader|cookie|session|privateKey|apiKey)/i;
 
 function parseIterationCondition(conditionValue: string) {
   const normalized = conditionValue.trim().toLowerCase();
@@ -467,10 +485,29 @@ function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnaps
   };
 }
 
-function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
+function deriveTaskSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
+  const hours = new Map<string, number>();
+  for (const log of snapshot.workLogs) hours.set(log.taskId, (hours.get(log.taskId) ?? 0) + log.hours);
+  const summaries = new Map<string, Set<string>>();
+  for (const blocker of snapshot.taskBlockers) {
+    if (blocker.status !== "open") continue;
+    const descriptions = summaries.get(blocker.blockedTaskId) ?? new Set<string>();
+    descriptions.add(blocker.description);
+    summaries.set(blocker.blockedTaskId, descriptions);
+  }
+  return { ...snapshot, tasks: snapshot.tasks.map((task) => ({
+    ...task, actualHours: hours.get(task.id) ?? 0, checklistItems: task.checklistItems ?? [], blockers: [...(summaries.get(task.id) ?? [])],
+  })) };
+}
+
+function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
-  const projectsById = new Map(clonedSnapshot.projects.map((project) => [project.id, project] as const));
+  const normalizedProjects = clonedSnapshot.projects.map((project) => ({
+    ...project,
+    teamId: normalizeProjectTeamId(project.teamId),
+  }));
+  const projectsById = new Map(normalizedProjects.map((project) => [project.id, project] as const));
 
   const normalizeMilestoneSeasonId = (milestone: Milestone) => {
     if (milestone.seasonId) {
@@ -498,65 +535,187 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     };
   });
 
-  const buildLegacyScopeRequirements = (milestones: Milestone[]): MilestoneRequirement[] => {
-    const requirements: MilestoneRequirement[] = [];
-    const seen = new Set<string>();
-
-    for (const milestone of milestones) {
-      let sortOrder = 1;
-      for (const projectId of uniqueIds(milestone.projectIds ?? [])) {
-        const id = `${milestone.id}:scope:project:${projectId}`;
-        if (seen.has(id)) {
-          continue;
-        }
-        seen.add(id);
-        requirements.push({
-          id,
-          milestoneId: milestone.id,
-          targetType: "project",
-          targetId: projectId,
-          conditionType: "custom",
-          conditionValue: "in_scope",
-          required: true,
-          sortOrder: sortOrder++,
-          notes: "",
-        });
-      }
-    }
-
-    return requirements;
-  };
-
-  const normalizedMilestoneRequirements =
-    clonedSnapshot.milestoneRequirements && Array.isArray(clonedSnapshot.milestoneRequirements)
-      ? clonedSnapshot.milestoneRequirements
-      : buildLegacyScopeRequirements(normalizedMilestones);
-
   const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
+    projects: normalizedProjects,
+    subsystems: clonedSnapshot.subsystems.map((subsystem) => ({
+      ...subsystem,
+      ...normalizePmCadProvenance(subsystem),
+    })),
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
     ),
+    mechanisms: clonedSnapshot.mechanisms.map((mechanism) => ({
+      ...mechanism,
+      ...normalizePmCadProvenance(mechanism),
+    })),
     partDefinitions: clonedSnapshot.partDefinitions.map((partDefinition) =>
-      normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
+      normalizePartDefinitionSeasonMembership(
+        {
+          ...partDefinition,
+          ...normalizePmCadProvenance(partDefinition),
+        },
+        fallbackSeasonId,
+      ),
     ),
+    partInstances: clonedSnapshot.partInstances.map((partInstance) => ({
+      ...partInstance,
+      ...normalizePmCadProvenance(partInstance),
+    })),
     milestones: normalizedMilestones,
-    milestoneRequirements: normalizedMilestoneRequirements,
+    milestoneRequirements: clonedSnapshot.milestoneRequirements,
     qaRequests: clonedSnapshot.qaRequests ?? [],
+    workLogs: clonedSnapshot.workLogs.map((workLog) => ({
+      ...workLog,
+      createdById: workLog.createdById ?? null,
+    })),
+    manufacturingItems: clonedSnapshot.manufacturingItems.map((item) => ({
+      ...item,
+      reviewedById: item.reviewedById ?? null,
+      reviewedAt: item.reviewedAt ?? null,
+    })),
+    purchaseItems: clonedSnapshot.purchaseItems.map((item) => ({
+      ...item,
+      approvedById: item.approvedById ?? null,
+      approvedAt: item.approvedAt ?? null,
+      purchasedAt: item.purchasedAt ?? null,
+      deliveredAt: item.deliveredAt ?? null,
+    })),
     meetings: clonedSnapshot.meetings.map((meeting) =>
       normalizeMeetingSchedule(meeting, fallbackSeasonId),
     ),
   });
 
-  return normalizeSnapshotTaskSerials({
+  return deriveTaskSummaries(normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
-    favoriteViews: normalizedSnapshot.favoriteViews ?? [],
     actions: normalizedSnapshot.actions ?? [],
-  });
+  }));
 }
 
-let currentSnapshot = cloneSnapshot(initialSnapshot);
-let interactiveTutorialSnapshot: PlatformSnapshot | null = null;
+interface SnapshotState {
+  current: PlatformSnapshot;
+  interactive: PlatformSnapshot | null;
+  isGlobalTransaction?: boolean;
+  dirty?: boolean;
+}
+
+const platformSnapshotPath = resolve(
+  process.cwd(),
+  process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json",
+);
+const persistedProductionSnapshot = process.env.NODE_ENV === "production"
+  ? loadPlatformSnapshotFile(platformSnapshotPath)
+  : null;
+const globalSnapshotState: SnapshotState = {
+  current: canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot()),
+  interactive: null,
+};
+const tutorialSnapshotStates = new Map<string, SnapshotState>();
+const snapshotContext = new AsyncLocalStorage<SnapshotState>();
+let globalMutationTail = Promise.resolve();
+
+function activeSnapshotState() {
+  return snapshotContext.getStore() ?? globalSnapshotState;
+}
+
+const currentSnapshot = new Proxy({} as PlatformSnapshot, {
+  get: (_target, property) => Reflect.get(activeSnapshotState().current, property),
+  set: (_target, property, value) => {
+    const state = activeSnapshotState();
+    const updated = Reflect.set(state.current, property, value);
+    if (updated && state.isGlobalTransaction) {
+      state.dirty = true;
+    }
+    return updated;
+  },
+  ownKeys: () => Reflect.ownKeys(activeSnapshotState().current),
+  getOwnPropertyDescriptor: (_target, property) =>
+    Reflect.getOwnPropertyDescriptor(activeSnapshotState().current, property),
+});
+
+function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
+  const state = activeSnapshotState();
+  if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
+    throw new Error("Production platform mutations require a durable request transaction.");
+  }
+  state.current = deriveTaskSummaries(snapshot);
+  if (state.isGlobalTransaction) {
+    state.dirty = true;
+  }
+}
+
+export async function acquireGlobalSnapshotMutation() {
+  let releaseLock!: () => void;
+  const previous = globalMutationTail;
+  globalMutationTail = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  await previous;
+
+  const state: SnapshotState = {
+    current: structuredClone(globalSnapshotState.current),
+    interactive: null,
+    isGlobalTransaction: true,
+    dirty: false,
+  };
+  let released = false;
+
+  return {
+    enter() {
+      snapshotContext.enterWith(state);
+    },
+    hasChanges() {
+      return state.dirty === true;
+    },
+    async commit() {
+      if (!state.dirty) {
+        return;
+      }
+      try {
+        if (process.env.NODE_ENV === "production") {
+          await savePlatformSnapshotFile(platformSnapshotPath, state.current);
+        }
+        globalSnapshotState.current = state.current;
+      } finally {
+        state.dirty = false;
+      }
+    },
+    release() {
+      if (!released) {
+        released = true;
+        snapshotContext.enterWith(globalSnapshotState);
+        releaseLock();
+      }
+    },
+  };
+}
+
+function getInteractiveTutorialSnapshot() {
+  return activeSnapshotState().interactive;
+}
+
+function setInteractiveTutorialSnapshot(snapshot: PlatformSnapshot | null) {
+  activeSnapshotState().interactive = snapshot;
+}
+
+export function hasInteractiveTutorialSession(userKey: string) {
+  return tutorialSnapshotStates.has(userKey);
+}
+
+export function runWithInteractiveTutorialSession<T>(userKey: string, run: () => T): T {
+  const state = tutorialSnapshotStates.get(userKey);
+  return state ? snapshotContext.run(state, run) : run();
+}
+
+function normalizeProjectTeamId(teamId: string | null | undefined) {
+  const normalized = teamId?.trim();
+  return normalized ? normalized : DEFAULT_PROJECT_TEAM_ID;
+}
+
+function getDefaultProjectTeamId(snapshot: Pick<PlatformSnapshot, "projects">) {
+  const firstTeamId = snapshot.projects.find((project) => project.teamId?.trim())?.teamId;
+  return normalizeProjectTeamId(firstTeamId);
+}
 
 function isElevatedMemberRole(role: Member["role"]): boolean {
   return role === "lead" || role === "admin";
@@ -719,6 +878,18 @@ function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
     const existingPartInstance = partInstanceByKey.get(mergeKey);
 
     if (existingPartInstance) {
+      const existingProvenance = normalizePmCadProvenance(existingPartInstance);
+      const incomingProvenance = normalizePmCadProvenance(normalizedPartInstance);
+      if (
+        isManualPmCadImportSource(existingProvenance.cadImportSource) ||
+        !isManualPmCadImportSource(incomingProvenance.cadImportSource)
+      ) {
+        existingPartInstance.cadSource = incomingProvenance.cadSource;
+        existingPartInstance.cadImportSource = incomingProvenance.cadImportSource;
+        existingPartInstance.cadEditedAfterImport = incomingProvenance.cadEditedAfterImport;
+        existingPartInstance.cadSourceLabel = incomingProvenance.cadSourceLabel;
+        existingPartInstance.cadUpdatedAt = incomingProvenance.cadUpdatedAt;
+      }
       existingPartInstance.quantity += normalizedPartInstance.quantity;
       remappedPartInstanceIds.set(normalizedPartInstance.id, existingPartInstance.id);
       continue;
@@ -1171,8 +1342,9 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     status: "not-started",
     estimatedHours: 4,
     actualHours: 0,
+    checklistItems: [],
     blockers: [],
-    dependencyIds: [],
+
     linkedManufacturingIds: [],
     linkedPurchaseIds: [],
     requiresDocumentation: true,
@@ -1234,8 +1406,9 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     status: "not-started",
     estimatedHours: 4,
     actualHours: 0,
+    checklistItems: [],
     blockers: [],
-    dependencyIds: [],
+
     linkedManufacturingIds: [],
     linkedPurchaseIds: [],
     requiresDocumentation: true,
@@ -1331,18 +1504,78 @@ function collectProvidedFields(input: Record<string, unknown>) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function recordAuditAction(args: {
+function isSensitiveAuditField(fieldName: string) {
+  return SENSITIVE_AUDIT_FIELD_PATTERN.test(fieldName);
+}
+
+function summarizeAuditValue(fieldName: string, value: unknown): unknown {
+  if (isSensitiveAuditField(fieldName)) {
+    return REDACTED_AUDIT_VALUE;
+  }
+
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (typeof value === "string") {
+    return value.length > 120 ? `${value.slice(0, 117)}...` : value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: "array",
+      count: value.length,
+      values: value
+        .slice(0, 10)
+        .map((item) => summarizeAuditValue(fieldName, item)),
+    };
+  }
+
+  if (typeof value === "object") {
+    return {
+      type: "object",
+      keys: Object.keys(value as Record<string, unknown>).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    };
+  }
+
+  return String(value);
+}
+
+function buildAuditSummary(
+  record: object,
+  changedFields: string[],
+) {
+  const auditRecord = record as Record<string, unknown>;
+  return Object.fromEntries(
+    changedFields.map((fieldName) => [
+      fieldName,
+      summarizeAuditValue(fieldName, auditRecord[fieldName]),
+    ]),
+  );
+}
+
+export function recordAuditAction(args: {
   operation: AuditActionOperation;
   entityType: string;
   entityId: string;
   entityLabel?: string | null;
   changedFields?: string[];
+  beforeJson?: object;
+  afterJson?: object;
   projectId?: string | null;
   projectIds?: Array<string | null | undefined>;
   taskId?: string | null;
   subsystemId?: string | null;
   actorMemberId?: string | null;
+  requestId?: string | null;
   memberIds?: Array<string | null | undefined>;
+  detailsJson?: Record<string, unknown>;
 }) {
   const entityLabel = resolveEntityLabel(args.entityLabel, args.entityId);
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
@@ -1363,6 +1596,10 @@ function recordAuditAction(args: {
       changedFields,
     }),
     changedFields,
+    ...(args.beforeJson ? { beforeJson: buildAuditSummary(args.beforeJson, changedFields) } : {}),
+    ...(args.afterJson ? { afterJson: buildAuditSummary(args.afterJson, changedFields) } : {}),
+    ...(args.detailsJson ? { detailsJson: args.detailsJson } : {}),
+    requestId: args.requestId ?? null,
     projectId: projectIds[0] ?? null,
     ...(projectIds.length > 0 ? { projectIds } : {}),
     taskId: args.taskId ?? null,
@@ -1371,54 +1608,14 @@ function recordAuditAction(args: {
     memberIds: uniqueIds(args.memberIds ?? []),
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     actions: [...(currentSnapshot.actions ?? []), action],
-  };
+  });
 }
 
 export function getSnapshot() {
   return currentSnapshot;
-}
-
-export function getFavoriteViews(userKey: string) {
-  return (currentSnapshot.favoriteViews ?? [])
-    .filter((favorite) => favorite.userKey === userKey)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-}
-
-export function setFavoriteView(
-  userKey: string,
-  viewId: string,
-  isFavorite: boolean,
-) {
-  const favoriteViews = currentSnapshot.favoriteViews ?? [];
-  const existingFavorite = favoriteViews.find(
-    (favorite) => favorite.userKey === userKey && favorite.viewId === viewId,
-  );
-
-  if (isFavorite && !existingFavorite) {
-    const favorite: FavoriteView = {
-      id: uniqueId(`favorite-${toSlug(userKey)}-${viewId}`, new Set(favoriteViews.map((item) => item.id))),
-      userKey,
-      viewId,
-      createdAt: new Date().toISOString(),
-    };
-
-    currentSnapshot = {
-      ...currentSnapshot,
-      favoriteViews: [...favoriteViews, favorite],
-    };
-  }
-
-  if (!isFavorite && existingFavorite) {
-    currentSnapshot = {
-      ...currentSnapshot,
-      favoriteViews: favoriteViews.filter((favorite) => favorite.id !== existingFavorite.id),
-    };
-  }
-
-  return getFavoriteViews(userKey);
 }
 
 export interface TutorialBaselineState {
@@ -1470,28 +1667,66 @@ export function getTutorialBaselineState() {
 }
 
 export function resetStore() {
-  currentSnapshot = cloneSnapshot(initialSnapshot);
-  interactiveTutorialSnapshot = null;
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  globalSnapshotState.current = canonicalizeSnapshot(createTutorialSnapshot());
+  globalSnapshotState.interactive = null;
+  tutorialSnapshotStates.clear();
 }
 
-export function resetTutorialBaseline() {
-  const tutorialSnapshot = interactiveTutorialSnapshot;
-  currentSnapshot = cloneSnapshot(initialSnapshot);
-  interactiveTutorialSnapshot = tutorialSnapshot;
+export function resetTutorialBaseline(userKey?: string) {
+  if (userKey) {
+    const state = tutorialSnapshotStates.get(userKey);
+    if (!state) {
+      return buildTutorialBaselineState(createTutorialSnapshot());
+    }
+
+    state.current = canonicalizeSnapshot(createTutorialSnapshot());
+    return buildTutorialBaselineState(state.current);
+  }
+
+  const tutorialSnapshot = getInteractiveTutorialSnapshot();
+  replaceCurrentSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
+  setInteractiveTutorialSnapshot(tutorialSnapshot);
   return getTutorialBaselineState();
 }
 
-export function startInteractiveTutorialSession() {
-  interactiveTutorialSnapshot = cloneSnapshot(currentSnapshot);
+export function startInteractiveTutorialSession(userKey?: string) {
+  if (userKey) {
+    const current = canonicalizeSnapshot(createTutorialSnapshot());
+    tutorialSnapshotStates.set(userKey, {
+      current,
+      interactive: structuredClone(current),
+    });
+    return;
+  }
+
+  setInteractiveTutorialSnapshot(structuredClone(activeSnapshotState().current));
+  replaceCurrentSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
 }
 
-export function resetInteractiveTutorialSession() {
-  if (!interactiveTutorialSnapshot) {
+export function resetInteractiveTutorialSession(userKey?: string) {
+  if (userKey) {
+    const state = tutorialSnapshotStates.get(userKey);
+    if (!state?.interactive) {
+      return false;
+    }
+
+    state.current = structuredClone(state.interactive);
+    state.interactive = null;
+    tutorialSnapshotStates.delete(userKey);
+    return true;
+  }
+
+  const tutorialSnapshot = getInteractiveTutorialSnapshot();
+  if (!tutorialSnapshot) {
     return false;
   }
 
-  currentSnapshot = cloneSnapshot(interactiveTutorialSnapshot);
-  interactiveTutorialSnapshot = null;
+  replaceCurrentSnapshot(structuredClone(tutorialSnapshot));
+  setInteractiveTutorialSnapshot(null);
   return true;
 }
 
@@ -1511,12 +1746,14 @@ export function createSeason(input: SeasonInput) {
   };
 
   const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
+  const teamId = getDefaultProjectTeamId(currentSnapshot);
   const projects: Project[] = DEFAULT_SEASON_PROJECTS.map((template) => {
     const projectId = uniqueId(`${seasonId}-${template.key}`, projectIds);
     projectIds.add(projectId);
 
     return {
       id: projectId,
+      teamId,
       seasonId: season.id,
       name: template.name,
       projectType: template.projectType,
@@ -1540,13 +1777,13 @@ export function createSeason(input: SeasonInput) {
     mechanisms.push(...defaults.mechanisms);
   });
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     seasons: [...currentSnapshot.seasons, season],
     projects: [...currentSnapshot.projects, ...projects],
     subsystems: [...currentSnapshot.subsystems, ...subsystems],
     mechanisms: [...currentSnapshot.mechanisms, ...mechanisms],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -1565,8 +1802,10 @@ export function getProjects() {
 export function createProject(input: ProjectInput) {
   const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
   const season = currentSnapshot.seasons.find((candidate) => candidate.id === input.seasonId);
+  const teamId = normalizeProjectTeamId(input.teamId ?? getDefaultProjectTeamId(currentSnapshot));
   const project: Project = {
     id: uniqueId(toSlug(`${input.seasonId}-${input.name}`) || "project", projectIds),
+    teamId,
     seasonId: input.seasonId,
     name: input.name,
     projectType: input.projectType,
@@ -1581,12 +1820,12 @@ export function createProject(input: ProjectInput) {
       ? buildRobotProjectDefaults(project.id, subsystemIds, mechanismIds)
       : { subsystems: [] as Subsystem[], mechanisms: [] as Mechanism[] };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     projects: [...currentSnapshot.projects, project],
     subsystems: [...currentSnapshot.subsystems, ...defaults.subsystems],
     mechanisms: [...currentSnapshot.mechanisms, ...defaults.mechanisms],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -1606,7 +1845,7 @@ export function updateProject(
   const previousProject = currentSnapshot.projects.find((project) => project.id === projectId);
   let updatedProject: Project | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     projects: currentSnapshot.projects.map((project) => {
       if (project.id !== projectId) {
@@ -1620,7 +1859,7 @@ export function updateProject(
 
       return updatedProject;
     }),
-  };
+  });
 
   const savedProject = currentSnapshot.projects.find((project) => project.id === projectId);
   if (previousProject && savedProject) {
@@ -1657,10 +1896,10 @@ export function createWorkstream(input: WorkstreamInput) {
     isArchived: input.isArchived ?? false,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     workstreams: [...currentSnapshot.workstreams, workstream],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -1681,7 +1920,7 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
   const nextColor =
     input.color === undefined ? undefined : normalizeWorkspaceColor(input.color);
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     workstreams: currentSnapshot.workstreams.map((workstream) => {
       if (workstream.id !== workstreamId) {
@@ -1696,7 +1935,7 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
 
       return updatedWorkstream;
     }),
-  };
+  });
 
   const savedWorkstream = currentSnapshot.workstreams.find(
     (workstream) => workstream.id === workstreamId,
@@ -1720,10 +1959,6 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
 
 export function getMembers() {
   return currentSnapshot.members;
-}
-
-export function getMeetings() {
-  return currentSnapshot.meetings;
 }
 
 export function getSubsystems() {
@@ -1786,24 +2021,12 @@ export function getTestResults() {
   return currentSnapshot.testResults;
 }
 
-export function getQaFindings() {
-  return currentSnapshot.qaFindings;
-}
-
-export function getTestFindings() {
-  return currentSnapshot.testFindings;
-}
-
 export function getDesignIterations(): DesignIteration[] {
   return currentSnapshot.designIterations;
 }
 
 export function getReports(): Report[] {
   return buildReports(currentSnapshot);
-}
-
-export function getReportFindings(): ReportFinding[] {
-  return buildReportFindings(currentSnapshot);
 }
 
 export function getFindings(): FindingListItem[] {
@@ -1928,6 +2151,70 @@ export function getRisks() {
   return currentSnapshot.risks;
 }
 
+function getSubsystemProjectId(subsystemId: string | null | undefined) {
+  return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId)
+    ?.projectId;
+}
+
+function getSeasonAuditDetails(...records: Array<{
+  seasonId?: string | null;
+  activeSeasonIds?: string[];
+}>) {
+  const seasonIds = uniqueIds(
+    records.flatMap((record) => [
+      record.seasonId,
+      ...(record.activeSeasonIds ?? []),
+    ]),
+  );
+  const latestRecord = records[records.length - 1];
+  return {
+    ...(typeof latestRecord?.seasonId === "string" ? { seasonId: latestRecord.seasonId } : {}),
+    activeSeasonIds: seasonIds,
+  };
+}
+
+function getRiskProjectIds(risk: Risk) {
+  const projectIds: Array<string | null | undefined> = [];
+
+  if (risk.attachmentType === "project") {
+    projectIds.push(risk.attachmentId);
+  }
+
+  if (risk.attachmentType === "workstream") {
+    const workstream = currentSnapshot.workstreams.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    projectIds.push(workstream?.projectId);
+  }
+
+  if (risk.attachmentType === "mechanism") {
+    const mechanism = currentSnapshot.mechanisms.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    const subsystem = currentSnapshot.subsystems.find(
+      (candidate) => candidate.id === mechanism?.subsystemId,
+    );
+    projectIds.push(subsystem?.projectId);
+  }
+
+  if (risk.attachmentType === "part-instance") {
+    const partInstance = currentSnapshot.partInstances.find(
+      (candidate) => candidate.id === risk.attachmentId,
+    );
+    const subsystem = currentSnapshot.subsystems.find(
+      (candidate) => candidate.id === partInstance?.subsystemId,
+    );
+    projectIds.push(subsystem?.projectId);
+  }
+
+  const mitigationTask = currentSnapshot.tasks.find(
+    (candidate) => candidate.id === risk.mitigationTaskId,
+  );
+  projectIds.push(mitigationTask?.projectId);
+
+  return uniqueIds(projectIds);
+}
+
 export function createRisk(input: RiskInput) {
   const riskIds = new Set(currentSnapshot.risks.map((risk) => risk.id));
   const risk: Risk = {
@@ -1942,17 +2229,17 @@ export function createRisk(input: RiskInput) {
     mitigationTaskId: input.mitigationTaskId,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     risks: [...currentSnapshot.risks, risk],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
     entityType: "risk",
     entityId: risk.id,
     entityLabel: risk.title,
-    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    projectIds: getRiskProjectIds(risk),
     taskId: risk.mitigationTaskId,
   });
 
@@ -1963,7 +2250,7 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
   const previousRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
   let updatedRisk: Risk | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     risks: currentSnapshot.risks.map((risk) => {
       if (risk.id !== riskId) {
@@ -1981,17 +2268,20 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
 
       return updatedRisk;
     }),
-  };
+  });
 
   const savedRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
   if (previousRisk && savedRisk) {
+    const projectIds = uniqueIds([
+      ...getRiskProjectIds(previousRisk),
+      ...getRiskProjectIds(savedRisk),
+    ]);
     recordAuditAction({
       operation: "update",
       entityType: "risk",
       entityId: savedRisk.id,
       entityLabel: savedRisk.title,
-      projectId:
-        savedRisk.attachmentType === "project" ? savedRisk.attachmentId : null,
+      projectIds,
       taskId: savedRisk.mitigationTaskId,
       changedFields: collectChangedFields(
         previousRisk,
@@ -2008,19 +2298,25 @@ export function removeRisk(riskId: string) {
   if (!risk) {
     return null;
   }
+  const projectIds = getRiskProjectIds(risk);
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     risks: currentSnapshot.risks.filter((candidate) => candidate.id !== riskId),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
     entityType: "risk",
     entityId: risk.id,
     entityLabel: risk.title,
-    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    projectIds,
     taskId: risk.mitigationTaskId,
+    detailsJson: {
+      attachmentType: risk.attachmentType,
+      attachmentId: risk.attachmentId,
+      projectIds,
+    },
   });
 
   return risk;
@@ -2048,10 +2344,10 @@ export function createMaterial(input: MaterialInput) {
     notes: input.notes,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     materials: [...currentSnapshot.materials, material],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -2067,7 +2363,7 @@ export function updateMaterial(materialId: string, input: Partial<MaterialInput>
   const previousMaterial = currentSnapshot.materials.find((material) => material.id === materialId);
   let updatedMaterial: Material | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     materials: currentSnapshot.materials.map((material) => {
       if (material.id !== materialId) {
@@ -2081,7 +2377,7 @@ export function updateMaterial(materialId: string, input: Partial<MaterialInput>
 
       return updatedMaterial;
     }),
-  };
+  });
 
   const savedMaterial = currentSnapshot.materials.find((material) => material.id === materialId);
   if (previousMaterial && savedMaterial) {
@@ -2108,12 +2404,12 @@ export function removeMaterial(materialId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     materials: currentSnapshot.materials.filter(
       (candidate) => candidate.id !== materialId,
     ),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
@@ -2140,10 +2436,10 @@ export function createArtifact(input: ArtifactInput) {
     updatedAt: input.updatedAt,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     artifacts: [...currentSnapshot.artifacts, artifact],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -2160,7 +2456,7 @@ export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>
   const previousArtifact = currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
   let updatedArtifact: Artifact | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.map((artifact) => {
       if (artifact.id !== artifactId) {
@@ -2174,7 +2470,7 @@ export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>
 
       return updatedArtifact;
     }),
-  };
+  });
 
   const savedArtifact = currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
   if (previousArtifact && savedArtifact) {
@@ -2202,7 +2498,7 @@ export function removeArtifact(artifactId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.filter(
       (candidate) => candidate.id !== artifactId,
@@ -2229,7 +2525,7 @@ export function removeArtifact(artifactId: string) {
           }
         : iteration,
     ),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
@@ -2246,6 +2542,12 @@ export function createSubsystem(input: SubsystemInput) {
   const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
   const subsystem: Subsystem = {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
+    ...normalizePmCadProvenance(input),
+    layoutX: input.layoutX ?? null,
+    layoutY: input.layoutY ?? null,
+    layoutZone: input.layoutZone ?? "unplaced",
+    layoutView: input.layoutView ?? "top",
+    sortOrder: input.sortOrder ?? null,
     projectId: input.projectId,
     name: input.name,
     serialAlias: normalizeSubsystemSerialAlias(input.serialAlias),
@@ -2263,11 +2565,11 @@ export function createSubsystem(input: SubsystemInput) {
 
   const integrationTask = createSubsystemIntegrationTask(subsystem);
 
-  currentSnapshot = normalizeSnapshotTaskSerials({
+  replaceCurrentSnapshot(normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     subsystems: [...currentSnapshot.subsystems, subsystem],
     tasks: integrationTask ? [...currentSnapshot.tasks, integrationTask] : currentSnapshot.tasks,
-  });
+  }));
 
   recordAuditAction({
     operation: "create",
@@ -2318,7 +2620,7 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       ? currentSubsystem.serialAlias
       : normalizeSubsystemSerialAlias(input.serialAlias);
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     subsystems: currentSnapshot.subsystems.map((subsystem) => {
       if (subsystem.id !== subsystemId) {
@@ -2328,6 +2630,11 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        ...normalizePmCadProvenance({
+          ...subsystem,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(subsystem, input),
+        }),
         serialAlias: nextSerialAlias,
         color: nextColor,
         iteration:
@@ -2339,9 +2646,9 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
 
       return updatedSubsystem;
     }),
-  };
+  });
 
-  currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
+  replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));
 
   const savedSubsystem = currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId);
   if (savedSubsystem) {
@@ -2426,7 +2733,7 @@ export function removeSubsystem(subsystemId: string) {
       .map((task) => task.id),
   );
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     subsystems: currentSnapshot.subsystems.filter(
       (candidate) => !subsystemIdsToRemove.has(candidate.id),
@@ -2441,9 +2748,6 @@ export function removeSubsystem(subsystemId: string) {
       .filter((task) => !taskIdsToRemove.has(task.id))
       .map((task) => ({
         ...task,
-        dependencyIds: task.dependencyIds.filter(
-          (dependencyId) => !taskIdsToRemove.has(dependencyId),
-        ),
         linkedManufacturingIds: task.linkedManufacturingIds.filter(
           (itemId) => !manufacturingItemIdsToRemove.has(itemId),
         ),
@@ -2502,7 +2806,7 @@ export function removeSubsystem(subsystemId: string) {
 
       return true;
     }),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
@@ -2531,6 +2835,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
   );
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
+    ...normalizePmCadProvenance(input),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     name: input.name,
@@ -2546,16 +2851,17 @@ export function createPartDefinition(input: PartDefinitionInput) {
     photoUrl: input.photoUrl ?? "",
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     partDefinitions: [...currentSnapshot.partDefinitions, partDefinition],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
+    detailsJson: getSeasonAuditDetails(partDefinition),
   });
 
   return partDefinition;
@@ -2570,7 +2876,7 @@ export function updatePartDefinition(
   );
   let updatedPartDefinition: PartDefinition | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     partDefinitions: currentSnapshot.partDefinitions.map((partDefinition) => {
       if (partDefinition.id !== partDefinitionId) {
@@ -2585,6 +2891,11 @@ export function updatePartDefinition(
       updatedPartDefinition = {
         ...partDefinition,
         ...input,
+        ...normalizePmCadProvenance({
+          ...partDefinition,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(partDefinition, input),
+        }),
         seasonId,
         activeSeasonIds,
         iteration:
@@ -2595,7 +2906,7 @@ export function updatePartDefinition(
 
       return updatedPartDefinition;
     }),
-  };
+  });
 
   const savedPartDefinition = currentSnapshot.partDefinitions.find(
     (partDefinition) => partDefinition.id === partDefinitionId,
@@ -2606,6 +2917,7 @@ export function updatePartDefinition(
       entityType: "part-definition",
       entityId: savedPartDefinition.id,
       entityLabel: savedPartDefinition.name,
+      detailsJson: getSeasonAuditDetails(previousPartDefinition, savedPartDefinition),
       changedFields: collectChangedFields(
         previousPartDefinition,
         savedPartDefinition,
@@ -2630,7 +2942,7 @@ export function removePartDefinition(partDefinitionId: string) {
       .map((partInstance) => partInstance.id),
   );
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     partDefinitions: currentSnapshot.partDefinitions.filter(
       (candidate) => candidate.id !== partDefinitionId,
@@ -2671,13 +2983,14 @@ export function removePartDefinition(partDefinitionId: string) {
           }
         : item,
     ),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
     entityType: "part-definition",
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
+    detailsJson: getSeasonAuditDetails(partDefinition),
   });
 
   return partDefinition;
@@ -2687,6 +3000,7 @@ export function createMechanism(input: MechanismInput) {
   const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
   const mechanism: Mechanism = {
     id: uniqueId(toSlug(input.name) || "mechanism", mechanismIds),
+    ...normalizePmCadProvenance(input),
     subsystemId: input.subsystemId,
     name: input.name,
     description: input.description,
@@ -2698,17 +3012,18 @@ export function createMechanism(input: MechanismInput) {
 
   const wiringTask = createMechanismWiringTask(mechanism);
 
-  currentSnapshot = normalizeSnapshotTaskSerials({
+  replaceCurrentSnapshot(normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     mechanisms: [...currentSnapshot.mechanisms, mechanism],
     tasks: wiringTask ? [...currentSnapshot.tasks, wiringTask] : currentSnapshot.tasks,
-  });
+  }));
 
   recordAuditAction({
     operation: "create",
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
+    projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
   });
 
@@ -2735,6 +3050,7 @@ export function createPartInstance(input: PartInstanceInput) {
   );
   const partInstance: PartInstance = {
     id: uniqueId(toSlug(input.name) || "part-instance", partInstanceIds),
+    ...normalizePmCadProvenance(input),
     subsystemId: input.subsystemId,
     mechanismId: input.mechanismId,
     partDefinitionId: input.partDefinitionId,
@@ -2745,10 +3061,10 @@ export function createPartInstance(input: PartInstanceInput) {
     photoUrl: input.photoUrl ?? "",
   };
 
-  currentSnapshot = normalizePartInstanceSnapshot({
+  replaceCurrentSnapshot(normalizePartInstanceSnapshot({
     ...currentSnapshot,
     partInstances: [...currentSnapshot.partInstances, partInstance],
-  });
+  }));
 
   const savedPartInstance =
     currentSnapshot.partInstances.find(
@@ -2760,6 +3076,7 @@ export function createPartInstance(input: PartInstanceInput) {
     entityType: "part-instance",
     entityId: savedPartInstance.id,
     entityLabel: savedPartInstance.name,
+    projectId: getSubsystemProjectId(savedPartInstance.subsystemId),
     subsystemId: savedPartInstance.subsystemId,
   });
 
@@ -2787,7 +3104,7 @@ export function updatePartInstance(
       ? findMechanism(nextMechanismId)?.subsystemId ?? currentPartInstance.subsystemId
       : currentPartInstance.subsystemId);
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.map((partInstance) => {
       if (partInstance.id !== partInstanceId) {
@@ -2797,6 +3114,11 @@ export function updatePartInstance(
       updatedPartInstance = {
         ...partInstance,
         ...input,
+        ...normalizePmCadProvenance({
+          ...partInstance,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(partInstance, input),
+        }),
         subsystemId: nextSubsystemId,
         mechanismId: nextMechanismId,
         status:
@@ -2807,9 +3129,9 @@ export function updatePartInstance(
 
       return updatedPartInstance;
     }),
-  };
+  });
 
-  currentSnapshot = normalizePartInstanceSnapshot(currentSnapshot);
+  replaceCurrentSnapshot(normalizePartInstanceSnapshot(currentSnapshot));
 
   const savedPartInstance =
     currentSnapshot.partInstances.find(
@@ -2825,6 +3147,10 @@ export function updatePartInstance(
       entityType: "part-instance",
       entityId: savedPartInstance.id,
       entityLabel: savedPartInstance.name,
+      projectIds: uniqueIds([
+        getSubsystemProjectId(currentPartInstance.subsystemId),
+        getSubsystemProjectId(savedPartInstance.subsystemId),
+      ]),
       subsystemId: savedPartInstance.subsystemId,
       changedFields: updatedPartInstance
         ? collectChangedFields(
@@ -2846,7 +3172,7 @@ export function removePartInstance(partInstanceId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.filter(
       (candidate) => candidate.id !== partInstanceId,
@@ -2868,13 +3194,14 @@ export function removePartInstance(partInstanceId: string) {
         partInstanceIds,
       });
     }),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
     entityType: "part-instance",
     entityId: partInstance.id,
     entityLabel: partInstance.name,
+    projectId: getSubsystemProjectId(partInstance.subsystemId),
     subsystemId: partInstance.subsystemId,
   });
 
@@ -2893,7 +3220,7 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
 
   const nextSubsystemId = input.subsystemId ?? currentMechanism.subsystemId;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     mechanisms: currentSnapshot.mechanisms.map((mechanism) => {
       if (mechanism.id !== mechanismId) {
@@ -2903,6 +3230,11 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       updatedMechanism = {
         ...mechanism,
         ...input,
+        ...normalizePmCadProvenance({
+          ...mechanism,
+          ...input,
+          cadEditedAfterImport: markPmCadEditedAfterImport(mechanism, input),
+        }),
         googleSheetsUrl:
           input.googleSheetsUrl === undefined
             ? mechanism.googleSheetsUrl ?? ""
@@ -2939,7 +3271,7 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
           }
         : partInstance,
     ),
-  };
+  });
 
   const savedMechanism = currentSnapshot.mechanisms.find((mechanism) => mechanism.id === mechanismId);
   if (savedMechanism) {
@@ -2948,6 +3280,10 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       entityType: "mechanism",
       entityId: savedMechanism.id,
       entityLabel: savedMechanism.name,
+      projectIds: uniqueIds([
+        getSubsystemProjectId(currentMechanism.subsystemId),
+        getSubsystemProjectId(savedMechanism.subsystemId),
+      ]),
       subsystemId: savedMechanism.subsystemId,
       changedFields: collectChangedFields(
         currentMechanism,
@@ -2967,7 +3303,7 @@ export function removeMechanism(mechanismId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     mechanisms: currentSnapshot.mechanisms.filter(
       (candidate) => candidate.id !== mechanismId,
@@ -2994,13 +3330,14 @@ export function removeMechanism(mechanismId: string) {
           }
         : partInstance,
     ),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
+    projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
   });
 
@@ -3045,22 +3382,23 @@ export function createTask(input: TaskInput) {
     dueDate: input.dueDate,
     priority: input.priority,
     status: input.status,
-    blockers: input.blockers,
-    dependencyIds: input.dependencyIds,
+    checklistItems: input.checklistItems ?? [],
+    blockers: [],
+
     linkedManufacturingIds: input.linkedManufacturingIds,
     linkedPurchaseIds: input.linkedPurchaseIds,
     estimatedHours: input.estimatedHours,
-    actualHours: input.actualHours,
+    actualHours: 0,
     requiresDocumentation: input.requiresDocumentation,
     documentationLinked: input.documentationLinked,
   };
 
   const normalizedTask = normalizeTaskTargets(task);
 
-  currentSnapshot = normalizeSnapshotTaskSerials({
+  replaceCurrentSnapshot(normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     tasks: [...currentSnapshot.tasks, normalizedTask],
-  });
+  }));
 
   const savedTask = currentSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
 
@@ -3129,7 +3467,7 @@ export function createMilestone(input: MilestoneInput) {
     photoUrl: input.photoUrl ?? "",
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     milestones: [...currentSnapshot.milestones, milestone],
     milestoneRequirements: [
@@ -3139,7 +3477,7 @@ export function createMilestone(input: MilestoneInput) {
         projectIds: milestone.projectIds ?? [],
       }),
     ],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -3147,6 +3485,7 @@ export function createMilestone(input: MilestoneInput) {
     entityId: milestone.id,
     entityLabel: milestone.title,
     projectIds: milestone.projectIds,
+    detailsJson: getSeasonAuditDetails(milestone),
   });
 
   return milestone;
@@ -3163,12 +3502,23 @@ export function createQaReport(input: QaReportInput) {
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
     reviewedAt: input.reviewedAt,
+    evidenceNotes: input.evidenceNotes ?? "",
+    qaRequestId: input.qaRequestId ?? null,
+    mentorId: input.mentorId ?? null,
+    requestedById: input.requestedById ?? null,
+    targetRiskId: input.targetRiskId ?? null,
+    proposedRiskSeverity: input.proposedRiskSeverity ?? null,
+    proposedRiskStatus: input.proposedRiskStatus ?? null,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     qaReports: [...currentSnapshot.qaReports, report],
-  };
+    risks: currentSnapshot.risks.map((risk) => report.mentorApproved && risk.id === report.targetRiskId
+      ? { ...risk, severity: report.proposedRiskStatus === "full-mitigation" ? "low" : report.proposedRiskSeverity ?? risk.severity,
+          mitigationTaskId: risk.mitigationTaskId ?? report.taskId }
+      : risk),
+  });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
   recordAuditAction({
@@ -3183,6 +3533,47 @@ export function createQaReport(input: QaReportInput) {
   });
 
   return report;
+}
+
+// Called inside the route's snapshot transaction: the report and its workflow
+// effects must become durable together, or none of them may be published.
+export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }) {
+  const task = currentSnapshot.tasks.find((item) => item.id === input.taskId);
+  if (!task) return { error: "The selected task does not exist." };
+  const request = input.qaRequestId
+    ? getQaRequests().find((item) => item.id === input.qaRequestId)
+    : getQaRequests().find((item) => item.taskId === task.id);
+  if (input.qaRequestId && (!request || request.taskId !== task.id)) {
+    return { error: "The selected QA request is no longer pending for this task." };
+  }
+  if (input.result === "pass" && (task.status !== "waiting-for-qa" ||
+      task.blockers.length > 0 || isTaskWaitingOnDependencies(task, currentSnapshot))) {
+    return { error: "A pass requires a task waiting for QA with no blockers or unfinished dependencies." };
+  }
+  const report = createQaReport({ ...input, qaRequestId: request?.id ?? null,
+    mentorId: request?.mentorId ?? task.mentorId,
+    requestedById: request?.requestedById ?? null });
+  if (input.result === "pass") {
+    updateTask(task.id, { status: "complete" });
+  } else {
+    createTask({ ...task,
+      title: input.followUpTaskTitle?.trim() || `${input.result === "iteration-worthy" ? "Iterate after QA" : "Fix QA finding"}: ${task.title}`,
+      summary: [`Created from QA on "${task.title}".`, `Result: ${input.result}.`, input.notes,
+        input.evidenceNotes ? `Evidence: ${input.evidenceNotes}` : ""].filter(Boolean).join("\n"),
+      startDate: input.reviewedAt, dueDate: input.reviewedAt,
+      status: "not-started", priority: input.result === "iteration-worthy" ? "high" : "medium",
+      checklistItems: [], estimatedHours: 0,
+      documentationLinked: false,
+    });
+    if (input.result === "iteration-worthy") {
+      createTaskBlocker({ blockedTaskId: task.id, blockerType: "external", blockerId: null,
+        issueType: "qa-failed", description: "QA identified iteration-worthy follow-up.",
+        severity: "medium", status: "open" });
+    }
+  }
+  replaceCurrentSnapshot({ ...currentSnapshot,
+    qaRequests: getQaRequests().filter((item) => item.taskId !== task.id) });
+  return { item: report };
 }
 
 export function createQaRequest(input: QaRequestInput) {
@@ -3201,10 +3592,10 @@ export function createQaRequest(input: QaRequestInput) {
     status: "requested",
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     qaRequests: [request, ...getQaRequests()],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -3232,10 +3623,10 @@ export function createTestResult(input: TestResultInput) {
     photoUrl: input.photoUrl ?? "",
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     testResults: [...currentSnapshot.testResults, testResult],
-  };
+  });
 
   const milestone = currentSnapshot.milestones.find((candidate) => candidate.id === testResult.milestoneId);
   recordAuditAction({
@@ -3266,9 +3657,12 @@ export function createReport(input: ReportInput) {
       notes: input.notes || input.summary,
       photoUrl: input.photoUrl,
       reviewedAt: input.reviewedAt ?? input.createdAt.slice(0, 10),
+      targetRiskId: input.targetRiskId,
+      proposedRiskSeverity: input.proposedRiskSeverity,
+      proposedRiskStatus: input.proposedRiskStatus,
     });
 
-    return reportFromQaReport(currentSnapshot, report);
+    return reportFromQaReport(currentSnapshot.tasks.find((task) => task.id === report.taskId), report);
   }
 
   if (!input.milestoneId) {
@@ -3283,7 +3677,8 @@ export function createReport(input: ReportInput) {
     photoUrl: input.photoUrl,
   });
 
-  return reportFromTestResult(currentSnapshot, testResult);
+  const milestone = currentSnapshot.milestones.find((item) => item.id === testResult.milestoneId);
+  return reportFromTestResult(milestone, testResult, milestone?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? null);
 }
 
 export function createReportFinding(input: ReportFindingInput) {
@@ -3312,10 +3707,10 @@ export function createReportFinding(input: ReportFindingInput) {
       createdAt: now,
       updatedAt: now,
     };
-    currentSnapshot = {
+    replaceCurrentSnapshot({
       ...currentSnapshot,
       qaFindings: [...currentSnapshot.qaFindings, finding],
-    };
+    });
 
     recordAuditAction({
       operation: "create",
@@ -3349,10 +3744,10 @@ export function createReportFinding(input: ReportFindingInput) {
     createdAt: now,
     updatedAt: now,
   };
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     testFindings: [...currentSnapshot.testFindings, finding],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -3379,18 +3774,10 @@ export function createTaskDependency(input: TaskDependencyInput) {
     createdAt: new Date().toISOString(),
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     taskDependencies: [...currentSnapshot.taskDependencies, dependency],
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === input.taskId && input.kind === "task" && input.dependencyType !== "soft"
-        ? {
-            ...task,
-            dependencyIds: uniqueIds([...task.dependencyIds, input.refId]),
-          }
-        : task,
-    ),
-  };
+  });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
   recordAuditAction({
@@ -3421,36 +3808,12 @@ export function updateTaskDependency(
     ...input,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     taskDependencies: currentSnapshot.taskDependencies.map((dependency) =>
       dependency.id === dependencyId ? savedDependency : dependency,
     ),
-  };
-
-  currentSnapshot = {
-    ...currentSnapshot,
-    tasks: currentSnapshot.tasks.map((task) => {
-      let dependencyIds = task.dependencyIds;
-      if (
-        task.id === originalDependency.taskId &&
-        originalDependency.kind === "task" &&
-        originalDependency.dependencyType !== "soft"
-      ) {
-        dependencyIds = dependencyIds.filter((dependencyId) => dependencyId !== originalDependency.refId);
-      }
-
-      return {
-        ...task,
-        dependencyIds:
-          task.id === savedDependency.taskId &&
-          savedDependency.kind === "task" &&
-          savedDependency.dependencyType !== "soft"
-            ? uniqueIds([...dependencyIds, savedDependency.refId])
-            : dependencyIds,
-      };
-    }),
-  };
+  });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.taskId);
   recordAuditAction({
@@ -3478,22 +3841,12 @@ export function removeTaskDependency(dependencyId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (candidate) => candidate.id !== dependencyId,
     ),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === dependency.taskId && dependency.kind === "task" && dependency.dependencyType !== "soft"
-        ? {
-            ...task,
-            dependencyIds: task.dependencyIds.filter(
-              (candidate) => candidate !== dependency.refId,
-            ),
-          }
-        : task,
-    ),
-  };
+  });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
   recordAuditAction({
@@ -3515,6 +3868,7 @@ export function createTaskBlocker(input: TaskBlockerInput) {
     id: uniqueId(`${input.blockedTaskId}-blocker`, blockerIds),
     blockedTaskId: input.blockedTaskId,
     blockerType: input.blockerType,
+    issueType: input.issueType ?? "external",
     blockerId: input.blockerId,
     description: input.description,
     severity: input.severity,
@@ -3524,18 +3878,10 @@ export function createTaskBlocker(input: TaskBlockerInput) {
     resolvedAt: null,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     taskBlockers: [...currentSnapshot.taskBlockers, blocker],
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === input.blockedTaskId && blocker.status === "open"
-        ? {
-            ...task,
-            blockers: uniqueIds([...task.blockers, input.description]),
-          }
-        : task,
-    ),
-  };
+  });
 
   const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
   recordAuditAction({
@@ -3565,29 +3911,12 @@ export function updateTaskBlocker(blockerId: string, input: Partial<TaskBlockerI
     resolvedAt: input.status === "resolved" ? new Date().toISOString() : originalBlocker.resolvedAt,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     taskBlockers: currentSnapshot.taskBlockers.map((blocker) =>
       blocker.id === blockerId ? savedBlocker : blocker,
     ),
-  };
-
-  currentSnapshot = {
-    ...currentSnapshot,
-    tasks: currentSnapshot.tasks.map((task) => {
-      const blockers = task.id === originalBlocker.blockedTaskId
-        ? task.blockers.filter((description) => description !== originalBlocker.description)
-        : task.blockers;
-
-      return {
-        ...task,
-        blockers:
-          task.id === savedBlocker.blockedTaskId && savedBlocker.status === "open"
-            ? uniqueIds([...blockers, savedBlocker.description])
-            : blockers,
-      };
-    }),
-  };
+  });
 
   const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === savedBlocker.blockedTaskId);
   recordAuditAction({
@@ -3616,20 +3945,10 @@ export function removeTaskBlocker(blockerId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     taskBlockers: currentSnapshot.taskBlockers.filter((candidate) => candidate.id !== blockerId),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.id === blocker.blockedTaskId
-        ? {
-            ...task,
-            blockers: task.blockers.filter(
-              (candidate) => candidate !== blocker.description,
-            ),
-          }
-        : task,
-    ),
-  };
+  });
 
   const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
   recordAuditAction({
@@ -3675,12 +3994,12 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
     photoUrl: input.photoUrl === undefined ? currentMilestone.photoUrl : input.photoUrl,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     milestones: currentSnapshot.milestones.map((milestone) =>
       milestone.id === milestoneId ? updatedMilestone! : milestone,
     ),
-  };
+  });
 
   if (updatedMilestone) {
     const desiredScopeRequirementIds = new Set(
@@ -3710,10 +4029,10 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       projectIds: updatedMilestone.projectIds ?? [],
     }).filter((req) => !retainedIds.has(req.id));
 
-    currentSnapshot = {
+    replaceCurrentSnapshot({
       ...currentSnapshot,
       milestoneRequirements: [...retained, ...additions],
-    };
+    });
 
     recordAuditAction({
       operation: "update",
@@ -3721,6 +4040,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       entityId: updatedMilestone.id,
       entityLabel: updatedMilestone.title,
       projectIds: updatedMilestone.projectIds,
+      detailsJson: getSeasonAuditDetails(currentMilestone, updatedMilestone),
       changedFields: collectChangedFields(
         currentMilestone,
         updatedMilestone,
@@ -3737,7 +4057,7 @@ export function removeMilestone(milestoneId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     milestones: currentSnapshot.milestones.filter((candidate) => candidate.id !== milestoneId),
     milestoneRequirements: (currentSnapshot.milestoneRequirements ?? []).filter(
@@ -3752,7 +4072,7 @@ export function removeMilestone(milestoneId: string) {
           }
         : task,
     ),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
@@ -3760,6 +4080,7 @@ export function removeMilestone(milestoneId: string) {
     entityId: milestone.id,
     entityLabel: milestone.title,
     projectIds: milestone.projectIds,
+    detailsJson: getSeasonAuditDetails(milestone),
   });
 
   return milestone;
@@ -3795,10 +4116,10 @@ export function createMeeting(input: MeetingInput) {
     fallbackSeasonId,
   );
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     meetings: [...currentSnapshot.meetings, meeting],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -3806,6 +4127,7 @@ export function createMeeting(input: MeetingInput) {
     entityId: meeting.id,
     entityLabel: meeting.title,
     projectIds: meeting.projectIds,
+    detailsJson: getSeasonAuditDetails(meeting),
   });
 
   return meeting;
@@ -3847,12 +4169,12 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
     fallbackSeasonId,
   );
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     meetings: currentSnapshot.meetings.map((meeting) =>
       meeting.id === meetingId ? updatedMeeting : meeting,
     ),
-  };
+  });
 
   recordAuditAction({
     operation: "update",
@@ -3860,6 +4182,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
     entityId: updatedMeeting.id,
     entityLabel: updatedMeeting.title,
     projectIds: updatedMeeting.projectIds,
+    detailsJson: getSeasonAuditDetails(currentMeeting, updatedMeeting),
     changedFields: collectChangedFields(currentMeeting, updatedMeeting),
   });
 
@@ -3872,10 +4195,10 @@ export function removeMeeting(meetingId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     meetings: currentSnapshot.meetings.filter((candidate) => candidate.id !== meetingId),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
@@ -3883,12 +4206,16 @@ export function removeMeeting(meetingId: string) {
     entityId: meeting.id,
     entityLabel: meeting.title,
     projectIds: meeting.projectIds ?? [],
+    detailsJson: getSeasonAuditDetails(meeting),
   });
 
   return meeting;
 }
 
-export function createWorkLog(input: WorkLogInput) {
+export function createWorkLog(
+  input: WorkLogInput,
+  auditContext: AuditMutationContext = {},
+) {
   const workLog: WorkLog = {
     id: nextWorkLogId(),
     taskId: input.taskId,
@@ -3897,12 +4224,13 @@ export function createWorkLog(input: WorkLogInput) {
     participantIds: input.participantIds,
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
+    createdById: input.createdById ?? null,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     workLogs: [...currentSnapshot.workLogs, workLog],
-  };
+  });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === workLog.taskId);
   recordAuditAction({
@@ -3914,16 +4242,22 @@ export function createWorkLog(input: WorkLogInput) {
     taskId: workLog.taskId,
     subsystemId: task?.subsystemId ?? null,
     memberIds: workLog.participantIds,
+    actorMemberId: auditContext.actorMemberId ?? workLog.createdById,
+    requestId: auditContext.requestId ?? null,
   });
 
   return workLog;
 }
 
-export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
+export function updateWorkLog(
+  workLogId: string,
+  input: Partial<WorkLogInput>,
+  auditContext: AuditMutationContext = {},
+) {
   const previousWorkLog = currentSnapshot.workLogs.find((workLog) => workLog.id === workLogId);
   let updatedWorkLog: WorkLog | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     workLogs: currentSnapshot.workLogs.map((workLog) => {
       if (workLog.id !== workLogId) {
@@ -3937,7 +4271,7 @@ export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
 
       return updatedWorkLog;
     }),
-  };
+  });
 
   const savedWorkLog = currentSnapshot.workLogs.find((workLog) => workLog.id === workLogId);
   if (previousWorkLog && savedWorkLog) {
@@ -3951,6 +4285,8 @@ export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
       taskId: savedWorkLog.taskId,
       subsystemId: task?.subsystemId ?? null,
       memberIds: savedWorkLog.participantIds,
+      actorMemberId: auditContext.actorMemberId ?? savedWorkLog.createdById,
+      requestId: auditContext.requestId ?? null,
       changedFields: collectChangedFields(
         previousWorkLog,
         savedWorkLog,
@@ -3961,7 +4297,10 @@ export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
   return updatedWorkLog;
 }
 
-export function removeWorkLog(workLogId: string) {
+export function removeWorkLog(
+  workLogId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const workLog = currentSnapshot.workLogs.find(
     (candidate) => candidate.id === workLogId,
   );
@@ -3969,12 +4308,12 @@ export function removeWorkLog(workLogId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     workLogs: currentSnapshot.workLogs.filter(
       (candidate) => candidate.id !== workLogId,
     ),
-  };
+  });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === workLog.taskId);
   recordAuditAction({
@@ -3986,12 +4325,18 @@ export function removeWorkLog(workLogId: string) {
     taskId: workLog.taskId,
     subsystemId: task?.subsystemId ?? null,
     memberIds: workLog.participantIds,
+    actorMemberId: auditContext.actorMemberId ?? workLog.createdById,
+    requestId: auditContext.requestId ?? null,
   });
 
   return workLog;
 }
 
-export function updateTask(taskId: string, input: Partial<TaskInput>): Task | null {
+export function updateTask(
+  taskId: string,
+  input: Partial<TaskInput>,
+  auditContext: AuditMutationContext = {},
+): Task | null {
   const currentTask = currentSnapshot.tasks.find((task) => task.id === taskId);
   if (!currentTask) {
     return null;
@@ -4036,12 +4381,12 @@ export function updateTask(taskId: string, input: Partial<TaskInput>): Task | nu
     };
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     tasks: currentSnapshot.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
-  };
+  });
 
-  currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
+  replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));
 
   const savedTask = currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask;
   recordAuditAction({
@@ -4053,11 +4398,14 @@ export function updateTask(taskId: string, input: Partial<TaskInput>): Task | nu
     subsystemId: savedTask.subsystemId,
     taskId: savedTask.id,
     memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
-    actorMemberId: savedTask.ownerId,
+    actorMemberId: auditContext.actorMemberId ?? savedTask.ownerId,
+    requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       currentTask,
       savedTask,
     ),
+    beforeJson: currentTask,
+    afterJson: savedTask,
   });
 
   return savedTask;
@@ -4069,16 +4417,9 @@ export function removeTask(taskId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
-    tasks: currentSnapshot.tasks
-      .filter((candidate) => candidate.id !== taskId)
-      .map((candidate) => ({
-        ...candidate,
-        dependencyIds: candidate.dependencyIds.filter(
-          (dependencyId) => dependencyId !== taskId,
-        ),
-      })),
+    tasks: currentSnapshot.tasks.filter((candidate) => candidate.id !== taskId),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
     qaRequests: getQaRequests().filter(
@@ -4094,9 +4435,9 @@ export function removeTask(taskId: string) {
       (review) => review.subjectType !== "task" || review.subjectId !== taskId,
     ),
     risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId),
-  };
+  });
 
-  currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
+  replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -4113,7 +4454,10 @@ export function removeTask(taskId: string) {
   return task;
 }
 
-export function createPurchaseItem(input: PurchaseItemInput) {
+export function createPurchaseItem(
+  input: PurchaseItemInput,
+  auditContext: AuditMutationContext = {},
+) {
   const itemIds = new Set(currentSnapshot.purchaseItems.map((item) => item.id));
   const item: PurchaseItem = {
     id: uniqueId(toSlug(input.title) || "purchase-item", itemIds),
@@ -4127,13 +4471,17 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     estimatedCost: input.estimatedCost,
     finalCost: input.finalCost,
     approvedByMentor: input.approvedByMentor,
+    approvedById: input.approvedById ?? null,
+    approvedAt: input.approvedAt ?? null,
+    purchasedAt: input.purchasedAt ?? null,
+    deliveredAt: input.deliveredAt ?? null,
     status: input.status,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     purchaseItems: [...currentSnapshot.purchaseItems, item],
-  };
+  });
 
   const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
   recordAuditAction({
@@ -4143,7 +4491,8 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
@@ -4153,11 +4502,12 @@ export function createPurchaseItem(input: PurchaseItemInput) {
 export function updatePurchaseItem(
   itemId: string,
   input: Partial<PurchaseItemInput>,
+  auditContext: AuditMutationContext = {},
 ) {
   const previousItem = currentSnapshot.purchaseItems.find((item) => item.id === itemId);
   let updatedItem: PurchaseItem | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     purchaseItems: currentSnapshot.purchaseItems.map((item) => {
       if (item.id !== itemId) {
@@ -4171,7 +4521,7 @@ export function updatePurchaseItem(
 
       return updatedItem;
     }),
-  };
+  });
 
   const savedPurchaseItem = currentSnapshot.purchaseItems.find((item) => item.id === itemId);
   if (previousItem && savedPurchaseItem) {
@@ -4183,7 +4533,8 @@ export function updatePurchaseItem(
       entityLabel: savedPurchaseItem.title,
       projectId: subsystem?.projectId ?? null,
       subsystemId: savedPurchaseItem.subsystemId,
-      actorMemberId: savedPurchaseItem.requestedById,
+      actorMemberId: auditContext.actorMemberId ?? savedPurchaseItem.requestedById,
+      requestId: auditContext.requestId ?? null,
       memberIds: [savedPurchaseItem.requestedById],
       changedFields: collectChangedFields(
         previousItem,
@@ -4195,7 +4546,10 @@ export function updatePurchaseItem(
   return updatedItem;
 }
 
-export function removePurchaseItem(itemId: string) {
+export function removePurchaseItem(
+  itemId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const item = currentSnapshot.purchaseItems.find(
     (candidate) => candidate.id === itemId,
   );
@@ -4203,7 +4557,7 @@ export function removePurchaseItem(itemId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     purchaseItems: currentSnapshot.purchaseItems.filter(
       (candidate) => candidate.id !== itemId,
@@ -4214,7 +4568,7 @@ export function removePurchaseItem(itemId: string) {
         (linkedItemId) => linkedItemId !== itemId,
       ),
     })),
-  };
+  });
 
   const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
   recordAuditAction({
@@ -4224,14 +4578,18 @@ export function removePurchaseItem(itemId: string) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
   return item;
 }
 
-export function createManufacturingItem(input: ManufacturingItemInput) {
+export function createManufacturingItem(
+  input: ManufacturingItemInput,
+  auditContext: AuditMutationContext = {},
+) {
   const itemIds = new Set(currentSnapshot.manufacturingItems.map((item) => item.id));
   const partInstanceIds = uniqueIds([
     ...(input.partInstanceIds ?? []),
@@ -4252,14 +4610,16 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     quantity: input.quantity,
     status: input.status,
     mentorReviewed: input.mentorReviewed,
+    reviewedById: input.reviewedById ?? null,
+    reviewedAt: input.reviewedAt ?? null,
     inHouse: input.process === "cnc" ? input.inHouse ?? true : true,
     batchLabel: input.batchLabel,
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     manufacturingItems: [...currentSnapshot.manufacturingItems, item],
-  };
+  });
 
   const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
   recordAuditAction({
@@ -4269,7 +4629,8 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
@@ -4279,11 +4640,12 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
 export function updateManufacturingItem(
   itemId: string,
   input: Partial<ManufacturingItemInput>,
+  auditContext: AuditMutationContext = {},
 ) {
   const previousItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
   let updatedItem: ManufacturingItem | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     manufacturingItems: currentSnapshot.manufacturingItems.map((item) => {
       if (item.id !== itemId) {
@@ -4309,7 +4671,7 @@ export function updateManufacturingItem(
 
       return updatedItem;
     }),
-  };
+  });
 
   const savedManufacturingItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
   if (previousItem && savedManufacturingItem) {
@@ -4321,7 +4683,8 @@ export function updateManufacturingItem(
       entityLabel: savedManufacturingItem.title,
       projectId: subsystem?.projectId ?? null,
       subsystemId: savedManufacturingItem.subsystemId,
-      actorMemberId: savedManufacturingItem.requestedById,
+      actorMemberId: auditContext.actorMemberId ?? savedManufacturingItem.requestedById,
+      requestId: auditContext.requestId ?? null,
       memberIds: [savedManufacturingItem.requestedById],
       changedFields: collectChangedFields(
         previousItem,
@@ -4333,7 +4696,10 @@ export function updateManufacturingItem(
   return updatedItem;
 }
 
-export function removeManufacturingItem(itemId: string) {
+export function removeManufacturingItem(
+  itemId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const item = currentSnapshot.manufacturingItems.find(
     (candidate) => candidate.id === itemId,
   );
@@ -4341,7 +4707,7 @@ export function removeManufacturingItem(itemId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     manufacturingItems: currentSnapshot.manufacturingItems.filter(
       (candidate) => candidate.id !== itemId,
@@ -4356,7 +4722,7 @@ export function removeManufacturingItem(itemId: string) {
       (review) =>
         review.subjectType !== "manufacturing" || review.subjectId !== itemId,
     ),
-  };
+  });
 
   const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
   recordAuditAction({
@@ -4366,7 +4732,8 @@ export function removeManufacturingItem(itemId: string) {
     entityLabel: item.title,
     projectId: subsystem?.projectId ?? null,
     subsystemId: item.subsystemId,
-    actorMemberId: item.requestedById,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
   });
 
@@ -4396,10 +4763,10 @@ export function createMember(input: MemberInput) {
     plannedAttendanceNotes: (input.plannedAttendanceNotes ?? "").trim(),
   };
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     members: [...currentSnapshot.members, member],
-  };
+  });
 
   recordAuditAction({
     operation: "create",
@@ -4408,16 +4775,21 @@ export function createMember(input: MemberInput) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
+    detailsJson: getSeasonAuditDetails(member),
   });
 
   return member;
 }
 
-export function updateMember(memberId: string, input: Partial<MemberInput>) {
+export function updateMember(
+  memberId: string,
+  input: Partial<MemberInput>,
+  auditContext: AuditMutationContext = {},
+) {
   const previousMember = currentSnapshot.members.find((member) => member.id === memberId);
   let updatedMember: Member | null = null;
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     members: currentSnapshot.members.map((member) => {
       if (member.id !== memberId) {
@@ -4462,7 +4834,7 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
 
       return updatedMember;
     }),
-  };
+  });
 
   const savedMember = currentSnapshot.members.find((member) => member.id === memberId);
   if (previousMember && savedMember) {
@@ -4471,8 +4843,10 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
       entityType: "member",
       entityId: savedMember.id,
       entityLabel: savedMember.name,
-      actorMemberId: savedMember.id,
+      actorMemberId: auditContext.actorMemberId ?? savedMember.id,
+      requestId: auditContext.requestId ?? null,
       memberIds: [savedMember.id],
+      detailsJson: getSeasonAuditDetails(previousMember, savedMember),
       changedFields: collectChangedFields(
         previousMember,
         savedMember,
@@ -4489,7 +4863,7 @@ export function removeMember(memberId: string) {
     return null;
   }
 
-  currentSnapshot = {
+  replaceCurrentSnapshot({
     ...currentSnapshot,
     members: currentSnapshot.members.filter((candidate) => candidate.id !== memberId),
     subsystems: currentSnapshot.subsystems.map((subsystem) => ({
@@ -4510,6 +4884,7 @@ export function removeMember(memberId: string) {
     })),
     workLogs: currentSnapshot.workLogs.map((workLog) => ({
       ...workLog,
+      createdById: workLog.createdById === memberId ? null : workLog.createdById,
       participantIds: workLog.participantIds.filter(
         (participantId) => participantId !== memberId,
       ),
@@ -4520,10 +4895,12 @@ export function removeMember(memberId: string) {
     manufacturingItems: currentSnapshot.manufacturingItems.map((item) => ({
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
+      reviewedById: item.reviewedById === memberId ? null : item.reviewedById,
     })),
     purchaseItems: currentSnapshot.purchaseItems.map((item) => ({
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
+      approvedById: item.approvedById === memberId ? null : item.approvedById,
     })),
     qaRequests: getQaRequests()
       .filter((request) => request.mentorId !== memberId)
@@ -4537,7 +4914,7 @@ export function removeMember(memberId: string) {
         (participantId) => participantId !== memberId,
       ),
     })),
-  };
+  });
 
   recordAuditAction({
     operation: "delete",
@@ -4546,6 +4923,7 @@ export function removeMember(memberId: string) {
     entityLabel: member.name,
     actorMemberId: member.id,
     memberIds: [member.id],
+    detailsJson: getSeasonAuditDetails(member),
   });
 
   return member;

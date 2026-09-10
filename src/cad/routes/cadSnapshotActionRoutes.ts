@@ -1,20 +1,31 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { getSessionFromRequest, isAuthEnabled } from "../../auth/authService";
+import { getMembers, recordAuditAction } from "../../data/store";
 import { buildCadSnapshotDiff } from "../cadDiffService";
 import { applyHierarchyReviewDecisions } from "../cadHierarchyApplyService";
 import { validateCadHierarchyForFinalize } from "../cadHierarchyValidationService";
 import { applyMappingUpdates } from "../cadMappingEngine";
 import { buildCadPartMatchProposals } from "../cadPartMatchingService";
 import { cadFinalizeSchema, cadHierarchyApplySchema, cadMappingUpdateSchema } from "../cadRouteSchemas";
-import { getCadStore } from "../cadStoreFactory";
 import type { RequireApiSession } from "./cadRouteTypes";
+
+export function resolveCadFinalizeActor(request: FastifyRequest, requestedActor?: string | null) {
+  if (!isAuthEnabled()) return requestedActor ?? null;
+  const session = getSessionFromRequest(request);
+  const accountId = session?.accountId?.trim().toLowerCase();
+  const email = session?.email?.trim().toLowerCase();
+  const member = getMembers().find((candidate) =>
+    candidate.id.trim().toLowerCase() === accountId || candidate.email?.trim().toLowerCase() === email);
+  return member?.id ?? session?.accountId ?? session?.email ?? null;
+}
 
 export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
   app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/part-match-proposals", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     if (!(await store.findSnapshot(request.params.snapshotId))) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
     }
@@ -29,7 +40,7 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     if (!parsed.success) {
       return reply.code(400).send({ message: "CAD hierarchy review payload is invalid.", issues: parsed.error.flatten() });
     }
-    const result = await applyHierarchyReviewDecisions({ store: getCadStore(), snapshotId: request.params.snapshotId, input: parsed.data });
+    const result = await applyHierarchyReviewDecisions({ store: app.cadStore, snapshotId: request.params.snapshotId, input: parsed.data });
     return result ?? reply.code(404).send({ message: "CAD snapshot was not found." });
   });
 
@@ -41,7 +52,7 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     if (!parsed.success) {
       return reply.code(400).send({ message: "CAD mapping update payload is invalid.", issues: parsed.error.flatten() });
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     const snapshot = await store.findSnapshot(request.params.snapshotId);
     if (!snapshot) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
@@ -49,7 +60,7 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     return applyMappingUpdates({ store, snapshot, updates: parsed.data.updates, reviewedBy: parsed.data.reviewedBy ?? null });
   });
 
-  app.post<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/finalize", async (request, reply) => {
+  app.post<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/finalize", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
     }
@@ -57,7 +68,7 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     if (!parsed.success) {
       return reply.code(400).send({ message: "CAD finalize payload is invalid.", issues: parsed.error.flatten() });
     }
-    const store = getCadStore();
+    const store = app.cadStore;
     const snapshot = await store.findSnapshot(request.params.snapshotId);
     if (!snapshot) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
@@ -70,20 +81,33 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
         issues: hierarchyIssues,
       });
     }
-    const item = await store.updateSnapshot(snapshot.id, {
-      status: "finalized",
+    const finalizedBy = resolveCadFinalizeActor(request, parsed.data.finalizedBy);
+    const finalized = await store.finalizeSnapshot(snapshot.id, {
       finalizedAt: new Date().toISOString(),
-      finalizedBy: parsed.data.finalizedBy ?? null,
+      finalizedBy,
     });
-    const importRun = item ? await store.updateImportRun(item.importRunId, { status: "FINALIZED" }) : null;
-    return { item, importRun, warnings: hierarchyIssues };
+    if (!finalized) {
+      return reply.code(404).send({ message: "CAD snapshot was not found." });
+    }
+
+    recordAuditAction({
+      operation: "update",
+      entityType: "cad_snapshot",
+      entityId: finalized.snapshot.id,
+      entityLabel: finalized.snapshot.label,
+      changedFields: ["finalizedAt", "finalizedBy", "status"],
+      projectId: finalized.snapshot.projectId,
+      actorMemberId: finalizedBy,
+    });
+
+    return { item: finalized.snapshot, importRun: finalized.importRun, warnings: hierarchyIssues };
   });
 
   app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/diff", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const diff = await buildCadSnapshotDiff({ store: getCadStore(), snapshotId: request.params.snapshotId });
+    const diff = await buildCadSnapshotDiff({ store: app.cadStore, snapshotId: request.params.snapshotId });
     return diff ?? reply.code(404).send({ message: "CAD snapshot was not found." });
   });
 }

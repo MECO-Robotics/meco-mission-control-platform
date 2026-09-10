@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 
-import { getCadStore } from "../cadStoreFactory";
 import { cadMappingRuleCreateSchema, cadMappingRulePatchSchema } from "../cadRouteSchemas";
 import type { RequireApiSession } from "./cadRouteTypes";
 
@@ -14,7 +13,7 @@ export function registerCadMappingRuleRoutes(app: FastifyInstance, requireApiSes
       return reply.code(400).send({ message: "CAD mapping rule payload is invalid.", issues: parsed.error.flatten() });
     }
     return reply.code(201).send({
-      item: await getCadStore().createMappingRule({
+      item: await app.cadStore.createMappingRule({
         ...parsed.data,
         seasonId: parsed.data.seasonId ?? null,
         targetId: parsed.data.targetId ?? null,
@@ -32,7 +31,7 @@ export function registerCadMappingRuleRoutes(app: FastifyInstance, requireApiSes
     if (!parsed.success) {
       return reply.code(400).send({ message: "CAD mapping rule patch is invalid.", issues: parsed.error.flatten() });
     }
-    const item = await getCadStore().updateMappingRule(request.params.id, parsed.data);
+    const item = await app.cadStore.updateMappingRule(request.params.id, parsed.data);
     return item ? { item } : reply.code(404).send({ message: "CAD mapping rule was not found." });
   });
 }

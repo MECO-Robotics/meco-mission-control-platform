@@ -285,6 +285,7 @@ test("Onshape OAuth routes issue authorization URLs and store callback tokens", 
       assert.equal(overviewResponse.statusCode, 200);
       assert.equal(overviewResponse.json().connection.authMode, "oauth");
       assert.equal(overviewResponse.json().connection.oauth.connected, true);
+      assert.equal(overviewResponse.json().connection.oauth.connectionState, "connected");
     });
   } finally {
     setOnshapeOAuthTokenTransportForTests(null);

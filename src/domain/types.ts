@@ -80,6 +80,16 @@ export type PartInstanceStatus =
   | "blocked"
   | "qa"
   | "ready";
+export type PmCadSource = "manual" | "step" | "onshape";
+export type PmCadImportSource = "MANUAL" | "STEP_UPLOAD" | "ONSHAPE_API" | "ONSHAPE_BOM_CSV" | "MANUAL_BOM_CSV";
+
+export interface PmCadProvenance {
+  cadSource?: PmCadSource;
+  cadImportSource?: PmCadImportSource;
+  cadEditedAfterImport?: boolean;
+  cadSourceLabel?: string;
+  cadUpdatedAt?: string | null;
+}
 export type QaResult = "pass" | "minor-fix" | "iteration-worthy";
 export type SeasonType = "season" | "offseason" | "initiative";
 export type ProjectType = "robot" | "operations" | "outreach" | "other";
@@ -93,6 +103,7 @@ export type IterationStatus = "planned" | "in-progress" | "complete";
 export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
 export type TaskDependencyKind = "task" | "milestone" | "part_instance";
 export type TaskDependencyType = "hard" | "soft";
+export const DEFAULT_PROJECT_TEAM_ID = "default-team";
 export type PlannedAttendanceDay =
   | "monday"
   | "tuesday"
@@ -110,6 +121,9 @@ export type TaskBlockerType =
   | "part_instance"
   | "artifact_instance"
   | "external";
+export type TaskBlockerIssueType =
+  | "external" | "lost-part" | "broken-part" | "lost-tool" | "broken-tool"
+  | "design-issue" | "shipping-delay" | "manufacturing-unavailable" | "qa-failed" | "other";
 export type TaskBlockerSeverity = "low" | "medium" | "high" | "critical";
 export type TaskBlockerStatus = "open" | "resolved";
 export type AuditActionOperation = "create" | "update" | "delete";
@@ -123,6 +137,10 @@ export interface AuditAction {
   entityLabel: string;
   message: string;
   changedFields: string[];
+  beforeJson?: Record<string, unknown>;
+  afterJson?: Record<string, unknown>;
+  detailsJson?: Record<string, unknown>;
+  requestId: string | null;
   projectId: string | null;
   projectIds?: string[];
   taskId: string | null;
@@ -146,7 +164,12 @@ export interface Member {
   plannedAttendanceNotes?: string;
 }
 
-export interface Subsystem {
+export interface Subsystem extends PmCadProvenance {
+  layoutX?: number | null;
+  layoutY?: number | null;
+  layoutZone?: "front" | "rear" | "left" | "right" | "center" | "top" | "unplaced" | null;
+  layoutView?: "top" | null;
+  sortOrder?: number | null;
   id: string;
   projectId: string;
   name: string;
@@ -169,7 +192,7 @@ export interface Discipline {
   name: string;
 }
 
-export interface Mechanism {
+export interface Mechanism extends PmCadProvenance {
   id: string;
   subsystemId: string;
   name: string;
@@ -180,7 +203,7 @@ export interface Mechanism {
   isArchived: boolean;
 }
 
-export interface PartDefinition {
+export interface PartDefinition extends PmCadProvenance {
   id: string;
   seasonId: string;
   activeSeasonIds?: string[];
@@ -197,7 +220,7 @@ export interface PartDefinition {
   photoUrl?: string;
 }
 
-export interface PartInstance {
+export interface PartInstance extends PmCadProvenance {
   id: string;
   subsystemId: string;
   mechanismId: string | null;
@@ -262,7 +285,7 @@ export interface Task {
   dueDate: string;
   priority: TaskPriority;
   status: TaskStatus;
-  dependencyIds: string[];
+  checklistItems: string[];
   blockers: string[];
   isBlocked?: boolean;
   isWaitingOnDependency?: boolean;
@@ -282,6 +305,7 @@ export interface WorkLog {
   participantIds: string[];
   notes: string;
   photoUrl?: string;
+  createdById?: string | null;
 }
 
 export interface Meeting {
@@ -367,11 +391,20 @@ export interface ManufacturingItem {
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
   inHouse: boolean;
   batchLabel?: string;
 }
 
 export interface Report {
+  evidenceNotes?: string;
+  qaRequestId?: string | null;
+  mentorId?: string | null;
+  requestedById?: string | null;
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   id: string;
   reportType: ReportType;
   projectId: string;
@@ -421,7 +454,7 @@ export interface TaskDependency {
   taskId: string;
   kind: TaskDependencyKind;
   refId: string;
-  requiredState?: string;
+  requiredState: string;
   dependencyType: TaskDependencyType;
   createdAt: string;
 }
@@ -430,6 +463,7 @@ export interface TaskBlocker {
   id: string;
   blockedTaskId: string;
   blockerType: TaskBlockerType;
+  issueType?: TaskBlockerIssueType;
   blockerId: string | null;
   description: string;
   severity: TaskBlockerSeverity;
@@ -451,6 +485,10 @@ export interface PurchaseItem {
   estimatedCost: number;
   finalCost?: number;
   approvedByMentor: boolean;
+  approvedById?: string | null;
+  approvedAt?: string | null;
+  purchasedAt?: string | null;
+  deliveredAt?: string | null;
   status: PurchaseStatus;
 }
 
@@ -464,6 +502,7 @@ export interface Season {
 
 export interface Project {
   id: string;
+  teamId: string;
   seasonId: string;
   name: string;
   projectType: ProjectType;
@@ -481,6 +520,13 @@ export interface Workstream {
 }
 
 export interface QaReport {
+  evidenceNotes?: string;
+  qaRequestId?: string | null;
+  mentorId?: string | null;
+  requestedById?: string | null;
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: RiskSeverity | null;
+  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
   id: string;
   taskId: string;
   participantIds: string[];
@@ -594,13 +640,6 @@ export interface Escalation {
   severity: "high" | "medium";
 }
 
-export interface FavoriteView {
-  id: string;
-  userKey: string;
-  viewId: string;
-  createdAt: string;
-}
-
 export type SlackChannelKey =
   | "build"
   | "meetingPlansRecaps"
@@ -708,6 +747,5 @@ export interface PlatformSnapshot {
   purchaseItems: PurchaseItem[];
   qaReviews: QaReview[];
   escalations: Escalation[];
-  favoriteViews?: FavoriteView[];
   actions?: AuditAction[];
 }

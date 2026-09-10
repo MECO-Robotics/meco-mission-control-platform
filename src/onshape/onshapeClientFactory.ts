@@ -52,7 +52,7 @@ async function credentialsFromConfig(
   let tokenSet = store.getOAuthTokenSet() ?? envTokenSet(config);
   const refreshToken = tokenSet?.refreshToken ?? config.oauthRefreshToken;
   if ((!tokenSet?.accessToken || shouldRefreshOnshapeOAuthToken(tokenSet)) && refreshToken) {
-    tokenSet = await refreshOnshapeOAuthToken({
+    tokenSet = await store.refreshOAuthTokenSet(() => refreshOnshapeOAuthToken({
       config: {
         clientId: config.oauthClientId,
         clientSecret: config.oauthClientSecret,
@@ -62,8 +62,7 @@ async function credentialsFromConfig(
         scopes: config.oauthScopes,
       },
       refreshToken,
-    });
-    store.setOAuthTokenSet(tokenSet);
+    }));
   }
 
   return {

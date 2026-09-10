@@ -17,12 +17,14 @@ import type {
   CadPartDefinitionCreateInput,
   CadPartInstanceCreateInput,
   CadSnapshotCreateInput,
+  CadSnapshotFinalizeInput,
   CadSnapshotMappingPatchInput,
   CadSnapshotMappingUpsertInput,
   CadSnapshotPatchInput,
   CadStore,
   CadWarningCreateInput,
 } from "./cadStoreTypes";
+import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
 import { clone, nextId, normalizeCadName, nowIso } from "./cadUtils";
 
 interface CadRuntimeState {
@@ -50,6 +52,7 @@ function buildInitialState(): CadRuntimeState {
 }
 
 const state = buildInitialState();
+let finalizeSnapshotFailureForTest: Error | null = null;
 
 function filterProjectSeason<T extends { projectId: string | null; seasonId: string | null }>(
   items: T[],
@@ -122,6 +125,42 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       Object.assign(item, patch);
       return clone(item);
     },
+    finalizeSnapshot(id: string, input: CadSnapshotFinalizeInput) {
+      const snapshotIndex = state.snapshots.findIndex((snapshot) => snapshot.id === id);
+      if (snapshotIndex === -1) {
+        return null;
+      }
+      const snapshot = state.snapshots[snapshotIndex];
+      const importRunIndex = state.importRuns.findIndex((run) => run.id === snapshot.importRunId);
+      if (importRunIndex === -1) {
+        return null;
+      }
+
+      const previousSnapshot = clone(state.snapshots[snapshotIndex]);
+      const previousImportRun = clone(state.importRuns[importRunIndex]);
+      try {
+        Object.assign(state.snapshots[snapshotIndex], {
+          status: "finalized",
+          finalizedAt: input.finalizedAt,
+          finalizedBy: input.finalizedBy,
+        });
+        if (finalizeSnapshotFailureForTest) {
+          throw finalizeSnapshotFailureForTest;
+        }
+        Object.assign(state.importRuns[importRunIndex], {
+          status: "FINALIZED",
+          updatedAt: nowIso(),
+        });
+        return {
+          snapshot: clone(state.snapshots[snapshotIndex]),
+          importRun: clone(state.importRuns[importRunIndex]),
+        };
+      } catch (error) {
+        state.snapshots[snapshotIndex] = previousSnapshot;
+        state.importRuns[importRunIndex] = previousImportRun;
+        throw error;
+      }
+    },
     listSnapshots(filter?: {
       projectId?: string | null;
       seasonId?: string | null;
@@ -140,6 +179,8 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       return item ? clone(item) : null;
     },
   createAssemblyNodes(snapshotId: string, input: CadAssemblyCreateInput[]) {
+    assertAcyclicAssemblyParents(input);
+
     const bySourceId = new Map<string, CadAssemblyNode>();
     for (const node of input) {
       const item: CadAssemblyNode = {
@@ -297,6 +338,10 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
 export type CadRuntimeStore = ReturnType<typeof getCadRuntimeStore>;
 
 export function resetCadRuntimeStore() {
+  finalizeSnapshotFailureForTest = null;
   getCadRuntimeStore().reset();
 }
 
+export function setCadRuntimeStoreFinalizeFailureForTest(error: Error | null) {
+  finalizeSnapshotFailureForTest = error;
+}

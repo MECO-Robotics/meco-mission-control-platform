@@ -1,4 +1,5 @@
 import type { OnshapeRuntimeStore } from "./cadStore";
+import { isImmutableReference } from "./cadStoreUtils";
 import { ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "./onshapeCadClient";
 import type { OnshapeDocumentRef, SyncLevel } from "./onshapeTypes";
 
@@ -18,10 +19,6 @@ interface MemberLike {
 
 function hasDeepReleaseRole(role: string | null | undefined) {
   return role === "lead" || role === "mentor" || role === "admin";
-}
-
-function isImmutableReference(documentRef: OnshapeDocumentRef) {
-  return documentRef.referenceType === "version" || documentRef.referenceType === "microversion";
 }
 
 function syncRequestHashes(syncLevel: SyncLevel) {

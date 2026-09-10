@@ -71,6 +71,7 @@ test("tutorial baseline reset restores canonical season/projects and is idempote
     assert.equal(bootstrapResponse.statusCode, 200);
     const bootstrapBody = bootstrapResponse.json() as {
       members: Array<{ id: string }>;
+      tasks: Array<{ startDate: string; dueDate: string }>;
     };
     assert.equal(
       bootstrapBody.members.some((member) => member.id === createdMemberBody.item.id),
@@ -78,6 +79,10 @@ test("tutorial baseline reset restores canonical season/projects and is idempote
     );
 
     resetLimits();
+
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    assert.ok(bootstrapBody.tasks.length > 0);
+    assert.ok(bootstrapBody.tasks.every((task) => task.startDate.startsWith(currentMonth) && task.dueDate.startsWith(currentMonth)));
 
     const secondResetResponse = await app.inject({
       method: "POST",

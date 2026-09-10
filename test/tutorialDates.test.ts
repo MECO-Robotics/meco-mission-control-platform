@@ -1,0 +1,77 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createTutorialSnapshot } from "../src/data/tutorialSnapshot";
+
+for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
+  test(`tutorial activity stays in the current month and Monday week at ${date}`, () => {
+    const now = new Date(`${date}T12:00:00Z`);
+    const data = createTutorialSnapshot(now);
+    const day = 86_400_000;
+    const monday = Date.parse(date) - ((now.getUTCDay() + 6) % 7) * day;
+    const checkDates = (value: unknown): void => {
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T|$)/.test(value)) {
+        assert.equal(value.slice(0, 7), date.slice(0, 7));
+        assert.ok(Date.parse(value) >= monday && Date.parse(value) < monday + 7 * day, value);
+      } else if (value && typeof value === "object") Object.values(value).forEach(checkDates);
+    };
+    for (const [key, value] of Object.entries(data)) if (key !== "seasons") checkDates(value);
+    for (const task of data.tasks) {
+      assert.ok(task.startDate <= task.dueDate);
+      assert.equal(task.actualHours, data.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0));
+    }
+    for (const recorded of [...data.workLogs.map((log) => log.date), ...data.qaReports.map((report) => report.reviewedAt), ...data.attendanceRecords.map((record) => record.date)]) assert.ok(Date.parse(recorded) <= now.getTime(), recorded);
+    for (const report of data.qaReports.filter((report) => report.result === "pass" && report.mentorApproved)) assert.equal(data.tasks.find((task) => task.id === report.taskId)?.status, "complete");
+    for (const milestone of data.milestones) {
+      if (milestone.endDateTime) assert.ok(Date.parse(milestone.startDateTime) <= Date.parse(milestone.endDateTime));
+    }
+    assert.equal(data.seasons[0].startDate, `${date.slice(0, 7)}-01`);
+    assert.equal(data.seasons[0].endDate.slice(0, 7), date.slice(0, 7));
+    const demoMembers = data.members.filter((member) => member.id.startsWith("demo-"));
+    assert.equal(demoMembers.length, 8);
+    for (const member of demoMembers) {
+      assert.ok(data.attendanceRecords.some((record) =>
+        record.memberId === member.id && record.date === date && record.totalHours > 0,
+      ), `${member.name} must appear in today's availability roster`);
+    }
+    assert.equal(new Set(data.attendanceRecords.map((record) => record.id)).size, data.attendanceRecords.length);
+    assert.deepEqual(createTutorialSnapshot(now), data);
+  });
+}
+
+test("new tutorial data rolls forward without mutating an earlier session", () => {
+  const old = createTutorialSnapshot(new Date("2026-12-31T12:00:00Z"));
+  const before = structuredClone(old);
+  const next = createTutorialSnapshot(new Date("2027-01-04T12:00:00Z"));
+  assert.deepEqual(old, before);
+  assert.notEqual(next.tasks[0].startDate, old.tasks[0].startDate);
+});
+
+test("tutorial roster categories and all member references resolve within the seed", () => {
+  const data = createTutorialSnapshot();
+  const members = new Set(data.members.map((member) => member.id));
+  const disciplines = new Set(data.disciplines.map((discipline) => discipline.id));
+  const seasons = new Set(data.seasons.map((season) => season.id));
+  assert.equal(members.size, data.members.length);
+  for (const member of data.members) {
+    assert.ok(["student", "lead", "mentor", "admin", "external"].includes(member.role));
+    if (member.disciplineId) assert.ok(disciplines.has(member.disciplineId), `${member.id}: ${member.disciplineId}`);
+    if (member.seasonId) assert.ok(seasons.has(member.seasonId));
+    for (const seasonId of member.activeSeasonIds ?? []) assert.ok(seasons.has(seasonId));
+  }
+  const memberFields = new Set([
+    "memberId", "ownerId", "mentorId", "responsibleEngineerId", "createdByMemberId",
+    "createdById", "requestedById", "reviewedById", "approvedById", "actorMemberId",
+    "participantIds", "assigneeIds", "mentorIds", "memberIds",
+  ]);
+  const inspect = (value: unknown, path: string): void => {
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      if (memberFields.has(key)) {
+        for (const id of Array.isArray(child) ? child : [child]) {
+          if (id != null && id !== "") assert.ok(members.has(id), `${path}.${key}: ${id}`);
+        }
+      } else inspect(child, `${path}.${key}`);
+    }
+  };
+  inspect(data, "tutorial");
+});

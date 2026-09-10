@@ -1,5 +1,6 @@
 ﻿import type { OnshapeReference } from "./onshapeTypes";
 import type { OnshapeRuntimeState } from "./cadStoreTypes";
+import type { OnshapeDocumentRef, OnshapeSyncJob } from "./onshapeTypes";
 import { clone, nextId, nowIso } from "./cadStoreUtils";
 
 export function buildCadRequestStore(state: OnshapeRuntimeState) {
@@ -45,6 +46,63 @@ export function buildCadRequestStore(state: OnshapeRuntimeState) {
       return clone(
         state.importRuns
           .filter((run) => !documentRefId || run.onshapeDocumentRefId === documentRefId)
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+      );
+    },
+    createSyncJob(input: {
+      importRunId: string;
+      documentRef: OnshapeDocumentRef;
+      actor?: string | null;
+    }): OnshapeSyncJob {
+      const timestamp = nowIso();
+      const sourceReferenceJson: Record<string, unknown> = {
+        documentId: input.documentRef.documentId,
+        workspaceId: input.documentRef.workspaceId ?? null,
+        versionId: input.documentRef.versionId ?? null,
+        microversionId: input.documentRef.microversionId ?? null,
+        elementId: input.documentRef.elementId ?? null,
+        referenceType: input.documentRef.referenceType,
+        originalUrl: input.documentRef.originalUrl,
+        label: input.documentRef.label,
+      };
+      const job: OnshapeSyncJob = {
+        id: nextId("onshape-sync-job", state.syncJobs.map((item) => item.id)),
+        importRunId: input.importRunId,
+        onshapeDocumentRefId: input.documentRef.id,
+        status: "running",
+        startedAt: timestamp,
+        completedAt: null,
+        actor: input.actor ?? null,
+        sourceReferenceJson,
+        summaryJson: {},
+        errorMessage: null,
+        createdAt: timestamp,
+      };
+      state.syncJobs.push(job);
+      return clone(job);
+    },
+    updateSyncJob(id: string, patch: Partial<Omit<OnshapeSyncJob, "id" | "importRunId" | "onshapeDocumentRefId" | "sourceReferenceJson" | "createdAt">>) {
+      const job = state.syncJobs.find((item) => item.id === id);
+      if (!job) {
+        return null;
+      }
+      Object.assign(job, patch);
+      return clone(job);
+    },
+    findSyncJob(id: string) {
+      const found = state.syncJobs.find((item) => item.id === id);
+      return found ? clone(found) : null;
+    },
+    findSyncJobByImportRunId(importRunId: string) {
+      const found = state.syncJobs.find((item) => item.importRunId === importRunId);
+      return found ? clone(found) : null;
+    },
+    listSyncJobs(filter?: { documentRefId?: string; status?: OnshapeSyncJob["status"] }) {
+      return clone(
+        state.syncJobs
+          .filter((job) =>
+            (!filter?.documentRefId || job.onshapeDocumentRefId === filter.documentRefId) &&
+            (!filter?.status || job.status === filter.status))
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       );
     },

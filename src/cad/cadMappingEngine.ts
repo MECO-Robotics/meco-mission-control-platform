@@ -334,11 +334,11 @@ async function syncSnapshotLifecycleAfterMappingUpdates(store: CadStore, snapsho
   const updatedSnapshot =
     snapshot.status === snapshotStatus
       ? snapshot
-      : (await store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? snapshot;
+      : (await store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? missingCadTransition("snapshot");
   const importRun = await store.findImportRun(snapshot.importRunId);
   const updatedImportRun =
     importRun && importRun.status !== importRunStatus
-      ? (await store.updateImportRun(importRun.id, { status: importRunStatus })) ?? importRun
+      ? (await store.updateImportRun(importRun.id, { status: importRunStatus })) ?? missingCadTransition("import run")
       : importRun;
 
   return {
@@ -424,4 +424,8 @@ export async function applyMappingUpdates(args: {
     mappingRules,
     lifecycle: await syncSnapshotLifecycleAfterMappingUpdates(args.store, args.snapshot),
   };
+}
+
+function missingCadTransition(record: string): never {
+  throw new Error(`CAD ${record} disappeared during a required state transition.`);
 }
