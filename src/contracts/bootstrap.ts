@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { favoriteNavigationViewIdSchema, subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, taskBlockerSchema } from "../routes/routeSchemas";
+import { subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, taskBlockerSchema } from "../routes/routeSchemas";
 
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
 export const BOOTSTRAP_CONTRACT_VERSION = 1;
@@ -64,7 +64,6 @@ export const bootstrapPayloadSchema = z
     qaReviews: bootstrapCollectionSchema,
     escalations: bootstrapCollectionSchema,
     actions: bootstrapCollectionSchema,
-    favoriteViews: z.array(z.object({ id: z.string(), userKey: z.string(), viewId: favoriteNavigationViewIdSchema, createdAt: z.string() })),
     designIterations: bootstrapCollectionSchema.optional(),
   })
   .strict();

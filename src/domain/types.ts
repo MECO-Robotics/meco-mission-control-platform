@@ -1,4 +1,3 @@
-import type { NavigationViewId } from "./navigation";
 export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
 export type MilestoneType =
   | "practice"
@@ -641,13 +640,6 @@ export interface Escalation {
   severity: "high" | "medium";
 }
 
-export interface FavoriteView {
-  id: string;
-  userKey: string;
-  viewId: NavigationViewId;
-  createdAt: string;
-}
-
 export type SlackChannelKey =
   | "build"
   | "meetingPlansRecaps"
@@ -755,6 +747,5 @@ export interface PlatformSnapshot {
   purchaseItems: PurchaseItem[];
   qaReviews: QaReview[];
   escalations: Escalation[];
-  favoriteViews?: FavoriteView[];
   actions?: AuditAction[];
 }

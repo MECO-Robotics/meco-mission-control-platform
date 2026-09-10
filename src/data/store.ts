@@ -1,4 +1,3 @@
-import { isNavigationViewId, type NavigationViewId } from "../domain/navigation";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
@@ -11,7 +10,6 @@ import type {
   Artifact,
   DesignIteration,
   Discipline,
-  FavoriteView,
   MilestoneRequirement,
   Milestone,
   MilestoneStatus,
@@ -590,7 +588,6 @@ function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
   return deriveTaskSummaries(normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
-    favoriteViews: (normalizedSnapshot.favoriteViews ?? []).filter((favorite) => isNavigationViewId(favorite.viewId)),
     actions: normalizedSnapshot.actions ?? [],
   }));
 }
@@ -1619,46 +1616,6 @@ export function recordAuditAction(args: {
 
 export function getSnapshot() {
   return currentSnapshot;
-}
-
-export function getFavoriteViews(userKey: string) {
-  return (currentSnapshot.favoriteViews ?? [])
-    .filter((favorite) => favorite.userKey === userKey)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-}
-
-export function setFavoriteView(
-  userKey: string,
-  viewId: NavigationViewId,
-  isFavorite: boolean,
-) {
-  const favoriteViews = currentSnapshot.favoriteViews ?? [];
-  const existingFavorite = favoriteViews.find(
-    (favorite) => favorite.userKey === userKey && favorite.viewId === viewId,
-  );
-
-  if (isFavorite && !existingFavorite) {
-    const favorite: FavoriteView = {
-      id: uniqueId(`favorite-${toSlug(userKey)}-${viewId}`, new Set(favoriteViews.map((item) => item.id))),
-      userKey,
-      viewId,
-      createdAt: new Date().toISOString(),
-    };
-
-    replaceCurrentSnapshot({
-      ...currentSnapshot,
-      favoriteViews: [...favoriteViews, favorite],
-    });
-  }
-
-  if (!isFavorite && existingFavorite) {
-    replaceCurrentSnapshot({
-      ...currentSnapshot,
-      favoriteViews: favoriteViews.filter((favorite) => favorite.id !== existingFavorite.id),
-    });
-  }
-
-  return getFavoriteViews(userKey);
 }
 
 export interface TutorialBaselineState {

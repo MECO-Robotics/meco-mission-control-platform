@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { navigationViewIds } from "../domain/navigation";
 
 
 const plannedAttendanceDaySchema = z.enum([
@@ -535,12 +534,6 @@ export const workLogPatchSchema = workLogSchema.partial();
 
 export const tutorialSessionResetSchema = z.object({
   mode: z.enum(["session", "baseline"]).default("session"),
-});
-
-export const favoriteNavigationViewIdSchema = z.enum(navigationViewIds);
-
-export const favoriteViewToggleSchema = z.object({
-  isFavorite: z.boolean(),
 });
 
 export const paginatedQuerySchema = z.object({

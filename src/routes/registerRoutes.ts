@@ -32,7 +32,6 @@ import {
   createWorkLog,
   createWorkstream,
   findDiscipline,
-  getFavoriteViews,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -90,7 +89,6 @@ import {
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
-  setFavoriteView,
   updateManufacturingItem,
   updateArtifact,
   updateMaterial,
@@ -167,8 +165,6 @@ import {
   auditExportQuerySchema,
   artifactPatchSchema,
   artifactSchema,
-  favoriteNavigationViewIdSchema,
-  favoriteViewToggleSchema,
   milestonePatchSchema,
   milestoneSchema,
   manufacturingItemPatchSchema,
@@ -599,7 +595,7 @@ export async function registerRoutes(
     return false;
   };
 
-  const getNavigationPreferenceUserKey = (
+  const getWorkspaceUserKey = (
     request: Parameters<typeof getSessionFromRequest>[0],
   ) => {
     if (!isAuthEnabled()) {
@@ -703,19 +699,13 @@ export async function registerRoutes(
     const snapshot = getSnapshot();
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
     const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
-    const userKey = isPublicDemoBootstrap
-      ? "public-demo"
-      : getNavigationPreferenceUserKey(request);
     const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
       sanitizeEscalations: isPublicDemoBootstrap,
     });
     const responseBootstrap = isPublicDemoBootstrap
       ? sanitizePublicDemoBootstrap(selectedBootstrap)
       : selectedBootstrap;
-    const bootstrapPayload = bootstrapPayloadSchema.safeParse({
-      ...responseBootstrap,
-      favoriteViews: getFavoriteViews(userKey),
-    });
+    const bootstrapPayload = bootstrapPayloadSchema.safeParse(responseBootstrap);
 
     if (!bootstrapPayload.success) {
       return reply.code(500).send({
@@ -761,35 +751,6 @@ export async function registerRoutes(
     };
   });
 
-  app.patch<{ Body: unknown; Params: { viewId: string } }>(
-    "/api/navigation/favorites/:viewId",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsedViewId = favoriteNavigationViewIdSchema.safeParse(request.params.viewId);
-      const parsedBody = favoriteViewToggleSchema.safeParse(request.body);
-      if (!parsedViewId.success || !parsedBody.success) {
-        return reply.code(400).send({
-          message: "Favorite view payload is invalid.",
-          issues: {
-            params: parsedViewId.success ? undefined : parsedViewId.error.flatten(),
-            body: parsedBody.success ? undefined : parsedBody.error.flatten(),
-          },
-        });
-      }
-
-      return {
-        favoriteViews: setFavoriteView(
-          getNavigationPreferenceUserKey(request),
-          parsedViewId.data,
-          parsedBody.data.isFavorite,
-        ),
-      };
-    },
-  );
-
   app.post("/api/tutorial/session/start", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -799,7 +760,7 @@ export async function registerRoutes(
       return;
     }
 
-    const userKey = getNavigationPreferenceUserKey(request);
+    const userKey = getWorkspaceUserKey(request);
     startInteractiveTutorialSession(isAuthEnabled() ? userKey : undefined);
     return {
       ok: true,
@@ -829,7 +790,7 @@ export async function registerRoutes(
 
     if (parsed.data.mode === "baseline") {
       const tutorial = resetTutorialBaseline(
-        isAuthEnabled() ? getNavigationPreferenceUserKey(request) : undefined,
+        isAuthEnabled() ? getWorkspaceUserKey(request) : undefined,
       );
       const baselineReady =
         tutorial.seasonId !== null && tutorial.missingProjectNames.length === 0;
@@ -856,7 +817,7 @@ export async function registerRoutes(
     }
 
     const restored = resetInteractiveTutorialSession(
-      isAuthEnabled() ? getNavigationPreferenceUserKey(request) : undefined,
+      isAuthEnabled() ? getWorkspaceUserKey(request) : undefined,
     );
 
     const response: TutorialResetResponse = {

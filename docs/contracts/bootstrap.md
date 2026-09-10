@@ -49,13 +49,7 @@ manifest; no source secrets or credentials are included in the image.
   normalized to manual unless the part definition source text identifies STEP or Onshape provenance.
 - Note: PR checks in this repository require `development`-targeted PRs with all required checks passing before merge.
 
-Navigation favorites use the consolidated view IDs: `home`, `work-tasks`,
-`work-schedule`, `work-risks`, `work-activity`, `resources-materials`,
-`resources-documents`, `resources-parts`, `resources-purchases`,
-`resources-manufacturing`, `resources-structure`, `team-people`, and
-`team-attendance`. `PATCH /api/navigation/favorites/:viewId` rejects retired or
-unknown IDs with HTTP 400. Bootstrap validates favorite records against the same
-set. Favorites remain private to the current user and persist in the platform
-snapshot in production; development startup reseeds the demo as before. Loading a snapshot discards unsupported favorite IDs without translating
-them; the next snapshot write removes those entries on disk. Canonical favorites
-survive ordinary restarts. No business-data reset or reseed command is required.
+Navigation favorites have been removed. The bootstrap payload has no `favoriteViews`
+field, and `/api/navigation/favorites/:viewId` no longer exists. Previously saved
+favorites are discarded; no business-data reset or reseed is needed. Old local
+snapshot files may retain unused preference bytes until manually removed.
