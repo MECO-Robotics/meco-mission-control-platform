@@ -1,4 +1,5 @@
 import { snapshot as initialSnapshot } from "./mockData";
+import { createTutorialSnapshot } from "./tutorialSnapshot";
 import type {
   AuditAction,
   AuditActionOperation,
@@ -1470,13 +1471,13 @@ export function getTutorialBaselineState() {
 }
 
 export function resetStore() {
-  currentSnapshot = cloneSnapshot(initialSnapshot);
+  currentSnapshot = createTutorialSnapshot();
   interactiveTutorialSnapshot = null;
 }
 
 export function resetTutorialBaseline() {
   const tutorialSnapshot = interactiveTutorialSnapshot;
-  currentSnapshot = cloneSnapshot(initialSnapshot);
+  currentSnapshot = createTutorialSnapshot();
   interactiveTutorialSnapshot = tutorialSnapshot;
   return getTutorialBaselineState();
 }
