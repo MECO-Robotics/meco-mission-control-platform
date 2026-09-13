@@ -69,7 +69,7 @@ export async function groupedSnapshotMappings(store: CadStore, snapshotId: strin
       }
       const representativeMapping = group.mapping ?? group.mappings[0] ?? null;
       return {
-        ...(representativeMapping ?? {}),
+        ...(representativeMapping ?? undefined),
         id: group.groupId,
         kind: "part_instance_group",
         snapshotId,

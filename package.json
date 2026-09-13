@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "contracts:generate": "node --import tsx scripts/contracts/generate-bootstrap-contract.ts",
     "contracts:verify": "node --import tsx scripts/contracts/verify-bootstrap-contract.ts",
-    "test": "node --import tsx --test ./test/app.core-auth.test.ts ./test/app.inventory-artifacts-workstreams.test.ts ./test/app.inventory-manufacturing-purchases.test.ts ./test/app.planning-entities.test.ts ./test/app.tasks-events.test.ts ./test/app.work-logs.test.ts ./test/app.reports.test.ts ./test/authRosterAccess.test.ts ./test/devAuthBypass.test.ts ./test/emailAuth.test.ts ./test/env.test.ts ./test/cad.store-fallback.test.ts ./test/cad.hierarchy-review.test.ts ./test/cad.step-import.test.ts ./test/onshape.test.ts ./test/onshape.routes.test.ts ./test/onshape.oauth-permissions.test.ts ./test/onshape.oauth-refresh-config.test.ts ./test/requestLimits.test.ts ./test/slackHomeService.test.ts ./test/store.test.ts ./test/workflows.test.ts ./test/tutorialDates.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
@@ -38,7 +38,7 @@
     "fastify": "^5.8.5",
     "google-auth-library": "^10.6.2",
     "jsonwebtoken": "^9.0.3",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "9.1.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {

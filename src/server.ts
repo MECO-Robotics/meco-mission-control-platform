@@ -4,16 +4,21 @@ import { buildApp } from "./app";
 import { cadPersistenceConfig, cadStepParserConfig, env } from "./config/env";
 
 async function start() {
-  console.info(
-    `[startup] CAD_STORE_DRIVER=${cadPersistenceConfig.storeDriver} CAD_STEP_PARSER_MODE=${cadStepParserConfig.mode} placeholderMode=${cadStepParserConfig.mode === "placeholder"}`,
+  const app = await buildApp();
+
+  app.log.info(
+    {
+      cadStoreDriver: cadPersistenceConfig.storeDriver,
+      cadStepParserMode: cadStepParserConfig.mode,
+      placeholderMode: cadStepParserConfig.mode === "placeholder",
+    },
+    "CAD startup configuration",
   );
   if (cadStepParserConfig.mode === "placeholder") {
-    console.warn(
+    app.log.warn(
       "[startup] WARNING: CAD_STEP_PARSER_MODE=placeholder is enabled. STEP uploads will not be treated as real CAD parses.",
     );
   }
-
-  const app = await buildApp();
 
   await app.listen({
     host: "0.0.0.0",

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {
-  BASE_URL,
   PLATFORM_TEST_TOKEN,
   WEB_BASE_URL,
 } from "./smoke-test/config.mjs";

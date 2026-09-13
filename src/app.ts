@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { createPrismaCadStore } from "./cad/cadPrismaStore";
-import { getCadRuntimeStore } from "./cad/cadStore";
+import { getCadRuntimeStore, resetCadRuntimeStore } from "./cad/cadStore";
 import type { CadStore } from "./cad/cadStoreTypes";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
@@ -20,7 +20,6 @@ import {
   createPrismaWebSessionStore,
   type WebSessionStore,
 } from "./auth/webSessionStore";
-import { resetCadRuntimeStore } from "./cad/cadStore";
 import { cadPersistenceConfig, cadStepUploadConfig, corsConfig, env } from "./config/env";
 import {
   acquireGlobalSnapshotMutation,

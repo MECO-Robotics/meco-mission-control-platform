@@ -1,13 +1,6 @@
 import type { MilestoneStatus, PlatformSnapshot, Task, TaskDependency } from "./types";
 
-const MILESTONE_STATUS_ORDER: Record<MilestoneStatus, number> = {
-  "not ready": 0,
-  blocked: 1,
-  qa: 2,
-  ready: 3,
-};
-
-const PART_INSTANCE_STATUS_ORDER: Record<MilestoneStatus, number> = {
+const WORKFLOW_STATUS_ORDER: Record<MilestoneStatus, number> = {
   "not ready": 0,
   blocked: 1,
   qa: 2,
@@ -36,8 +29,8 @@ function isMilestoneDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = MILESTONE_STATUS_ORDER[requiredState as MilestoneStatus];
-  const targetOrder = MILESTONE_STATUS_ORDER[milestone.status ?? "not ready"];
+  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState as MilestoneStatus];
+  const targetOrder = WORKFLOW_STATUS_ORDER[milestone.status ?? "not ready"];
 
   return targetOrder >= requiredOrder;
 }
@@ -52,13 +45,13 @@ function isPartInstanceDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = PART_INSTANCE_STATUS_ORDER[requiredState as MilestoneStatus];
-  const targetOrder = PART_INSTANCE_STATUS_ORDER[partInstance.status];
+  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState as MilestoneStatus];
+  const targetOrder = WORKFLOW_STATUS_ORDER[partInstance.status];
 
   return targetOrder >= requiredOrder;
 }
 
-function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: PlatformSnapshot, now: Date) {
+function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: PlatformSnapshot) {
   if (dependency.dependencyType === "soft") {
     return true;
   }
@@ -81,22 +74,20 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Platfor
 export function getTaskWaitingOnDependencyRecords(
   taskId: string,
   snapshot: PlatformSnapshot,
-  now: Date = new Date(),
 ) {
   return snapshot.taskDependencies.filter(
     (dependency) =>
       dependency.taskId === taskId &&
       dependency.dependencyType !== "soft" &&
-      !isTaskDependencySatisfied(dependency, snapshot, now),
+      !isTaskDependencySatisfied(dependency, snapshot),
   );
 }
 
 export function isTaskWaitingOnDependencies(
   task: Pick<Task, "id" | "status">,
   snapshot: PlatformSnapshot,
-  now: Date = new Date(),
 ) {
   return (
-    task.status !== "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot, now).length > 0
+    task.status !== "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot).length > 0
   );
 }

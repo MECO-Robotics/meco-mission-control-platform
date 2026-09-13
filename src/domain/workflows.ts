@@ -152,6 +152,31 @@ function hasMentorPass(qaReviews: QaReview[]) {
   });
 }
 
+function buildTaskMetrics(
+  snapshot: PlatformSnapshot,
+  tasks: Task[],
+  workHoursByTaskId: Map<string, number>,
+) {
+  const taskIds = new Set(tasks.map((task) => task.id));
+  const completeTaskCount = tasks.filter((task) => task.status === "complete").length;
+  const waitingForQaCount = tasks.filter((task) => task.status === "waiting-for-qa").length;
+  const blockerCount = tasks.reduce((sum, task) => sum + task.blockers.length, 0);
+  const plannedHours = tasks.reduce((sum, task) => sum + task.estimatedHours, 0);
+  const loggedHours = tasks.reduce(
+    (sum, task) => sum + (workHoursByTaskId.get(task.id) ?? 0),
+    0,
+  );
+  const qaPassCount = snapshot.qaReviews.filter((review) =>
+    review.subjectType === "task" &&
+    review.result === "pass" &&
+    review.mentorApproved &&
+    review.subjectId !== null &&
+    taskIds.has(review.subjectId),
+  ).length;
+
+  return { completeTaskCount, waitingForQaCount, blockerCount, plannedHours, loggedHours, qaPassCount };
+}
+
 function buildSubsystemMetrics(
   snapshot: PlatformSnapshot,
   workHoursByTaskId: Map<string, number>,
@@ -161,24 +186,7 @@ function buildSubsystemMetrics(
       const tasks = snapshot.tasks.filter((task) =>
         [task.subsystemId, ...(task.subsystemIds ?? [])].includes(subsystem.id),
       );
-      const taskIds = new Set(tasks.map((task) => task.id));
-      const completeTaskCount = tasks.filter((task) => task.status === "complete").length;
-      const waitingForQaCount = tasks.filter((task) => task.status === "waiting-for-qa").length;
-      const blockerCount = tasks.reduce((sum, task) => sum + task.blockers.length, 0);
-      const plannedHours = tasks.reduce((sum, task) => sum + task.estimatedHours, 0);
-      const loggedHours = tasks.reduce(
-        (sum, task) => sum + (workHoursByTaskId.get(task.id) ?? 0),
-        0,
-      );
-      const qaPassCount = snapshot.qaReviews.filter((review) => {
-        return (
-          review.subjectType === "task" &&
-          review.result === "pass" &&
-          review.mentorApproved &&
-          review.subjectId &&
-          taskIds.has(review.subjectId)
-        );
-      }).length;
+      const taskMetrics = buildTaskMetrics(snapshot, tasks, workHoursByTaskId);
       const mechanismCount = snapshot.mechanisms.filter((mechanism) => {
         return mechanism.subsystemId === subsystem.id;
       }).length;
@@ -188,16 +196,16 @@ function buildSubsystemMetrics(
         name: subsystem.name,
         projectId: subsystem.projectId,
         taskCount: tasks.length,
-        activeTaskCount: tasks.length - completeTaskCount,
-        completeTaskCount,
-        waitingForQaCount,
-        blockerCount,
-        plannedHours: Number(plannedHours.toFixed(1)),
-        loggedHours: Number(loggedHours.toFixed(1)),
+        activeTaskCount: tasks.length - taskMetrics.completeTaskCount,
+        completeTaskCount: taskMetrics.completeTaskCount,
+        waitingForQaCount: taskMetrics.waitingForQaCount,
+        blockerCount: taskMetrics.blockerCount,
+        plannedHours: Number(taskMetrics.plannedHours.toFixed(1)),
+        loggedHours: Number(taskMetrics.loggedHours.toFixed(1)),
         completionRate: Number(
-          (completeTaskCount / Math.max(tasks.length, 1)).toFixed(2),
+          (taskMetrics.completeTaskCount / Math.max(tasks.length, 1)).toFixed(2),
         ),
-        qaPassCount,
+        qaPassCount: taskMetrics.qaPassCount,
         mechanismCount,
       };
     })
@@ -230,27 +238,10 @@ function buildMechanismMetrics(
       const tasks = snapshot.tasks.filter((task) =>
         [task.mechanismId, ...(task.mechanismIds ?? [])].includes(mechanism.id),
       );
-      const taskIds = new Set(tasks.map((task) => task.id));
       const subsystemName = snapshot.subsystems.find(
         (subsystem) => subsystem.id === mechanism.subsystemId,
       )?.name ?? "Unknown subsystem";
-      const completeTaskCount = tasks.filter((task) => task.status === "complete").length;
-      const waitingForQaCount = tasks.filter((task) => task.status === "waiting-for-qa").length;
-      const blockerCount = tasks.reduce((sum, task) => sum + task.blockers.length, 0);
-      const plannedHours = tasks.reduce((sum, task) => sum + task.estimatedHours, 0);
-      const loggedHours = tasks.reduce(
-        (sum, task) => sum + (workHoursByTaskId.get(task.id) ?? 0),
-        0,
-      );
-      const qaPassCount = snapshot.qaReviews.filter((review) => {
-        return (
-          review.subjectType === "task" &&
-          review.result === "pass" &&
-          review.mentorApproved &&
-          review.subjectId &&
-          taskIds.has(review.subjectId)
-        );
-      }).length;
+      const taskMetrics = buildTaskMetrics(snapshot, tasks, workHoursByTaskId);
       const partInstanceCount = snapshot.partInstances.filter((partInstance) => {
         return partInstance.mechanismId === mechanism.id;
       }).length;
@@ -261,16 +252,16 @@ function buildMechanismMetrics(
         subsystemId: mechanism.subsystemId,
         subsystemName,
         taskCount: tasks.length,
-        activeTaskCount: tasks.length - completeTaskCount,
-        completeTaskCount,
-        waitingForQaCount,
-        blockerCount,
-        plannedHours: Number(plannedHours.toFixed(1)),
-        loggedHours: Number(loggedHours.toFixed(1)),
+        activeTaskCount: tasks.length - taskMetrics.completeTaskCount,
+        completeTaskCount: taskMetrics.completeTaskCount,
+        waitingForQaCount: taskMetrics.waitingForQaCount,
+        blockerCount: taskMetrics.blockerCount,
+        plannedHours: Number(taskMetrics.plannedHours.toFixed(1)),
+        loggedHours: Number(taskMetrics.loggedHours.toFixed(1)),
         completionRate: Number(
-          (completeTaskCount / Math.max(tasks.length, 1)).toFixed(2),
+          (taskMetrics.completeTaskCount / Math.max(tasks.length, 1)).toFixed(2),
         ),
-        qaPassCount,
+        qaPassCount: taskMetrics.qaPassCount,
         partInstanceCount,
       };
     })

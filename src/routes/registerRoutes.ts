@@ -45,9 +45,7 @@ import {
   findRisk,
   findSubsystem,
   findWorkstream,
-  getDisciplines,
   getMembers,
-  getMechanisms,
   getManufacturingItems,
   getArtifacts,
   getMaterials,
@@ -61,7 +59,6 @@ import {
   getRisks,
   getSnapshot,
   getSeasons,
-  getSubsystems,
   getTaskTargets,
   getMilestonesForTask,
   getTasks,
@@ -114,13 +111,11 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
-import type { Member } from "../domain/types";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
   filterManufacturingItemsForPerson,
   filterPurchaseItemsForPerson,
   filterTasksForPerson,
-  filterWorkLogsForPerson,
   paginateItems,
   readPersonFilter,
   withManufacturingQaReviewCounts,
@@ -286,9 +281,12 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     ]),
   );
 
+  // Fictional names keep the public roster natural without exposing member identities.
+  const firstNames = ["Emma", "Liam", "Isabella", "Mason", "Grace", "Daniel", "Chloe", "Owen", "Zara", "Caleb", "Nora", "Adrian", "Elena", "Miles", "Leila", "Nathan", "Hannah", "Julian", "Naomi", "Gabriel", "Audrey", "Isaac", "Vivian", "Sebastian", "Amara", "Leo"];
+  const lastNames = ["Bennett", "Nguyen", "Ramirez", "Sullivan", "Okafor", "Kim", "Anderson", "Mitchell", "Hassan", "Torres", "Thompson", "Reyes", "Petrov", "Johnson", "Rahman", "Campbell", "Wilson", "Moreau", "Tanaka", "Santos", "Clarke", "Mensah", "Lin", "Romero", "Davis", "Williams"];
   const members = selectedBootstrap.members.map((member, memberIndex) => ({
     id: rewriteDemoMemberId(member.id, memberIdsByOriginalId),
-    name: `Demo Member ${memberIndex + 1}`,
+    name: `${firstNames[memberIndex % firstNames.length]} ${lastNames[(memberIndex + Math.floor(memberIndex / firstNames.length)) % lastNames.length]}`,
     // Public roster categories support directory grouping, never elevated permissions.
     role: member.role === "mentor" || member.role === "admin"
       ? "mentor"
@@ -555,8 +553,7 @@ export async function registerRoutes(
     requestId: readAuditRequestId(request),
   });
 
-  const canManageTaskAssignment = (request: Parameters<typeof requireSession>[0]) =>
-    hasMentorPermission(request);
+  const canManageTaskAssignment = hasMentorPermission;
 
   const buildTaskActionItem = (taskId: string) => {
     const task = getTasks().find((candidate) => candidate.id === taskId);
