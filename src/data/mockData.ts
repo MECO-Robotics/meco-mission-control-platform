@@ -1,12 +1,4 @@
-import type {
-  Mechanism,
-  PartDefinition,
-  PlatformSnapshot,
-  Project,
-  Subsystem,
-  Task,
-  Workstream,
-} from "../domain/types";
+import type { PartDefinition, PlatformSnapshot, Project, Task } from "../domain/types";
 import {
   TASK_DISCIPLINE_DEFINITIONS,
   getDefaultTaskDisciplineIdForProject,
