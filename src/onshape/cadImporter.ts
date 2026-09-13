@@ -74,7 +74,7 @@ function completeRun(args: {
   const callsUsed = args.client.getCallsUsed();
   const completedAt = new Date().toISOString();
   const rawSummaryJson = args.snapshotId
-    ? { ...(args.summary ?? {}), snapshotId: args.snapshotId }
+    ? { ...(args.summary ?? undefined), snapshotId: args.snapshotId }
     : (args.summary ?? {});
   args.store.updateImportRun(args.runId, {
     status: args.status,
