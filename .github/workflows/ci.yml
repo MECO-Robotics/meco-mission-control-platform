@@ -26,6 +26,7 @@ on:
       - ".github/workflows/publish-bootstrap-contract.yml"
       - ".gitignore"
       - ".dockerignore"
+      - ".nvmrc"
       - "Dockerfile"
       - "docker-compose.prod.yml"
       - "package.json"
