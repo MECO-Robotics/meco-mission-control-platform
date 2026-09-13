@@ -5,6 +5,7 @@ import {
   getTaskDisciplineBucketForProject,
   isTaskDisciplineAllowedForProject,
 } from "../domain/taskDisciplines";
+import type { TaskDisciplineBucket } from "../domain/taskDisciplines";
 import type {
   SeedMechanism,
   SeedPartDefinition,
@@ -93,6 +94,53 @@ function normalizeTaskTargets(task: SeedTask): Task {
   };
 }
 
+type LegacyDiscipline = "mechanical" | "electrical" | "software" | "integration" | "qa-test";
+
+const LEGACY_DISCIPLINE_BY_BUCKET: Record<TaskDisciplineBucket, Record<LegacyDiscipline, string>> = {
+  robot: {
+    mechanical: "design",
+    electrical: "electrical",
+    software: "programming",
+    integration: "testing",
+    "qa-test": "testing",
+  },
+  operations: {
+    mechanical: "communications",
+    electrical: "documentation",
+    software: "research",
+    integration: "planning",
+    "qa-test": "documentation",
+  },
+  outreach: {
+    mechanical: "presentation",
+    electrical: "documentation",
+    software: "media_production",
+    integration: "engagement",
+    "qa-test": "documentation",
+  },
+  strategy: {
+    mechanical: "planning",
+    electrical: "documentation",
+    software: "data_analysis",
+    integration: "risk_review",
+    "qa-test": "game_analysis",
+  },
+  training: {
+    mechanical: "practice",
+    electrical: "documentation",
+    software: "instruction",
+    integration: "assessment",
+    "qa-test": "curriculum",
+  },
+  media: {
+    mechanical: "graphics",
+    electrical: "web",
+    software: "video",
+    integration: "writing",
+    "qa-test": "photography",
+  },
+};
+
 function normalizeTaskDiscipline(
   task: Task,
   projectsById: Map<string, Project>,
@@ -103,56 +151,7 @@ function normalizeTaskDiscipline(
   }
 
   const bucket = getTaskDisciplineBucketForProject(project);
-  const legacyDisciplineId =
-    bucket === "robot"
-      ? ({
-          mechanical: "design",
-          electrical: "electrical",
-          software: "programming",
-          integration: "testing",
-          "qa-test": "testing",
-        } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
-      : bucket === "operations"
-        ? ({
-            mechanical: "communications",
-            electrical: "documentation",
-            software: "research",
-            integration: "planning",
-            "qa-test": "documentation",
-          } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
-        : bucket === "outreach"
-          ? ({
-              mechanical: "presentation",
-              electrical: "documentation",
-              software: "media_production",
-              integration: "engagement",
-              "qa-test": "documentation",
-            } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
-          : bucket === "strategy"
-            ? ({
-                mechanical: "planning",
-                electrical: "documentation",
-                software: "data_analysis",
-                integration: "risk_review",
-                "qa-test": "game_analysis",
-              } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
-            : bucket === "training"
-              ? ({
-                  mechanical: "practice",
-                  electrical: "documentation",
-                  software: "instruction",
-                  integration: "assessment",
-                  "qa-test": "curriculum",
-                } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
-              : bucket === "media"
-                ? ({
-                    mechanical: "graphics",
-                    electrical: "web",
-                    software: "video",
-                    integration: "writing",
-                    "qa-test": "photography",
-                  } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
-      : undefined;
+  const legacyDisciplineId = LEGACY_DISCIPLINE_BY_BUCKET[bucket][task.disciplineId as LegacyDiscipline];
 
   return {
     ...task,
