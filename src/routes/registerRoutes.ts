@@ -554,8 +554,7 @@ export async function registerRoutes(
     requestId: readAuditRequestId(request),
   });
 
-  const canManageTaskAssignment = (request: Parameters<typeof requireSession>[0]) =>
-    hasMentorPermission(request);
+  const canManageTaskAssignment = hasMentorPermission;
 
   const buildTaskActionItem = (taskId: string) => {
     const task = getTasks().find((candidate) => candidate.id === taskId);

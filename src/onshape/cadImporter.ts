@@ -260,6 +260,4 @@ export async function runCadImport(args: {
   return result;
 }
 
-export function estimateCadImportCalls(syncLevel: SyncLevel) {
-  return estimateSyncCalls(syncLevel);
-}
+export const estimateCadImportCalls = estimateSyncCalls;
