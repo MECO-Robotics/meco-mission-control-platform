@@ -81,7 +81,6 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Platfor
 export function getTaskWaitingOnDependencyRecords(
   taskId: string,
   snapshot: PlatformSnapshot,
-  now: Date = new Date(),
 ) {
   return snapshot.taskDependencies.filter(
     (dependency) =>
@@ -94,9 +93,8 @@ export function getTaskWaitingOnDependencyRecords(
 export function isTaskWaitingOnDependencies(
   task: Pick<Task, "id" | "status">,
   snapshot: PlatformSnapshot,
-  now: Date = new Date(),
 ) {
   return (
-    task.status !== "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot, now).length > 0
+    task.status !== "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot).length > 0
   );
 }
