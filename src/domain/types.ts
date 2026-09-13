@@ -556,9 +556,8 @@ export interface TestResult {
   photoUrl?: string;
 }
 
-export interface QaFinding {
+interface FindingRecordBase {
   id: string;
-  qaReportId: string | null;
   taskId: string | null;
   projectId: string;
   workstreamId: string | null;
@@ -574,23 +573,13 @@ export interface QaFinding {
   updatedAt: string;
 }
 
-export interface TestFinding {
-  id: string;
+export interface QaFinding extends FindingRecordBase {
+  qaReportId: string | null;
+}
+
+export interface TestFinding extends FindingRecordBase {
   testResultId: string | null;
   milestoneId: string | null;
-  taskId: string | null;
-  projectId: string;
-  workstreamId: string | null;
-  subsystemId: string | null;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactId: string | null;
-  title: string;
-  detail: string;
-  severity: RiskSeverity;
-  status: FindingStatus;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface DesignIteration {
