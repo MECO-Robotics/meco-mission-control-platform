@@ -38,6 +38,26 @@ function fallbackNormalizedPart(part: CadPartDefinition): NormalizedCadPartDefin
   };
 }
 
+function appendPartMetadataWarning(
+  store: OnshapeRuntimeStore,
+  runId: string,
+  snapshotId: string,
+  part: CadPartDefinition,
+  input: Pick<CadImportWarning, "code" | "title" | "message" | "metadataJson">,
+) {
+  store.appendWarning(
+    warning({
+      importRunId: runId,
+      snapshotId,
+      severity: "warning",
+      ...input,
+      cadAssemblyNodeId: null,
+      cadPartDefinitionId: part.id,
+      cadPartInstanceId: null,
+    }),
+  );
+}
+
 export function addReferenceWarnings(store: OnshapeRuntimeStore, runId: string, ref: OnshapeDocumentRef) {
   if (ref.referenceType === "workspace") {
     store.appendWarning(
@@ -161,53 +181,29 @@ function addPartMetadataWarnings(
   normalized: NormalizedCadPartDefinition,
 ) {
   if (!part.material) {
-    store.appendWarning(
-      warning({
-        importRunId: runId,
-        snapshotId,
-        severity: "warning",
-        code: "part_material_missing",
-        title: "Part material is missing",
-        message: `${part.name} does not include material metadata in the imported CAD snapshot.`,
-        cadAssemblyNodeId: null,
-        cadPartDefinitionId: part.id,
-        cadPartInstanceId: null,
-        metadataJson: { partId: part.partId, partNumber: part.partNumber },
-      }),
-    );
+    appendPartMetadataWarning(store, runId, snapshotId, part, {
+      code: "part_material_missing",
+      title: "Part material is missing",
+      message: `${part.name} does not include material metadata in the imported CAD snapshot.`,
+      metadataJson: { partId: part.partId, partNumber: part.partNumber },
+    });
   }
 
   if (!customPropertyValue(normalized, ["manufacturingMethod", "manufacturing_method"])) {
-    store.appendWarning(
-      warning({
-        importRunId: runId,
-        snapshotId,
-        severity: "warning",
-        code: "manufacturing_method_missing",
-        title: "Manufacturing method is missing",
-        message: `${part.name} does not include manufacturing method metadata.`,
-        cadAssemblyNodeId: null,
-        cadPartDefinitionId: part.id,
-        cadPartInstanceId: null,
-        metadataJson: { partId: part.partId },
-      }),
-    );
+    appendPartMetadataWarning(store, runId, snapshotId, part, {
+      code: "manufacturing_method_missing",
+      title: "Manufacturing method is missing",
+      message: `${part.name} does not include manufacturing method metadata.`,
+      metadataJson: { partId: part.partId },
+    });
   }
 
   if (isCotsPart(part) && !customPropertyValue(normalized, ["vendor", "supplier", "purchaseVendor"])) {
-    store.appendWarning(
-      warning({
-        importRunId: runId,
-        snapshotId,
-        severity: "warning",
-        code: "cots_vendor_missing",
-        title: "COTS vendor metadata is missing",
-        message: `${part.name} appears to be purchased/COTS but has no vendor metadata.`,
-        cadAssemblyNodeId: null,
-        cadPartDefinitionId: part.id,
-        cadPartInstanceId: null,
-        metadataJson: { partId: part.partId },
-      }),
-    );
+    appendPartMetadataWarning(store, runId, snapshotId, part, {
+      code: "cots_vendor_missing",
+      title: "COTS vendor metadata is missing",
+      message: `${part.name} appears to be purchased/COTS but has no vendor metadata.`,
+      metadataJson: { partId: part.partId },
+    });
   }
 }
