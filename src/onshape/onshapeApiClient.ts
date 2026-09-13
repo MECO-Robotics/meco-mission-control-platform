@@ -33,6 +33,29 @@ export interface OnshapeRequestJsonArgs {
   policy: RequestPolicy;
 }
 
+type RequestLogDetails = Pick<
+  Parameters<OnshapeRuntimeStore["appendRequestLog"]>[0],
+  "usedCache" | "statusCode" | "responseHeadersJson" | "rateLimitRemaining" | "errorMessage"
+>;
+
+function appendRequestLog(
+  store: OnshapeRuntimeStore,
+  args: OnshapeRequestJsonArgs,
+  cacheKey: string,
+  requestStartedAt: string,
+  details: RequestLogDetails,
+) {
+  store.appendRequestLog({
+    importRunId: args.importRunId ?? null,
+    endpoint: args.endpoint,
+    method: args.method,
+    cacheKey,
+    requestStartedAt,
+    requestCompletedAt: new Date().toISOString(),
+    ...details,
+  });
+}
+
 interface CreateClientArgs {
   store: OnshapeRuntimeStore;
   credentials: OnshapeCredentials;
@@ -207,15 +230,9 @@ function assertCallIsAllowed(
   requestStartedAt: string,
 ) {
   if (callsUsed >= args.policy.maxCallsAllowed) {
-    store.appendRequestLog({
-      importRunId: args.importRunId ?? null,
-      endpoint: args.endpoint,
-      method: args.method,
-      cacheKey,
+    appendRequestLog(store, args, cacheKey, requestStartedAt, {
       usedCache: false,
       statusCode: null,
-      requestStartedAt,
-      requestCompletedAt: new Date().toISOString(),
       responseHeadersJson: {},
       rateLimitRemaining: store.getBudget().lastRateLimitRemaining,
       errorMessage: "max_calls_allowed",
@@ -239,15 +256,9 @@ function buildHeadersOrLogError(
   try {
     return buildAuthHeaders(credentials);
   } catch (error) {
-    store.appendRequestLog({
-      importRunId: args.importRunId ?? null,
-      endpoint: args.endpoint,
-      method: args.method,
-      cacheKey,
+    appendRequestLog(store, args, cacheKey, requestStartedAt, {
       usedCache: false,
       statusCode: null,
-      requestStartedAt,
-      requestCompletedAt: new Date().toISOString(),
       responseHeadersJson: {},
       rateLimitRemaining: store.getBudget().lastRateLimitRemaining,
       errorMessage: error instanceof Error ? error.message : String(error),
