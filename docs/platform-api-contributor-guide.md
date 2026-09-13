@@ -165,6 +165,8 @@ git diff -- docs
 
 The affected command objects reject unknown fields. `taskDependencies` and `taskBlockers` are the authoritative relation collections; task commands do not accept `dependencyIds` or `blockers`. Dependency commands require explicit `taskId`, `kind`, `refId`, `requiredState`, and `dependencyType`; legacy upstream/downstream aliases are rejected. Task blocker descriptions and readiness booleans are derived for bootstrap. Task `checklistItems` round-trip as a string array, defaulting to empty.
 
+QA and test findings share the common finding-record fields, but remain distinct boundary records: QA findings identify `qaReportId`, while test findings identify `testResultId` and may carry `milestoneId`. Keep those source-specific fields explicit when extending either model.
+
 Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports retain `targetRiskId`, `proposedRiskSeverity`, and `proposedRiskStatus`; authorized approved proposals update the risk severity and missing mitigation-task link in the same snapshot transaction. Full mitigation selects low severity. Pending proposals do not change risks.
 
 Route registrations that write snapshot state declare `config.snapshotMutation: true`. Their successful responses commit one staged snapshot; errors discard it. Production mutation outside that boundary fails before replacement. Snapshot loading/seed initialization canonicalizes once; ordinary transaction copies are pure clones. Persistence stores share the application's Prisma client and its close lifecycle. CAD backend selection is explicit and never changes after a database failure.
