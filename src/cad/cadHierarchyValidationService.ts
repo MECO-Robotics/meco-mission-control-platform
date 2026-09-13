@@ -25,8 +25,14 @@ function hasConfirmedAncestor(args: {
   assembliesById: Map<string, CadAssemblyNode>;
   mappingsBySourceId: Map<string, CadSnapshotMapping>;
 }) {
+  const visited = new Set<string>();
   let parentId = args.node.parentAssemblyNodeId;
   while (parentId) {
+    if (visited.has(parentId)) {
+      return false;
+    }
+    visited.add(parentId);
+
     const parent = args.assembliesById.get(parentId);
     if (!parent) {
       return false;
@@ -51,6 +57,26 @@ function hasConfirmedSelfOrAncestor(args: {
   return hasConfirmedAncestor(args);
 }
 
+function hasParentCycle(node: CadAssemblyNode, assembliesById: Map<string, CadAssemblyNode>) {
+  const visited = new Set<string>();
+  let parentId = node.parentAssemblyNodeId;
+
+  while (parentId) {
+    if (visited.has(parentId) || parentId === node.id) {
+      return true;
+    }
+    visited.add(parentId);
+
+    const parent = assembliesById.get(parentId);
+    if (!parent) {
+      return false;
+    }
+    parentId = parent.parentAssemblyNodeId;
+  }
+
+  return false;
+}
+
 function addIssue(issues: CadHierarchyIssue[], issue: CadHierarchyIssue) {
   if (!issues.some((candidate) => candidate.code === issue.code && candidate.sourceId === issue.sourceId)) {
     issues.push(issue);
@@ -70,6 +96,15 @@ export function collectHierarchyIssues(args: {
   const unmatchedNames = new Map<string, CadPartMatchProposal[]>();
   for (const assembly of args.assemblies) {
     const mapping = args.mappingsBySourceId.get(assembly.id);
+    if (hasParentCycle(assembly, assembliesById)) {
+      addIssue(issues, {
+        code: "cad_assembly_parent_cycle",
+        severity: "BLOCKING",
+        sourceKind: "ASSEMBLY_NODE",
+        sourceId: assembly.sourceId,
+        message: `${assembly.name} has a cyclic assembly parent relationship.`,
+      });
+    }
     if (
       assembly.parentAssemblyNodeId &&
       assembly.depth === 1 &&

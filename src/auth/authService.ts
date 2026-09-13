@@ -2,15 +2,31 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import nodemailer from "nodemailer";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
-import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
 import { getMembers } from "../data/store";
-import { getUserPreferences } from "../data/userPreferencesStore";
+import type { UserPreferencesStore } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
-const SESSION_ISSUER = "meco-platform";
-const SESSION_AUDIENCE = "meco-apps";
+const PUBLIC_DEMO_SEASON_ID = "default-season";
+const EMAIL_DELIVERY_TIMEOUT_MS = 12_000;
+
+export async function awaitEmailDelivery(
+  sendMailPromise: Promise<unknown>,
+  timeoutMs = EMAIL_DELIVERY_TIMEOUT_MS,
+) {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      sendMailPromise.then(() => "delivered" as const),
+      new Promise<"uncertain">((resolve) => {
+        timeoutHandle = setTimeout(() => resolve("uncertain"), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
 
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
@@ -40,14 +56,6 @@ const emailTransport =
       })
     : null;
 
-interface SessionClaims extends JwtPayload {
-  email: string;
-  name: string;
-  picture?: string | null;
-  hd: string;
-  provider?: "google" | "email";
-  role?: MemberRole;
-}
 
 interface PendingEmailCodeRecord {
   codeHash: Buffer;
@@ -65,11 +73,11 @@ export interface SessionUser {
   hostedDomain: string;
   role: MemberRole;
   taskSubteamIds: string[];
+  isPublicDemo?: boolean;
 }
 
-interface SessionTokenOptions {
-  deviceId?: string | null;
-}
+
+type DevelopmentSessionRole = Extract<MemberRole, "student" | "mentor">;
 
 export interface EmailCodeDelivery {
   sentTo: string;
@@ -104,13 +112,6 @@ export function isAuthEnabled() {
   return authConfig.enabled;
 }
 
-function getJwtSecret() {
-  if (!env.AUTH_JWT_SECRET) {
-    throw new AuthError("MECO sign-in is not configured on the server yet.", 503);
-  }
-
-  return env.AUTH_JWT_SECRET;
-}
 
 function assertGoogleAuthReady() {
   if (!authConfig.enabled || !googleClient || authConfig.googleClientIds.length === 0) {
@@ -148,10 +149,9 @@ function isAllowedHostedDomain(email: string) {
   return domain === authConfig.hostedDomain;
 }
 
-function isExternalRosterEmailAllowed(email: string) {
+function isRosterEmailAllowed(email: string) {
   return getMembers().some((member) => {
     return (
-      member.role === "external" &&
       member.email.length > 0 &&
       normalizeEmailAddress(member.email) === email
     );
@@ -159,11 +159,11 @@ function isExternalRosterEmailAllowed(email: string) {
 }
 
 function isAllowedSignInEmail(email: string) {
-  return isAllowedHostedDomain(email) || isExternalRosterEmailAllowed(email);
+  return isAllowedHostedDomain(email) || isRosterEmailAllowed(email);
 }
 
 function buildSignInAccessMessage() {
-  return `Use your ${authConfig.hostedDomain} email address or an external access email from the roster to continue.`;
+  return `Use your ${authConfig.hostedDomain} email address or a roster email to continue.`;
 }
 
 function formatEmailLocalPart(localPart: string) {
@@ -263,24 +263,29 @@ function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
   }
 }
 
-function getTaskSubteamIdsForEmail(email: string) {
-  return authConfig.memberSubteamsByEmail[email] ?? getUserPreferences(email).taskSubteamIds;
+function getTaskSubteamIdsForEmail(email: string, preferences?: UserPreferencesStore) {
+  const normalizedEmail = normalizeEmailAddress(email);
+  return (
+    preferences?.getTaskSubteamIds(normalizedEmail) ??
+    authConfig.memberSubteamsByEmail[normalizedEmail] ??
+    []
+  );
 }
 
 function getRoleForEmail(email: string): MemberRole {
   const normalizedEmail = normalizeEmailAddress(email);
-  const rosterRole = getMembers().find(
+  const rosterMember = getMembers().find(
     (member) => normalizeEmailAddress(member.email) === normalizedEmail,
-  )?.role;
+  );
 
-  if (rosterRole && rosterRole !== "external") {
-    return rosterRole;
+  if (rosterMember) {
+    return rosterMember.role;
   }
 
   return authConfig.mentorEmails.has(normalizedEmail) ? "mentor" : "student";
 }
 
-function buildEmailSessionUser(email: string): SessionUser {
+function buildEmailSessionUser(email: string, preferences?: UserPreferencesStore): SessionUser {
   const normalizedEmail = normalizeEmailAddress(email);
 
   return {
@@ -291,31 +296,66 @@ function buildEmailSessionUser(email: string): SessionUser {
     picture: null,
     hostedDomain: authConfig.hostedDomain,
     role: getRoleForEmail(normalizedEmail),
-    taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail),
+    taskSubteamIds: getTaskSubteamIdsForEmail(normalizedEmail, preferences),
   };
 }
 
-function isDevelopmentSessionRole(role: MemberRole | undefined): role is "student" | "mentor" {
+function isDevelopmentSessionRole(role: MemberRole | undefined): role is DevelopmentSessionRole {
   return role === "student" || role === "mentor";
 }
 
-export function buildDevelopmentSessionUser(role: "student" | "mentor" = "student"): SessionUser {
-  const emailPrefix = role === "mentor" ? "dev.mentor" : "dev.student";
-  const email = `${emailPrefix}@${authConfig.hostedDomain}`;
+export function buildDevelopmentSessionUser(role: DevelopmentSessionRole = "student", preferences?: UserPreferencesStore): SessionUser {
+  const email = `dev.${role}@${authConfig.hostedDomain}`;
+  const displayRole = role === "mentor" ? "Mentor" : "Student";
 
   return {
     accountId: `local-dev-${role}`,
     authProvider: "email",
     email,
-    name: role === "mentor" ? "Local Dev Mentor" : "Local Dev Student",
+    name: `Local Dev ${displayRole}`,
     picture: null,
     hostedDomain: authConfig.hostedDomain,
     role,
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
-function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
+function buildPublicDemoSessionUser(): SessionUser {
+  const email = `public.demo@${authConfig.hostedDomain}`;
+
+  return {
+    accountId: "public-demo",
+    authProvider: "email",
+    email,
+    name: "Public Demo",
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
+    role: "student",
+    taskSubteamIds: [],
+    isPublicDemo: true,
+  };
+}
+
+function isPublicDemoBootstrapRequest(request: FastifyRequest) {
+  if (request.method !== "GET") {
+    return false;
+  }
+
+  const [path = "", rawQuery = ""] = request.url.split("?", 2);
+  if (path !== "/api/bootstrap") {
+    return false;
+  }
+
+  const query = new URLSearchParams(rawQuery);
+  const seasonIds = query.getAll("seasonId");
+  return (
+    seasonIds.length === 1 &&
+    seasonIds[0] === PUBLIC_DEMO_SEASON_ID &&
+    !query.has("personId")
+  );
+}
+
+function mapGooglePayload(payload: TokenPayload | undefined, preferences?: UserPreferencesStore): SessionUser {
   if (!payload?.sub || !payload.email) {
     throw new AuthError("Google did not return the required identity fields.", 401);
   }
@@ -326,6 +366,11 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
 
   const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd?.toLowerCase();
+  const hostedDomainEmail = isAllowedHostedDomain(email);
+  if (hostedDomainEmail && hostedDomain !== authConfig.hostedDomain) {
+    throw new AuthError("Google sign-in requires a verified hosted domain claim.", 403);
+  }
+
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
@@ -336,13 +381,13 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     email,
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
-    hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
+    hostedDomain: hostedDomain ?? authConfig.hostedDomain,
     role: getRoleForEmail(email),
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
-export async function verifyGoogleCredential(credential: string) {
+export async function verifyGoogleCredential(credential: string, preferences?: UserPreferencesStore) {
   const { client, googleClientIds } = assertGoogleAuthReady();
 
   let ticket;
@@ -355,7 +400,7 @@ export async function verifyGoogleCredential(credential: string) {
     throw toAuthError(error);
   }
 
-  return mapGooglePayload(ticket.getPayload());
+  return mapGooglePayload(ticket.getPayload(), preferences);
 }
 
 export async function requestEmailSignInCode(emailInput: string): Promise<EmailCodeDelivery> {
@@ -391,15 +436,24 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
   pendingEmailCodes.set(email, record);
 
   try {
-    await transport.sendMail({
+    const sendMailPromise = transport.sendMail({
       from,
       to: email,
       subject: "Your MECO Mission Control sign-in code",
       text: buildEmailVerificationMessage(code),
       html: buildEmailVerificationHtml(code),
     });
+    void sendMailPromise.catch(() => undefined);
+
+    // The request remains accepted while SMTP is pending, so clients can enter
+    // a code that arrives after this bounded wait.
+    await awaitEmailDelivery(sendMailPromise);
   } catch (error) {
     pendingEmailCodes.delete(email);
+    if (error instanceof AuthError) {
+      throw error;
+    }
+
     requestEmailDeliveryFailure(error);
   }
 
@@ -409,7 +463,7 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
   };
 }
 
-export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
+export function verifyEmailSignInCode(emailInput: string, codeInput: string, preferences?: UserPreferencesStore) {
   assertEmailAuthReady();
   cleanupExpiredPendingEmailCodes();
 
@@ -442,7 +496,7 @@ export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
   }
 
   pendingEmailCodes.delete(email);
-  return buildEmailSessionUser(email);
+  return buildEmailSessionUser(email, preferences);
 }
 
 function toAuthError(error: unknown) {
@@ -507,78 +561,24 @@ function requestEmailDeliveryFailure(error?: unknown): never {
   );
 }
 
-function normalizeDeviceId(value: string | null | undefined) {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : null;
-}
-
-export function signSessionToken(user: SessionUser, options: SessionTokenOptions = {}) {
-  const secret = getJwtSecret();
-  const deviceId = normalizeDeviceId(options.deviceId);
-
-  return jwt.sign(
-    {
-      ...(deviceId ? { deviceId } : null),
-      email: user.email,
-      name: user.name,
-      picture: user.picture,
-      hd: user.hostedDomain,
-      provider: user.authProvider,
-      role: user.role,
-    },
-    secret,
-    {
-      algorithm: "HS256",
-      subject: user.accountId,
-      expiresIn: (deviceId ? authConfig.deviceTokenTtl : authConfig.tokenTtl) as SignOptions["expiresIn"],
-      issuer: SESSION_ISSUER,
-      audience: SESSION_AUDIENCE,
-    },
-  );
-}
-
-export function verifySessionToken(token: string): SessionUser {
-  const secret = getJwtSecret();
-  const payload = jwt.verify(token, secret, {
-    issuer: SESSION_ISSUER,
-    audience: SESSION_AUDIENCE,
-    algorithms: ["HS256"],
-  }) as SessionClaims;
-
-  if (
-    typeof payload.sub !== "string" ||
-    typeof payload.email !== "string" ||
-    typeof payload.name !== "string" ||
-    typeof payload.hd !== "string"
-  ) {
-    throw new AuthError("The session token is missing required identity fields.", 401);
-  }
-
-  if (payload.provider && payload.provider !== "google" && payload.provider !== "email") {
-    throw new AuthError("The session token uses an unknown sign-in provider.", 401);
-  }
-
-  const email = normalizeEmailAddress(payload.email);
+export function refreshSessionUser(user: SessionUser, preferences?: UserPreferencesStore): SessionUser {
+  const email = normalizeEmailAddress(user.email);
   if (!isAllowedSignInEmail(email)) {
     throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
   const developmentRole =
     env.NODE_ENV !== "production" &&
-    payload.sub.startsWith("local-dev-") &&
-    isDevelopmentSessionRole(payload.role)
-      ? payload.role
+    user.accountId.startsWith("local-dev-") &&
+    isDevelopmentSessionRole(user.role)
+      ? user.role
       : null;
 
   return {
-    accountId: payload.sub,
-    authProvider: payload.provider ?? "google",
+    ...user,
     email,
-    name: payload.name,
-    picture: typeof payload.picture === "string" ? payload.picture : null,
-    hostedDomain: payload.hd.toLowerCase(),
     role: developmentRole ?? getRoleForEmail(email),
-    taskSubteamIds: getTaskSubteamIdsForEmail(email),
+    taskSubteamIds: getTaskSubteamIdsForEmail(email, preferences),
   };
 }
 
@@ -596,16 +596,19 @@ export function readBearerToken(headerValue: string | undefined) {
 }
 
 export function getSessionFromRequest(request: FastifyRequest) {
-  const token = readBearerToken(request.headers.authorization);
-  if (!token) {
-    return null;
+  if (request.mobileSession) {
+    return request.mobileSession.user;
   }
 
-  try {
-    return verifySessionToken(token);
-  } catch {
-    return null;
+  if (request.headers.authorization) return null;
+
+  if (request.webSession) {
+    return request.webSession.user;
   }
+
+  return authConfig.enabled && isPublicDemoBootstrapRequest(request)
+    ? buildPublicDemoSessionUser()
+    : null;
 }
 
 export function requireSession(request: FastifyRequest, reply: FastifyReply) {

@@ -9,12 +9,14 @@ export type { OnshapeRuntimeStore } from "./cadStoreTypes";
 
 export function createOnshapeRuntimeStore(): OnshapeRuntimeStore {
   const state = buildInitialState();
+  const oauthStore = buildCadOAuthStore(state);
   return {
     ...buildCadReferenceStore(state),
     ...buildCadRequestStore(state),
     ...buildCadGraphStore(state),
-    ...buildCadOAuthStore(state),
+    ...oauthStore,
     reset() {
+      oauthStore.setOAuthTokenSet(null);
       Object.assign(state, buildInitialState());
     },
   };

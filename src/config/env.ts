@@ -1,6 +1,3 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { z } from "zod";
 
 import {
@@ -8,7 +5,6 @@ import {
   parseCorsOrigins,
   parseCsv,
   parseGoogleClientIds,
-  pickFirstNumber,
   pickFirstString,
 } from "./envHelpers";
 
@@ -16,6 +12,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
   DATABASE_URL: z.string().min(1),
+  TRUST_PROXY_IPS: z.string().refine((value) => value.split(",").every((ip) => z.ipv4().safeParse(ip.trim()).success || z.ipv6().safeParse(ip.trim()).success), "TRUST_PROXY_IPS must contain IP addresses").optional(),
   CORS_ORIGIN: z.string().min(1).default("*"),
   API_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(300),
   API_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
@@ -25,49 +22,30 @@ const envSchema = z.object({
   AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ALLOWED_HOSTED_DOMAIN: z.string().min(1).default("mecorobotics.org"),
-  AUTH_JWT_SECRET: z.string().min(32).optional(),
-  AUTH_TOKEN_TTL: z.string().min(2).default("12h"),
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
   AUTH_EMAIL_SMTP_NAME: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_USER: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PASS: z.string().min(1).optional(),
-  AUTH_EMAIL_SMTP_FROM: z.string().min(1).optional(),
   AUTH_EMAIL_FROM: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
-  SMTP_HOST: z.string().min(1).optional(),
-  SMTP_PORT: z.coerce.number().int().positive().optional(),
-  SMTP_NAME: z.string().min(1).optional(),
-  SMTP_USER: z.string().min(1).optional(),
-  SMTP_PASS: z.string().min(1).optional(),
-  SMTP_FROM: z.string().min(1).optional(),
-  EMAIL_SMTP_HOST: z.string().min(1).optional(),
-  EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
-  EMAIL_SMTP_NAME: z.string().min(1).optional(),
-  EMAIL_SMTP_USER: z.string().min(1).optional(),
-  EMAIL_SMTP_PASS: z.string().min(1).optional(),
-  EMAIL_FROM: z.string().min(1).optional(),
-  MAIL_HOST: z.string().min(1).optional(),
-  MAIL_PORT: z.coerce.number().int().positive().optional(),
-  MAIL_NAME: z.string().min(1).optional(),
-  MAIL_USER: z.string().min(1).optional(),
-  MAIL_PASS: z.string().min(1).optional(),
-  MAIL_FROM: z.string().min(1).optional(),
   AUTH_EMAIL_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   AUTH_EMAIL_CODE_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
   AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
   AUTH_EMAIL_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  AUTH_DEVICE_TOKEN_TTL: z.string().min(2).default("3650d"),
   AUTH_MENTOR_EMAILS: z.string().min(1).optional(),
   AUTH_MEMBER_SUBTEAMS_BY_EMAIL: z.string().min(1).optional(),
-  AUTH_MEMBER_SUBTEAMS_ENV_PATH: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_PUBLIC_BASE_URL: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).optional(),
+  S3_BUCKET_PREFIX: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
+  MEDIA_IMAGE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(50 * 1024 * 1024).default(15 * 1024 * 1024),
+  MEDIA_VIDEO_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(500 * 1024 * 1024).default(250 * 1024 * 1024),
+  MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR: z.coerce.number().int().positive().max(10 * 1024 * 1024 * 1024).default(1024 * 1024 * 1024),
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
   SLACK_ALERT_USERGROUP_HANDLES: z.string().min(1).default("allmentors,allstudents"),
   SLACK_CHANNEL_BUILD_ID: z.string().min(1).optional(),
@@ -88,8 +66,14 @@ const envSchema = z.object({
   ONSHAPE_OAUTH_TOKEN: z.string().min(1).optional(),
   ONSHAPE_CREDENTIAL_REFERENCE: z.string().min(1).optional(),
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
-  CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
+  PLATFORM_SNAPSHOT_PATH: z.string().trim().min(1).default("data/platform-snapshot.json"),
+  CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(64 * 1024 * 1024).default(32 * 1024 * 1024),
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
+  CAD_STEP_PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  CAD_STEP_PARSER_MAX_CONCURRENCY: z.coerce.number().int().positive().max(8).default(2),
+  CAD_STEP_PARSER_MAX_QUEUE: z.coerce.number().int().min(0).max(32).default(4),
+  CAD_STEP_PARSER_MAX_OLD_SPACE_MB: z.coerce.number().int().min(64).max(1024).default(256),
+  CAD_STEP_PARSER_MAX_RESULT_BYTES: z.coerce.number().int().positive().max(64 * 1024 * 1024).default(16 * 1024 * 1024),
 });
 
 const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
@@ -98,54 +82,23 @@ export const env = envSchema.parse(process.env);
 
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
 const resolvedResendApiKey = pickFirstString(env.RESEND_API_KEY);
-const resolvedExplicitEmailSmtpHost = pickFirstString(
-  env.AUTH_EMAIL_SMTP_HOST,
-  env.SMTP_HOST,
-  env.EMAIL_SMTP_HOST,
-  env.MAIL_HOST,
-);
+const resolvedExplicitEmailSmtpHost = env.AUTH_EMAIL_SMTP_HOST;
 const usesExplicitEmailSmtp = Boolean(resolvedExplicitEmailSmtpHost);
-const resolvedEmailSmtpHost = resolvedResendApiKey
-  ? (resolvedExplicitEmailSmtpHost ?? "smtp.resend.com")
-  : resolvedExplicitEmailSmtpHost;
-const resolvedEmailSmtpPort =
-  pickFirstNumber(
-    env.AUTH_EMAIL_SMTP_PORT,
-    env.SMTP_PORT,
-    env.EMAIL_SMTP_PORT,
-    env.MAIL_PORT,
-  ) ?? 587;
-const resolvedEmailSmtpUser = pickFirstString(
-  usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_USER : undefined,
-  usesExplicitEmailSmtp ? env.SMTP_USER : undefined,
-  usesExplicitEmailSmtp ? env.EMAIL_SMTP_USER : undefined,
-  usesExplicitEmailSmtp ? env.MAIL_USER : undefined,
-  resolvedResendApiKey && !usesExplicitEmailSmtp ? "resend" : undefined,
-);
-const resolvedEmailSmtpName = pickFirstString(
-  env.AUTH_EMAIL_SMTP_NAME,
-  env.SMTP_NAME,
-  env.EMAIL_SMTP_NAME,
-  env.MAIL_NAME,
-);
-const resolvedEmailSmtpPass = pickFirstString(
-  usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_PASS : undefined,
-  usesExplicitEmailSmtp ? env.SMTP_PASS : undefined,
-  usesExplicitEmailSmtp ? env.EMAIL_SMTP_PASS : undefined,
-  usesExplicitEmailSmtp ? env.MAIL_PASS : undefined,
-  resolvedResendApiKey && !usesExplicitEmailSmtp
-    ? resolvedResendApiKey
-    : undefined,
-);
-const resolvedEmailFrom = pickFirstString(
-  env.AUTH_EMAIL_FROM,
-  env.AUTH_EMAIL_SMTP_FROM,
-  env.SMTP_FROM,
-  env.EMAIL_FROM,
-  env.MAIL_FROM,
-);
+if (Boolean(env.AUTH_EMAIL_SMTP_USER) !== Boolean(env.AUTH_EMAIL_SMTP_PASS)) {
+  throw new Error("AUTH_EMAIL_SMTP_USER and AUTH_EMAIL_SMTP_PASS must be configured together.");
+}
+if (!usesExplicitEmailSmtp && (env.AUTH_EMAIL_SMTP_USER || env.AUTH_EMAIL_SMTP_PASS)) {
+  throw new Error("SMTP credentials require AUTH_EMAIL_SMTP_HOST.");
+}
+const resolvedEmailSmtpHost = resolvedExplicitEmailSmtpHost ?? (resolvedResendApiKey ? "smtp.resend.com" : undefined);
+const resolvedEmailSmtpPort = env.AUTH_EMAIL_SMTP_PORT ?? 587;
+const resolvedEmailSmtpUser = usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_USER : resolvedResendApiKey ? "resend" : undefined;
+const resolvedEmailSmtpPass = usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_PASS : resolvedResendApiKey;
+const resolvedEmailSmtpName = env.AUTH_EMAIL_SMTP_NAME;
+const resolvedEmailFrom = env.AUTH_EMAIL_FROM;
 const s3Endpoint = normalizeUrl(env.S3_ENDPOINT);
 const s3PublicBaseUrl = normalizeUrl(env.S3_PUBLIC_BASE_URL) ?? s3Endpoint;
+const s3BucketPrefix = env.S3_BUCKET_PREFIX;
 export const emailSmtpConfig = {
   host: resolvedEmailSmtpHost,
   port: resolvedEmailSmtpPort,
@@ -188,118 +141,21 @@ function parseMemberSubteamsByEmail(value: string | undefined) {
   }, {});
 }
 
-function serializeMemberSubteamsByEmail(mapping: Record<string, string[]>) {
-  return Object.entries(mapping)
-    .sort(([leftEmail], [rightEmail]) => leftEmail.localeCompare(rightEmail))
-    .map(([email, subteams]) => `${email}=${subteams.join(",")}`)
-    .join(";");
-}
-
-function resolveMemberSubteamsEnvPath() {
-  if (env.AUTH_MEMBER_SUBTEAMS_ENV_PATH) {
-    return env.AUTH_MEMBER_SUBTEAMS_ENV_PATH;
-  }
-
-  if (env.NODE_ENV === "production") {
-    return join(process.cwd(), ".env.production");
-  }
-
-  return join(process.cwd(), ".env");
-}
-
-function updateEnvFileValue(path: string, key: string, value: string) {
-  const line = `${key}=${value}`;
-  if (!existsSync(path)) {
-    writeFileSync(path, `${line}\n`, "utf8");
-    return;
-  }
-
-  const content = readFileSync(path, "utf8");
-  const lines = content.split(/\r?\n/);
-  const keyPattern = new RegExp(`^\\s*${key}=`);
-  const index = lines.findIndex((candidate) => keyPattern.test(candidate));
-
-  if (index >= 0) {
-    lines[index] = line;
-  } else {
-    if (lines.length > 0 && lines[lines.length - 1] !== "") {
-      lines.push("");
-    }
-    lines.push(line);
-  }
-
-  writeFileSync(path, `${lines.join("\n").replace(/\n*$/, "")}\n`, "utf8");
-}
-
-function removeEnvFileValue(path: string, key: string) {
-  if (!existsSync(path)) {
-    return;
-  }
-
-  const content = readFileSync(path, "utf8");
-  const keyPattern = new RegExp(`^\\s*${key}=`);
-  const lines = content.split(/\r?\n/).filter((candidate) => !keyPattern.test(candidate));
-  const nextContent = lines.join("\n").replace(/\n*$/, "");
-  writeFileSync(path, nextContent ? `${nextContent}\n` : "", "utf8");
-}
-
-function normalizeMemberSubteams(email: string, subteams: string[]) {
-  return {
-    email: email.trim().toLowerCase(),
-    subteams: subteams.filter((subteam) => taskSubteamIds.has(subteam)),
-  };
-}
-
 export const authConfig = {
   enabled: Boolean(
-    env.AUTH_JWT_SECRET &&
-      (googleClientIds.length > 0 || hasEmailDeliveryConfig),
+    googleClientIds.length > 0 || hasEmailDeliveryConfig,
   ),
   googleClientId: googleClientIds[0] ?? null,
   googleClientIds,
   hostedDomain: env.GOOGLE_ALLOWED_HOSTED_DOMAIN.toLowerCase(),
-  tokenTtl: env.AUTH_TOKEN_TTL,
-  deviceTokenTtl: env.AUTH_DEVICE_TOKEN_TTL,
-  memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   mentorEmails: new Set(parseCsv(env.AUTH_MENTOR_EMAILS).map((email) => email.toLowerCase())),
+  memberSubteamsByEmail: parseMemberSubteamsByEmail(env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL),
   emailEnabled: hasEmailDeliveryConfig,
   emailCodeTtlMinutes: env.AUTH_EMAIL_CODE_TTL_MINUTES,
   emailCodeLength: env.AUTH_EMAIL_CODE_LENGTH,
   emailCodeResendCooldownSeconds: env.AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS,
   emailMaxVerifyAttempts: env.AUTH_EMAIL_MAX_VERIFY_ATTEMPTS,
 };
-
-export function setMemberSubteamsForEmail(email: string, subteams: string[]) {
-  const normalized = normalizeMemberSubteams(email, subteams);
-  if (!normalized.email) {
-    return authConfig.memberSubteamsByEmail;
-  }
-
-  if (normalized.subteams.length === 0) {
-    const { [normalized.email]: _removed, ...remaining } = authConfig.memberSubteamsByEmail;
-    authConfig.memberSubteamsByEmail = remaining;
-  } else {
-    authConfig.memberSubteamsByEmail = {
-      ...authConfig.memberSubteamsByEmail,
-      [normalized.email]: normalized.subteams,
-    };
-  }
-
-  const serialized = serializeMemberSubteamsByEmail(authConfig.memberSubteamsByEmail);
-  if (serialized) {
-    process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL = serialized;
-    updateEnvFileValue(
-      resolveMemberSubteamsEnvPath(),
-      "AUTH_MEMBER_SUBTEAMS_BY_EMAIL",
-      serialized,
-    );
-  } else {
-    delete process.env.AUTH_MEMBER_SUBTEAMS_BY_EMAIL;
-    removeEnvFileValue(resolveMemberSubteamsEnvPath(), "AUTH_MEMBER_SUBTEAMS_BY_EMAIL");
-  }
-
-  return authConfig.memberSubteamsByEmail;
-}
 
 export const corsConfig = {
   origins: corsOrigins,
@@ -311,11 +167,13 @@ function assertProductionSecurityConfig() {
     return;
   }
 
+
   if (!authConfig.enabled) {
     throw new Error(
-      "Production deployments must configure AUTH_JWT_SECRET and either Google or SMTP sign-in before the server starts.",
+      "Production deployments must configure either Google or SMTP sign-in before the server starts.",
     );
   }
+
 
   if (corsConfig.allowsAnyOrigin) {
     throw new Error(
@@ -327,6 +185,29 @@ function assertProductionSecurityConfig() {
     throw new Error(
       "Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder.",
     );
+  }
+
+  const credentialedUrls = {
+    S3_ENDPOINT: env.S3_ENDPOINT,
+    S3_PUBLIC_BASE_URL: env.S3_PUBLIC_BASE_URL,
+    ONSHAPE_BASE_URL: env.ONSHAPE_BASE_URL,
+    ONSHAPE_OAUTH_REDIRECT_URI: env.ONSHAPE_OAUTH_REDIRECT_URI,
+    ONSHAPE_OAUTH_AUTHORIZATION_URL: env.ONSHAPE_OAUTH_AUTHORIZATION_URL,
+    ONSHAPE_OAUTH_TOKEN_URL: env.ONSHAPE_OAUTH_TOKEN_URL,
+  };
+  for (const [name, value] of Object.entries(credentialedUrls)) {
+    if (!value) {
+      continue;
+    }
+    let protocol: string;
+    try {
+      protocol = new URL(value).protocol;
+    } catch {
+      throw new Error(`Production ${name} must be a valid HTTPS URL.`);
+    }
+    if (protocol !== "https:") {
+      throw new Error(`Production ${name} must use HTTPS.`);
+    }
   }
 }
 
@@ -353,7 +234,7 @@ export const mediaUploadConfig = {
       env.S3_SECRET_ACCESS_KEY &&
       env.S3_ENDPOINT &&
       env.S3_REGION &&
-      env.S3_BUCKET,
+      (s3BucketPrefix || env.S3_BUCKET),
   ),
   accessKeyId: env.S3_ACCESS_KEY_ID,
   secretAccessKey: env.S3_SECRET_ACCESS_KEY,
@@ -361,7 +242,11 @@ export const mediaUploadConfig = {
   publicBaseUrl: s3PublicBaseUrl,
   region: env.S3_REGION,
   bucket: env.S3_BUCKET,
+  bucketPrefix: s3BucketPrefix,
   presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
+  imageMaxBytes: env.MEDIA_IMAGE_UPLOAD_MAX_BYTES,
+  videoMaxBytes: env.MEDIA_VIDEO_UPLOAD_MAX_BYTES,
+  quotaBytesPerHour: env.MEDIA_UPLOAD_QUOTA_BYTES_PER_HOUR,
 } as const;
 
 export const slackConfig = {
@@ -409,6 +294,11 @@ export const cadStepUploadConfig = {
 
 export const cadStepParserConfig = {
   mode: env.CAD_STEP_PARSER_MODE,
+  timeoutMs: env.CAD_STEP_PARSER_TIMEOUT_MS,
+  maxConcurrency: env.CAD_STEP_PARSER_MAX_CONCURRENCY,
+  maxQueue: env.CAD_STEP_PARSER_MAX_QUEUE,
+  maxOldSpaceMb: env.CAD_STEP_PARSER_MAX_OLD_SPACE_MB,
+  maxResultBytes: env.CAD_STEP_PARSER_MAX_RESULT_BYTES,
 } as const;
 
 export function resolveCadStepParserMode() {

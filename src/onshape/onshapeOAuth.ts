@@ -1,3 +1,4 @@
+import { parseJsonResponseText } from "../shared/json";
 import type { OnshapeOAuthTokenSet } from "./onshapeTypes";
 
 export interface OnshapeOAuthConfig {
@@ -170,13 +171,6 @@ async function defaultTokenTransport(request: {
     body: request.body,
   });
   const text = await response.text();
-  let json: unknown = {};
-  if (text.trim()) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = { rawText: text };
-    }
-  }
+  const json = parseJsonResponseText(text);
   return { statusCode: response.status, json };
 }

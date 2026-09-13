@@ -12,6 +12,7 @@ import {
   getMilestones,
   getMembers,
   getQaReports,
+  getRisks,
   getTasks,
   getTestResults,
 } from "../../data/store";
@@ -46,6 +47,9 @@ export function validateWorkLogLinks(input: {
 }
 
 export function validateQaReportLinks(input: {
+  targetRiskId?: string | null;
+  proposedRiskSeverity?: string | null;
+  proposedRiskStatus?: string | null;
   taskId: string;
   participantIds: string[];
 }) {
@@ -62,6 +66,12 @@ export function validateQaReportLinks(input: {
     return "One or more selected participants do not exist.";
   }
 
+  if ((input.proposedRiskSeverity || input.proposedRiskStatus) && !input.targetRiskId) {
+    return "A risk reassessment requires a target risk.";
+  }
+  if (input.targetRiskId && !getRisks().some((risk) => risk.id === input.targetRiskId)) {
+    return "The selected risk does not exist.";
+  }
   return null;
 }
 

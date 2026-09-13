@@ -1,5 +1,7 @@
 import type {
   PlatformSnapshot,
+  Task,
+  Milestone,
   QaFinding,
   Report,
   ReportFinding,
@@ -26,8 +28,38 @@ export interface FindingListItem {
   updatedAt: string;
 }
 
-export function reportFromQaReport(snapshot: PlatformSnapshot, report: PlatformSnapshot["qaReports"][number]): Report | null {
-  const task = snapshot.tasks.find((candidate) => candidate.id === report.taskId);
+function findingListItemFromFinding(
+  finding: QaFinding | TestFinding,
+  sourceType: FindingListItem["sourceType"],
+  sourceId: string | null,
+  milestoneId: string | null,
+): FindingListItem {
+  return {
+    id: finding.id,
+    sourceType,
+    sourceId,
+    title: finding.title,
+    detail: finding.detail,
+    severity: finding.severity,
+    status: finding.status,
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    mechanismId: finding.mechanismId,
+    partInstanceId: finding.partInstanceId,
+    artifactId: finding.artifactId,
+    taskId: finding.taskId,
+    milestoneId,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  };
+}
+
+export function reportFromQaReport(
+  task: Task | undefined,
+  report: PlatformSnapshot["qaReports"][number],
+  options: { includePhoto?: boolean } = {},
+): Report | null {
   if (!task) {
     return null;
   }
@@ -43,21 +75,28 @@ export function reportFromQaReport(snapshot: PlatformSnapshot, report: PlatformS
     result: report.result,
     summary: report.notes,
     notes: report.notes,
-    photoUrl: report.photoUrl,
+    ...(options.includePhoto === false ? {} : { photoUrl: report.photoUrl }),
     createdAt: report.reviewedAt,
     participantIds: report.participantIds,
     mentorApproved: report.mentorApproved,
     reviewedAt: report.reviewedAt,
+    evidenceNotes: report.evidenceNotes ?? "",
+    qaRequestId: report.qaRequestId ?? null,
+    mentorId: report.mentorId ?? null,
+    requestedById: report.requestedById ?? null,
+    targetRiskId: report.targetRiskId ?? null,
+    proposedRiskSeverity: report.proposedRiskSeverity ?? null,
+    proposedRiskStatus: report.proposedRiskStatus ?? null,
     title: task.title,
   };
 }
 
 export function reportFromTestResult(
-  snapshot: PlatformSnapshot,
+  milestone: Milestone | undefined,
   result: PlatformSnapshot["testResults"][number],
+  projectId: string | null,
+  options: { includePhoto?: boolean } = {},
 ): Report | null {
-  const milestone = snapshot.milestones.find((candidate) => candidate.id === result.milestoneId);
-  const projectId = milestone?.projectIds[0] ?? snapshot.projects[0]?.id ?? null;
   if (!projectId) {
     return null;
   }
@@ -73,7 +112,7 @@ export function reportFromTestResult(
     result: result.status,
     summary: result.title,
     notes: result.findings.join("\n"),
-    photoUrl: result.photoUrl,
+    ...(options.includePhoto === false ? {} : { photoUrl: result.photoUrl }),
     createdAt: milestone?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     title: result.title,
     status: result.status,
@@ -142,58 +181,22 @@ export function reportFindingFromTestFinding(finding: TestFinding): ReportFindin
 
 export function buildReports(snapshot: PlatformSnapshot): Report[] {
   return [
-    ...snapshot.qaReports.map((report) => reportFromQaReport(snapshot, report)),
-    ...snapshot.testResults.map((result) => reportFromTestResult(snapshot, result)),
+    ...snapshot.qaReports.map((report) =>
+      reportFromQaReport(snapshot.tasks.find((task) => task.id === report.taskId), report)),
+    ...snapshot.testResults.map((result) => {
+      const milestone = snapshot.milestones.find((item) => item.id === result.milestoneId);
+      return reportFromTestResult(milestone, result, milestone?.projectIds[0] ?? snapshot.projects[0]?.id ?? null);
+    }),
   ].filter((report): report is Report => report !== null);
 }
 
-export function buildReportFindings(snapshot: PlatformSnapshot): ReportFinding[] {
-  return [
-    ...snapshot.qaFindings.map(reportFindingFromQaFinding),
-    ...snapshot.testFindings.map(reportFindingFromTestFinding),
-  ].filter((finding): finding is ReportFinding => finding !== null);
-}
-
 export function buildFindings(snapshot: PlatformSnapshot): FindingListItem[] {
-  const qaItems: FindingListItem[] = snapshot.qaFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "qa",
-    sourceId: finding.qaReportId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    milestoneId: null,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
-
-  const testItems: FindingListItem[] = snapshot.testFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "test",
-    sourceId: finding.testResultId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    milestoneId: finding.milestoneId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
+  const qaItems = snapshot.qaFindings.map((finding) =>
+    findingListItemFromFinding(finding, "qa", finding.qaReportId, null),
+  );
+  const testItems = snapshot.testFindings.map((finding) =>
+    findingListItemFromFinding(finding, "test", finding.testResultId, finding.milestoneId),
+  );
 
   return [...qaItems, ...testItems];
 }

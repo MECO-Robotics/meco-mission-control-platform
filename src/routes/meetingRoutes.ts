@@ -8,7 +8,7 @@ import {
   removeMeeting,
   updateMeeting,
 } from "../data/store";
-import { validateMilestoneProjectLinks } from "./routeHelpers";
+import { validateMilestoneProjectLinks } from "./helpers/linkValidation";
 import { meetingPatchSchema, meetingSchema } from "./routeSchemas";
 
 type ApiSessionGuard = (request: FastifyRequest, reply: FastifyReply) => boolean;
@@ -74,7 +74,7 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
     };
   });
 
-  app.post<{ Body: unknown }>("/api/meetings", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/meetings", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -117,7 +117,7 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
 
   app.patch<{ Body: unknown; Params: { meetingId: string } }>(
     "/api/meetings/:meetingId",
-    async (request, reply) => {
+    { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
@@ -189,8 +189,7 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
   );
 
   app.delete<{ Params: { meetingId: string } }>(
-    "/api/meetings/:meetingId",
-    async (request, reply) => {
+    "/api/meetings/:meetingId", { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }

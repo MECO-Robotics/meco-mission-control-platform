@@ -1,5 +1,7 @@
 ﻿import type { OnshapeCredentials, OnshapeReference, OnshapeTransport, RequestPolicy } from "./onshapeTypes";
 import type { OnshapeRuntimeStore } from "./cadStore";
+import { parseJsonResponseText } from "../shared/json";
+import { isImmutableReference } from "./cadStoreUtils";
 
 export class OnshapeCallBudgetExceededError extends Error {
   constructor(message = "max_calls_allowed") {
@@ -31,15 +33,34 @@ export interface OnshapeRequestJsonArgs {
   policy: RequestPolicy;
 }
 
+type RequestLogDetails = Pick<
+  Parameters<OnshapeRuntimeStore["appendRequestLog"]>[0],
+  "usedCache" | "statusCode" | "responseHeadersJson" | "rateLimitRemaining" | "errorMessage"
+>;
+
+function appendRequestLog(
+  store: OnshapeRuntimeStore,
+  args: OnshapeRequestJsonArgs,
+  cacheKey: string,
+  requestStartedAt: string,
+  details: RequestLogDetails,
+) {
+  store.appendRequestLog({
+    importRunId: args.importRunId ?? null,
+    endpoint: args.endpoint,
+    method: args.method,
+    cacheKey,
+    requestStartedAt,
+    requestCompletedAt: new Date().toISOString(),
+    ...details,
+  });
+}
+
 interface CreateClientArgs {
   store: OnshapeRuntimeStore;
   credentials: OnshapeCredentials;
   transport?: OnshapeTransport;
   baseUrl?: string;
-}
-
-function isImmutableReference(reference: Partial<OnshapeReference>) {
-  return reference.referenceType === "version" || reference.referenceType === "microversion";
 }
 
 function normalizeHeaders(headers: Record<string, string | number | undefined>) {
@@ -115,14 +136,7 @@ async function defaultTransport(baseUrl: string, request: Parameters<OnshapeTran
     headers: request.headers,
   });
   const text = await response.text();
-  let json: unknown = {};
-  if (text.trim()) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = { rawText: text };
-    }
-  }
+  const json = parseJsonResponseText(text);
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key] = value;
@@ -216,15 +230,9 @@ function assertCallIsAllowed(
   requestStartedAt: string,
 ) {
   if (callsUsed >= args.policy.maxCallsAllowed) {
-    store.appendRequestLog({
-      importRunId: args.importRunId ?? null,
-      endpoint: args.endpoint,
-      method: args.method,
-      cacheKey,
+    appendRequestLog(store, args, cacheKey, requestStartedAt, {
       usedCache: false,
       statusCode: null,
-      requestStartedAt,
-      requestCompletedAt: new Date().toISOString(),
       responseHeadersJson: {},
       rateLimitRemaining: store.getBudget().lastRateLimitRemaining,
       errorMessage: "max_calls_allowed",
@@ -248,15 +256,9 @@ function buildHeadersOrLogError(
   try {
     return buildAuthHeaders(credentials);
   } catch (error) {
-    store.appendRequestLog({
-      importRunId: args.importRunId ?? null,
-      endpoint: args.endpoint,
-      method: args.method,
-      cacheKey,
+    appendRequestLog(store, args, cacheKey, requestStartedAt, {
       usedCache: false,
       statusCode: null,
-      requestStartedAt,
-      requestCompletedAt: new Date().toISOString(),
       responseHeadersJson: {},
       rateLimitRemaining: store.getBudget().lastRateLimitRemaining,
       errorMessage: error instanceof Error ? error.message : String(error),

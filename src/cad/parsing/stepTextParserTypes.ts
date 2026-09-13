@@ -9,4 +9,5 @@ export interface StepAssemblyUsage {
   occurrenceName: string;
   parentProductDefinitionId: string;
   childProductDefinitionId: string;
+  quantity: number;
 }

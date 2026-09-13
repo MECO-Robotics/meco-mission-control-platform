@@ -5,6 +5,7 @@ export interface StepParserInput {
   originalFilename: string;
   importRunId: string;
   options?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 export interface StepParserClient {

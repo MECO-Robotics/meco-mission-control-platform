@@ -3,7 +3,7 @@ dist/
 coverage/
 .turbo/
 .prisma/
-data/
+/data/
 .tmp-skills-sync/
 
 # Imported shared skills
@@ -13,6 +13,10 @@ data/
 *.log
 *.err
 *.out
+
+# Codex/GitHub-review scratch artifacts
+.codex/
+.codex_*.json
 
 .env
 .env.local

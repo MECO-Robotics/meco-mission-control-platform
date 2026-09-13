@@ -1,66 +1,11 @@
-﻿# Platform PR checklist
+## Problem and resulting behavior
 
-## Summary
-
-<!-- One concise paragraph for what changed and why -->
+<!-- Explain the problem and the behavior this change produces. Link an issue when useful. -->
 
 ## Validation
 
-- [ ] `npm.cmd run typecheck:test`
-- [ ] `npm.cmd run test`
-- [ ] `npm.cmd run build`
-- [ ] `npm.cmd run verify` (only if not run above, or if additional checks are in scope)
+<!-- List commands and results; do not repeat checks already included in npm run verify. State limitations. -->
 
-### Verification notes
+## Relevant integration or rollout details
 
-- Command output / results:
-- Test coverage changed:
-
-## Migration notes
-
-- Migration file(s) touched:
-- Backfill or data-corrective work:
-- Rollback SQL / compensating operation:
-- Migration validation executed:
-
-## Environment variable changes
-
-- Added:
-- Updated:
-- Removed:
-- Any production-only behavior change (e.g., auth/CORS/rate limits):
-
-## API contract changes
-
-- Endpoints added/changed:
-- Request/response schema changes:
-- Auth/session behavior changes:
-- Consumer repos/components to coordinate:
-
-## Database impact
-
-- Prisma schema/migration impact:
-- Data model risk:
-- Seed/reset/runtime persistence assumptions changed:
-- Query/index/perf checks:
-
-## Deployment impact
-
-- Expected deploy gate/path:
-  - `development` yes / `main` yes / `release` yes / other: specify
-- `deploy-vps.yml`/CI steps affected:
-- Extra runbook/flag needed for rollout:
-- Post-deploy smoke checks:
-  - `curl /health`
-  - Core API path (list one):
-
-## Rollback / risk notes
-
-- Revert strategy:
-- Partial rollback constraints:
-- Blast radius and mitigation:
-- Required owner signoff for merge:
-
-## Notes
-
-- Any secrets kept out of PR; only variable names and config intent included.
+<!-- Delete if unnecessary. Include affected API consumers, schema/reset commands and discarded state, environment changes, or deployment evidence when applicable. -->

@@ -2,6 +2,7 @@ import type { NormalizedCadWarning, StepParseResult } from "../cadTypes";
 import { createFlatStepResult } from "./stepFlatResultParser";
 import type { StepParserInput } from "./stepParserTypes";
 import { createParserWarning } from "./stepParserShared";
+import { collectAssemblyUsages } from "./stepTextAssemblyUsageCollector";
 import { parseStepEntities, stepStringValue } from "./stepTextEntityParser";
 import { createStructuredStepResult } from "./stepTextStructuredResultParser";
 import type { StepAssemblyUsage, StepProductDefinition } from "./stepTextParserTypes";
@@ -49,32 +50,6 @@ function collectProductDefinitions(args: {
     args.productDefinitions.set(entity.id, { id: entity.id, productId, name });
   }
   return partialReferenceCount;
-}
-
-function collectAssemblyUsages(args: {
-  entities: ReturnType<typeof parseStepEntities>;
-  productDefinitions: Map<string, StepProductDefinition>;
-}) {
-  const assemblyUsages: StepAssemblyUsage[] = [];
-  let partialReferenceCount = 0;
-  for (const entity of args.entities) {
-    if (entity.type !== "NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
-      continue;
-    }
-    const productDefinitionRefs = entity.refs.filter((ref) => args.productDefinitions.has(ref));
-    if (productDefinitionRefs.length < 2) {
-      partialReferenceCount += 1;
-      continue;
-    }
-    const stringArgs = entity.args.map(stepStringValue).filter((value): value is string => value !== null);
-    assemblyUsages.push({
-      id: entity.id,
-      occurrenceName: stringArgs[1]?.trim() || stringArgs[0]?.trim() || "",
-      parentProductDefinitionId: productDefinitionRefs[0]!,
-      childProductDefinitionId: productDefinitionRefs[1]!,
-    });
-  }
-  return { assemblyUsages, partialReferenceCount };
 }
 
 function buildAssemblyGraph(assemblyUsages: StepAssemblyUsage[]) {
@@ -140,7 +115,7 @@ export function parseStepTextAssemblyGraph(input: StepParserInput): StepParseRes
     productCount: products.size,
     productDefinitionFormationCount: formationToProductId.size,
     productDefinitionCount: productDefinitions.size,
-    nextAssemblyUsageOccurrenceCount: assemblyUsages.length,
+    nextAssemblyUsageOccurrenceCount: collectedUsages.nextAssemblyUsageOccurrenceCount,
     assemblyUsageCount: assemblyUsages.length,
   });
 

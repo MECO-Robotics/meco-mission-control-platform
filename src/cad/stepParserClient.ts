@@ -57,7 +57,3 @@ export function createStepParserClient(options?: { mode?: StepParserMode }): Ste
     },
   };
 }
-
-export function createMockStepParserClient(): StepParserClient {
-  return createJsonFixtureStepParserClient();
-}

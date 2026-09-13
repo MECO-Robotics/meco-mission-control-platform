@@ -5,6 +5,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { mediaUploadConfig } from "../config/env";
+import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 
 const IMAGE_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "image/avif": ".avif",
@@ -42,9 +43,31 @@ interface PresignMediaUploadInput {
   contentType: string;
   fileName: string;
   projectId: string;
+  quotaKey: string;
+  sizeBytes: number;
+  teamId?: string | null;
 }
 
 type MediaUploadKind = "image" | "video";
+const quotaWindowMs = 60 * 60 * 1000;
+const quotaReservations = new Map<string, { bytes: number; windowStartedAt: number }>();
+
+function reserveUploadQuota(quotaKey: string, sizeBytes: number, now = Date.now()) {
+  const current = quotaReservations.get(quotaKey);
+  const active = current && now - current.windowStartedAt < quotaWindowMs
+    ? current
+    : { bytes: 0, windowStartedAt: now };
+  if (active.bytes + sizeBytes > mediaUploadConfig.quotaBytesPerHour) {
+    throw new MediaUploadError(
+      "The hourly media upload quota has been reached. Try again later.",
+      429,
+    );
+  }
+  quotaReservations.set(quotaKey, {
+    bytes: active.bytes + sizeBytes,
+    windowStartedAt: active.windowStartedAt,
+  });
+}
 
 function getStorageClient() {
   if (
@@ -108,6 +131,36 @@ function buildPublicUrl(bucket: string, key: string) {
   return `${baseUrl}/${encodeURIComponent(bucket)}/${encodeObjectKey(key)}`;
 }
 
+export function createTeamBucketName(
+  teamId: string | null | undefined,
+  options: {
+    bucket?: string;
+    bucketPrefix?: string;
+  } = mediaUploadConfig,
+) {
+  if (options.bucketPrefix) {
+    const prefixSegment = sanitizePathSegment(options.bucketPrefix, "media").slice(0, 40).replace(/-+$/g, "") || "media";
+    const teamSegmentMaxLength = Math.max(1, 63 - prefixSegment.length - 1);
+    const teamSegment =
+      sanitizePathSegment(teamId ?? "", DEFAULT_PROJECT_TEAM_ID).slice(0, teamSegmentMaxLength).replace(/-+$/g, "") ||
+      DEFAULT_PROJECT_TEAM_ID;
+
+    return `${prefixSegment}-${teamSegment}`;
+  }
+
+  if (options.bucket) {
+    return options.bucket;
+  }
+
+  throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
+}
+
+function createMediaBucketName(teamId: string | null | undefined) {
+  const bucketPrefix = mediaUploadConfig.bucketPrefix;
+  const bucket = mediaUploadConfig.bucket;
+  return createTeamBucketName(teamId, { bucket, bucketPrefix });
+}
+
 function createObjectKey(projectId: string, fileName: string, contentType: string, kind: MediaUploadKind) {
   const now = new Date();
   const year = now.getUTCFullYear().toString();
@@ -133,10 +186,17 @@ async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUpl
     throw new MediaUploadError(`${kind === "image" ? "Image" : "Video"} uploads require a file name.`);
   }
 
-  const bucket = mediaUploadConfig.bucket;
-  if (!bucket) {
-    throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
+  const maxBytes = kind === "image"
+    ? mediaUploadConfig.imageMaxBytes
+    : mediaUploadConfig.videoMaxBytes;
+  if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes <= 0 || input.sizeBytes > maxBytes) {
+    throw new MediaUploadError(
+      `${kind === "image" ? "Image" : "Video"} uploads must be ${maxBytes} bytes or smaller.`,
+      413,
+    );
   }
+
+  const bucket = createMediaBucketName(input.teamId);
 
   const key = createObjectKey(input.projectId, fileName, contentType, kind);
   const client = getStorageClient();
@@ -144,11 +204,13 @@ async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUpl
     client,
     new PutObjectCommand({
       Bucket: bucket,
+      ContentLength: input.sizeBytes,
       Key: key,
       ContentType: contentType,
     }),
     { expiresIn: mediaUploadConfig.presignTtlSeconds },
   );
+  reserveUploadQuota(`${input.teamId ?? DEFAULT_PROJECT_TEAM_ID}:${input.quotaKey}`, input.sizeBytes);
 
   return {
     expiresInSeconds: mediaUploadConfig.presignTtlSeconds,
