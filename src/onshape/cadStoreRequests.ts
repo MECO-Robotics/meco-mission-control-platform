@@ -1,13 +1,12 @@
-﻿import type { OnshapeReference } from "./onshapeTypes";
 import type { OnshapeRuntimeState } from "./cadStoreTypes";
-import type { OnshapeDocumentRef, OnshapeSyncJob } from "./onshapeTypes";
+import type { OnshapeDocumentRef, OnshapeReference, OnshapeSyncJob, SyncLevel } from "./onshapeTypes";
 import { clone, nextId, nowIso } from "./cadStoreUtils";
 
 export function buildCadRequestStore(state: OnshapeRuntimeState) {
   return {
     createImportRun(input: {
       documentRefId: string;
-      syncLevel: import("./onshapeTypes").SyncLevel;
+      syncLevel: SyncLevel;
       requestedBy?: string | null;
       callsEstimated?: number | null;
     }) {
