@@ -10,3 +10,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation and PR delivery.
 - Keep meaningful behavior tests. Reuse verification outputs within a revision instead of repeating suites or adding one-off frameworks.
 - Report exact validation and its limits. Do not claim a running application without checking it, or an approval without an actual approving review.
 - Shared skills and context engines are optional; load only those relevant to the task. Parallel agents must have disjoint write scopes.
+- Before making any code or configuration modification, invoke the Moyu skill and apply its scope checklist. This is mandatory for every LLM-assisted modification, regardless of size.
