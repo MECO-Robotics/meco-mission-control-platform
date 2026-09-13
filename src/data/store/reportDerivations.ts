@@ -28,6 +28,33 @@ export interface FindingListItem {
   updatedAt: string;
 }
 
+function findingListItemFromFinding(
+  finding: QaFinding | TestFinding,
+  sourceType: FindingListItem["sourceType"],
+  sourceId: string | null,
+  milestoneId: string | null,
+): FindingListItem {
+  return {
+    id: finding.id,
+    sourceType,
+    sourceId,
+    title: finding.title,
+    detail: finding.detail,
+    severity: finding.severity,
+    status: finding.status,
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    mechanismId: finding.mechanismId,
+    partInstanceId: finding.partInstanceId,
+    artifactId: finding.artifactId,
+    taskId: finding.taskId,
+    milestoneId,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  };
+}
+
 export function reportFromQaReport(
   task: Task | undefined,
   report: PlatformSnapshot["qaReports"][number],
@@ -164,45 +191,12 @@ export function buildReports(snapshot: PlatformSnapshot): Report[] {
 }
 
 export function buildFindings(snapshot: PlatformSnapshot): FindingListItem[] {
-  const qaItems: FindingListItem[] = snapshot.qaFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "qa",
-    sourceId: finding.qaReportId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    milestoneId: null,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
-
-  const testItems: FindingListItem[] = snapshot.testFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "test",
-    sourceId: finding.testResultId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    milestoneId: finding.milestoneId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
+  const qaItems = snapshot.qaFindings.map((finding) =>
+    findingListItemFromFinding(finding, "qa", finding.qaReportId, null),
+  );
+  const testItems = snapshot.testFindings.map((finding) =>
+    findingListItemFromFinding(finding, "test", finding.testResultId, finding.milestoneId),
+  );
 
   return [...qaItems, ...testItems];
 }
