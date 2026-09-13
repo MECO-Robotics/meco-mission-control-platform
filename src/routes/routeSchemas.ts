@@ -43,6 +43,12 @@ export const memberPatchSchema = z.object({
   plannedAttendanceNotes: z.string().trim().optional(),
 });
 
+export const profilePatchSchema = z.object({
+  name: z.string().trim().min(2).optional(),
+  email: z.union([z.literal(""), z.string().trim().email()]).optional(),
+  photoUrl: z.string().trim().optional(),
+}).strict();
+
 export const seasonSchema = z.object({
   name: z.string().trim().min(2),
   type: z.enum(["season", "offseason", "initiative"]).default("season"),

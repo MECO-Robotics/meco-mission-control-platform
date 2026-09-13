@@ -171,6 +171,7 @@ import {
   mediaUploadRequestSchema,
   memberPatchSchema,
   memberSchema,
+  profilePatchSchema,
   mechanismPatchSchema,
   mechanismSchema,
   partDefinitionPatchSchema,
@@ -2689,6 +2690,35 @@ export async function registerRoutes(
       pagination: paginated.pagination,
     };
   });
+
+  app.patch<{ Body: unknown }>(
+    "/api/users/me/profile",
+    { config: { snapshotMutation: true } },
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) return;
+      const session = requireSession(request, reply);
+      if (!session) return;
+
+      const parsed = profilePatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Profile payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const member = getMembers().find(
+        (candidate) => candidate.email.trim().toLowerCase() === session.email.trim().toLowerCase(),
+      );
+      if (!member) {
+        return reply.code(404).send({ message: "No roster profile is linked to this account." });
+      }
+
+      const updated = updateMember(member.id, parsed.data, buildTaskAuditContext(request));
+      if (!updated) return reply.code(404).send({ message: "Profile not found." });
+      return { item: updated };
+    },
+  );
 
   app.post<{ Body: unknown }>("/api/members", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
