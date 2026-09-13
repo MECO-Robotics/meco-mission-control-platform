@@ -58,7 +58,7 @@ function isPartInstanceDependencySatisfied(
   return targetOrder >= requiredOrder;
 }
 
-function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: PlatformSnapshot, now: Date) {
+function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: PlatformSnapshot) {
   if (dependency.dependencyType === "soft") {
     return true;
   }
@@ -87,7 +87,7 @@ export function getTaskWaitingOnDependencyRecords(
     (dependency) =>
       dependency.taskId === taskId &&
       dependency.dependencyType !== "soft" &&
-      !isTaskDependencySatisfied(dependency, snapshot, now),
+      !isTaskDependencySatisfied(dependency, snapshot),
   );
 }
 
