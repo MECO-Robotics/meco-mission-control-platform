@@ -1,0 +1,30 @@
+name: Aislop quality gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Aislop quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run Aislop on pull-request changes
+        if: github.event_name == 'pull_request'
+        run: npx --yes aislop@latest ci --changes --base "origin/${{ github.base_ref }}"
+      - name: Run Aislop on branch
+        if: github.event_name != 'pull_request'
+        run: npx --yes aislop@latest ci
