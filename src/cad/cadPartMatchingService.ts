@@ -1,6 +1,6 @@
 import type { PartDefinition } from "../domain/types";
 import { getPartDefinitions } from "../data/store";
-import type { CadPartDefinition, CadPartInstance } from "./cadTypes";
+import type { CadPartDefinition } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
 import { normalizeCadName } from "./cadUtils";
 
