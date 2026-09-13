@@ -1,13 +1,6 @@
 import type { MilestoneStatus, PlatformSnapshot, Task, TaskDependency } from "./types";
 
-const MILESTONE_STATUS_ORDER: Record<MilestoneStatus, number> = {
-  "not ready": 0,
-  blocked: 1,
-  qa: 2,
-  ready: 3,
-};
-
-const PART_INSTANCE_STATUS_ORDER: Record<MilestoneStatus, number> = {
+const WORKFLOW_STATUS_ORDER: Record<MilestoneStatus, number> = {
   "not ready": 0,
   blocked: 1,
   qa: 2,
@@ -36,8 +29,8 @@ function isMilestoneDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = MILESTONE_STATUS_ORDER[requiredState as MilestoneStatus];
-  const targetOrder = MILESTONE_STATUS_ORDER[milestone.status ?? "not ready"];
+  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState as MilestoneStatus];
+  const targetOrder = WORKFLOW_STATUS_ORDER[milestone.status ?? "not ready"];
 
   return targetOrder >= requiredOrder;
 }
@@ -52,8 +45,8 @@ function isPartInstanceDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = PART_INSTANCE_STATUS_ORDER[requiredState as MilestoneStatus];
-  const targetOrder = PART_INSTANCE_STATUS_ORDER[partInstance.status];
+  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState as MilestoneStatus];
+  const targetOrder = WORKFLOW_STATUS_ORDER[partInstance.status];
 
   return targetOrder >= requiredOrder;
 }
