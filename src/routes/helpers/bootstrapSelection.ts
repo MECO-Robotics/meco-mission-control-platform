@@ -1,8 +1,7 @@
 import {
   reportFromQaReport,
   reportFromTestResult,
-  reportFindingFromQaFinding,
-  reportFindingFromTestFinding,
+  reportFindingFromFinding,
 } from "../../data/store/reportDerivations";
 import type {
   ReadonlyData,
@@ -80,8 +79,8 @@ function buildReportFindings(args: {
   reportIds: Set<string>;
 }) {
   return [
-    ...args.qaFindings.map(reportFindingFromQaFinding),
-    ...args.testFindings.map(reportFindingFromTestFinding),
+    ...args.qaFindings.map(reportFindingFromFinding),
+    ...args.testFindings.map(reportFindingFromFinding),
   ].filter((finding): finding is ReadonlyData<ReportFinding> => finding !== null && args.reportIds.has(finding.reportId));
 }
 
