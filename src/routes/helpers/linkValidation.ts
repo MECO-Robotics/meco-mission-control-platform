@@ -437,22 +437,25 @@ export function validatePurchaseItemLinks(input: {
   return validatePartDefinitionLink(input.partDefinitionId);
 }
 
-export function validateManufacturingItemLinks(input: {
+export function resolveManufacturingItem(input: {
   subsystemId: string;
   process: string;
+  title: string;
+  materialId?: string | null;
   partDefinitionId?: string | null | undefined;
   partInstanceId?: string | null | undefined;
   partInstanceIds?: readonly string[];
-}) {
+}, fallbackMaterialId: string | null = null):
+  { error: string } | { materialId: string | null; title: string } {
   if (!findSubsystem(input.subsystemId)) {
-    return "The selected subsystem does not exist.";
+    return { error: "The selected subsystem does not exist." };
   }
 
-  if (input.partDefinitionId) {
-    const partDefinitionError = validatePartDefinitionLink(input.partDefinitionId);
-    if (partDefinitionError) {
-      return partDefinitionError;
-    }
+  const partDefinition = input.partDefinitionId
+    ? findPartDefinition(input.partDefinitionId)
+    : null;
+  if (input.partDefinitionId && !partDefinition) {
+    return { error: "Please select a real part from the Parts tab." };
   }
 
   const partInstanceIds = uniqueIds([
@@ -462,18 +465,35 @@ export function validateManufacturingItemLinks(input: {
   for (const partInstanceId of partInstanceIds) {
     const partInstance = findPartInstance(partInstanceId);
     if (!partInstance) {
-      return "The selected part instance does not exist.";
+      return { error: "The selected part instance does not exist." };
     }
 
     if (
       input.partDefinitionId &&
       partInstance.partDefinitionId !== input.partDefinitionId
     ) {
-      return "The selected part instance does not match the selected part definition.";
+      return { error: "The selected part instance does not match the selected part definition." };
     }
   }
 
-  return null;
+  if (
+    partDefinition &&
+    input.materialId !== undefined &&
+    input.materialId !== (partDefinition.materialId ?? null)
+  ) {
+    return { error: "The selected material does not match the selected part." };
+  }
+  const requestedMaterialId = input.materialId === undefined ? fallbackMaterialId : input.materialId;
+  const materialId = partDefinition ? partDefinition.materialId ?? null : requestedMaterialId;
+  const materialError = validatePartDefinitionMaterialId(materialId);
+  if (materialError) {
+    return { error: materialError };
+  }
+
+  return {
+    materialId,
+    title: input.process === "fabrication" || !partDefinition ? input.title : partDefinition.name,
+  };
 }
 
 export function validateSubsystemPeople(input: {

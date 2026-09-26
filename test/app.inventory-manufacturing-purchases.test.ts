@@ -351,3 +351,62 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
     );
   });
 });
+
+
+test("manufacturing patches distinguish omitted materials, explicit clearing and part changes", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const created = await app.inject({
+      method: "POST", url: "/api/manufacturing",
+      payload: {
+        title: "Material resolution", subsystemId: "drive", requestedById: "ava",
+        process: "cnc", dueDate: "2026-10-01", material: "Onyx", quantity: 1, status: "requested",
+        partDefinitionId: "pd-swerve-encoder-bracket",
+      },
+    });
+    assert.equal(created.statusCode, 201);
+    let item = created.json().item;
+    assert.equal(item.materialId, "mat-onyx-filament");
+    const originalTitle = item.title;
+    const patch = async (payload: Record<string, unknown>) => {
+      resetLimits();
+      return app.inject({ method: "PATCH", url: `/api/manufacturing/${item.id}`, payload });
+    };
+    let response = await patch({ title: "Ignored part title" });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().item.title, originalTitle);
+    assert.equal(response.json().item.materialId, item.materialId);
+    response = await patch({ materialId: null });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().message, "The selected material does not match the selected part.");
+    response = await patch({ partDefinitionId: "pd-intake-guard" });
+    assert.equal(response.statusCode, 200);
+    item = response.json().item;
+    assert.equal(item.materialId, "mat-1-8-polycarbonate");
+    assert.notEqual(item.title, originalTitle);
+    response = await patch({ partDefinitionId: null, process: "fabrication", title: "Freeform fabrication" });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().item.materialId, "mat-1-8-polycarbonate");
+    assert.equal(response.json().item.title, "Freeform fabrication");
+    response = await patch({ materialId: null });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().item.materialId, null);
+
+    for (const [payload, message] of [
+      [{ subsystemId: "missing", partDefinitionId: "missing", materialId: "missing" }, "The selected subsystem does not exist."],
+      [{ partDefinitionId: "missing", partInstanceId: "missing", materialId: "missing" }, "Please select a real part from the Parts tab."],
+      [{ partInstanceId: "missing", materialId: "missing" }, "The selected part instance does not exist."],
+      [{ partDefinitionId: "pd-intake-guard", partInstanceId: "pi-swerve-encoder-bracket-front-left", materialId: "missing" }, "The selected part instance does not match the selected part definition."],
+      [{ materialId: "missing" }, "The selected material does not exist."],
+    ] as const) {
+      response = await patch(payload);
+      assert.equal(response.statusCode, 400);
+      assert.equal(response.json().message, message);
+    }
+    resetLimits();
+    const list = await app.inject({ method: "GET", url: "/api/manufacturing?pageSize=100" });
+    const saved = list.json().items.find((candidate: { id: string }) => candidate.id === item.id);
+    assert.equal(saved.materialId, null);
+    assert.equal(saved.partDefinitionId, null);
+    assert.equal(saved.title, "Freeform fabrication");
+  });
+});
