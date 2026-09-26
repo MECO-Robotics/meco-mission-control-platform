@@ -298,6 +298,43 @@ test("student sessions cannot reset global tutorial state", async () => {
   );
 });
 
+test("auth-off public demo bootstrap is sanitized while the local workspace remains intact", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const { createMember } = await import("../src/data/store");
+    const member = createMember({
+      name: "Private Local Workspace Member",
+      email: "private-local-workspace@example.test",
+      role: "admin",
+      plannedAttendanceNotes: "Private attendance notes",
+    });
+
+    const localResponse = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(localResponse.statusCode, 200);
+    const localMember = localResponse.json().members.find((item: { id: string }) => item.id === member.id);
+    assert.equal(localMember.email, member.email);
+    assert.equal(localMember.plannedAttendanceNotes, member.plannedAttendanceNotes);
+
+    for (const seasonId of ["default-season", "%20default-season%20"]) {
+      resetLimits();
+      const demoResponse = await app.inject({
+        method: "GET",
+        url: `/api/bootstrap?seasonId=${seasonId}`,
+      });
+      assert.equal(demoResponse.statusCode, 200);
+      const demo = demoResponse.json();
+      assert.ok(demo.members.length > 0);
+      assert.ok(demo.members.every((item: { id: string; email?: string }) =>
+        item.id.startsWith("demo-member-") && item.email === undefined,
+      ));
+      assert.ok(!demoResponse.body.includes(member.name));
+      assert.ok(!demoResponse.body.includes(member.email));
+      assert.ok(!demoResponse.body.includes("Private attendance notes"));
+      assert.deepEqual(demo.escalations, []);
+      assert.deepEqual(demo.actions, []);
+    }
+  });
+});
+
 test("unsigned users can read only the demo season bootstrap", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {

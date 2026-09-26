@@ -697,7 +697,8 @@ export async function registerRoutes(
 
     const snapshot = getSnapshot();
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
-    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const isPublicDemoBootstrap = session?.isPublicDemo === true ||
+      (!session && (isAuthEnabled() || selection.seasonId === PUBLIC_DEMO_SEASON_ID));
     const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
       sanitizeEscalations: isPublicDemoBootstrap,
     });
