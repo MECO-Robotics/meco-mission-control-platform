@@ -18,26 +18,20 @@ export type SeedPartDefinition = Omit<IteratedSeed<PartDefinition>, "seasonId" |
   Partial<Pick<PartDefinition, "seasonId" | "activeSeasonIds">>;
 export type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Workstream, "isArchived">>;
 
-export type SeedTask = Omit<
-  Task,
-  | "actualHours"
+type DefaultedTaskField =
+  | "checklistItems"
+  | "blockers"
+  | "linkedManufacturingIds"
+  | "linkedPurchaseIds"
+  | "requiresDocumentation"
+  | "documentationLinked"
   | "workstreamIds"
   | "subsystemIds"
   | "mechanismIds"
   | "partInstanceIds"
   | "artifactId"
   | "artifactIds"
-  | "assigneeIds"
-> &
-  Partial<
-    Pick<
-      Task,
-      | "workstreamIds"
-      | "subsystemIds"
-      | "mechanismIds"
-      | "partInstanceIds"
-      | "artifactId"
-      | "artifactIds"
-      | "assigneeIds"
-    >
-  >;
+  | "assigneeIds";
+
+export type SeedTask = Omit<Task, "actualHours" | DefaultedTaskField> &
+  Partial<Pick<Task, DefaultedTaskField>>;
