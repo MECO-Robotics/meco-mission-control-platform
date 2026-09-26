@@ -33,3 +33,5 @@ Describe the problem, resulting behavior and validation. Include contract change
 ## Optional shared skills
 
 [Shared skills](docs/shared-skills.md) are ignored local imports, not application or CI dependencies. Edit their canonical repository through its contribution process; never commit imported copies here.
+
+Graphify output is local tooling state under ignored `graphify-out/`. Query an existing graph before browsing source and run `graphify update .` after code changes. Keep generated graphs, caches and diagnostics out of commits; record maintained architecture guidance in `docs/` instead.
