@@ -3103,10 +3103,6 @@ export async function registerRoutes(
       return reply;
     }
 
-    if (parsed.data.acquisition && parsed.data.acquisition.method !== "stock" &&
-      !requireMentorPermission(request, reply, "Only leads, mentors, and admins can create acquisition work.")) {
-      return;
-    }
     const actorMemberId = isAuthEnabled() ? getTaskActionMember(request)?.id ?? null : null;
     const prepared = preparePartAcquisition(parsed.data, actorMemberId);
     if ("error" in prepared) {
