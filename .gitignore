@@ -26,3 +26,6 @@ coverage/
 !.env.production.example
 
 .DS_Store
+
+# Graphify semantic extraction cache
+/graphify-out/cache/
