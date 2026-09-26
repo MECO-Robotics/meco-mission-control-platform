@@ -1,3 +1,4 @@
+import { parseRouteInput } from "../../routes/helpers/parseRouteInput";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { getSessionFromRequest, isAuthEnabled } from "../../auth/authService";
@@ -36,9 +37,12 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const parsed = cadHierarchyApplySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "CAD hierarchy review payload is invalid.", issues: parsed.error.flatten() });
+    const parsed = parseRouteInput(
+      cadHierarchyApplySchema, request.body, reply,
+      "CAD hierarchy review payload is invalid.",
+    );
+    if (!parsed) {
+      return reply;
     }
     const result = await applyHierarchyReviewDecisions({ store: app.cadStore, snapshotId: request.params.snapshotId, input: parsed.data });
     return result ?? reply.code(404).send({ message: "CAD snapshot was not found." });
@@ -48,9 +52,12 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const parsed = cadMappingUpdateSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "CAD mapping update payload is invalid.", issues: parsed.error.flatten() });
+    const parsed = parseRouteInput(
+      cadMappingUpdateSchema, request.body, reply,
+      "CAD mapping update payload is invalid.",
+    );
+    if (!parsed) {
+      return reply;
     }
     const store = app.cadStore;
     const snapshot = await store.findSnapshot(request.params.snapshotId);
@@ -64,9 +71,9 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const parsed = cadFinalizeSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "CAD finalize payload is invalid.", issues: parsed.error.flatten() });
+    const parsed = parseRouteInput(cadFinalizeSchema, request.body ?? {}, reply, "CAD finalize payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
     const store = app.cadStore;
     const snapshot = await store.findSnapshot(request.params.snapshotId);
