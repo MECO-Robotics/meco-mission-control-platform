@@ -1368,20 +1368,7 @@ export async function registerRoutes(
         });
       }
 
-      const risk = updateRisk(request.params.riskId, {
-        ...parsed.data,
-        title: parsed.data.title === undefined ? undefined : parsed.data.title.trim(),
-        detail: parsed.data.detail === undefined ? undefined : parsed.data.detail.trim(),
-        sourceId: parsed.data.sourceId === undefined ? undefined : parsed.data.sourceId.trim(),
-        attachmentId:
-          parsed.data.attachmentId === undefined
-            ? undefined
-            : parsed.data.attachmentId.trim(),
-        mitigationTaskId:
-          parsed.data.mitigationTaskId === undefined
-            ? undefined
-            : parsed.data.mitigationTaskId,
-      });
+      const risk = updateRisk(request.params.riskId, parsed.data);
 
       return {
         item: risk,
@@ -1479,14 +1466,9 @@ export async function registerRoutes(
 
       const workLog = updateWorkLog(request.params.workLogId, {
         ...parsed.data,
-        notes:
-          parsed.data.notes === undefined
-            ? undefined
-            : parsed.data.notes.trim(),
-        participantIds:
-          parsed.data.participantIds === undefined
-            ? undefined
-            : Array.from(new Set(parsed.data.participantIds)),
+        ...(parsed.data.participantIds === undefined
+          ? {}
+          : { participantIds: Array.from(new Set(parsed.data.participantIds)) }),
       }, buildTaskAuditContext(request));
 
       return {

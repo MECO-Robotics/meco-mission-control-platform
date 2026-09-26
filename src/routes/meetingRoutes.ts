@@ -136,25 +136,10 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
         return reply.code(404).send({ message: "Meeting not found." });
       }
 
-      const rawPatch = request.body && typeof request.body === "object"
-        ? (request.body as Record<string, unknown>)
-        : {};
-      const patchHas = (field: string) => Object.prototype.hasOwnProperty.call(rawPatch, field);
-      const patchData = { ...parsed.data };
-      if (!patchHas("meetingType")) {
-        delete patchData.meetingType;
-      }
-      if (!patchHas("location")) {
-        delete patchData.location;
-      }
-      if (!patchHas("description")) {
-        delete patchData.description;
-      }
-
       const projectIds =
-        !patchHas("projectIds")
+        parsed.data.projectIds === undefined
           ? currentMeeting.projectIds ?? []
-          : Array.from(new Set(patchData.projectIds ?? []));
+          : Array.from(new Set(parsed.data.projectIds));
       const meetingProjectValidation = validateMilestoneProjectLinks(projectIds);
       if (meetingProjectValidation) {
         return reply.code(400).send({ message: meetingProjectValidation });
@@ -170,13 +155,13 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
       }
 
       const meeting = updateMeeting(request.params.meetingId, {
-        ...patchData,
+        ...parsed.data,
         seasonId: seasonId ?? undefined,
         projectIds: [...projectIds],
         endDateTime:
-          patchData.endDateTime === undefined
+          parsed.data.endDateTime === undefined
             ? currentMeeting.endDateTime ?? null
-            : patchData.endDateTime,
+            : parsed.data.endDateTime,
       });
 
       return { item: meeting };

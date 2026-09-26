@@ -1244,7 +1244,6 @@
           ]
         },
         "photoUrl": {
-          "default": "",
           "type": "string"
         },
         "ownerId": {
@@ -1259,7 +1258,6 @@
           ]
         },
         "assigneeIds": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
@@ -1310,7 +1308,6 @@
           "minimum": 0
         },
         "checklistItems": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
@@ -1318,7 +1315,6 @@
           }
         },
         "linkedManufacturingIds": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
@@ -1326,7 +1322,6 @@
           }
         },
         "linkedPurchaseIds": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
@@ -1334,11 +1329,9 @@
           }
         },
         "requiresDocumentation": {
-          "default": false,
           "type": "boolean"
         },
         "documentationLinked": {
-          "default": false,
           "type": "boolean"
         }
       },
@@ -1659,17 +1652,14 @@
           "minLength": 3
         },
         "photoUrl": {
-          "default": "",
           "type": "string"
         },
         "iteration": {
-          "default": 1,
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
         },
         "isArchived": {
-          "default": false,
           "type": "boolean"
         },
         "parentSubsystemId": {
@@ -1695,7 +1685,6 @@
           ]
         },
         "mentorIds": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
@@ -1703,7 +1692,6 @@
           }
         },
         "risks": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
