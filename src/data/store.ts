@@ -1064,99 +1064,29 @@ export interface TaskTargetLink {
 
 function flattenTaskTargets(task: Task): TaskTargetLink[] {
   const links: TaskTargetLink[] = [];
+  const appendTargets = (targetType: TaskTargetType, targetIds: string[]) => {
+    for (const targetId of targetIds) {
+      links.push({
+        id: `${task.id}:${targetType}:${targetId}`,
+        taskId: task.id,
+        taskTitle: task.title,
+        projectId: task.projectId,
+        workstreamId: task.workstreamId,
+        subsystemId: task.subsystemId,
+        targetType,
+        targetId,
+      });
+    }
+  };
 
-  links.push({
-    id: `${task.id}:project:${task.projectId}`,
-    taskId: task.id,
-    taskTitle: task.title,
-    projectId: task.projectId,
-    workstreamId: task.workstreamId,
-    subsystemId: task.subsystemId,
-    targetType: "project",
-    targetId: task.projectId,
-  });
-
-  const workstreamIds = uniqueIds([...task.workstreamIds, task.workstreamId]);
-  for (const workstreamId of workstreamIds) {
-    links.push({
-      id: `${task.id}:workstream:${workstreamId}`,
-      taskId: task.id,
-      taskTitle: task.title,
-      projectId: task.projectId,
-      workstreamId: task.workstreamId,
-      subsystemId: task.subsystemId,
-      targetType: "workstream",
-      targetId: workstreamId,
-    });
-  }
-
-  const subsystemIds = uniqueIds([...task.subsystemIds, task.subsystemId]);
-  for (const subsystemId of subsystemIds) {
-    links.push({
-      id: `${task.id}:subsystem:${subsystemId}`,
-      taskId: task.id,
-      taskTitle: task.title,
-      projectId: task.projectId,
-      workstreamId: task.workstreamId,
-      subsystemId: task.subsystemId,
-      targetType: "subsystem",
-      targetId: subsystemId,
-    });
-  }
-
-  const mechanismIds = uniqueIds([...task.mechanismIds, task.mechanismId]);
-  for (const mechanismId of mechanismIds) {
-    links.push({
-      id: `${task.id}:mechanism:${mechanismId}`,
-      taskId: task.id,
-      taskTitle: task.title,
-      projectId: task.projectId,
-      workstreamId: task.workstreamId,
-      subsystemId: task.subsystemId,
-      targetType: "mechanism",
-      targetId: mechanismId,
-    });
-  }
-
-  const partInstanceIds = uniqueIds([...task.partInstanceIds, task.partInstanceId]);
-  for (const partInstanceId of partInstanceIds) {
-    links.push({
-      id: `${task.id}:part-instance:${partInstanceId}`,
-      taskId: task.id,
-      taskTitle: task.title,
-      projectId: task.projectId,
-      workstreamId: task.workstreamId,
-      subsystemId: task.subsystemId,
-      targetType: "part-instance",
-      targetId: partInstanceId,
-    });
-  }
-
-  const artifactIds = uniqueIds([...task.artifactIds, task.artifactId]);
-  for (const artifactId of artifactIds) {
-    links.push({
-      id: `${task.id}:artifact:${artifactId}`,
-      taskId: task.id,
-      taskTitle: task.title,
-      projectId: task.projectId,
-      workstreamId: task.workstreamId,
-      subsystemId: task.subsystemId,
-      targetType: "artifact",
-      targetId: artifactId,
-    });
-  }
-
+  appendTargets("project", [task.projectId]);
+  appendTargets("workstream", uniqueIds([...task.workstreamIds, task.workstreamId]));
+  appendTargets("subsystem", uniqueIds([...task.subsystemIds, task.subsystemId]));
+  appendTargets("mechanism", uniqueIds([...task.mechanismIds, task.mechanismId]));
+  appendTargets("part-instance", uniqueIds([...task.partInstanceIds, task.partInstanceId]));
+  appendTargets("artifact", uniqueIds([...task.artifactIds, task.artifactId]));
   if (task.targetMilestoneId) {
-    links.push({
-      id: `${task.id}:milestone:${task.targetMilestoneId}`,
-      taskId: task.id,
-      taskTitle: task.title,
-      projectId: task.projectId,
-      workstreamId: task.workstreamId,
-      subsystemId: task.subsystemId,
-      targetType: "milestone",
-      targetId: task.targetMilestoneId,
-    });
+    appendTargets("milestone", [task.targetMilestoneId]);
   }
 
   return links;

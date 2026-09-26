@@ -27,6 +27,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Seed task records declare canonical discipline IDs and nondefault values; `buildSeedTask` in `src/data/mockData.ts` owns task defaults, allocates independent collections, and derives logged hours and target links.
 - Core state loads the production snapshot when present; fresh/tutorial initialization uses the clock-relative fixture factory in `src/data/tutorialSnapshot.ts`.
 - Core platform reads and writes go through `src/data/store.ts`. Store input types derive from the domain entities, excluding generated fields and making only store-defaulted fields optional. Request schemas still own transport validation and coercion.
+- Task target links are projected once in `flattenTaskTargets` in `src/data/store.ts`; the task-target API and both directions of milestone matching share that projection and its stable target ordering.
 - Core platform state is loaded from and atomically persisted to `data/platform-snapshot.json`
   in production. Mutations are serialized and acknowledged only after the asynchronous durable
   write succeeds. The production Compose stack mounts `/app/data` as a durable named volume.

@@ -18,6 +18,7 @@ import {
   createMilestone,
   getQaRequests,
   getSnapshot,
+  getTaskTargets,
   getTutorialBaselineState,
   getMilestonesForTask,
   getTasksForMilestone,
@@ -1188,4 +1189,46 @@ test("task hours follow work log create, resize, move and delete", () => {
   assert.equal(hours(second), beforeSecond + 3);
   removeWorkLog(log.id);
   assert.equal(hours(second), beforeSecond);
+});
+
+
+test("task targets preserve kind order, primary context, and unique scalar/list links", () => {
+  const task = getSnapshot().tasks[0];
+  Object.assign(task, {
+    workstreamId: "primary-workstream",
+    workstreamIds: ["shared", "shared"],
+    subsystemId: "primary-subsystem",
+    subsystemIds: ["shared", "primary-subsystem"],
+    mechanismId: null,
+    mechanismIds: ["mechanism", "mechanism"],
+    partInstanceId: "part",
+    partInstanceIds: [],
+    artifactId: "primary-artifact",
+    artifactIds: ["artifact", "artifact"],
+    targetMilestoneId: "milestone",
+  });
+
+  const links = getTaskTargets().filter((link) => link.taskId === task.id);
+  assert.deepEqual(links.map((link) => [link.targetType, link.targetId]), [
+    ["project", task.projectId],
+    ["workstream", "shared"],
+    ["workstream", "primary-workstream"],
+    ["subsystem", "shared"],
+    ["subsystem", "primary-subsystem"],
+    ["mechanism", "mechanism"],
+    ["part-instance", "part"],
+    ["artifact", "artifact"],
+    ["artifact", "primary-artifact"],
+    ["milestone", "milestone"],
+  ]);
+  for (const link of links) {
+    assert.equal(link.id, `${task.id}:${link.targetType}:${link.targetId}`);
+    assert.equal(link.taskTitle, task.title);
+    assert.equal(link.projectId, task.projectId);
+    assert.equal(link.workstreamId, "primary-workstream");
+    assert.equal(link.subsystemId, "primary-subsystem");
+  }
+
+  task.targetMilestoneId = null;
+  assert.deepEqual(getTaskTargets().filter((link) => link.taskId === task.id), links.slice(0, -1));
 });
