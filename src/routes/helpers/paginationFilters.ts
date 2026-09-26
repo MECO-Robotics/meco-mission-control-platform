@@ -24,7 +24,7 @@ function parsePaginationQuery(query: unknown) {
   };
 }
 
-export function paginateItems<T>(items: T[], query: unknown) {
+export function paginateItems<T>(items: readonly T[], query: unknown) {
   const { page: requestedPage, pageSize } = parsePaginationQuery(query);
   const totalItems = items.length;
   const totalPages = totalItems === 0 ? 1 : Math.ceil(totalItems / pageSize);

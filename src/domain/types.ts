@@ -738,3 +738,9 @@ export interface PlatformSnapshot {
   escalations: Escalation[];
   actions?: AuditAction[];
 }
+
+export type ReadonlyData<T> = T extends object
+  ? { readonly [Key in keyof T]: ReadonlyData<T[Key]> }
+  : T;
+
+export type SnapshotView = ReadonlyData<PlatformSnapshot>;

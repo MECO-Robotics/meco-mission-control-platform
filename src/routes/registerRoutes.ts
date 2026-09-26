@@ -265,7 +265,7 @@ function rewriteDemoMemberId(
 }
 
 function rewriteDemoMemberIds(
-  memberIds: string[] | undefined,
+  memberIds: readonly string[] | undefined,
   memberIdsByOriginalId: Map<string, string>,
 ) {
   return (memberIds ?? []).flatMap((memberId) => {
@@ -1733,7 +1733,7 @@ export async function registerRoutes(
           parsed.data.description === undefined
             ? currentMilestone.description
             : parsed.data.description,
-        projectIds: nextProjectIds,
+        projectIds: [...nextProjectIds],
         photoUrl:
           parsed.data.photoUrl === undefined
             ? currentMilestone.photoUrl
@@ -2925,7 +2925,7 @@ export async function registerRoutes(
       const validationError = validateSubsystemPeople({
         projectId: nextProjectId,
         responsibleEngineerId: nextResponsibleEngineerId,
-        mentorIds: nextMentorIds,
+        mentorIds: [...nextMentorIds],
       });
       if (validationError) {
         return reply.code(400).send({
@@ -2963,8 +2963,8 @@ export async function registerRoutes(
       const subsystem = updateSubsystem(request.params.subsystemId, {
         ...parsed.data,
         projectId: nextProjectId,
-        mentorIds: nextMentorIds,
-        risks: parsed.data.risks ?? currentSubsystem.risks,
+        mentorIds: [...nextMentorIds],
+        risks: [...(parsed.data.risks ?? currentSubsystem.risks)],
         parentSubsystemId: nextParentSubsystemId,
         responsibleEngineerId: nextResponsibleEngineerId,
       });
@@ -3548,7 +3548,7 @@ export async function registerRoutes(
         materialId: nextMaterialId ?? null,
         partDefinitionId: nextItemShape.partDefinitionId ?? null,
         partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
-        partInstanceIds: nextItemShape.partInstanceIds,
+        partInstanceIds: [...nextItemShape.partInstanceIds],
         title:
           nextItemShape.process === "fabrication" || !partDefinition
             ? parsed.data.title ?? currentItem.title

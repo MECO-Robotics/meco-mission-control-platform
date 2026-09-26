@@ -5,11 +5,12 @@ import {
   reportFindingFromTestFinding,
 } from "../../data/store/reportDerivations";
 import type {
+  ReadonlyData,
   AuditAction,
   Milestone,
   MilestoneRequirement,
   Member,
-  PlatformSnapshot,
+  SnapshotView,
   Report,
   ReportFinding,
   QaFinding,
@@ -37,12 +38,12 @@ function readScopedId(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function isMemberActiveInSeason(member: Pick<Member, "seasonId" | "activeSeasonIds">, seasonId: string) {
+function isMemberActiveInSeason(member: Pick<ReadonlyData<Member>, "seasonId" | "activeSeasonIds">, seasonId: string) {
   return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
 }
 
 function isPartDefinitionActiveInSeason(
-  partDefinition: Pick<PlatformSnapshot["partDefinitions"][number], "seasonId" | "activeSeasonIds">,
+  partDefinition: Pick<SnapshotView["partDefinitions"][number], "seasonId" | "activeSeasonIds">,
   seasonId: string,
 ) {
   return uniqueIds([...(partDefinition.activeSeasonIds ?? []), partDefinition.seasonId]).includes(
@@ -52,10 +53,10 @@ function isPartDefinitionActiveInSeason(
 
 // Bootstrap chooses an in-scope milestone project and intentionally omits photos.
 function buildReports(args: {
-  qaReports: QaReport[];
-  tasksById: Map<string, Task>;
-  testResults: TestResult[];
-  milestonesById: Map<string, Milestone>;
+  qaReports: ReadonlyData<QaReport[]>;
+  tasksById: Map<string, ReadonlyData<Task>>;
+  testResults: ReadonlyData<TestResult[]>;
+  milestonesById: Map<string, ReadonlyData<Milestone>>;
   activeProjectIds: Set<string>;
 }) {
   return [
@@ -70,18 +71,18 @@ function buildReports(args: {
       const projectId = milestone?.projectIds.find((id) => args.activeProjectIds.has(id)) ?? null;
       return projectId ? reportFromTestResult(milestone, result, projectId, { includePhoto: false }) : null;
     }),
-  ].filter((report): report is Report => report !== null);
+  ].filter((report): report is ReadonlyData<Report> => report !== null);
 }
 
 function buildReportFindings(args: {
-  qaFindings: QaFinding[];
-  testFindings: TestFinding[];
+  qaFindings: ReadonlyData<QaFinding[]>;
+  testFindings: ReadonlyData<TestFinding[]>;
   reportIds: Set<string>;
 }) {
   return [
     ...args.qaFindings.map(reportFindingFromQaFinding),
     ...args.testFindings.map(reportFindingFromTestFinding),
-  ].filter((finding): finding is ReportFinding => finding !== null && args.reportIds.has(finding.reportId));
+  ].filter((finding): finding is ReadonlyData<ReportFinding> => finding !== null && args.reportIds.has(finding.reportId));
 }
 
 function parseDateMs(value: string) {
@@ -92,7 +93,7 @@ function parseDateMs(value: string) {
 function isSeasonScopedByProjectLinks(args: {
   selectedSeasonId: string | null;
   recordSeasonId?: string;
-  projectIds: string[];
+  projectIds: readonly string[];
   activeProjectIds: Set<string>;
 }) {
   if (!args.selectedSeasonId) {
@@ -110,7 +111,7 @@ function isSeasonScopedByProjectLinks(args: {
 }
 
 export function buildBootstrapResponse(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   selection: BootstrapSelection,
   options: BootstrapResponseOptions = {},
 ) {
@@ -251,7 +252,7 @@ export function buildBootstrapResponse(
     return Boolean(task);
   });
   const isProjectScoped = selection.projectId !== null;
-  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: ReadonlyData<QaRequest>) => {
     if (selectedSeasonId && !request.taskId) {
       return false;
     }
@@ -350,7 +351,7 @@ export function buildBootstrapResponse(
     tasks: scopedTasks,
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
-  } as PlatformSnapshot;
+  } as SnapshotView;
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
     if (review.subjectType === "task") {
       return scopedTaskIds.has(review.subjectId);
@@ -467,7 +468,7 @@ export function buildBootstrapResponse(
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
     escalations: options.sanitizeEscalations ? [] : snapshot.escalations,
-    actions: scopedActions as AuditAction[],
+    actions: scopedActions as ReadonlyData<AuditAction[]>,
   };
 }
 

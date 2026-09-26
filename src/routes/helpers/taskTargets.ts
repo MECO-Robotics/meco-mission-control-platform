@@ -55,7 +55,7 @@ export function resolveWorkstreamId(input: {
   );
 }
 
-export function uniqueIds(values: Array<string | null | undefined>) {
+export function uniqueIds(values: ReadonlyArray<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value))),
   );
@@ -63,9 +63,9 @@ export function uniqueIds(values: Array<string | null | undefined>) {
 
 function readTargetIds(input: {
   id?: string | null;
-  ids?: string[];
+  ids?: readonly string[];
   fallbackId?: string | null;
-  fallbackIds?: string[];
+  fallbackIds?: readonly string[];
 }) {
   if (input.ids !== undefined) {
     return uniqueIds(input.ids);
@@ -81,27 +81,27 @@ function readTargetIds(input: {
 export function normalizeTaskTargets(
   input: {
     workstreamId?: string | null;
-    workstreamIds?: string[];
+    workstreamIds?: readonly string[];
     subsystemId?: string;
-    subsystemIds?: string[];
+    subsystemIds?: readonly string[];
     mechanismId?: string | null;
-    mechanismIds?: string[];
+    mechanismIds?: readonly string[];
     partInstanceId?: string | null;
-    partInstanceIds?: string[];
+    partInstanceIds?: readonly string[];
     artifactId?: string | null;
-    artifactIds?: string[];
+    artifactIds?: readonly string[];
   },
   fallback?: {
     workstreamId: string | null;
-    workstreamIds: string[];
+    workstreamIds: readonly string[];
     subsystemId: string;
-    subsystemIds: string[];
+    subsystemIds: readonly string[];
     mechanismId: string | null;
-    mechanismIds: string[];
+    mechanismIds: readonly string[];
     partInstanceId: string | null;
-    partInstanceIds: string[];
+    partInstanceIds: readonly string[];
     artifactId: string | null;
-    artifactIds: string[];
+    artifactIds: readonly string[];
   },
 ) {
   const partInstanceIds = readTargetIds({

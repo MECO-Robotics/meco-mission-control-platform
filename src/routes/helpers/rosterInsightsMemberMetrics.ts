@@ -89,7 +89,7 @@ export function buildMemberInsights(args: {
 }) {
   const attendanceRecords = args.source.attendanceRecords ?? [];
 
-  const tasksByMember = new Map<string, typeof args.openTasks>();
+  const tasksByMember = new Map<string, Array<typeof args.openTasks[number]>>();
   for (const task of args.openTasks) {
     for (const memberId of new Set([task.ownerId, ...task.assigneeIds])) {
       if (!memberId) continue;
@@ -98,7 +98,7 @@ export function buildMemberInsights(args: {
       tasksByMember.set(memberId, bucket);
     }
   }
-  const attendanceByMember = new Map<string, typeof attendanceRecords>();
+  const attendanceByMember = new Map<string, Array<typeof attendanceRecords[number]>>();
   for (const record of attendanceRecords) {
     const bucket = attendanceByMember.get(record.memberId) ?? [];
     bucket.push(record);
