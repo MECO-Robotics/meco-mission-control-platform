@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  createMaterial,
+  updateProject,
+  updateWorkstream,
+  updateRisk,
+  updateMaterial,
+  updateArtifact,
+  updateMechanism,
+  updatePurchaseItem,
   createWorkLog,
   updateWorkLog,
   removeWorkLog,
@@ -1242,4 +1250,41 @@ test("task targets preserve kind order, primary context, and unique scalar/list 
 
   resetStore({ ...snapshot, tasks: [{ ...task, targetMilestoneId: null }, ...snapshot.tasks.slice(1)] });
   assert.deepEqual(getTaskTargets().filter((link) => link.taskId === task.id), links.slice(0, -1));
+});
+
+
+test("missing update targets leave the published snapshot and audit trail untouched", () => {
+  const before = getSnapshot();
+  for (const update of [
+    updateProject, updateWorkstream, updateRisk, updateMaterial, updateArtifact,
+    updateMember, updatePartDefinition, updateSubsystem, updateMechanism,
+    updateWorkLog, updatePurchaseItem, updateManufacturingItem,
+  ]) {
+    assert.equal(update("missing-update-target", {}), null);
+    assert.equal(getSnapshot(), before);
+  }
+});
+
+test("prepared updates retain detached results, audit changes, and reject invalid publication", () => {
+  const material = createMaterial({
+    name: "Update contract stock", category: "metal", unit: "sheet",
+    onHandQuantity: 5, reorderPoint: 1, location: "Rack", vendor: "Supplier", notes: "Retain notes",
+  });
+  const before = getSnapshot();
+  const updated = updateMaterial(material.id, { onHandQuantity: 3 });
+  assert.ok(updated);
+  assert.equal(updated.notes, "Retain notes");
+  assert.equal(before.materials.find((item) => item.id === material.id)?.onHandQuantity, 5);
+  const published = getSnapshot();
+  assert.deepEqual(published.materials.find((item) => item.id === material.id), updated);
+  assert.deepEqual(published.actions?.at(-1)?.changedFields, ["onHandQuantity"]);
+  updated.onHandQuantity = 99;
+  assert.equal(getSnapshot().materials.find((item) => item.id === material.id)?.onHandQuantity, 3);
+  assert.throws(() => updateMaterial(material.id, { onHandQuantity: Number.NaN }), /plain JSON data/);
+  assert.equal(getSnapshot(), published);
+
+  const unchanged = updateMaterial(material.id, {});
+  assert.equal(unchanged?.onHandQuantity, 3);
+  assert.equal(getSnapshot().actions?.length, (published.actions?.length ?? 0) + 1);
+  assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, []);
 });
