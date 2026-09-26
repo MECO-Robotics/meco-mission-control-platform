@@ -134,7 +134,7 @@ import {
 import {
   validateArtifactLinks,
   validateMilestoneProjectLinks,
-  validateManufacturingItemLinks,
+  resolveManufacturingItem,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
@@ -3384,37 +3384,9 @@ export async function registerRoutes(
       });
     }
 
-    const validationError = validateManufacturingItemLinks(parsed.data);
-    if (validationError) {
-      return reply.code(400).send({
-        message: validationError,
-      });
-    }
-    const partDefinition = parsed.data.partDefinitionId
-      ? findPartDefinition(parsed.data.partDefinitionId)
-      : null;
-    if (parsed.data.partDefinitionId && !partDefinition) {
-      return reply.code(400).send({
-        message: "Please select a real part from the Parts tab.",
-      });
-    }
-    if (
-      partDefinition &&
-      parsed.data.materialId !== undefined &&
-      parsed.data.materialId !== (partDefinition.materialId ?? null)
-    ) {
-      return reply.code(400).send({
-        message: "The selected material does not match the selected part.",
-      });
-    }
-    const resolvedMaterialId = partDefinition
-      ? partDefinition.materialId ?? null
-      : parsed.data.materialId ?? null;
-    const materialError = validatePartDefinitionMaterialId(resolvedMaterialId);
-    if (materialError) {
-      return reply.code(400).send({
-        message: materialError,
-      });
+    const resolved = resolveManufacturingItem(parsed.data);
+    if ("error" in resolved) {
+      return reply.code(400).send({ message: resolved.error });
     }
 
     const partInstanceIds = uniqueIds([
@@ -3427,14 +3399,11 @@ export async function registerRoutes(
       mentorReviewed: false,
       reviewedById: null,
       reviewedAt: null,
-      materialId: resolvedMaterialId,
+      materialId: resolved.materialId,
       partDefinitionId: parsed.data.partDefinitionId ?? null,
       partInstanceId: partInstanceIds[0] ?? null,
       partInstanceIds,
-      title:
-        parsed.data.process === "fabrication" || !partDefinition
-          ? parsed.data.title
-          : partDefinition.name,
+      title: resolved.title,
     }, buildTaskAuditContext(request));
     return reply.code(201).send({
       item: withManufacturingQaReviewCounts([item])[0],
@@ -3503,51 +3472,22 @@ export async function registerRoutes(
               ]),
       };
 
-      const validationError = validateManufacturingItemLinks(nextItemShape);
-      if (validationError) {
-        return reply.code(400).send({
-          message: validationError,
-        });
-      }
-      const partDefinition = nextItemShape.partDefinitionId
-        ? findPartDefinition(nextItemShape.partDefinitionId)
-        : null;
-      if (nextItemShape.partDefinitionId && !partDefinition) {
-        return reply.code(400).send({
-          message: "Please select a real part from the Parts tab.",
-        });
-      }
-      const requestedMaterialId =
-        parsed.data.materialId === undefined ? currentItem.materialId : parsed.data.materialId;
-      if (
-        partDefinition &&
-        parsed.data.materialId !== undefined &&
-        parsed.data.materialId !== (partDefinition.materialId ?? null)
-      ) {
-        return reply.code(400).send({
-          message: "The selected material does not match the selected part.",
-        });
-      }
-      const nextMaterialId = partDefinition
-        ? partDefinition.materialId ?? null
-        : requestedMaterialId ?? null;
-      const materialError = validatePartDefinitionMaterialId(nextMaterialId);
-      if (materialError) {
-        return reply.code(400).send({
-          message: materialError,
-        });
+      const resolved = resolveManufacturingItem({
+        ...nextItemShape,
+        title: parsed.data.title ?? currentItem.title,
+        materialId: parsed.data.materialId,
+      }, currentItem.materialId);
+      if ("error" in resolved) {
+        return reply.code(400).send({ message: resolved.error });
       }
 
       const item = updateManufacturingItem(request.params.itemId, {
         ...parsed.data,
-        materialId: nextMaterialId ?? null,
+        materialId: resolved.materialId,
         partDefinitionId: nextItemShape.partDefinitionId ?? null,
         partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
         partInstanceIds: [...nextItemShape.partInstanceIds],
-        title:
-          nextItemShape.process === "fabrication" || !partDefinition
-            ? parsed.data.title ?? currentItem.title
-            : partDefinition.name,
+        title: resolved.title,
       }, buildTaskAuditContext(request));
 
       return {
