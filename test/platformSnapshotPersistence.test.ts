@@ -35,7 +35,7 @@ test("production platform state survives a fresh process", () => {
     runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
-      const transaction = await store.acquireGlobalSnapshotMutation();
+      const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       store.createProject({
           name: "Durable restart project",
@@ -98,7 +98,7 @@ test("failed production persistence does not publish staged state", () => {
   const result = runProductionStoreScript(impossiblePath, `
     const imported = await import("./src/data/store.ts");
     const store = imported.default ?? imported;
-    const transaction = await store.acquireGlobalSnapshotMutation();
+    const transaction = await store.acquireSnapshotMutation();
     transaction.enter();
     store.createProject({
         name: "Rejected durable project",
@@ -142,7 +142,7 @@ test("QA workflow effects survive restart and roll back together when persistenc
   const submit = `
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
     const before = JSON.stringify(store.getSnapshot());
-    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const source = store.getSnapshot(); const task = source.tasks[0];
     store.createQaRequest({ taskId: task.id, subject: task.title, mentorId: source.members[0].id });
     const result = store.submitQaReport({ taskId: task.id, participantIds: [source.members[0].id], result: "iteration-worthy", mentorApproved: false, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: "2026-09-09" });
@@ -183,7 +183,7 @@ test("production snapshots reject external mutation and retain only committed co
       assert.equal(Reflect.set(store.findSubsystem(before.subsystems[0].id), "name", "outside command"), false);
       assert.equal(Reflect.set(before.tasks[0].assigneeIds, "0", "outside command"), false);
 
-      const transaction = await store.acquireGlobalSnapshotMutation();
+      const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       assert.equal(Reflect.set(store.getMembers()[0], "name", "nested transaction write"), false);
       assert.equal(transaction.hasChanges(), false);
@@ -206,7 +206,7 @@ test("production snapshots reject external mutation and retain only committed co
       assert.equal(saved.hours, 1.25);
       assert.deepEqual(saved.participantIds, [before.members[0].id]);
 
-      const rejected = await store.acquireGlobalSnapshotMutation();
+      const rejected = await store.acquireSnapshotMutation();
       rejected.enter();
       const cyclic = {}; cyclic.self = cyclic;
       for (const value of [new Date(), new Map(), new Set(), NaN, Infinity, 1n, cyclic]) {
@@ -248,7 +248,7 @@ test("atomic acquisition persists all linked records or rolls back the entire du
       acquisition: { method: "purchase", subsystemId: subsystem.id, disciplineId: "design", ownerId: "ava", mentorId: "jordan", dueDate: "2026-10-01" },
     }), "priya");
     assert.ok(!prepared.error);
-    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: "priya", requestId: "atomic-proof" });
     assert.equal(transaction.hasChanges(), true);
     try {
@@ -289,7 +289,7 @@ test("QA and test findings preserve separate IDs, audits and durable transaction
     const { default: assert } = await import("node:assert/strict");
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
     const before = store.getSnapshot();
-    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const outputs = [];
     for (const reportType of ["QA", "MilestoneTest"]) {
       const report = store.getReports().find(item => item.reportType === reportType);
@@ -335,6 +335,47 @@ test("QA and test findings preserve separate IDs, audits and durable transaction
     `));
     assert.deepEqual(restored, created);
     assert.equal(runProductionStoreScript("/dev/null/findings.json", submit), "rolled-back");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("production tutorial commits and lifecycle changes stay off disk while global writes survive restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-tutorial-publication-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  try {
+    runProductionStoreScript(snapshotPath, `
+      const { default: assert } = await import("node:assert/strict");
+      const { existsSync, readFileSync } = await import("node:fs");
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const mutate = async (userKey, command) => {
+        const transaction = await store.acquireSnapshotMutation(userKey);
+        try { transaction.enter(); command(); await transaction.commit(); }
+        finally { transaction.release(); }
+      };
+      const write = notes => {
+        const snapshot = store.getSnapshot();
+        store.createWorkLog({ taskId: snapshot.tasks[0].id, participantIds: [snapshot.members[0].id], date: "2026-09-26", hours: 1, notes });
+      };
+      await mutate("tutorial-user", () => store.startInteractiveTutorialSession("tutorial-user"));
+      await mutate("tutorial-user", () => write("Memory-only tutorial work"));
+      const tutorial = store.runWithInteractiveTutorialSession("tutorial-user", () => store.getSnapshot());
+      assert.equal(tutorial.workLogs.filter(item => item.notes === "Memory-only tutorial work").length, 1);
+      assert.equal(existsSync(process.env.PLATFORM_SNAPSHOT_PATH), false);
+      await mutate(undefined, () => write("Durable global work"));
+      const persisted = readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8");
+      assert.equal(persisted.includes("Memory-only tutorial work"), false);
+      await mutate("tutorial-user", () => store.resetTutorialBaseline("tutorial-user"));
+      await mutate("tutorial-user", () => store.resetInteractiveTutorialSession("tutorial-user"));
+      assert.equal(readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8"), persisted);
+    `);
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      process.stdout.write(JSON.stringify(store.getSnapshot().workLogs.map(item => item.notes)));
+    `));
+    assert.ok(restored.includes("Durable global work"));
+    assert.ok(!restored.includes("Memory-only tutorial work"));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

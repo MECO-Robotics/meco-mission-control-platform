@@ -752,7 +752,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post("/api/tutorial/session/start", async (request, reply) => {
+  app.post("/api/tutorial/session/start", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -772,7 +772,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/tutorial/session/reset", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/tutorial/session/reset", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }

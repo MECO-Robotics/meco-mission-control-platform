@@ -34,6 +34,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Core platform state is loaded from and atomically persisted to `data/platform-snapshot.json`
   in production. Mutations are serialized and acknowledged only after the asynchronous durable
   write succeeds. The production Compose stack mounts `/app/data` as a durable named volume.
+- Global and per-user tutorial mutations share one request transaction owner. Mutations and tutorial start/reset/end queue by user; global destinations then take the global lock. Reads see the last published snapshot. Failures before publication discard drafts and lifecycle changes; successful tutorial commits remain memory-only. Client disconnects do not cancel accepted mutations; they may still complete and publish. Acquisition retains its private command draft for atomic direct calls outside HTTP.
 - Per-user preferences are stored outside git in `data/user-preferences.json` on the same volume.
 - Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - `prisma/schema.prisma` owns web/mobile sessions and CAD tables. Core planning/manufacturing entities live only in the snapshot domain model; they have no duplicate Prisma tables.
