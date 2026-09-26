@@ -65,8 +65,7 @@ export function buildDashboard(snapshot: SnapshotView) {
     subsystemCards: snapshot.subsystems.map((subsystem) => {
       const tasks = snapshot.tasks.filter(
         (task) =>
-          task.subsystemId === subsystem.id ||
-          (task.subsystemIds ?? [task.subsystemId]).includes(subsystem.id),
+          task.subsystemIds.includes(subsystem.id),
       );
       const done = tasks.filter((task) => task.status === "complete").length;
 
@@ -184,7 +183,7 @@ function buildSubsystemMetrics(
   return snapshot.subsystems
     .map((subsystem) => {
       const tasks = snapshot.tasks.filter((task) =>
-        [task.subsystemId, ...(task.subsystemIds ?? [])].includes(subsystem.id),
+        task.subsystemIds.includes(subsystem.id),
       );
       const taskMetrics = buildTaskMetrics(snapshot, tasks, workHoursByTaskId);
       const mechanismCount = snapshot.mechanisms.filter((mechanism) => {
@@ -236,7 +235,7 @@ function buildMechanismMetrics(
   return snapshot.mechanisms
     .map((mechanism) => {
       const tasks = snapshot.tasks.filter((task) =>
-        [task.mechanismId, ...(task.mechanismIds ?? [])].includes(mechanism.id),
+        task.mechanismIds.includes(mechanism.id),
       );
       const subsystemName = snapshot.subsystems.find(
         (subsystem) => subsystem.id === mechanism.subsystemId,

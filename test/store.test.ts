@@ -257,11 +257,11 @@ test("offseason FRC sample data has internally consistent references", () => {
 
   for (const task of snapshot.tasks) {
     expectId(ids.projects, task.projectId, `task ${task.id} projectId`);
-    expectId(ids.workstreams, task.workstreamId, `task ${task.id} workstreamId`);
-    expectId(ids.subsystems, task.subsystemId, `task ${task.id} subsystemId`);
-    expectId(ids.mechanisms, task.mechanismId, `task ${task.id} mechanismId`);
-    expectId(ids.partInstances, task.partInstanceId, `task ${task.id} partInstanceId`);
-    expectId(ids.artifacts, task.artifactId, `task ${task.id} artifactId`);
+    expectId(ids.workstreams, (task.workstreamIds[0] ?? null), `task ${task.id} workstreamId`);
+    expectId(ids.subsystems, (task.subsystemIds[0] ?? ""), `task ${task.id} subsystemId`);
+    expectId(ids.mechanisms, (task.mechanismIds[0] ?? null), `task ${task.id} mechanismId`);
+    expectId(ids.partInstances, (task.partInstanceIds[0] ?? null), `task ${task.id} partInstanceId`);
+    expectId(ids.artifacts, (task.artifactIds[0] ?? null), `task ${task.id} artifactId`);
     expectId(ids.milestones, task.targetMilestoneId, `task ${task.id} targetMilestoneId`);
     expectId(ids.members, task.ownerId, `task ${task.id} ownerId`);
     expectId(ids.members, task.mentorId, `task ${task.id} mentorId`);
@@ -520,11 +520,11 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
   assert.equal(mechanism.isArchived, false);
 
   const wiringTask = getSnapshot().tasks.find(
-    (task) => task.mechanismId === mechanism.id && task.title === "Wire Test Mechanism",
+    (task) => (task.mechanismIds[0] ?? null) === mechanism.id && task.title === "Wire Test Mechanism",
   );
 
   assert.ok(wiringTask);
-  assert.equal(wiringTask?.subsystemId, "drive");
+  assert.equal((wiringTask.subsystemIds[0] ?? ""), "drive");
   assert.equal(wiringTask?.disciplineId, "electrical");
 });
 
@@ -547,9 +547,9 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
   assert.equal(subsystem.color, "#4F86C6");
   assert.equal(subsystem.parentSubsystemId, "drive");
   assert.ok(integrationTask);
-  assert.equal(integrationTask?.subsystemId, "drive");
+  assert.equal((integrationTask.subsystemIds[0] ?? ""), "drive");
   assert.equal(integrationTask?.disciplineId, "testing");
-  assert.equal(integrationTask?.mechanismId, null);
+  assert.equal((integrationTask.mechanismIds[0] ?? null), null);
   assert.equal(integrationTask?.ownerId, "ava");
   assert.equal(integrationTask?.mentorId, "jordan");
 });
@@ -590,7 +590,7 @@ test("task updates append an audit action entry", () => {
   assert.equal(lastAction.operation, "update");
   assert.equal(lastAction.taskId, "intake-guard");
   assert.equal(lastAction.projectId, updatedTask.projectId);
-  assert.equal(lastAction.subsystemId, updatedTask.subsystemId);
+  assert.equal(lastAction.subsystemId, (updatedTask.subsystemIds[0] ?? ""));
   assert.equal(lastAction.entityLabel, updatedTask.title);
   assert.equal(lastAction.actorMemberId, "jordan");
   assert.equal(lastAction.requestId, "req-audit-task-update");
@@ -767,7 +767,7 @@ test("updatePartInstance merges onto an existing part and retargets task referen
   });
 
   updateTask("swerve-sensor-bundle", {
-    partInstanceId: intakePartInstance.id,
+    partInstanceIds: [intakePartInstance.id],
   });
 
   const mergedPartInstance = updatePartInstance(intakePartInstance.id, {
@@ -784,7 +784,7 @@ test("updatePartInstance merges onto an existing part and retargets task referen
   assert.equal(matchingPartInstances.length, 1);
   assert.equal(matchingPartInstances[0].quantity, 5);
   assert.equal(matchingPartInstances[0].mechanismId, "swerve-module");
-  assert.equal(updatedTask?.partInstanceId, drivePartInstance.id);
+  assert.equal(updatedTask?.partInstanceIds[0], drivePartInstance.id);
 });
 
 test("fabrication manufacturing items stay seeded and update cleanly", () => {
@@ -915,7 +915,7 @@ test("removePartDefinition clears linked part instances and task references", ()
   });
 
   updateTask("swerve-sensor-bundle", {
-    partInstanceId: createdPartInstance.id,
+    partInstanceIds: [createdPartInstance.id],
   });
 
   const removed = removePartDefinition(createdPartDefinition.id);
@@ -930,9 +930,9 @@ test("removePartDefinition clears linked part instances and task references", ()
     snapshot.partInstances.some((partInstance) => partInstance.id === createdPartInstance.id),
     false,
   );
-  assert.equal(
-    snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.partInstanceId,
-    null,
+  assert.deepEqual(
+    snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.partInstanceIds,
+    [],
   );
 });
 
@@ -1209,23 +1209,18 @@ test("task hours follow work log create, resize, move and delete", () => {
 });
 
 
-test("task targets preserve kind order, primary context, and unique scalar/list links", () => {
+test("task targets preserve kind order, first-target context, and unique array links", () => {
   const snapshot = getSnapshot();
-  const task = {
-    ...snapshot.tasks[0],
-    workstreamId: "primary-workstream",
-    workstreamIds: ["shared", "shared"],
-    subsystemId: "primary-subsystem",
+  const task = snapshot.tasks[0];
+  const targets = {
+    workstreamIds: ["shared", "shared", "primary-workstream"],
     subsystemIds: ["shared", "primary-subsystem"],
-    mechanismId: null,
     mechanismIds: ["mechanism", "mechanism"],
-    partInstanceId: "part",
-    partInstanceIds: [],
-    artifactId: "primary-artifact",
-    artifactIds: ["artifact", "artifact"],
+    partInstanceIds: ["part"],
+    artifactIds: ["artifact", "artifact", "primary-artifact"],
     targetMilestoneId: "milestone",
   };
-  resetStore({ ...snapshot, tasks: [task, ...snapshot.tasks.slice(1)] });
+  updateTask(task.id, targets);
 
   const links = getTaskTargets().filter((link) => link.taskId === task.id);
   assert.deepEqual(links.map((link) => [link.targetType, link.targetId]), [
@@ -1244,11 +1239,11 @@ test("task targets preserve kind order, primary context, and unique scalar/list 
     assert.equal(link.id, `${task.id}:${link.targetType}:${link.targetId}`);
     assert.equal(link.taskTitle, task.title);
     assert.equal(link.projectId, task.projectId);
-    assert.equal(link.workstreamId, "primary-workstream");
-    assert.equal(link.subsystemId, "primary-subsystem");
+    assert.equal(link.workstreamId, "shared");
+    assert.equal(link.subsystemId, "shared");
   }
 
-  resetStore({ ...snapshot, tasks: [{ ...task, targetMilestoneId: null }, ...snapshot.tasks.slice(1)] });
+  updateTask(task.id, { targetMilestoneId: null });
   assert.deepEqual(getTaskTargets().filter((link) => link.taskId === task.id), links.slice(0, -1));
 });
 

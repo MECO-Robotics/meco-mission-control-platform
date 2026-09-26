@@ -1263,10 +1263,10 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         title: "Roster summary dedupe task",
         summary: "Ensures roster summary task counts stay deduplicated.",
-        subsystemId: rosterSummarySubsystemBody.item.id,
+        subsystemIds: [rosterSummarySubsystemBody.item.id],
         disciplineId: "design",
-        mechanismId: null,
-        partInstanceId: null,
+        mechanismIds: [],
+        partInstanceIds: [],
         targetMilestoneId: null,
         ownerId: "ava",
         assigneeIds: ["ava", "priya"],

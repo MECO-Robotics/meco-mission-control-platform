@@ -29,7 +29,6 @@ type DefaultedTaskField =
   | "subsystemIds"
   | "mechanismIds"
   | "partInstanceIds"
-  | "artifactId"
   | "artifactIds"
   | "assigneeIds";
 

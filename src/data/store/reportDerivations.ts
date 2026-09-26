@@ -71,7 +71,7 @@ export function reportFromQaReport(
     projectId: task.projectId,
     taskId: report.taskId,
     milestoneId: null,
-    workstreamId: task.workstreamId,
+    workstreamId: (task.workstreamIds[0] ?? null),
     createdByMemberId: null,
     result: report.result,
     summary: report.notes,

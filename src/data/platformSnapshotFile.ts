@@ -1,3 +1,4 @@
+import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -33,6 +34,12 @@ export function loadPlatformSnapshotFile(path: string) {
   }
 
   return parsed;
+}
+
+export function assertSnapshotTaskTargets(snapshot: Pick<PlatformSnapshot, "tasks">) {
+  if (!snapshot.tasks.every((task) => taskRecordTargetsSchema.safeParse(task).success)) {
+    throw new Error("Unsupported task targets in platform snapshot. Stop the app, delete the configured PLATFORM_SNAPSHOT_PATH (default data/platform-snapshot.json), and restart to bootstrap disposable development state.");
+  }
 }
 
 export async function savePlatformSnapshotFile(path: string, snapshot: PlatformSnapshot) {

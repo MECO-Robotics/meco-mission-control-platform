@@ -24,18 +24,13 @@ function makeTask(overrides: Partial<Task> = {}) {
   const baseTask: Task = {
     id: "task-a",
     projectId: "default-season-robot",
-    workstreamId: null,
     workstreamIds: [],
     title: "Drive calibration",
     summary: "Validate encoder calibration before practice.",
-    subsystemId: "drive",
     subsystemIds: ["drive"],
     disciplineId: "design",
-    mechanismId: null,
     mechanismIds: [],
-    partInstanceId: null,
     partInstanceIds: [],
-    artifactId: null,
     artifactIds: [],
     targetMilestoneId: null,
     ownerId: "ava",
@@ -56,24 +51,7 @@ function makeTask(overrides: Partial<Task> = {}) {
     documentationLinked: false,
   };
 
-  const mergedTask = {
-    ...baseTask,
-    ...overrides,
-  } as Task;
-
-  return {
-    ...mergedTask,
-    workstreamIds:
-      overrides.workstreamIds ??
-      (mergedTask.workstreamId ? [mergedTask.workstreamId] : []),
-    subsystemIds: overrides.subsystemIds ?? [mergedTask.subsystemId],
-    mechanismIds:
-      overrides.mechanismIds ??
-      (mergedTask.mechanismId ? [mergedTask.mechanismId] : []),
-    partInstanceIds:
-      overrides.partInstanceIds ??
-      (mergedTask.partInstanceId ? [mergedTask.partInstanceId] : []),
-  };
+  return { ...baseTask, ...overrides };
 }
 
 function makeWorkflowSnapshot() {
@@ -82,7 +60,6 @@ function makeWorkflowSnapshot() {
 
   snapshot.tasks = [
     makeTask({
-      mechanismId: "drive-shaft",
       mechanismIds: ["drive-shaft"],
       status: "waiting-for-qa",
       priority: "critical",
@@ -94,7 +71,7 @@ function makeWorkflowSnapshot() {
     makeTask({
       id: "task-b",
       title: "Controls firmware",
-      subsystemId: "controls",
+      subsystemIds: ["controls"],
       disciplineId: "programming",
       ownerId: "ethan",
       mentorId: "riley",
@@ -108,7 +85,7 @@ function makeWorkflowSnapshot() {
     makeTask({
       id: "task-c",
       title: "Controls integration",
-      subsystemId: "controls",
+      subsystemIds: ["controls"],
       disciplineId: "testing",
       ownerId: "ethan",
       mentorId: "riley",

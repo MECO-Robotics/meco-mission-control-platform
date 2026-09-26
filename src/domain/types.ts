@@ -1,3 +1,5 @@
+import type { TaskTargets } from "./taskTargets";
+
 export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
 export type MilestoneType =
   | "practice"
@@ -257,25 +259,15 @@ export interface Artifact {
   updatedAt: string;
 }
 
-export interface Task {
+export interface Task extends TaskTargets {
   id: string;
   createdAt?: string;
   serialNumber?: number;
   serial?: string;
   projectId: string;
-  workstreamId: string | null;
-  workstreamIds: string[];
   title: string;
   summary: string;
-  subsystemId: string;
-  subsystemIds: string[];
   disciplineId: string;
-  mechanismId: string | null;
-  mechanismIds: string[];
-  partInstanceId: string | null;
-  partInstanceIds: string[];
-  artifactId: string | null;
-  artifactIds: string[];
   targetMilestoneId: string | null;
   photoUrl?: string;
   ownerId: string | null;

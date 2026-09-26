@@ -223,8 +223,7 @@ export function buildBootstrapResponse(
   const scopedTasks = snapshot.tasks.filter(
     (task) =>
       activeProjectIds.has(task.projectId) &&
-      (scopedSubsystemIds.has(task.subsystemId) ||
-        task.subsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId))),
+      task.subsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId)),
   );
   const scopedTaskIds = new Set(scopedTasks.map((task) => task.id));
   const scopedTasksById = new Map(scopedTasks.map((task) => [task.id, task] as const));

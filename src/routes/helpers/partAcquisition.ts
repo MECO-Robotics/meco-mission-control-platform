@@ -5,7 +5,7 @@ import {
 } from "../../data/store";
 import type { partDefinitionSchema } from "../routeSchemas";
 import { validatePartDefinitionMaterialId, validateSubsystemPeople, validateTaskLinks } from "./linkValidation";
-import { normalizeTaskTargets, resolveWorkstreamId, uniqueIds } from "./taskTargets";
+import { normalizeTaskTargets, uniqueIds } from "./taskTargets";
 
 export function preparePartAcquisition(
   input: z.infer<typeof partDefinitionSchema>,
@@ -53,8 +53,7 @@ export function preparePartAcquisition(
   if (peopleError) {
     return { error: peopleError };
   }
-  const workstreamId = resolveWorkstreamId({ projectId: project.id, subsystemId: subsystem.id });
-  const targets = normalizeTaskTargets({ subsystemId: subsystem.id, workstreamId });
+  const targets = normalizeTaskTargets({ subsystemIds: [subsystem.id] });
   const task = {
     ...targets,
     projectId: project.id,
