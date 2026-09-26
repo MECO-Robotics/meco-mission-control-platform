@@ -127,7 +127,6 @@ import {
   getDefaultProjectId,
   normalizeTaskTargets,
   resolveProjectId,
-  resolveWorkstreamId,
   uniqueIds,
 } from "./helpers/taskTargets";
 
@@ -1517,18 +1516,13 @@ export async function registerRoutes(
     const items = filterTasksForPerson(personId).map((task) => ({
       id: task.id,
       projectId: task.projectId,
-      workstreamId: task.workstreamId,
       workstreamIds: task.workstreamIds,
       title: task.title,
       summary: task.summary,
-      subsystemId: task.subsystemId,
       subsystemIds: task.subsystemIds,
       disciplineId: task.disciplineId,
-      mechanismId: task.mechanismId,
       mechanismIds: task.mechanismIds,
-      partInstanceId: task.partInstanceId,
       partInstanceIds: task.partInstanceIds,
-      artifactId: task.artifactId,
       artifactIds: task.artifactIds,
       targetMilestoneId: task.targetMilestoneId,
       ownerId: task.ownerId,
@@ -2037,7 +2031,7 @@ export async function registerRoutes(
     const targetIds = normalizeTaskTargets(parsed.data);
     const projectId = resolveProjectId({
       projectId: parsed.data.projectId,
-      subsystemId: targetIds.subsystemId,
+      subsystemId: targetIds.subsystemIds[0],
     });
     if (!projectId) {
       return reply.code(400).send({
@@ -2045,21 +2039,10 @@ export async function registerRoutes(
       });
     }
 
-    const defaultWorkstreamId = resolveWorkstreamId({
-      projectId,
-      requestedWorkstreamId: parsed.data.workstreamId,
-      subsystemId: targetIds.subsystemId,
-    });
-    const workstreamIds =
-      targetIds.workstreamIds.length > 0
-        ? targetIds.workstreamIds
-        : uniqueIds([defaultWorkstreamId]);
     const taskInput = {
       ...parsed.data,
       projectId,
       ...targetIds,
-      workstreamId: workstreamIds[0] ?? null,
-      workstreamIds,
       assigneeIds: uniqueIds(parsed.data.assigneeIds ?? []),
       startDate: parsed.data.startDate ?? parsed.data.dueDate,
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
@@ -2251,28 +2234,11 @@ export async function registerRoutes(
       const targetIds = normalizeTaskTargets(parsed.data, currentTask);
       const nextProjectId = resolveProjectId({
         projectId: parsed.data.projectId,
-        subsystemId: targetIds.subsystemId,
+        subsystemId: targetIds.subsystemIds[0],
       }) ?? currentTask.projectId;
-      const workstreamWasProvided =
-        parsed.data.workstreamId !== undefined || parsed.data.workstreamIds !== undefined;
-      const subsystemWasProvided =
-        parsed.data.subsystemId !== undefined || parsed.data.subsystemIds !== undefined;
-      const defaultWorkstreamId =
-        !workstreamWasProvided && subsystemWasProvided
-          ? resolveWorkstreamId({
-              projectId: nextProjectId,
-              subsystemId: targetIds.subsystemId,
-            })
-          : targetIds.workstreamId;
-      const workstreamIds =
-        workstreamWasProvided || !subsystemWasProvided
-          ? targetIds.workstreamIds
-          : uniqueIds([defaultWorkstreamId]);
       const nextTaskShape = {
         projectId: nextProjectId,
         ...targetIds,
-        workstreamId: workstreamIds[0] ?? null,
-        workstreamIds,
         assigneeIds:
           parsed.data.assigneeIds === undefined
             ? currentTask.assigneeIds ?? []
@@ -2294,15 +2260,10 @@ export async function registerRoutes(
       const updatedTask = updateTask(request.params.taskId, {
         ...parsed.data,
         projectId: nextTaskShape.projectId,
-        workstreamId: nextTaskShape.workstreamId,
         workstreamIds: nextTaskShape.workstreamIds,
-        subsystemId: nextTaskShape.subsystemId,
         subsystemIds: nextTaskShape.subsystemIds,
-        mechanismId: nextTaskShape.mechanismId,
         mechanismIds: nextTaskShape.mechanismIds,
-        partInstanceId: nextTaskShape.partInstanceId,
         partInstanceIds: nextTaskShape.partInstanceIds,
-        artifactId: nextTaskShape.artifactId,
         artifactIds: nextTaskShape.artifactIds,
       }, buildTaskAuditContext(request));
       return {

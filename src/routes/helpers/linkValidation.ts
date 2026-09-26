@@ -159,16 +159,11 @@ export function validateRiskLinks(input: {
 
 export function validateTaskLinks(input: {
   projectId: string;
-  workstreamId?: string | null;
   workstreamIds?: readonly string[];
-  subsystemId?: string | null;
   subsystemIds: readonly string[];
   disciplineId?: string;
-  mechanismId?: string | null;
   mechanismIds?: readonly string[];
-  partInstanceId?: string | null;
   partInstanceIds?: readonly string[];
-  artifactId?: string | null;
   artifactIds?: readonly string[];
   targetMilestoneId?: string | null;
   assigneeIds?: readonly string[];
@@ -178,10 +173,7 @@ export function validateTaskLinks(input: {
     return "The selected project does not exist.";
   }
 
-  const workstreamIds = uniqueIds([
-    ...(input.workstreamIds ?? []),
-    input.workstreamId,
-  ]);
+  const workstreamIds = input.workstreamIds ?? [];
   for (const workstreamId of workstreamIds) {
     const workstream = findWorkstream(workstreamId);
     if (!workstream) {
@@ -193,10 +185,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const subsystemIds = uniqueIds([
-    ...input.subsystemIds,
-    input.subsystemId,
-  ]);
+  const subsystemIds = input.subsystemIds ?? [];
   if (subsystemIds.length === 0) {
     return "Select at least one subsystem, mechanism, or part instance target.";
   }
@@ -221,10 +210,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const mechanismIds = uniqueIds([
-    ...(input.mechanismIds ?? []),
-    input.mechanismId,
-  ]);
+  const mechanismIds = input.mechanismIds ?? [];
   for (const mechanismId of mechanismIds) {
     const mechanism = findMechanism(mechanismId);
     if (!mechanism) {
@@ -236,10 +222,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const partInstanceIds = uniqueIds([
-    ...(input.partInstanceIds ?? []),
-    input.partInstanceId,
-  ]);
+  const partInstanceIds = input.partInstanceIds ?? [];
   for (const partInstanceId of partInstanceIds) {
     const partInstance = findPartInstance(partInstanceId);
     if (!partInstance) {
@@ -259,10 +242,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const artifactIds = uniqueIds([
-    ...(input.artifactIds ?? []),
-    input.artifactId,
-  ]);
+  const artifactIds = input.artifactIds ?? [];
   for (const artifactId of artifactIds) {
     const artifact = findArtifact(artifactId);
     if (!artifact) {

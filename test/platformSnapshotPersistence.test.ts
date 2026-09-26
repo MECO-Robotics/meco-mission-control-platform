@@ -380,3 +380,33 @@ test("production tutorial commits and lifecycle changes stay off disk while glob
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("obsolete task snapshots fail startup and deleting them restores canonical bootstrap", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-array-target-reset-"));
+  const path = join(directory, "snapshot.json");
+  const readSnapshot = `
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    process.stdout.write(JSON.stringify(store.getSnapshot()));
+  `;
+  try {
+    const snapshot = JSON.parse(runProductionStoreScript(path, readSnapshot));
+    for (const obsolete of [
+      { ...snapshot.tasks[0], subsystemId: snapshot.tasks[0].subsystemIds[0] },
+      { ...snapshot.tasks[0], artifactIds: undefined },
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...snapshot, tasks: [obsolete] }));
+      assert.throws(() => runProductionStoreScript(path, readSnapshot), /Unsupported task targets.*PLATFORM_SNAPSHOT_PATH/);
+    }
+    rmSync(path);
+    const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
+    assert.deepEqual(restored.tasks.map((task: { id: string }) => task.id), snapshot.tasks.map((task: { id: string }) => task.id));
+    assert.ok(restored.tasks.every((task: Record<string, unknown>) =>
+      ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds", "artifactIds"].every((field) =>
+        Array.isArray(task[field]) && !(field.slice(0, -1) in task),
+      ),
+    ));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

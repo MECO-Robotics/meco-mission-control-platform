@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { taskTargetsSchema } from "../domain/taskTargets";
 
 
 const plannedAttendanceDaySchema = z.enum([
@@ -66,20 +67,11 @@ export const projectSchema = projectFieldsSchema.extend({
 export const projectPatchSchema = projectFieldsSchema.pick({ name: true, description: true, status: true }).partial();
 
 const taskFieldsSchema = z.object({
+  ...taskTargetsSchema.partial().shape,
   projectId: z.string().trim().min(1).optional(),
-  workstreamId: z.string().trim().min(1).nullable().optional(),
-  workstreamIds: z.array(z.string().trim().min(1)).optional(),
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
-  subsystemId: z.string().trim().min(1).optional(),
-  subsystemIds: z.array(z.string().trim().min(1)).optional(),
   disciplineId: z.string().min(1),
-  mechanismId: z.string().trim().min(1).nullable().optional(),
-  mechanismIds: z.array(z.string().trim().min(1)).optional(),
-  partInstanceId: z.string().trim().min(1).nullable().optional(),
-  partInstanceIds: z.array(z.string().trim().min(1)).optional(),
-  artifactId: z.string().trim().min(1).nullable().optional(),
-  artifactIds: z.array(z.string().trim().min(1)).optional(),
   targetMilestoneId: z.string().trim().min(1).nullable(),
   photoUrl: z.string().trim(),
   ownerId: z.string().trim().min(1).nullable(),

@@ -59,10 +59,10 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         title: "Mobile task payload",
         summary: "Created from the mobile app's compact task draft.",
-        subsystemId: mobileSubsystemCreatedBody.item.id,
+        subsystemIds: [mobileSubsystemCreatedBody.item.id],
         disciplineId: "design",
-        mechanismId: null,
-        partInstanceId: null,
+        mechanismIds: [],
+        partInstanceIds: [],
         targetMilestoneId: null,
         ownerId: mobileMemberCreatedBody.item.id,
         assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
@@ -84,7 +84,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         projectId: string;
         assigneeIds: string[];
         startDate: string;
-        workstreamId: string | null;
+        workstreamIds: string[];
         photoUrl: string;
       };
     };
@@ -94,11 +94,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       "ava",
     ]);
     assert.equal(mobileTaskCreatedBody.item.startDate, "2026-05-06");
-    assert.equal(
-      typeof mobileTaskCreatedBody.item.workstreamId === "string" ||
-        mobileTaskCreatedBody.item.workstreamId === null,
-      true,
-    );
+    assert.deepEqual(mobileTaskCreatedBody.item.workstreamIds, []);
     assert.equal(
       mobileTaskCreatedBody.item.photoUrl,
       "https://cdn.example.test/tasks/mobile-task.png",
@@ -111,13 +107,13 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       url: "/api/tasks",
       payload: {
         projectId: "project-operations-2026",
-        workstreamId: "workstream-operations-logistics",
+        workstreamIds: ["workstream-operations-logistics"],
         title: "Invalid operations discipline",
         summary: "Attempts to use a robot-only discipline on a business task.",
-        subsystemId: "pit-readiness",
+        subsystemIds: ["pit-readiness"],
         disciplineId: "design",
-        mechanismId: "pit-board",
-        partInstanceId: "pi-pit-board-frame",
+        mechanismIds: ["pit-board"],
+        partInstanceIds: ["pi-pit-board-frame"],
         targetMilestoneId: "pit-freeze-apr-28",
         ownerId: "sofia",
         mentorId: "marco",
@@ -166,33 +162,22 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     assert.equal(multiTargetTaskCreateResponse.statusCode, 201);
     const multiTargetTaskCreatedBody = multiTargetTaskCreateResponse.json() as {
       item: {
-        workstreamId: string | null;
         workstreamIds: string[];
-        subsystemId: string;
         subsystemIds: string[];
-        mechanismId: string | null;
         mechanismIds: string[];
-        partInstanceId: string | null;
         partInstanceIds: string[];
         photoUrl: string;
       };
     };
-    assert.equal(multiTargetTaskCreatedBody.item.workstreamId, "workstream-drive");
     assert.deepEqual(multiTargetTaskCreatedBody.item.workstreamIds, [
       "workstream-drive",
       "workstream-controls",
     ]);
-    assert.equal(multiTargetTaskCreatedBody.item.subsystemId, "drive");
     assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, ["drive", "controls"]);
-    assert.equal(multiTargetTaskCreatedBody.item.mechanismId, "swerve-module");
     assert.deepEqual(multiTargetTaskCreatedBody.item.mechanismIds, [
       "swerve-module",
       "auto-safety",
     ]);
-    assert.equal(
-      multiTargetTaskCreatedBody.item.partInstanceId,
-      "pi-swerve-encoder-bracket-front-left",
-    );
     assert.deepEqual(multiTargetTaskCreatedBody.item.partInstanceIds, [
       "pi-swerve-encoder-bracket-front-left",
     ]);
@@ -420,10 +405,10 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
       payload: {
         title: "Assignment semantics task",
         summary: "Validates owner assignment list behavior.",
-        subsystemId: "drive",
+        subsystemIds: ["drive"],
         disciplineId: "design",
-        mechanismId: null,
-        partInstanceId: null,
+        mechanismIds: [],
+        partInstanceIds: [],
         targetMilestoneId: null,
         ownerId: "ava",
         assigneeIds: ["ava", "priya"],

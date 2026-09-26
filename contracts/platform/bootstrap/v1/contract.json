@@ -562,6 +562,41 @@
       "items": {
         "type": "object",
         "properties": {
+          "workstreamIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "subsystemIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "mechanismIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "partInstanceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "artifactIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -594,6 +629,11 @@
           }
         },
         "required": [
+          "workstreamIds",
+          "subsystemIds",
+          "mechanismIds",
+          "partInstanceIds",
+          "artifactIds",
           "id",
           "status",
           "checklistItems",
@@ -906,27 +946,44 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "workstreamId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "workstreamIds": {
           "type": "array",
           "items": {
             "type": "string",
             "minLength": 1
           }
+        },
+        "subsystemIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mechanismIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "partInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "artifactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
         },
         "title": {
           "type": "string",
@@ -936,74 +993,9 @@
           "type": "string",
           "minLength": 3
         },
-        "subsystemId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "subsystemIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "disciplineId": {
           "type": "string",
           "minLength": 1
-        },
-        "mechanismId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mechanismIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "partInstanceId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "partInstanceIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "artifactId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "artifactIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         },
         "targetMilestoneId": {
           "anyOf": [
@@ -1133,27 +1125,44 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "workstreamId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "workstreamIds": {
           "type": "array",
           "items": {
             "type": "string",
             "minLength": 1
           }
+        },
+        "subsystemIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mechanismIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "partInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "artifactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
         },
         "title": {
           "type": "string",
@@ -1163,74 +1172,9 @@
           "type": "string",
           "minLength": 3
         },
-        "subsystemId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "subsystemIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "disciplineId": {
           "type": "string",
           "minLength": 1
-        },
-        "mechanismId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mechanismIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "partInstanceId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "partInstanceIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "artifactId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "artifactIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         },
         "targetMilestoneId": {
           "anyOf": [

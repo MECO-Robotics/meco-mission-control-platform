@@ -16,6 +16,16 @@ npm run dev
 
 Before applying the schema, create the local database and set `DATABASE_URL` in `.env`. Review the example settings for your local services; do not use production credentials. The API listens on port 8080 by default. See [README](README.md) for authentication and the optional `npm run smtp:dev` email sink. Core workspace state uses snapshots; Prisma owns sessions and CAD persistence.
 
+Task records and commands use only `workstreamIds`, `subsystemIds`, `mechanismIds`, `partInstanceIds` and `artifactIds`. Stored records require all five arrays; PATCH omission retains existing targets and explicit arrays replace the selected set. Nested part/mechanism targets still infer their required ancestors. Workstreams are independent selections and are never inferred from subsystem names.
+
+Snapshots containing singular task target fields, missing target arrays or duplicate target IDs are rejected at startup. This breaking prototype change does not migrate old development state. Stop the API, then run the following from the repository root with the same environment used by the API, and restart it to bootstrap fresh state:
+
+```sh
+rm -- "${PLATFORM_SNAPSHOT_PATH:-data/platform-snapshot.json}"
+```
+
+This discards core workspace development state; it does not reset Prisma or CAD storage. Fresh snapshots retain writes across ordinary production restarts.
+
 ## Validation
 
 Run `npm run verify` for application, package or CI changes. It verifies the bootstrap contract, generates Prisma, checks test types, runs the test suite and builds the server; do not repeat those steps separately on the same revision. Use `npm test` for focused test iteration. Integration tests own temporary preference files; `buildApp({ userPreferencesPath })` selects their storage. Ordinary application startup retains `data/user-preferences.json`, and reopening that path retains saved preferences. Set `TEST_DATABASE_URL` to an isolated, bootstrapped PostgreSQL database when running `npm run verify` to include the production mobile-session persistence/competition test. Without it, that scenario is explicitly skipped. Schema changes also require `npx prisma validate` and a clean-database bootstrap/persistence check. Deployment changes require the relevant workflow tests and compose validation described in the [operator runbook](docs/platform-deployment-recovery.md).
