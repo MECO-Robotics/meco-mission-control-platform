@@ -12,7 +12,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Source Layout
 
-- `src/routes/` contains the main Mission Control route registration, route schemas, route helpers, and small helper modules for bootstrap selection, pagination, task targets, link validation, and roster insights.
+- `src/routes/` contains explicit route registration, schemas, and helpers for bootstrap selection, pagination, task targets, link validation, and roster insights. `helpers/parseRouteInput.ts` owns the shared 400 validation envelope; each route retains its schema, error message, input defaults, and authentication/link-validation order.
 - `src/data/` contains the current seeded snapshot store and TypeScript input types for core platform entities.
 - `src/domain/` contains shared workflow, task dependency, discipline, and platform type logic.
 - `src/auth/` contains Google and email verification, revocable web and mobile sessions, development-bypass auth behavior.

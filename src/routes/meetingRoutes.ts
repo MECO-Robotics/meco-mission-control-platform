@@ -1,3 +1,4 @@
+import { parseRouteInput } from "./helpers/parseRouteInput";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -83,12 +84,9 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
       return;
     }
 
-    const parsed = meetingSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Meeting payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(meetingSchema, request.body, reply, "Meeting payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const projectIds = Array.from(new Set(parsed.data.projectIds ?? []));
@@ -126,12 +124,9 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
         return;
       }
 
-      const parsed = meetingPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Meeting update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(meetingPatchSchema, request.body, reply, "Meeting update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentMeeting = getSnapshot().meetings.find(
