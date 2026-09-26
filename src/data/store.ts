@@ -1,9 +1,10 @@
+import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 
 import { createTutorialSnapshot } from "./tutorialSnapshot";
-import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
+import type { ReadonlyData, SnapshotView } from "../domain/types";
 import type {
   AuditAction,
   AuditActionOperation,
@@ -498,8 +499,8 @@ function deriveTaskSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
   })) };
 }
 
-function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
-  const clonedSnapshot = structuredClone(snapshot);
+function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
+  const clonedSnapshot = structuredClone(snapshot) as PlatformSnapshot;
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
   const normalizedProjects = clonedSnapshot.projects.map((project) => ({
     ...project,
@@ -590,6 +591,37 @@ function canonicalizeSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   }));
 }
 
+function ownSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
+  const owned = structuredClone(snapshot);
+  const ancestors = new WeakSet<object>();
+  const freeze = (value: unknown): void => {
+    if (value === null || value === undefined || typeof value === "string" || typeof value === "boolean") {
+      return;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return;
+    }
+    if (typeof value !== "object" ||
+      (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype)) {
+      throw new TypeError("Platform snapshots require plain JSON data.");
+    }
+    if (ancestors.has(value)) {
+      throw new TypeError("Platform snapshots cannot contain cyclic data.");
+    }
+    if (Object.isFrozen(value)) {
+      return;
+    }
+    ancestors.add(value);
+    Object.freeze(value);
+    for (const child of Object.values(value)) {
+      freeze(child);
+    }
+    ancestors.delete(value);
+  };
+  freeze(owned);
+  return owned;
+}
+
 interface SnapshotState {
   current: PlatformSnapshot;
   interactive: PlatformSnapshot | null;
@@ -605,7 +637,7 @@ const persistedProductionSnapshot = process.env.NODE_ENV === "production"
   ? loadPlatformSnapshotFile(platformSnapshotPath)
   : null;
 const globalSnapshotState: SnapshotState = {
-  current: canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot()),
+  current: ownSnapshot(canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot())),
   interactive: null,
 };
 const tutorialSnapshotStates = new Map<string, SnapshotState>();
@@ -618,17 +650,14 @@ function activeSnapshotState() {
 
 const currentSnapshot = new Proxy({} as PlatformSnapshot, {
   get: (_target, property) => Reflect.get(activeSnapshotState().current, property),
-  set: (_target, property, value) => {
-    const state = activeSnapshotState();
-    const updated = Reflect.set(state.current, property, value);
-    if (updated && state.isGlobalTransaction) {
-      state.dirty = true;
-    }
-    return updated;
-  },
+  set: () => false,
+  defineProperty: () => false,
+  deleteProperty: () => false,
   ownKeys: () => Reflect.ownKeys(activeSnapshotState().current),
-  getOwnPropertyDescriptor: (_target, property) =>
-    Reflect.getOwnPropertyDescriptor(activeSnapshotState().current, property),
+  getOwnPropertyDescriptor: (_target, property) => {
+    const descriptor = Reflect.getOwnPropertyDescriptor(activeSnapshotState().current, property);
+    return descriptor ? { ...descriptor, configurable: true } : undefined;
+  },
 });
 
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
@@ -636,7 +665,7 @@ function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
     throw new Error("Production platform mutations require a durable request transaction.");
   }
-  state.current = deriveTaskSummaries(snapshot);
+  state.current = ownSnapshot(deriveTaskSummaries(snapshot));
   if (state.isGlobalTransaction) {
     state.dirty = true;
   }
@@ -651,7 +680,7 @@ export async function acquireGlobalSnapshotMutation() {
   await previous;
 
   const state: SnapshotState = {
-    current: structuredClone(globalSnapshotState.current),
+    current: globalSnapshotState.current,
     interactive: null,
     isGlobalTransaction: true,
     dirty: false,
@@ -1542,8 +1571,8 @@ export function recordAuditAction(args: {
   });
 }
 
-export function getSnapshot() {
-  return currentSnapshot;
+export function getSnapshot(): SnapshotView {
+  return activeSnapshotState().current;
 }
 
 export interface TutorialBaselineState {
@@ -1594,12 +1623,12 @@ export function getTutorialBaselineState() {
   return buildTutorialBaselineState(currentSnapshot);
 }
 
-export function resetStore() {
+export function resetStore(snapshot?: SnapshotView) {
   if (process.env.NODE_ENV === "production") {
     return;
   }
 
-  globalSnapshotState.current = canonicalizeSnapshot(createTutorialSnapshot());
+  globalSnapshotState.current = ownSnapshot(canonicalizeSnapshot(snapshot ?? createTutorialSnapshot()));
   globalSnapshotState.interactive = null;
   tutorialSnapshotStates.clear();
 }
@@ -1611,7 +1640,7 @@ export function resetTutorialBaseline(userKey?: string) {
       return buildTutorialBaselineState(createTutorialSnapshot());
     }
 
-    state.current = canonicalizeSnapshot(createTutorialSnapshot());
+    state.current = ownSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
     return buildTutorialBaselineState(state.current);
   }
 
@@ -1623,15 +1652,15 @@ export function resetTutorialBaseline(userKey?: string) {
 
 export function startInteractiveTutorialSession(userKey?: string) {
   if (userKey) {
-    const current = canonicalizeSnapshot(createTutorialSnapshot());
+    const current = ownSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
     tutorialSnapshotStates.set(userKey, {
       current,
-      interactive: structuredClone(current),
+      interactive: current,
     });
     return;
   }
 
-  setInteractiveTutorialSnapshot(structuredClone(activeSnapshotState().current));
+  setInteractiveTutorialSnapshot(activeSnapshotState().current);
   replaceCurrentSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
 }
 
@@ -1642,7 +1671,7 @@ export function resetInteractiveTutorialSession(userKey?: string) {
       return false;
     }
 
-    state.current = structuredClone(state.interactive);
+    state.current = state.interactive;
     state.interactive = null;
     tutorialSnapshotStates.delete(userKey);
     return true;
@@ -1658,7 +1687,7 @@ export function resetInteractiveTutorialSession(userKey?: string) {
   return true;
 }
 
-export function getSeasons() {
+export function getSeasons(): SnapshotView["seasons"] {
   return currentSnapshot.seasons;
 }
 
@@ -1723,7 +1752,7 @@ export function createSeason(input: SeasonInput) {
   return season;
 }
 
-export function getProjects() {
+export function getProjects(): SnapshotView["projects"] {
   return currentSnapshot.projects;
 }
 
@@ -1807,7 +1836,7 @@ export function updateProject(
   return updatedProject;
 }
 
-export function getWorkstreams() {
+export function getWorkstreams(): SnapshotView["workstreams"] {
   return currentSnapshot.workstreams;
 }
 
@@ -1885,75 +1914,75 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
   return updatedWorkstream;
 }
 
-export function getMembers() {
+export function getMembers(): SnapshotView["members"] {
   return currentSnapshot.members;
 }
 
-export function getSubsystems() {
+export function getSubsystems(): SnapshotView["subsystems"] {
   return currentSnapshot.subsystems;
 }
 
-export function getDisciplines() {
+export function getDisciplines(): SnapshotView["disciplines"] {
   return currentSnapshot.disciplines;
 }
 
-export function getMechanisms() {
+export function getMechanisms(): SnapshotView["mechanisms"] {
   return currentSnapshot.mechanisms;
 }
 
-export function getMaterials() {
+export function getMaterials(): SnapshotView["materials"] {
   return currentSnapshot.materials;
 }
 
-export function getArtifacts() {
+export function getArtifacts(): SnapshotView["artifacts"] {
   return currentSnapshot.artifacts;
 }
 
-export function getPartDefinitions() {
+export function getPartDefinitions(): SnapshotView["partDefinitions"] {
   return currentSnapshot.partDefinitions;
 }
 
-export function getPartInstances() {
+export function getPartInstances(): SnapshotView["partInstances"] {
   return currentSnapshot.partInstances;
 }
 
-export function getTasks() {
+export function getTasks(): SnapshotView["tasks"] {
   return currentSnapshot.tasks;
 }
 
-export function getMilestones() {
+export function getMilestones(): SnapshotView["milestones"] {
   return currentSnapshot.milestones;
 }
 
-export function getMilestoneRequirements() {
+export function getMilestoneRequirements(): NonNullable<SnapshotView["milestoneRequirements"]> {
   return currentSnapshot.milestoneRequirements ?? [];
 }
 
-export function getTaskDependencies() {
+export function getTaskDependencies(): SnapshotView["taskDependencies"] {
   return currentSnapshot.taskDependencies;
 }
 
-export function getTaskBlockers() {
+export function getTaskBlockers(): SnapshotView["taskBlockers"] {
   return currentSnapshot.taskBlockers;
 }
 
-export function getQaReports() {
+export function getQaReports(): SnapshotView["qaReports"] {
   return currentSnapshot.qaReports;
 }
 
-export function getQaRequests() {
+export function getQaRequests(): NonNullable<SnapshotView["qaRequests"]> {
   return currentSnapshot.qaRequests ?? [];
 }
 
-export function getTestResults() {
+export function getTestResults(): SnapshotView["testResults"] {
   return currentSnapshot.testResults;
 }
 
-export function getDesignIterations(): DesignIteration[] {
+export function getDesignIterations(): SnapshotView["designIterations"] {
   return currentSnapshot.designIterations;
 }
 
-export function getReports(): Report[] {
+export function getReports() {
   return buildReports(currentSnapshot);
 }
 
@@ -2075,7 +2104,7 @@ export function getTasksForMilestone(milestoneId: string): TaskMilestoneMatch[] 
   return matches;
 }
 
-export function getRisks() {
+export function getRisks(): SnapshotView["risks"] {
   return currentSnapshot.risks;
 }
 
@@ -2250,11 +2279,11 @@ export function removeRisk(riskId: string) {
   return risk;
 }
 
-export function getPurchaseItems() {
+export function getPurchaseItems(): SnapshotView["purchaseItems"] {
   return currentSnapshot.purchaseItems;
 }
 
-export function getManufacturingItems() {
+export function getManufacturingItems(): SnapshotView["manufacturingItems"] {
   return currentSnapshot.manufacturingItems;
 }
 
@@ -2972,7 +3001,7 @@ export function createMechanism(input: MechanismInput) {
   return mechanism;
 }
 
-export function createPartInstance(input: PartInstanceInput) {
+export function createPartInstance(input: PartInstanceInput): ReadonlyData<PartInstance> {
   const partInstanceIds = new Set(
     currentSnapshot.partInstances.map((partInstance) => partInstance.id),
   );
@@ -3014,7 +3043,7 @@ export function createPartInstance(input: PartInstanceInput) {
 export function updatePartInstance(
   partInstanceId: string,
   input: Partial<PartInstanceInput>,
-) {
+): ReadonlyData<PartInstance> | null {
   let updatedPartInstance: PartInstance | null = null;
 
   const currentPartInstance = currentSnapshot.partInstances.find(
@@ -3272,7 +3301,7 @@ export function removeMechanism(mechanismId: string) {
   return mechanism;
 }
 
-export function createTask(input: TaskInput) {
+export function createTask(input: TaskInput): ReadonlyData<Task> {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const nextSerialNumber =
     currentSnapshot.tasks.reduce((max, task) => {
@@ -4264,7 +4293,7 @@ export function updateTask(
   taskId: string,
   input: Partial<TaskInput>,
   auditContext: AuditMutationContext = {},
-): Task | null {
+): ReadonlyData<Task> | null {
   const currentTask = currentSnapshot.tasks.find((task) => task.id === taskId);
   if (!currentTask) {
     return null;
@@ -4857,46 +4886,46 @@ export function removeMember(memberId: string) {
   return member;
 }
 
-export function findSubsystem(subsystemId: string): Subsystem | undefined {
+export function findSubsystem(subsystemId: string): SnapshotView["subsystems"][number] | undefined {
   return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId);
 }
 
-export function findMilestone(milestoneId: string): Milestone | undefined {
+export function findMilestone(milestoneId: string): SnapshotView["milestones"][number] | undefined {
   return currentSnapshot.milestones.find((milestone) => milestone.id === milestoneId);
 }
 
-export function findDiscipline(disciplineId: string): Discipline | undefined {
+export function findDiscipline(disciplineId: string): SnapshotView["disciplines"][number] | undefined {
   return currentSnapshot.disciplines.find((discipline) => discipline.id === disciplineId);
 }
 
-export function findMechanism(mechanismId: string): Mechanism | undefined {
+export function findMechanism(mechanismId: string): SnapshotView["mechanisms"][number] | undefined {
   return currentSnapshot.mechanisms.find((mechanism) => mechanism.id === mechanismId);
 }
 
-export function findProject(projectId: string): Project | undefined {
+export function findProject(projectId: string): SnapshotView["projects"][number] | undefined {
   return currentSnapshot.projects.find((project) => project.id === projectId);
 }
 
-export function findWorkstream(workstreamId: string): Workstream | undefined {
+export function findWorkstream(workstreamId: string): SnapshotView["workstreams"][number] | undefined {
   return currentSnapshot.workstreams.find((workstream) => workstream.id === workstreamId);
 }
 
-export function findPartDefinition(partDefinitionId: string): PartDefinition | undefined {
+export function findPartDefinition(partDefinitionId: string): SnapshotView["partDefinitions"][number] | undefined {
   return currentSnapshot.partDefinitions.find((partDefinition) => partDefinition.id === partDefinitionId);
 }
 
-export function findPartInstance(partInstanceId: string): PartInstance | undefined {
+export function findPartInstance(partInstanceId: string): SnapshotView["partInstances"][number] | undefined {
   return currentSnapshot.partInstances.find((partInstance) => partInstance.id === partInstanceId);
 }
 
-export function findMaterial(materialId: string): Material | undefined {
+export function findMaterial(materialId: string): SnapshotView["materials"][number] | undefined {
   return currentSnapshot.materials.find((material) => material.id === materialId);
 }
 
-export function findArtifact(artifactId: string): Artifact | undefined {
+export function findArtifact(artifactId: string): SnapshotView["artifacts"][number] | undefined {
   return currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
 }
 
-export function findRisk(riskId: string): Risk | undefined {
+export function findRisk(riskId: string): SnapshotView["risks"][number] | undefined {
   return currentSnapshot.risks.find((risk) => risk.id === riskId);
 }

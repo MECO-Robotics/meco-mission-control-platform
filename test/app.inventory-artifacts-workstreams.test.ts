@@ -1,3 +1,4 @@
+import { resetStore } from "../src/data/store";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -535,14 +536,14 @@ test("media upload endpoint selects buckets from server-owned project team ids",
     resetLimits();
 
     const snapshot = getSnapshot();
-    snapshot.projects.push({
+    resetStore({ ...snapshot, projects: [...snapshot.projects, {
       id: "legacy-media-project",
       seasonId: "default-season",
       name: "Legacy Media",
       projectType: "other",
       description: "Project record created before team-scoped buckets existed.",
       status: "active",
-    } as Project);
+    } as Project] });
 
     const legacyPresignResponse = await app.inject({
       method: "POST",

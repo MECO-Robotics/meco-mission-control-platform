@@ -167,3 +167,68 @@ test("QA workflow effects survive restart and roll back together when persistenc
     assert.equal(runProductionStoreScript("/dev/null/qa-snapshot.json", submit), "rolled-back");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("production snapshots reject external mutation and retain only committed command values", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-snapshot-ownership-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  try {
+    const createdId = runProductionStoreScript(snapshotPath, `
+      const { default: assert } = await import("node:assert/strict");
+      const { readFileSync } = await import("node:fs");
+      const imported = await import("./src/data/store.ts");
+      const store = imported.default ?? imported;
+      const before = store.getSnapshot();
+      assert.equal(Reflect.set(before, "members", []), false);
+      assert.equal(Reflect.set(store.getTasks()[0], "title", "outside command"), false);
+      assert.equal(Reflect.set(store.findSubsystem(before.subsystems[0].id), "name", "outside command"), false);
+      assert.equal(Reflect.set(before.tasks[0].assigneeIds, "0", "outside command"), false);
+
+      const transaction = await store.acquireGlobalSnapshotMutation();
+      transaction.enter();
+      assert.equal(Reflect.set(store.getMembers()[0], "name", "nested transaction write"), false);
+      assert.equal(transaction.hasChanges(), false);
+      const participantIds = [before.members[0].id];
+      const workLog = store.createWorkLog({
+        taskId: before.tasks[0].id, date: "2026-09-26", hours: 1.25,
+        participantIds, notes: "Owned command values",
+      });
+      assert.equal(before.workLogs.some(item => item.id === workLog.id), false);
+      assert.equal(transaction.hasChanges(), true);
+      const heldDraft = store.getSnapshot();
+      await transaction.commit();
+      transaction.release();
+      const persisted = readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8");
+
+      participantIds.push("unvalidated-member");
+      workLog.hours = 99;
+      assert.equal(Reflect.set(heldDraft.workLogs.find(item => item.id === workLog.id), "hours", 88), false);
+      const saved = store.getSnapshot().workLogs.find(item => item.id === workLog.id);
+      assert.equal(saved.hours, 1.25);
+      assert.deepEqual(saved.participantIds, [before.members[0].id]);
+
+      const rejected = await store.acquireGlobalSnapshotMutation();
+      rejected.enter();
+      const cyclic = {}; cyclic.self = cyclic;
+      for (const value of [new Date(), new Map(), new Set(), NaN, Infinity, 1n, cyclic]) {
+        assert.throws(() => store.recordAuditAction({
+          operation: "update", entityType: "probe", entityId: "probe", detailsJson: { value },
+        }), /plain JSON|cyclic/);
+      }
+      assert.equal(rejected.hasChanges(), false);
+      await rejected.commit();
+      rejected.release();
+      assert.equal(readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8"), persisted);
+      process.stdout.write(workLog.id);
+    `);
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts");
+      const store = imported.default ?? imported;
+      process.stdout.write(JSON.stringify(store.getSnapshot().workLogs.find(item => item.id === ${JSON.stringify(createdId)})));
+    `));
+    assert.equal(restored.hours, 1.25);
+    assert.equal(restored.participantIds.length, 1);
+    assert.equal(restored.notes, "Owned command values");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

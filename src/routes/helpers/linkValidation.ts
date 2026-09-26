@@ -20,7 +20,7 @@ import { isTaskDisciplineAllowedForProject } from "../../domain/taskDisciplines"
 import { uniqueIds } from "./taskTargets";
 
 function memberIsActiveInSeason(
-  member: { seasonId: string; activeSeasonIds?: string[] },
+  member: { seasonId: string; activeSeasonIds?: readonly string[] },
   seasonId: string,
 ) {
   return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
@@ -28,7 +28,7 @@ function memberIsActiveInSeason(
 
 export function validateWorkLogLinks(input: {
   taskId: string;
-  participantIds: string[];
+  participantIds: readonly string[];
 }) {
   const taskExists = getTasks().some((task) => task.id === input.taskId);
   if (!taskExists) {
@@ -51,7 +51,7 @@ export function validateQaReportLinks(input: {
   proposedRiskSeverity?: string | null;
   proposedRiskStatus?: string | null;
   taskId: string;
-  participantIds: string[];
+  participantIds: readonly string[];
 }) {
   const taskExists = getTasks().some((task) => task.id === input.taskId);
   if (!taskExists) {
@@ -160,18 +160,18 @@ export function validateRiskLinks(input: {
 export function validateTaskLinks(input: {
   projectId: string;
   workstreamId?: string | null;
-  workstreamIds?: string[];
+  workstreamIds?: readonly string[];
   subsystemId?: string | null;
-  subsystemIds: string[];
+  subsystemIds: readonly string[];
   disciplineId?: string;
   mechanismId?: string | null;
-  mechanismIds?: string[];
+  mechanismIds?: readonly string[];
   partInstanceId?: string | null;
-  partInstanceIds?: string[];
+  partInstanceIds?: readonly string[];
   artifactId?: string | null;
-  artifactIds?: string[];
+  artifactIds?: readonly string[];
   targetMilestoneId?: string | null;
-  assigneeIds?: string[];
+  assigneeIds?: readonly string[];
 }) {
   const project = findProject(input.projectId);
   if (!project) {
@@ -442,7 +442,7 @@ export function validateManufacturingItemLinks(input: {
   process: string;
   partDefinitionId?: string | null | undefined;
   partInstanceId?: string | null | undefined;
-  partInstanceIds?: string[];
+  partInstanceIds?: readonly string[];
 }) {
   if (!findSubsystem(input.subsystemId)) {
     return "The selected subsystem does not exist.";
@@ -479,7 +479,7 @@ export function validateManufacturingItemLinks(input: {
 export function validateSubsystemPeople(input: {
   projectId: string;
   responsibleEngineerId?: string | null;
-  mentorIds?: string[];
+  mentorIds?: readonly string[];
 }) {
   const members = getMembers();
   const project = findProject(input.projectId);
@@ -552,7 +552,7 @@ export function wouldCreateSubsystemCycle(
   return false;
 }
 
-export function validateMilestoneProjectLinks(projectIds: string[]) {
+export function validateMilestoneProjectLinks(projectIds: readonly string[]) {
   const unknownProjectId = projectIds.find((projectId) => !findProject(projectId));
 
   if (unknownProjectId) {

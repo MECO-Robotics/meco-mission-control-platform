@@ -1,5 +1,6 @@
 import type {
-  PlatformSnapshot,
+  ReadonlyData,
+  SnapshotView,
   Task,
   Milestone,
   QaFinding,
@@ -14,8 +15,8 @@ export interface FindingListItem {
   sourceId: string | null;
   title: string;
   detail: string;
-  severity: QaFinding["severity"] | TestFinding["severity"];
-  status: QaFinding["status"] | TestFinding["status"];
+  severity: ReadonlyData<QaFinding>["severity"] | ReadonlyData<TestFinding>["severity"];
+  status: ReadonlyData<QaFinding>["status"] | ReadonlyData<TestFinding>["status"];
   projectId: string;
   workstreamId: string | null;
   subsystemId: string | null;
@@ -29,7 +30,7 @@ export interface FindingListItem {
 }
 
 function findingListItemFromFinding(
-  finding: QaFinding | TestFinding,
+  finding: ReadonlyData<QaFinding> | ReadonlyData<TestFinding>,
   sourceType: FindingListItem["sourceType"],
   sourceId: string | null,
   milestoneId: string | null,
@@ -56,10 +57,10 @@ function findingListItemFromFinding(
 }
 
 export function reportFromQaReport(
-  task: Task | undefined,
-  report: PlatformSnapshot["qaReports"][number],
+  task: ReadonlyData<Task> | undefined,
+  report: SnapshotView["qaReports"][number],
   options: { includePhoto?: boolean } = {},
-): Report | null {
+): ReadonlyData<Report> | null {
   if (!task) {
     return null;
   }
@@ -92,11 +93,11 @@ export function reportFromQaReport(
 }
 
 export function reportFromTestResult(
-  milestone: Milestone | undefined,
-  result: PlatformSnapshot["testResults"][number],
+  milestone: ReadonlyData<Milestone> | undefined,
+  result: SnapshotView["testResults"][number],
   projectId: string | null,
   options: { includePhoto?: boolean } = {},
-): Report | null {
+): ReadonlyData<Report> | null {
   if (!projectId) {
     return null;
   }
@@ -120,7 +121,7 @@ export function reportFromTestResult(
   };
 }
 
-export function reportFindingFromQaFinding(finding: QaFinding): ReportFinding | null {
+export function reportFindingFromQaFinding(finding: ReadonlyData<QaFinding>): ReadonlyData<ReportFinding> | null {
   if (!finding.qaReportId) {
     return null;
   }
@@ -149,7 +150,7 @@ export function reportFindingFromQaFinding(finding: QaFinding): ReportFinding | 
   };
 }
 
-export function reportFindingFromTestFinding(finding: TestFinding): ReportFinding | null {
+export function reportFindingFromTestFinding(finding: ReadonlyData<TestFinding>): ReadonlyData<ReportFinding> | null {
   if (!finding.testResultId) {
     return null;
   }
@@ -179,7 +180,7 @@ export function reportFindingFromTestFinding(finding: TestFinding): ReportFindin
   };
 }
 
-export function buildReports(snapshot: PlatformSnapshot): Report[] {
+export function buildReports(snapshot: SnapshotView): ReadonlyData<Report[]> {
   return [
     ...snapshot.qaReports.map((report) =>
       reportFromQaReport(snapshot.tasks.find((task) => task.id === report.taskId), report)),
@@ -187,10 +188,10 @@ export function buildReports(snapshot: PlatformSnapshot): Report[] {
       const milestone = snapshot.milestones.find((item) => item.id === result.milestoneId);
       return reportFromTestResult(milestone, result, milestone?.projectIds[0] ?? snapshot.projects[0]?.id ?? null);
     }),
-  ].filter((report): report is Report => report !== null);
+  ].filter((report): report is ReadonlyData<Report> => report !== null);
 }
 
-export function buildFindings(snapshot: PlatformSnapshot): FindingListItem[] {
+export function buildFindings(snapshot: SnapshotView): FindingListItem[] {
   const qaItems = snapshot.qaFindings.map((finding) =>
     findingListItemFromFinding(finding, "qa", finding.qaReportId, null),
   );

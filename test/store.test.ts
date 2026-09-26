@@ -445,7 +445,7 @@ test("updateMember can reactivate an existing person for another season", () => 
   assert.ok(updatedMember);
   const refreshedMember = getSnapshot().members.find((candidate) => candidate.id === member.id);
   assert.ok(refreshedMember);
-  assert.deepEqual(refreshedMember?.activeSeasonIds?.sort(), ["default-season", season.id].sort());
+  assert.deepEqual([...(refreshedMember?.activeSeasonIds ?? [])].sort(), ["default-season", season.id].sort());
 });
 
 test("createPartDefinition defaults active season membership and can be reactivated for another season", () => {
@@ -479,7 +479,7 @@ test("createPartDefinition defaults active season membership and can be reactiva
   );
   assert.ok(refreshedPartDefinition);
   assert.deepEqual(
-    refreshedPartDefinition?.activeSeasonIds?.sort(),
+    [...(refreshedPartDefinition?.activeSeasonIds ?? [])].sort(),
     ["default-season", season.id].sort(),
   );
 });
@@ -1022,7 +1022,9 @@ test("task milestone requirements infer milestone matches from explicit target r
   });
 
   const snapshot = getSnapshot();
-  snapshot.milestoneRequirements = [
+  resetStore({
+    ...snapshot,
+    milestoneRequirements: [
     ...(snapshot.milestoneRequirements ?? []),
     {
       id: "drive-check-iteration",
@@ -1046,7 +1048,8 @@ test("task milestone requirements infer milestone matches from explicit target r
       sortOrder: 2,
       notes: "Encoder bracket part instance must be ready.",
     },
-  ];
+    ],
+  });
 
   const matches = getMilestonesForTask("swerve-sensor-bundle");
 
@@ -1071,7 +1074,9 @@ test("project-scoped requirements match through project task target inference", 
   });
 
   const snapshot = getSnapshot();
-  snapshot.milestoneRequirements = [
+  resetStore({
+    ...snapshot,
+    milestoneRequirements: [
     ...(snapshot.milestoneRequirements ?? []),
     {
       id: "robot-scope-match",
@@ -1084,7 +1089,8 @@ test("project-scoped requirements match through project task target inference", 
       sortOrder: 1,
       notes: "Robot-project-scoped checkpoint.",
     },
-  ];
+    ],
+  });
 
   const matches = getMilestonesForTask("swerve-sensor-bundle");
   const scopeMatch = matches.find((match) => match.milestoneId === milestone.id);
@@ -1134,7 +1140,9 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
   });
 
   const snapshot = getSnapshot();
-  snapshot.milestoneRequirements = [
+  resetStore({
+    ...snapshot,
+    milestoneRequirements: [
     ...(snapshot.milestoneRequirements ?? []),
     {
       id: "drive-readiness-iteration",
@@ -1147,7 +1155,8 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
       sortOrder: 1,
       notes: "Drive subsystem must meet the first major milestone.",
     },
-  ];
+    ],
+  });
 
   const legacyTask = updateTask("outreach-kiosk-assembly", {
     targetMilestoneId: milestone.id,
@@ -1193,8 +1202,9 @@ test("task hours follow work log create, resize, move and delete", () => {
 
 
 test("task targets preserve kind order, primary context, and unique scalar/list links", () => {
-  const task = getSnapshot().tasks[0];
-  Object.assign(task, {
+  const snapshot = getSnapshot();
+  const task = {
+    ...snapshot.tasks[0],
     workstreamId: "primary-workstream",
     workstreamIds: ["shared", "shared"],
     subsystemId: "primary-subsystem",
@@ -1206,7 +1216,8 @@ test("task targets preserve kind order, primary context, and unique scalar/list 
     artifactId: "primary-artifact",
     artifactIds: ["artifact", "artifact"],
     targetMilestoneId: "milestone",
-  });
+  };
+  resetStore({ ...snapshot, tasks: [task, ...snapshot.tasks.slice(1)] });
 
   const links = getTaskTargets().filter((link) => link.taskId === task.id);
   assert.deepEqual(links.map((link) => [link.targetType, link.targetId]), [
@@ -1229,6 +1240,6 @@ test("task targets preserve kind order, primary context, and unique scalar/list 
     assert.equal(link.subsystemId, "primary-subsystem");
   }
 
-  task.targetMilestoneId = null;
+  resetStore({ ...snapshot, tasks: [{ ...task, targetMilestoneId: null }, ...snapshot.tasks.slice(1)] });
   assert.deepEqual(getTaskTargets().filter((link) => link.taskId === task.id), links.slice(0, -1));
 });

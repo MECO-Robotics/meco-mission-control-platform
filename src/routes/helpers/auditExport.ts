@@ -1,4 +1,4 @@
-import type { PlatformSnapshot } from "../../domain/types";
+import type { SnapshotView } from "../../domain/types";
 import { actionMatchesProject } from "./auditExportProjectScope";
 import { actionMatchesSeason } from "./auditExportSeasonScope";
 export { formatAuditActionsCsv } from "./auditExportCsv";
@@ -12,7 +12,7 @@ export interface AuditExportFilters {
 }
 
 export function filterAuditActions(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   filters: AuditExportFilters,
 ) {
   return [...(snapshot.actions ?? [])]

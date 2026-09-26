@@ -1,4 +1,4 @@
-import type { AuditAction } from "../../domain/types";
+import type { ReadonlyData, AuditAction } from "../../domain/types";
 
 const CSV_COLUMNS = [
   "id",
@@ -35,7 +35,7 @@ function csvValue(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-function actionCsvRow(action: AuditAction) {
+function actionCsvRow(action: ReadonlyData<AuditAction>) {
   const values: Record<(typeof CSV_COLUMNS)[number], unknown> = {
     id: action.id,
     timestamp: action.timestamp,
@@ -57,6 +57,6 @@ function actionCsvRow(action: AuditAction) {
   return CSV_COLUMNS.map((column) => csvValue(values[column])).join(",");
 }
 
-export function formatAuditActionsCsv(actions: AuditAction[]) {
+export function formatAuditActionsCsv(actions: ReadonlyData<AuditAction[]>) {
   return [CSV_COLUMNS.join(","), ...actions.map(actionCsvRow)].join("\r\n");
 }

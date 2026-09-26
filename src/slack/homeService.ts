@@ -1,5 +1,6 @@
 import { slackConfig } from "../config/env";
 import type {
+  ReadonlyData,
   Member,
   SlackChannelKey,
   SlackHomeAlert,
@@ -37,7 +38,7 @@ function normalizeEmail(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function findMemberForEmail(members: Member[], email: string | null) {
+function findMemberForEmail(members: ReadonlyData<Member[]>, email: string | null) {
   if (!email) {
     return null;
   }
@@ -247,7 +248,7 @@ async function fetchSlackMessages(client: SlackClient, channels: SlackHomeChanne
 }
 
 export async function buildSlackHomeResponse(input: {
-  members: Member[];
+  members: ReadonlyData<Member[]>;
   userEmail?: string | null;
   slackClient?: SlackClient;
 }): Promise<SlackHomeResponse> {

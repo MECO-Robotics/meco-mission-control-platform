@@ -25,7 +25,7 @@ interface MeetingRoutesOptions {
 
 function resolveMeetingSeasonId(args: {
   currentSeasonId?: string | null;
-  projectIds: string[];
+  projectIds: readonly string[];
   requestedSeasonId?: string;
 }) {
   return args.requestedSeasonId ??
@@ -36,7 +36,7 @@ function resolveMeetingSeasonId(args: {
     null;
 }
 
-function validateMeetingSeasonProjectConsistency(seasonId: string | null, projectIds: string[]) {
+function validateMeetingSeasonProjectConsistency(seasonId: string | null, projectIds: readonly string[]) {
   if (seasonId && !getSeasons().some((candidate) => candidate.id === seasonId)) {
     return "The selected season does not exist.";
   }
@@ -172,7 +172,7 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
       const meeting = updateMeeting(request.params.meetingId, {
         ...patchData,
         seasonId: seasonId ?? undefined,
-        projectIds,
+        projectIds: [...projectIds],
         endDateTime:
           patchData.endDateTime === undefined
             ? currentMeeting.endDateTime ?? null

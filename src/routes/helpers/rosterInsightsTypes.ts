@@ -29,7 +29,7 @@ export interface RosterInsightsMember {
   attendanceHoursLast30Days: number;
   attendanceSessionsLast30Days: number;
   plannedWeeklyAttendanceHours: number;
-  plannedAttendanceDays: import("../../domain/types").PlannedAttendanceDay[];
+  plannedAttendanceDays: ReadonlyArray<import("../../domain/types").PlannedAttendanceDay>;
   plannedAttendanceNotes: string;
   availabilityStatus: RosterAvailabilityStatus;
   topTasks: RosterInsightsTaskPreview[];
@@ -77,35 +77,35 @@ export interface RosterInsightsResponse {
 }
 
 export interface RosterInsightsSource {
-  attendanceRecords?: Array<{
+  attendanceRecords?: ReadonlyArray<{
     id: string;
     memberId: string;
     date: string;
     totalHours: number;
   }>;
-  members: Array<{
+  members: ReadonlyArray<{
     id: string;
     name: string;
     role: MemberRole;
     disciplineId?: string | null;
     plannedWeeklyAttendanceHours?: number;
-    plannedAttendanceDays?: import("../../domain/types").PlannedAttendanceDay[];
+    plannedAttendanceDays?: ReadonlyArray<import("../../domain/types").PlannedAttendanceDay>;
     plannedAttendanceNotes?: string;
   }>;
-  projects: Array<{
+  projects: ReadonlyArray<{
     id: string;
     name: string;
   }>;
-  taskBlockers?: Array<{
+  taskBlockers?: ReadonlyArray<{
     blockedTaskId: string;
     status: "open" | "resolved";
   }>;
-  tasks: Array<{
+  tasks: ReadonlyArray<{
     id: string;
     projectId: string;
     title: string;
     ownerId: string | null;
-    assigneeIds: string[];
+    assigneeIds: readonly string[];
     dueDate: string;
     priority: TaskPriority;
     status: TaskStatus;

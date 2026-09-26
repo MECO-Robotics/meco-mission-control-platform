@@ -1,4 +1,4 @@
-import type { PartDefinition } from "../domain/types";
+import type { ReadonlyData, PartDefinition } from "../domain/types";
 import { getPartDefinitions } from "../data/store";
 import type { CadPartDefinition } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
@@ -61,7 +61,7 @@ function isStockOrFastenerName(value: string) {
   return /\b(rivet|bolt|screw|nut|washer|bearing|tube|extrusion|plate|stock|spacer)\b/i.test(value);
 }
 
-function candidateFrom(part: PartDefinition, strategy: CadPartMatchStrategy, confidence: "HIGH" | "MEDIUM" | "LOW", score: number) {
+function candidateFrom(part: ReadonlyData<PartDefinition>, strategy: CadPartMatchStrategy, confidence: "HIGH" | "MEDIUM" | "LOW", score: number) {
   return {
     id: part.id,
     partDefinitionId: part.id,
@@ -95,7 +95,7 @@ function proposalStatus(candidates: CadPartMatchCandidate[]) {
   return { status: "SUGGESTED" as const, recommendedPartDefinitionId: best.id };
 }
 
-function candidatesForPart(cadPart: CadPartDefinition, domainParts: PartDefinition[]) {
+function candidatesForPart(cadPart: CadPartDefinition, domainParts: ReadonlyData<PartDefinition[]>) {
   const cadNumber = cleanPartNumber(cadPart.partNumber);
   if (cadNumber) {
     const exact = domainParts.filter((part) => cleanPartNumber(part.partNumber) === cadNumber);

@@ -1,4 +1,4 @@
-import type { MilestoneStatus, PlatformSnapshot, Task, TaskDependency } from "./types";
+import type { ReadonlyData, MilestoneStatus, SnapshotView, Task, TaskDependency } from "./types";
 
 const WORKFLOW_STATUS_ORDER: Record<MilestoneStatus, number> = {
   "not ready": 0,
@@ -7,20 +7,20 @@ const WORKFLOW_STATUS_ORDER: Record<MilestoneStatus, number> = {
   ready: 3,
 };
 
-function getTaskById(snapshot: PlatformSnapshot, taskId: string) {
+function getTaskById(snapshot: SnapshotView, taskId: string) {
   return snapshot.tasks.find((task) => task.id === taskId) ?? null;
 }
 
-function getMilestoneById(snapshot: PlatformSnapshot, milestoneId: string) {
+function getMilestoneById(snapshot: SnapshotView, milestoneId: string) {
   return snapshot.milestones.find((milestone) => milestone.id === milestoneId) ?? null;
 }
 
-function getPartInstanceById(snapshot: PlatformSnapshot, partInstanceId: string) {
+function getPartInstanceById(snapshot: SnapshotView, partInstanceId: string) {
   return snapshot.partInstances.find((partInstance) => partInstance.id === partInstanceId) ?? null;
 }
 
 function isMilestoneDependencySatisfied(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   milestoneId: string,
   requiredState: string | undefined,
 ) {
@@ -36,7 +36,7 @@ function isMilestoneDependencySatisfied(
 }
 
 function isPartInstanceDependencySatisfied(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   partInstanceId: string,
   requiredState: string | undefined,
 ) {
@@ -51,7 +51,7 @@ function isPartInstanceDependencySatisfied(
   return targetOrder >= requiredOrder;
 }
 
-function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: PlatformSnapshot) {
+function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: SnapshotView) {
   if (dependency.dependencyType === "soft") {
     return true;
   }
@@ -73,7 +73,7 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Platfor
 
 export function getTaskWaitingOnDependencyRecords(
   taskId: string,
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
 ) {
   return snapshot.taskDependencies.filter(
     (dependency) =>
@@ -84,8 +84,8 @@ export function getTaskWaitingOnDependencyRecords(
 }
 
 export function isTaskWaitingOnDependencies(
-  task: Pick<Task, "id" | "status">,
-  snapshot: PlatformSnapshot,
+  task: Pick<ReadonlyData<Task>, "id" | "status">,
+  snapshot: SnapshotView,
 ) {
   return (
     task.status !== "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot).length > 0

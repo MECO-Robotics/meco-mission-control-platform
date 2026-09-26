@@ -1,4 +1,5 @@
 import type {
+  ReadonlyData,
   ManufacturingItem,
   ManufacturingStatus,
   MemberRole,
@@ -77,7 +78,7 @@ export function assessGenericPatch(args: {
 }
 
 export function validatePurchaseApproval(
-  item: PurchaseItem,
+  item: ReadonlyData<PurchaseItem>,
   approved: boolean,
 ): WorkflowPolicyFailure | null {
   if (approved) {
@@ -101,7 +102,7 @@ export function validatePurchaseTransition(
 }
 
 export function validateManufacturingReview(
-  item: ManufacturingItem,
+  item: ReadonlyData<ManufacturingItem>,
   reviewed: boolean,
 ): WorkflowPolicyFailure | null {
   if (reviewed) {
@@ -116,7 +117,7 @@ export function validateManufacturingReview(
 }
 
 export function validateManufacturingTransition(
-  item: ManufacturingItem,
+  item: ReadonlyData<ManufacturingItem>,
   next: ManufacturingStatus,
 ): WorkflowPolicyFailure | null {
   if (!item.mentorReviewed) {
