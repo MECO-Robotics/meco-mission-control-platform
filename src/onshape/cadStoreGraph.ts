@@ -4,6 +4,9 @@ import type {
   CadPartInstance,
   CadSnapshot,
   OnshapeDocumentRef,
+  NormalizedCadAssemblyNode,
+  NormalizedCadPartDefinition,
+  NormalizedCadPartInstance,
 } from "./onshapeTypes";
 import type { OnshapeRuntimeState } from "./cadStoreTypes";
 import {
@@ -13,10 +16,6 @@ import {
   normalizeName,
   nowIso,
 } from "./cadStoreUtils";
-
-type AssemblyNodeInput = Parameters<import("./cadStoreTypes").OnshapeRuntimeStore["upsertAssemblyNodes"]>[1][number];
-type PartDefinitionInput = Parameters<import("./cadStoreTypes").OnshapeRuntimeStore["upsertPartDefinitions"]>[1][number];
-type PartInstanceInput = Parameters<import("./cadStoreTypes").OnshapeRuntimeStore["upsertPartInstances"]>[1][number];
 
 function findExistingSnapshot(state: OnshapeRuntimeState, ref: OnshapeDocumentRef) {
   if (!isImmutableReference(ref)) {
@@ -32,7 +31,7 @@ function findExistingSnapshot(state: OnshapeRuntimeState, ref: OnshapeDocumentRe
   ) ?? null;
 }
 
-function partIdentity(part: PartDefinitionInput) {
+function partIdentity(part: NormalizedCadPartDefinition) {
   return part.missionControlExternalKey ||
     `${part.documentId}:${part.elementId ?? ""}:${part.partId || `source:${part.sourceId}`}:${part.configuration ?? ""}`;
 }
@@ -99,7 +98,7 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       );
     },
-    upsertAssemblyNodes(snapshotId: string, nodes: AssemblyNodeInput[]) {
+    upsertAssemblyNodes(snapshotId: string, nodes: NormalizedCadAssemblyNode[]) {
       const bySourceId = new Map<string, CadAssemblyNode>();
       const recordsBySourceId = new Map<string, CadAssemblyNode>();
 
@@ -148,7 +147,7 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
 
       return bySourceId;
     },
-    upsertPartDefinitions(snapshotId: string, parts: PartDefinitionInput[]) {
+    upsertPartDefinitions(snapshotId: string, parts: NormalizedCadPartDefinition[]) {
       const bySourceId = new Map<string, CadPartDefinition>();
       for (const part of parts) {
         const identityKey = partIdentity(part);
@@ -189,7 +188,7 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
       }
       return bySourceId;
     },
-    upsertPartInstances(snapshotId: string, parts: PartInstanceInput[], partDefinitionsBySourceId: Map<string, CadPartDefinition>, assemblyNodesBySourceId: Map<string, CadAssemblyNode>) {
+    upsertPartInstances(snapshotId: string, parts: NormalizedCadPartInstance[], partDefinitionsBySourceId: Map<string, CadPartDefinition>, assemblyNodesBySourceId: Map<string, CadAssemblyNode>) {
       const imported: CadPartInstance[] = [];
       for (const part of parts) {
         const existing = state.partInstances.find(

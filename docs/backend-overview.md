@@ -25,7 +25,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 ## Data Model
 
 - Core state loads the production snapshot when present; fresh/tutorial initialization uses the clock-relative fixture factory in `src/data/tutorialSnapshot.ts`.
-- Core platform reads and writes go through `src/data/store.ts`.
+- Core platform reads and writes go through `src/data/store.ts`. Store input types derive from the domain entities, excluding generated fields and making only store-defaulted fields optional. Request schemas still own transport validation and coercion.
 - Core platform state is loaded from and atomically persisted to `data/platform-snapshot.json`
   in production. Mutations are serialized and acknowledged only after the asynchronous durable
   write succeeds. The production Compose stack mounts `/app/data` as a durable named volume.
@@ -35,7 +35,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Work logs record an optional creator, manufacturing review records include reviewer/time metadata, and purchase approval records include the derived approver and workflow timestamps. Existing rows remain valid with null metadata until their next protected workflow action.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
-- The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store.
+- The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store. Its normalizer and graph store share the provider-local `NormalizedCad*` inputs. Keep these distinct from STEP records: immutable-reference reuse, provider identity, and upsert behavior differ. Prisma-to-CAD projections intentionally exclude provider columns and normalize dates/JSON.
 
 ## Authentication And Security
 
