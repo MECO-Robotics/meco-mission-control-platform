@@ -22,8 +22,7 @@ import {
 } from "./auth/webSessionStore";
 import { cadPersistenceConfig, cadStepUploadConfig, corsConfig, env } from "./config/env";
 import {
-  acquireGlobalSnapshotMutation,
-  hasInteractiveTutorialSession,
+  acquireSnapshotMutation,
   resetStore,
   runWithInteractiveTutorialSession,
 } from "./data/store";
@@ -89,23 +88,22 @@ export async function buildApp(options: BuildAppOptions = {}) {
   registerWebSessionSupport(app, webSessionService);
   const mutationTransactions = new WeakMap<
     object,
-    Awaited<ReturnType<typeof acquireGlobalSnapshotMutation>>
+    Awaited<ReturnType<typeof acquireSnapshotMutation>>
   >();
 
   app.addHook("preHandler", (request, _reply, done) => {
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
     const userKey = session?.email?.trim().toLowerCase() || session?.accountId;
-    if (userKey && hasInteractiveTutorialSession(userKey)) {
-      runWithInteractiveTutorialSession(userKey, done);
-      return;
-    }
-
     if (!request.routeOptions.config.snapshotMutation) {
-      done();
+      if (userKey) {
+        runWithInteractiveTutorialSession(userKey, done);
+      } else {
+        done();
+      }
       return;
     }
 
-    acquireGlobalSnapshotMutation().then(
+    acquireSnapshotMutation(userKey).then(
       (transaction) => {
         mutationTransactions.set(request, transaction);
         transaction.enter();

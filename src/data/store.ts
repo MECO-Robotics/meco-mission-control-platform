@@ -624,8 +624,11 @@ function ownSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 interface SnapshotState {
   current: PlatformSnapshot;
   interactive: PlatformSnapshot | null;
-  isGlobalTransaction?: boolean;
-  dirty?: boolean;
+  mutation?: {
+    userKey?: string;
+    destination: "global" | "tutorial" | "end-tutorial";
+    dirty: boolean;
+  };
 }
 
 const platformSnapshotPath = resolve(
@@ -641,7 +644,8 @@ const globalSnapshotState: SnapshotState = {
 };
 const tutorialSnapshotStates = new Map<string, SnapshotState>();
 const snapshotContext = new AsyncLocalStorage<SnapshotState>();
-let globalMutationTail = Promise.resolve();
+const globalMutationKey = Symbol("global snapshot");
+const mutationTails = new Map<string | symbol, Promise<void>>();
 
 function activeSnapshotState() {
   return snapshotContext.getStore() ?? globalSnapshotState;
@@ -665,24 +669,42 @@ function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
     throw new Error("Production platform mutations require a durable request transaction.");
   }
   state.current = ownSnapshot(deriveTaskSummaries(snapshot));
-  if (state.isGlobalTransaction) {
-    state.dirty = true;
+  if (state.mutation) {
+    state.mutation.dirty = true;
   }
 }
 
-export async function acquireGlobalSnapshotMutation() {
+async function acquireSnapshotLock(key: string | symbol) {
   let releaseLock!: () => void;
-  const previous = globalMutationTail;
-  globalMutationTail = new Promise<void>((resolve) => {
+  const previous = mutationTails.get(key) ?? Promise.resolve();
+  const tail = new Promise<void>((resolve) => {
     releaseLock = resolve;
   });
+  mutationTails.set(key, tail);
   await previous;
+  return () => {
+    if (mutationTails.get(key) === tail) {
+      mutationTails.delete(key);
+    }
+    releaseLock();
+  };
+}
 
-  const state: SnapshotState = {
-    current: globalSnapshotState.current,
-    interactive: null,
-    isGlobalTransaction: true,
+export async function acquireSnapshotMutation(userKey?: string) {
+  // Resolve the destination after the user queue, so a preceding reset/end wins.
+  const releaseUser = userKey ? await acquireSnapshotLock(userKey) : undefined;
+  const tutorial = userKey ? tutorialSnapshotStates.get(userKey) : undefined;
+  const releaseGlobal = tutorial ? undefined : await acquireSnapshotLock(globalMutationKey);
+  const source = tutorial ?? globalSnapshotState;
+  const mutation: NonNullable<SnapshotState["mutation"]> = {
+    userKey,
+    destination: tutorial ? "tutorial" : "global",
     dirty: false,
+  };
+  const state: SnapshotState = {
+    current: source.current,
+    interactive: source.interactive,
+    mutation,
   };
   let released = false;
 
@@ -691,26 +713,44 @@ export async function acquireGlobalSnapshotMutation() {
       snapshotContext.enterWith(state);
     },
     hasChanges() {
-      return state.dirty === true;
+      return mutation.dirty;
     },
     async commit() {
-      if (!state.dirty) {
+      if (released) {
+        throw new Error("Cannot commit a released snapshot mutation.");
+      }
+      if (!mutation.dirty) {
         return;
       }
       try {
-        if (process.env.NODE_ENV === "production") {
-          await savePlatformSnapshotFile(platformSnapshotPath, state.current);
+        if (mutation.destination === "global") {
+          if (process.env.NODE_ENV === "production") {
+            await savePlatformSnapshotFile(platformSnapshotPath, state.current);
+          }
+          globalSnapshotState.current = state.current;
+          globalSnapshotState.interactive = state.interactive;
+        } else if (userKey) {
+          if (mutation.destination === "end-tutorial") {
+            tutorialSnapshotStates.delete(userKey);
+          } else {
+            tutorialSnapshotStates.set(userKey, {
+              current: state.current,
+              interactive: state.interactive,
+            });
+          }
         }
-        globalSnapshotState.current = state.current;
       } finally {
-        state.dirty = false;
+        mutation.dirty = false;
       }
     },
     release() {
       if (!released) {
         released = true;
-        snapshotContext.enterWith(globalSnapshotState);
-        releaseLock();
+        snapshotContext.enterWith(userKey
+          ? tutorialSnapshotStates.get(userKey) ?? globalSnapshotState
+          : globalSnapshotState);
+        releaseGlobal?.();
+        releaseUser?.();
       }
     },
   };
@@ -724,13 +764,15 @@ function setInteractiveTutorialSnapshot(snapshot: PlatformSnapshot | null) {
   activeSnapshotState().interactive = snapshot;
 }
 
-export function hasInteractiveTutorialSession(userKey: string) {
-  return tutorialSnapshotStates.has(userKey);
+function tutorialStateForMutation(userKey: string) {
+  const state = activeSnapshotState();
+  return state.mutation?.userKey === userKey
+    ? state.mutation.destination === "tutorial" ? state : undefined
+    : tutorialSnapshotStates.get(userKey);
 }
 
 export function runWithInteractiveTutorialSession<T>(userKey: string, run: () => T): T {
-  const state = tutorialSnapshotStates.get(userKey);
-  return state ? snapshotContext.run(state, run) : run();
+  return snapshotContext.run(tutorialSnapshotStates.get(userKey) ?? globalSnapshotState, run);
 }
 
 function normalizeProjectTeamId(teamId: string | null | undefined) {
@@ -1634,12 +1676,15 @@ export function resetStore(snapshot?: SnapshotView) {
 
 export function resetTutorialBaseline(userKey?: string) {
   if (userKey) {
-    const state = tutorialSnapshotStates.get(userKey);
+    const state = tutorialStateForMutation(userKey);
     if (!state) {
       return buildTutorialBaselineState(createTutorialSnapshot());
     }
 
     state.current = ownSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
+    if (state.mutation) {
+      state.mutation.dirty = true;
+    }
     return buildTutorialBaselineState(state.current);
   }
 
@@ -1652,10 +1697,15 @@ export function resetTutorialBaseline(userKey?: string) {
 export function startInteractiveTutorialSession(userKey?: string) {
   if (userKey) {
     const current = ownSnapshot(canonicalizeSnapshot(createTutorialSnapshot()));
-    tutorialSnapshotStates.set(userKey, {
-      current,
-      interactive: current,
-    });
+    const state = activeSnapshotState();
+    if (state.mutation?.userKey === userKey) {
+      state.current = current;
+      state.interactive = current;
+      state.mutation.destination = "tutorial";
+      state.mutation.dirty = true;
+    } else {
+      tutorialSnapshotStates.set(userKey, { current, interactive: current });
+    }
     return;
   }
 
@@ -1665,14 +1715,19 @@ export function startInteractiveTutorialSession(userKey?: string) {
 
 export function resetInteractiveTutorialSession(userKey?: string) {
   if (userKey) {
-    const state = tutorialSnapshotStates.get(userKey);
+    const state = tutorialStateForMutation(userKey);
     if (!state?.interactive) {
       return false;
     }
 
-    state.current = state.interactive;
-    state.interactive = null;
-    tutorialSnapshotStates.delete(userKey);
+    if (state.mutation) {
+      state.current = globalSnapshotState.current;
+      state.interactive = null;
+      state.mutation.destination = "end-tutorial";
+      state.mutation.dirty = true;
+    } else {
+      tutorialSnapshotStates.delete(userKey);
+    }
     return true;
   }
 
