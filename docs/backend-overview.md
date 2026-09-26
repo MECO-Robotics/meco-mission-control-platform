@@ -40,6 +40,8 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
 - The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store. Its normalizer and graph store share the provider-local `NormalizedCad*` inputs. Keep these distinct from STEP records: immutable-reference reuse, provider identity, and upsert behavior differ. Prisma-to-CAD projections intentionally exclude provider columns and normalize dates/JSON.
 
+`createPartDefinitionWithAcquisition` composes existing store commands in a synchronous private snapshot draft and publishes once after success. Its enclosing request transaction owns durable persistence; the private draft also protects tutorial state from partial command failures. `routes/helpers/partAcquisition.ts` validates and resolves acquisition context before invoking that operation. Mobile sends one command; web catalog definition-only creation uses the same endpoint without acquisition work.
+
 ## Authentication And Security
 
 - Auth is enabled when either Google client IDs or email delivery config are available.

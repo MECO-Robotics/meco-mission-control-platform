@@ -1,3 +1,4 @@
+import { preparePartAcquisition } from "./helpers/partAcquisition";
 import { parseRouteInput } from "./helpers/parseRouteInput";
 import { FastifyInstance, type FastifyRequest } from "fastify";
 import { requestLimitConfig } from "../config/env";
@@ -19,7 +20,7 @@ import {
   createQaReport,
   submitQaReport,
   createQaRequest,
-  createPartDefinition,
+  createPartDefinitionWithAcquisition,
   createPartInstance,
   createProject,
   createSeason,
@@ -3102,22 +3103,20 @@ export async function registerRoutes(
       return reply;
     }
 
-    const materialError = validatePartDefinitionMaterialId(parsed.data.materialId ?? null);
-    if (materialError) {
-      return reply.code(400).send({
-        message: materialError,
-      });
+    if (parsed.data.acquisition && parsed.data.acquisition.method !== "stock" &&
+      !requireMentorPermission(request, reply, "Only leads, mentors, and admins can create acquisition work.")) {
+      return;
     }
-
-    const partDefinition = createPartDefinition({
-      ...parsed.data,
-      materialId: parsed.data.materialId ?? null,
-      description: parsed.data.description ?? "",
+    const actorMemberId = isAuthEnabled() ? getTaskActionMember(request)?.id ?? null : null;
+    const prepared = preparePartAcquisition(parsed.data, actorMemberId);
+    if ("error" in prepared) {
+      return reply.code(400).send({ message: prepared.error });
+    }
+    const result = createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, {
+      actorMemberId,
+      requestId: readAuditRequestId(request),
     });
-
-    return reply.code(201).send({
-      item: partDefinition,
-    });
+    return reply.code(201).send(result);
   });
 
   app.patch<{ Body: unknown; Params: { partDefinitionId: string } }>(
