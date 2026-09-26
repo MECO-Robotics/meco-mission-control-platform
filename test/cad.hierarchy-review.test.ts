@@ -470,6 +470,55 @@ test("hierarchy apply preserves part-instance decisions", async () => {
   });
 });
 
+test("mixed hierarchy reviews apply explicit decisions last and clear rejected part links", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const rivet = createDomainPart({ name: "3/16 Aluminum Rivet", partNumber: "RVT-001" });
+    const imported = await uploadStep(app, "mixed-hierarchy-review", hierarchyCadFixture());
+    const snapshotId = imported.snapshot.id;
+    const instances = await app.cadStore.listPartInstances(snapshotId);
+    const instance = instances[0]!;
+    resetLimits();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${snapshotId}/hierarchy-review/apply`,
+      payload: {
+        decisions: [
+          { nodeId: instance.id, sourceKind: "PART_INSTANCE", targetKind: "PART_DEFINITION", targetId: rivet.id, status: "REJECTED" },
+          { nodeId: "asm-root", targetKind: "IGNORE" },
+          { nodeId: "part-rivet", sourceKind: "PART_DEFINITION", targetKind: "PART_DEFINITION", targetId: rivet.id },
+        ],
+        assemblyDecisions: [
+          { sourceId: "asm-root", targetKind: "REFERENCE_GEOMETRY", confidence: "HIGH", status: "PROPOSED" },
+          { sourceId: "asm-bellypan", targetKind: "COMPONENT_ASSEMBLY", targetId: null, parentMechanismId: "chassis" },
+        ],
+        partMatchConfirmations: [
+          { cadPartDefinitionSourceId: "part-rivet", targetPartDefinitionId: rivet.id, status: "REJECTED" },
+        ],
+      },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    const mappings = await app.cadStore.listSnapshotMappings(snapshotId);
+    const assemblies = await app.cadStore.listAssemblyNodes(snapshotId);
+    const mappingForAssembly = (sourceId: string) => mappings.find((mapping) =>
+      mapping.sourceId === assemblies.find((assembly) => assembly.sourceId === sourceId)?.id,
+    );
+    const root = mappingForAssembly("asm-root");
+    assert.equal(root?.targetKind, "REFERENCE_GEOMETRY");
+    assert.equal(root?.status, "PROPOSED");
+    assert.equal(root?.confidence, "HIGH");
+    assert.equal(mappingForAssembly("asm-bellypan")?.targetId, "chassis");
+    for (const mapping of [
+      mappings.find((item) => item.sourceKind === "PART_DEFINITION"),
+      mappings.find((item) => item.sourceId === instance.id),
+    ]) {
+      assert.equal(mapping?.status, "REJECTED");
+      assert.equal(mapping?.targetKind, "UNMAPPED");
+      assert.equal(mapping?.targetId, null);
+    }
+  });
+});
+
 test("finalize reports hierarchy validation issues and still honors allowUnresolved", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
