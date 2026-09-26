@@ -55,8 +55,7 @@ import {
 import {
   buildFindings,
   buildReports,
-  reportFindingFromQaFinding,
-  reportFindingFromTestFinding,
+  reportFindingFromFinding,
   reportFromQaReport,
   reportFromTestResult,
   type FindingListItem,
@@ -3701,48 +3700,15 @@ export function createReportFinding(input: ReportFindingInput) {
   }
 
   const now = new Date().toISOString();
-  if (report.reportType === "QA") {
-    const findingIds = new Set(currentSnapshot.qaFindings.map((finding) => finding.id));
-    const finding: QaFinding = {
-      id: uniqueId(toSlug(input.issueType) || "qa-finding", findingIds),
-      qaReportId: input.reportId,
-      taskId: input.spawnedTaskId ?? report.taskId,
-      projectId: report.projectId,
-      workstreamId: report.workstreamId,
-      subsystemId: null,
-      mechanismId: input.mechanismId,
-      partInstanceId: input.partInstanceId,
-      artifactId: input.artifactInstanceId,
-      title: input.issueType,
-      detail: input.notes,
-      severity: input.severity,
-      status: "open",
-      createdAt: now,
-      updatedAt: now,
-    };
-    replaceCurrentSnapshot({
-      ...currentSnapshot,
-      qaFindings: [...currentSnapshot.qaFindings, finding],
-    });
-
-    recordAuditAction({
-      operation: "create",
-      entityType: "report-finding",
-      entityId: finding.id,
-      entityLabel: finding.title,
-      projectId: finding.projectId,
-      taskId: finding.taskId,
-      subsystemId: finding.subsystemId,
-    });
-
-    return reportFindingFromQaFinding(finding);
-  }
-
-  const findingIds = new Set(currentSnapshot.testFindings.map((finding) => finding.id));
-  const finding: TestFinding = {
-    id: uniqueId(toSlug(input.issueType) || "test-finding", findingIds),
-    testResultId: input.reportId,
-    milestoneId: report.milestoneId,
+  const existingFindings = report.reportType === "QA"
+    ? currentSnapshot.qaFindings
+    : currentSnapshot.testFindings;
+  const findingIds = new Set(existingFindings.map((finding) => finding.id));
+  const fields: Omit<QaFinding, "qaReportId"> = {
+    id: uniqueId(
+      toSlug(input.issueType) || (report.reportType === "QA" ? "qa-finding" : "test-finding"),
+      findingIds,
+    ),
     taskId: input.spawnedTaskId ?? report.taskId,
     projectId: report.projectId,
     workstreamId: report.workstreamId,
@@ -3757,10 +3723,20 @@ export function createReportFinding(input: ReportFindingInput) {
     createdAt: now,
     updatedAt: now,
   };
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    testFindings: [...currentSnapshot.testFindings, finding],
-  });
+  let finding: QaFinding | TestFinding;
+  if (report.reportType === "QA") {
+    finding = { ...fields, qaReportId: input.reportId };
+    replaceCurrentSnapshot({
+      ...currentSnapshot,
+      qaFindings: [...currentSnapshot.qaFindings, finding],
+    });
+  } else {
+    finding = { ...fields, testResultId: input.reportId, milestoneId: report.milestoneId };
+    replaceCurrentSnapshot({
+      ...currentSnapshot,
+      testFindings: [...currentSnapshot.testFindings, finding],
+    });
+  }
 
   recordAuditAction({
     operation: "create",
@@ -3772,7 +3748,7 @@ export function createReportFinding(input: ReportFindingInput) {
     subsystemId: finding.subsystemId,
   });
 
-  return reportFindingFromTestFinding(finding);
+  return reportFindingFromFinding(finding);
 }
 
 export function createTaskDependency(input: TaskDependencyInput) {

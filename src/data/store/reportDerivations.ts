@@ -121,14 +121,15 @@ export function reportFromTestResult(
   };
 }
 
-export function reportFindingFromQaFinding(finding: ReadonlyData<QaFinding>): ReadonlyData<ReportFinding> | null {
-  if (!finding.qaReportId) {
+export function reportFindingFromFinding(finding: ReadonlyData<QaFinding | TestFinding>): ReadonlyData<ReportFinding> | null {
+  const reportId = "qaReportId" in finding ? finding.qaReportId : finding.testResultId;
+  if (!reportId) {
     return null;
   }
 
   return {
     id: finding.id,
-    reportId: finding.qaReportId,
+    reportId,
     mechanismId: finding.mechanismId,
     partInstanceId: finding.partInstanceId,
     artifactInstanceId: finding.artifactId,
@@ -145,36 +146,7 @@ export function reportFindingFromQaFinding(finding: ReadonlyData<QaFinding>): Re
     workstreamId: finding.workstreamId,
     subsystemId: finding.subsystemId,
     taskId: finding.taskId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  };
-}
-
-export function reportFindingFromTestFinding(finding: ReadonlyData<TestFinding>): ReadonlyData<ReportFinding> | null {
-  if (!finding.testResultId) {
-    return null;
-  }
-
-  return {
-    id: finding.id,
-    reportId: finding.testResultId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactInstanceId: finding.artifactId,
-    issueType: finding.title,
-    severity: finding.severity,
-    notes: finding.detail,
-    spawnedTaskId: finding.taskId,
-    spawnedIterationId: null,
-    spawnedRiskId: null,
-    title: finding.title,
-    detail: finding.detail,
-    status: finding.status === "resolved" ? "resolved" : "open",
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    taskId: finding.taskId,
-    milestoneId: finding.milestoneId,
+    ...("testResultId" in finding ? { milestoneId: finding.milestoneId } : {}),
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
   };

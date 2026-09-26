@@ -280,3 +280,62 @@ test("atomic acquisition persists all linked records or rolls back the entire du
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("QA and test findings preserve separate IDs, audits and durable transaction rollback", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-findings-persistence-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  const submit = `
+    const { default: assert } = await import("node:assert/strict");
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const before = store.getSnapshot();
+    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const outputs = [];
+    for (const reportType of ["QA", "MilestoneTest"]) {
+      const report = store.getReports().find(item => item.reportType === reportType);
+      assert.ok(report);
+      for (const spawnedTaskId of [null, before.tasks[0].id]) {
+        const result = store.createReportFinding({
+          reportId: report.id, mechanismId: null, partInstanceId: null,
+          artifactInstanceId: null, issueType: "Durable finding", severity: "medium",
+          notes: "Preserved finding", spawnedTaskId, spawnedIterationId: null, spawnedRiskId: null,
+        });
+        assert.equal(result.taskId, spawnedTaskId ?? report.taskId);
+        assert.equal(Object.hasOwn(result, "milestoneId"), reportType !== "QA");
+        if (reportType !== "QA") assert.equal(result.milestoneId, report.milestoneId);
+        outputs.push(result);
+      }
+    }
+    assert.equal(outputs[0].id, outputs[2].id);
+    assert.equal(outputs[1].id, outputs[3].id);
+    assert.notEqual(outputs[0].id, outputs[1].id);
+    const draft = store.getSnapshot();
+    assert.equal(store.createReportFinding({ reportId: "missing" }), null);
+    assert.equal(store.getSnapshot(), draft);
+    assert.equal(draft.actions.length - before.actions.length, 4);
+    assert.ok(draft.actions.slice(before.actions.length).every(item => item.entityType === "report-finding" && item.operation === "create"));
+    try {
+      await transaction.commit(); transaction.release();
+      process.stdout.write(JSON.stringify({ qa: draft.qaFindings.slice(before.qaFindings.length), test: draft.testFindings.slice(before.testFindings.length) }));
+    } catch {
+      transaction.release();
+      assert.equal(store.getSnapshot(), before);
+      process.stdout.write("rolled-back");
+    }
+  `;
+  try {
+    const created = JSON.parse(runProductionStoreScript(snapshotPath, submit));
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      process.stdout.write(JSON.stringify({
+        qa: snapshot.qaFindings.filter(item => item.title === "Durable finding"),
+        test: snapshot.testFindings.filter(item => item.title === "Durable finding"),
+      }));
+    `));
+    assert.deepEqual(restored, created);
+    assert.equal(runProductionStoreScript("/dev/null/findings.json", submit), "rolled-back");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
