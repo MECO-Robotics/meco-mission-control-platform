@@ -2779,7 +2779,7 @@ export function removeSubsystem(subsystemId: string) {
   return subsystem;
 }
 
-export function createPartDefinition(input: PartDefinitionInput) {
+export function createPartDefinition(input: PartDefinitionInput, auditContext: AuditMutationContext = {}) {
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
@@ -2819,9 +2819,64 @@ export function createPartDefinition(input: PartDefinitionInput) {
     entityId: partDefinition.id,
     entityLabel: partDefinition.name,
     detailsJson: getSeasonAuditDetails(partDefinition),
+    ...auditContext,
   });
 
   return partDefinition;
+}
+
+export interface PartAcquisitionPlan {
+  method: "manufacture" | "purchase";
+  requestedById: string | null;
+  task: TaskInput;
+}
+
+// Compose in a private synchronous draft: even tutorial sessions publish only
+// after every command succeeds. The enclosing request owns durable commit.
+export function createPartDefinitionWithAcquisition(
+  definition: PartDefinitionInput,
+  plan: PartAcquisitionPlan | null,
+  auditContext: AuditMutationContext,
+) {
+  const draft: SnapshotState = { current: activeSnapshotState().current, interactive: null };
+  const result = snapshotContext.run(draft, () => {
+    const item = createPartDefinition(definition, auditContext);
+    if (!plan) {
+      return { item, acquisitionItem: null, task: null };
+    }
+    const common = {
+      title: item.name,
+      subsystemId: plan.task.subsystemId,
+      requestedById: plan.requestedById,
+      partDefinitionId: item.id,
+      quantity: 1,
+      status: "requested" as const,
+    };
+    const acquisitionItem = plan.method === "manufacture"
+      ? createManufacturingItem({
+          ...common,
+          process: "cnc",
+          dueDate: plan.task.dueDate,
+          material: item.source,
+          materialId: item.materialId ?? null,
+          mentorReviewed: false,
+        }, auditContext)
+      : createPurchaseItem({
+          ...common,
+          vendor: item.source,
+          linkLabel: "n/a",
+          estimatedCost: 0,
+          approvedByMentor: false,
+        }, auditContext);
+    const task = createTask({
+      ...plan.task,
+      linkedManufacturingIds: plan.method === "manufacture" ? [acquisitionItem.id] : [],
+      linkedPurchaseIds: plan.method === "purchase" ? [acquisitionItem.id] : [],
+    }, auditContext);
+    return { item, acquisitionItem, task };
+  });
+  replaceCurrentSnapshot(draft.current);
+  return result;
 }
 
 export function updatePartDefinition(
@@ -3301,7 +3356,7 @@ export function removeMechanism(mechanismId: string) {
   return mechanism;
 }
 
-export function createTask(input: TaskInput): ReadonlyData<Task> {
+export function createTask(input: TaskInput, auditContext: AuditMutationContext = {}): ReadonlyData<Task> {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const nextSerialNumber =
     currentSnapshot.tasks.reduce((max, task) => {
@@ -3369,6 +3424,7 @@ export function createTask(input: TaskInput): ReadonlyData<Task> {
     taskId: savedTask.id,
     memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
     actorMemberId: savedTask.ownerId,
+    ...auditContext,
   });
 
   return savedTask;

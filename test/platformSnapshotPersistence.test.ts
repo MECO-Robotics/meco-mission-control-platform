@@ -232,3 +232,51 @@ test("production snapshots reject external mutation and retain only committed co
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("atomic acquisition persists all linked records or rolls back the entire durable commit", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-acquisition-persistence-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  const submit = `
+    const { default: assert } = await import("node:assert/strict");
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const helper = await import("./src/routes/helpers/partAcquisition.ts");
+    const schemas = await import("./src/routes/routeSchemas.ts");
+    const before = store.getSnapshot();
+    const subsystem = before.subsystems.find(item => before.projects.some(project => project.id === item.projectId && project.projectType === "robot"));
+    const prepared = (helper.default ?? helper).preparePartAcquisition((schemas.default ?? schemas).partDefinitionSchema.parse({
+      name: "Durable acquisition", revision: "A", type: "custom", source: "Onshape",
+      acquisition: { method: "purchase", subsystemId: subsystem.id, disciplineId: "design", ownerId: "ava", mentorId: "jordan", dueDate: "2026-10-01" },
+    }), "priya");
+    assert.ok(!prepared.error);
+    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: "priya", requestId: "atomic-proof" });
+    assert.equal(transaction.hasChanges(), true);
+    try {
+      await transaction.commit(); transaction.release();
+      process.stdout.write(JSON.stringify({ definitionId: result.item.id, acquisitionId: result.acquisitionItem.id, taskId: result.task.id }));
+    } catch {
+      transaction.release();
+      assert.equal(store.getSnapshot(), before);
+      process.stdout.write("rolled-back");
+    }
+  `;
+  try {
+    const ids = JSON.parse(runProductionStoreScript(snapshotPath, submit));
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      process.stdout.write(JSON.stringify({
+        definition: snapshot.partDefinitions.find(item => item.id === ${JSON.stringify(ids.definitionId)}),
+        acquisition: snapshot.purchaseItems.find(item => item.id === ${JSON.stringify(ids.acquisitionId)}),
+        task: snapshot.tasks.find(item => item.id === ${JSON.stringify(ids.taskId)}),
+        audits: snapshot.actions.filter(item => item.requestId === "atomic-proof"),
+      }));
+    `));
+    assert.equal(restored.acquisition.partDefinitionId, restored.definition.id);
+    assert.deepEqual(restored.task.linkedPurchaseIds, [restored.acquisition.id]);
+    assert.equal(restored.audits.length, 3);
+    assert.equal(runProductionStoreScript("/dev/null/acquisition.json", submit), "rolled-back");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

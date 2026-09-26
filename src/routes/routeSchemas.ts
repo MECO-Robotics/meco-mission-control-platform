@@ -379,7 +379,22 @@ export const mechanismSchema = z.object({
 
 export const mechanismPatchSchema = mechanismSchema.partial();
 
+const acquisitionContext = {
+  subsystemId: z.string().trim().min(1),
+  disciplineId: z.string().trim().min(1),
+  ownerId: z.string().trim().min(1),
+  mentorId: z.string().trim().min(1),
+  dueDate: z.string().date(),
+};
+
+const partAcquisitionSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal("stock") }).strict(),
+  z.object({ method: z.literal("manufacture"), ...acquisitionContext }).strict(),
+  z.object({ method: z.literal("purchase"), ...acquisitionContext }).strict(),
+]);
+
 export const partDefinitionSchema = z.object({
+  acquisition: partAcquisitionSchema.optional(),
   ...pmCadProvenanceSchema,
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
