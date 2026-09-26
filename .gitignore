@@ -27,5 +27,5 @@ coverage/
 
 .DS_Store
 
-# Graphify semantic extraction cache
-/graphify-out/cache/
+# Local Graphify queries, indexes and generated diagnostics
+/graphify-out/

@@ -1,348 +1,149 @@
 import type {
-  ArtifactKind,
-  ArtifactStatus,
-  Milestone,
-  ManufacturingProcess,
-  ManufacturingStatus,
+  Artifact,
+  ManufacturingItem,
+  Material,
+  Mechanism,
   Meeting,
-  MaterialCategory,
   Member,
+  Milestone,
+  PartDefinition,
   PartInstance,
-  PmCadProvenance,
   Project,
-  QaResult,
-  ReportType,
-  RiskAttachmentType,
-  RiskSeverity,
-  PurchaseStatus,
+  PurchaseItem,
+  QaReport,
+  QaRequest,
+  Report,
+  ReportFinding,
+  Risk,
   Season,
-  TaskBlockerIssueType,
-  TaskBlockerSeverity,
-  TaskBlockerStatus,
-  TaskBlockerType,
-  TaskDependencyType,
-  TaskPriority,
-  TaskStatus,
-  TestResultStatus,
+  Subsystem,
+  Task,
+  TaskBlocker,
+  TaskDependency,
+  TestResult,
+  WorkLog,
+  Workstream,
 } from "../domain/types";
 
-export type PmCadProvenanceInput = Partial<PmCadProvenance>;
+// Store commands share entity fields; only generated fields and defaults differ.
+type OptionalFields<T, Keys extends keyof T> = Omit<T, Keys> & Partial<Pick<T, Keys>>;
 
-export interface TaskInput {
-  projectId: string;
-  workstreamId: string | null;
-  workstreamIds: string[];
-  title: string;
-  summary: string;
-  subsystemId: string;
-  subsystemIds: string[];
-  disciplineId: string;
-  mechanismId: string | null;
-  mechanismIds: string[];
-  partInstanceId: string | null;
-  partInstanceIds: string[];
-  artifactId: string | null;
-  artifactIds: string[];
-  targetMilestoneId: string | null;
-  photoUrl?: string;
-  ownerId: string | null;
-  assigneeIds: string[];
-  mentorId: string | null;
-  startDate: string;
-  dueDate: string;
-  priority: TaskPriority;
-  status: TaskStatus;
-  estimatedHours: number;
-  checklistItems?: string[];
-  linkedManufacturingIds: string[];
-  linkedPurchaseIds: string[];
-  requiresDocumentation: boolean;
-  documentationLinked: boolean;
-}
+export type TaskInput = OptionalFields<
+  Omit<
+    Task,
+    | "id"
+    | "createdAt"
+    | "serialNumber"
+    | "serial"
+    | "blockers"
+    | "isBlocked"
+    | "isWaitingOnDependency"
+    | "actualHours"
+  >,
+  "checklistItems"
+>;
 
-export interface WorkLogInput {
-  taskId: string;
-  date: string;
-  hours: number;
-  participantIds: string[];
-  notes: string;
-  photoUrl?: string;
-  createdById?: string | null;
-}
+export type WorkLogInput = Omit<WorkLog, "id">;
 
-export interface MemberInput {
-  name: string;
-  email?: string;
-  photoUrl?: string;
-  role: Member["role"];
-  elevated?: boolean;
-  disciplineId?: string | null;
-  seasonId?: string;
-  activeSeasonIds?: string[];
-  plannedWeeklyAttendanceHours?: number;
-  plannedAttendanceDays?: NonNullable<Member["plannedAttendanceDays"]>;
-  plannedAttendanceNotes?: string;
-}
+export type MemberInput = OptionalFields<
+  Omit<Member, "id">,
+  "email" | "elevated" | "seasonId"
+>;
 
-export interface MeetingInput {
-  title: string;
-  meetingType?: NonNullable<Meeting["meetingType"]>;
-  seasonId?: string;
-  projectIds?: string[];
-  startDateTime: string;
-  endDateTime?: string | null;
-  location?: string;
-  description?: string;
-}
+export type MeetingInput = Omit<
+  Meeting,
+  | "id"
+  | "date"
+  | "time"
+  | "rsvpsYes"
+  | "rsvpsMaybe"
+  | "openSignIns"
+  | "startDateTime"
+> & { startDateTime: string };
 
-export interface SeasonInput {
-  name: string;
-  type: Season["type"];
-  startDate: string;
-  endDate: string;
-}
+export type SeasonInput = Omit<Season, "id">;
 
-export interface ProjectInput {
-  teamId?: string;
-  seasonId: string;
-  name: string;
-  projectType: Project["projectType"];
-  description?: string;
-  status?: Project["status"];
-}
+export type ProjectInput = OptionalFields<
+  Omit<Project, "id">,
+  "teamId" | "description" | "status"
+>;
 
-export interface PurchaseItemInput {
-  title: string;
-  subsystemId: string;
-  requestedById: string | null;
-  partDefinitionId: string | null;
-  quantity: number;
-  vendor: string;
-  linkLabel: string;
-  estimatedCost: number;
-  finalCost?: number;
-  approvedByMentor: boolean;
-  approvedById?: string | null;
-  approvedAt?: string | null;
-  purchasedAt?: string | null;
-  deliveredAt?: string | null;
-  status: PurchaseStatus;
-}
+export type PurchaseItemInput = Omit<PurchaseItem, "id">;
 
-export interface ManufacturingItemInput {
-  title: string;
-  subsystemId: string;
-  requestedById: string | null;
-  process: ManufacturingProcess;
-  dueDate: string;
-  material: string;
-  materialId?: string | null;
-  partDefinitionId: string | null;
-  partInstanceId?: string | null;
-  partInstanceIds?: string[];
-  quantity: number;
-  status: ManufacturingStatus;
-  mentorReviewed: boolean;
-  reviewedById?: string | null;
-  reviewedAt?: string | null;
-  inHouse?: boolean;
-  batchLabel?: string;
-}
+export type ManufacturingItemInput = OptionalFields<
+  Omit<ManufacturingItem, "id">,
+  "materialId" | "partInstanceId" | "partInstanceIds" | "inHouse"
+>;
 
-export interface MaterialInput {
-  name: string;
-  category: MaterialCategory;
-  unit: string;
-  onHandQuantity: number;
-  reorderPoint: number;
-  location: string;
-  vendor: string;
-  notes: string;
-}
+export type MaterialInput = Omit<Material, "id">;
 
-export interface ArtifactInput {
-  projectId: string;
-  workstreamId: string | null;
-  kind: ArtifactKind;
-  title: string;
-  summary: string;
-  status: ArtifactStatus;
-  link: string;
-  isArchived?: boolean;
-  updatedAt: string;
-}
+export type ArtifactInput = OptionalFields<Omit<Artifact, "id">, "isArchived">;
 
-export interface WorkstreamInput {
-  projectId: string;
-  name: string;
-  color?: string;
-  description: string;
-  isArchived?: boolean;
-}
+export type WorkstreamInput = OptionalFields<Omit<Workstream, "id">, "isArchived">;
 
-export interface SubsystemInput extends PmCadProvenanceInput {
-  layoutX?: number | null;
-  layoutY?: number | null;
-  layoutZone?: "front" | "rear" | "left" | "right" | "center" | "top" | "unplaced" | null;
-  layoutView?: "top" | null;
-  sortOrder?: number | null;
-  projectId: string;
-  name: string;
-  serialAlias?: string;
-  color?: string;
-  description: string;
-  photoUrl?: string;
-  iteration?: number;
-  isArchived?: boolean;
-  parentSubsystemId: string | null;
-  responsibleEngineerId: string | null;
-  mentorIds: string[];
-  risks: string[];
-}
+export type SubsystemInput = OptionalFields<
+  Omit<Subsystem, "id" | "isCore">,
+  "iteration" | "isArchived"
+>;
 
-export interface MechanismInput extends PmCadProvenanceInput {
-  subsystemId: string;
-  name: string;
-  description: string;
-  googleSheetsUrl?: string;
-  photoUrl?: string;
-  iteration?: number;
-  isArchived?: boolean;
-}
+export type MechanismInput = OptionalFields<
+  Omit<Mechanism, "id">,
+  "iteration" | "isArchived"
+>;
 
-export interface PartDefinitionInput extends PmCadProvenanceInput {
-  seasonId?: string;
-  activeSeasonIds?: string[];
-  name: string;
-  partNumber: string;
-  isHardware?: boolean;
-  revision: string;
-  iteration?: number;
-  isArchived?: boolean;
-  type: string;
-  source: string;
-  materialId: string | null;
-  description: string;
-  photoUrl?: string;
-}
+export type PartDefinitionInput = OptionalFields<
+  Omit<PartDefinition, "id">,
+  "seasonId" | "iteration" | "isArchived"
+>;
 
-export interface PartInstanceInput extends PmCadProvenanceInput {
-  subsystemId: string;
-  mechanismId: string | null;
-  partDefinitionId: string;
-  name: string;
-  quantity: number;
-  trackIndividually: boolean;
-  status: PartInstance["status"];
-  photoUrl?: string;
-}
+export type PartInstanceInput = Omit<PartInstance, "id">;
 
-export interface MilestoneInput {
-  title: string;
-  type: Milestone["type"];
-  status?: Milestone["status"];
-  startDateTime: string;
-  endDateTime: string | null;
-  isExternal: boolean;
-  description: string;
-  projectIds: string[];
-  photoUrl?: string;
-}
+export type MilestoneInput = Pick<
+  Milestone,
+  | "title"
+  | "type"
+  | "status"
+  | "startDateTime"
+  | "endDateTime"
+  | "isExternal"
+  | "description"
+  | "projectIds"
+  | "photoUrl"
+>;
 
-export interface QaReportInput {
-  evidenceNotes?: string;
-  qaRequestId?: string | null;
-  mentorId?: string | null;
-  requestedById?: string | null;
-  targetRiskId?: string | null;
-  proposedRiskSeverity?: RiskSeverity | null;
-  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
-  taskId: string;
-  participantIds: string[];
-  result: QaResult;
-  mentorApproved: boolean;
-  notes: string;
-  photoUrl?: string;
-  reviewedAt: string;
-}
+export type QaReportInput = Omit<QaReport, "id">;
 
-export interface QaRequestInput {
-  taskId?: string | null;
-  subject: string;
-  mentorId: string;
-  requestedById?: string | null;
-}
+export type QaRequestInput = OptionalFields<
+  Omit<QaRequest, "id" | "createdAt" | "status">,
+  "taskId" | "requestedById"
+>;
 
-export interface TestResultInput {
-  milestoneId: string;
-  title: string;
-  status: TestResultStatus;
-  findings: string[];
-  photoUrl?: string;
-}
+export type TestResultInput = Omit<TestResult, "id">;
 
-export interface ReportInput {
-  targetRiskId?: string | null;
-  proposedRiskSeverity?: RiskSeverity | null;
-  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
-  reportType: ReportType;
-  projectId: string;
-  taskId: string | null;
-  milestoneId: string | null;
-  workstreamId: string | null;
-  createdByMemberId: string | null;
-  result: string;
-  summary: string;
-  notes: string;
-  photoUrl?: string;
-  createdAt: string;
-  participantIds?: string[];
-  mentorApproved?: boolean;
-  reviewedAt?: string;
-  title?: string;
-  status?: TestResultStatus;
-  findings?: string[];
-}
+export type ReportInput = Omit<
+  Report,
+  "id" | "evidenceNotes" | "qaRequestId" | "mentorId" | "requestedById"
+>;
 
-export interface ReportFindingInput {
-  reportId: string;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactInstanceId: string | null;
-  issueType: string;
-  severity: RiskSeverity;
-  notes: string;
-  spawnedTaskId: string | null;
-  spawnedIterationId: string | null;
-  spawnedRiskId: string | null;
-}
+export type ReportFindingInput = Pick<
+  ReportFinding,
+  | "reportId"
+  | "mechanismId"
+  | "partInstanceId"
+  | "artifactInstanceId"
+  | "issueType"
+  | "severity"
+  | "notes"
+  | "spawnedTaskId"
+  | "spawnedIterationId"
+  | "spawnedRiskId"
+>;
 
-export interface TaskDependencyInput {
-  taskId: string;
-  kind: "task" | "milestone" | "part_instance";
-  refId: string;
-  requiredState: string;
-  dependencyType: TaskDependencyType;
-}
+export type TaskDependencyInput = Omit<TaskDependency, "id" | "createdAt">;
 
-export interface TaskBlockerInput {
-  blockedTaskId: string;
-  blockerType: TaskBlockerType;
-  issueType?: TaskBlockerIssueType;
-  blockerId: string | null;
-  description: string;
-  severity: TaskBlockerSeverity;
-  status?: TaskBlockerStatus;
-  createdByMemberId?: string | null;
-}
+export type TaskBlockerInput = OptionalFields<
+  Omit<TaskBlocker, "id" | "createdAt" | "resolvedAt">,
+  "status" | "createdByMemberId"
+>;
 
-export interface RiskInput {
-  title: string;
-  detail: string;
-  severity: RiskSeverity;
-  sourceType: "qa-report" | "test-result";
-  sourceId: string;
-  attachmentType: RiskAttachmentType;
-  attachmentId: string;
-  mitigationTaskId: string | null;
-}
+export type RiskInput = Omit<Risk, "id">;
