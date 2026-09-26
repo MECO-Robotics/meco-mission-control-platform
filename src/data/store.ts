@@ -4498,6 +4498,28 @@ export function removeTask(taskId: string) {
   return task;
 }
 
+function recordProductionItemAudit(
+  entityType: "purchase-item" | "manufacturing-item",
+  operation: "create" | "update" | "delete",
+  item: Pick<PurchaseItem, "id" | "title" | "subsystemId" | "requestedById">,
+  auditContext: AuditMutationContext,
+  changedFields?: string[],
+) {
+  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
+  recordAuditAction({
+    operation,
+    entityType,
+    entityId: item.id,
+    entityLabel: item.title,
+    projectId: subsystem?.projectId ?? null,
+    subsystemId: item.subsystemId,
+    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
+    requestId: auditContext.requestId ?? null,
+    memberIds: [item.requestedById],
+    ...(changedFields === undefined ? {} : { changedFields }),
+  });
+}
+
 export function createPurchaseItem(
   input: PurchaseItemInput,
   auditContext: AuditMutationContext = {},
@@ -4527,18 +4549,7 @@ export function createPurchaseItem(
     purchaseItems: [...currentSnapshot.purchaseItems, item],
   });
 
-  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
-  recordAuditAction({
-    operation: "create",
-    entityType: "purchase-item",
-    entityId: item.id,
-    entityLabel: item.title,
-    projectId: subsystem?.projectId ?? null,
-    subsystemId: item.subsystemId,
-    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
-    requestId: auditContext.requestId ?? null,
-    memberIds: [item.requestedById],
-  });
+  recordProductionItemAudit("purchase-item", "create", item, auditContext);
 
   return item;
 }
@@ -4569,22 +4580,13 @@ export function updatePurchaseItem(
 
   const savedPurchaseItem = currentSnapshot.purchaseItems.find((item) => item.id === itemId);
   if (previousItem && savedPurchaseItem) {
-    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === savedPurchaseItem.subsystemId);
-    recordAuditAction({
-      operation: "update",
-      entityType: "purchase-item",
-      entityId: savedPurchaseItem.id,
-      entityLabel: savedPurchaseItem.title,
-      projectId: subsystem?.projectId ?? null,
-      subsystemId: savedPurchaseItem.subsystemId,
-      actorMemberId: auditContext.actorMemberId ?? savedPurchaseItem.requestedById,
-      requestId: auditContext.requestId ?? null,
-      memberIds: [savedPurchaseItem.requestedById],
-      changedFields: collectChangedFields(
-        previousItem,
-        savedPurchaseItem,
-      ),
-    });
+    recordProductionItemAudit(
+      "purchase-item",
+      "update",
+      savedPurchaseItem,
+      auditContext,
+      collectChangedFields(previousItem, savedPurchaseItem),
+    );
   }
 
   return updatedItem;
@@ -4614,18 +4616,7 @@ export function removePurchaseItem(
     })),
   });
 
-  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
-  recordAuditAction({
-    operation: "delete",
-    entityType: "purchase-item",
-    entityId: item.id,
-    entityLabel: item.title,
-    projectId: subsystem?.projectId ?? null,
-    subsystemId: item.subsystemId,
-    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
-    requestId: auditContext.requestId ?? null,
-    memberIds: [item.requestedById],
-  });
+  recordProductionItemAudit("purchase-item", "delete", item, auditContext);
 
   return item;
 }
@@ -4665,18 +4656,7 @@ export function createManufacturingItem(
     manufacturingItems: [...currentSnapshot.manufacturingItems, item],
   });
 
-  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
-  recordAuditAction({
-    operation: "create",
-    entityType: "manufacturing-item",
-    entityId: item.id,
-    entityLabel: item.title,
-    projectId: subsystem?.projectId ?? null,
-    subsystemId: item.subsystemId,
-    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
-    requestId: auditContext.requestId ?? null,
-    memberIds: [item.requestedById],
-  });
+  recordProductionItemAudit("manufacturing-item", "create", item, auditContext);
 
   return item;
 }
@@ -4719,22 +4699,13 @@ export function updateManufacturingItem(
 
   const savedManufacturingItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
   if (previousItem && savedManufacturingItem) {
-    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === savedManufacturingItem.subsystemId);
-    recordAuditAction({
-      operation: "update",
-      entityType: "manufacturing-item",
-      entityId: savedManufacturingItem.id,
-      entityLabel: savedManufacturingItem.title,
-      projectId: subsystem?.projectId ?? null,
-      subsystemId: savedManufacturingItem.subsystemId,
-      actorMemberId: auditContext.actorMemberId ?? savedManufacturingItem.requestedById,
-      requestId: auditContext.requestId ?? null,
-      memberIds: [savedManufacturingItem.requestedById],
-      changedFields: collectChangedFields(
-        previousItem,
-        savedManufacturingItem,
-      ),
-    });
+    recordProductionItemAudit(
+      "manufacturing-item",
+      "update",
+      savedManufacturingItem,
+      auditContext,
+      collectChangedFields(previousItem, savedManufacturingItem),
+    );
   }
 
   return updatedItem;
@@ -4768,18 +4739,7 @@ export function removeManufacturingItem(
     ),
   });
 
-  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
-  recordAuditAction({
-    operation: "delete",
-    entityType: "manufacturing-item",
-    entityId: item.id,
-    entityLabel: item.title,
-    projectId: subsystem?.projectId ?? null,
-    subsystemId: item.subsystemId,
-    actorMemberId: auditContext.actorMemberId ?? item.requestedById,
-    requestId: auditContext.requestId ?? null,
-    memberIds: [item.requestedById],
-  });
+  recordProductionItemAudit("manufacturing-item", "delete", item, auditContext);
 
   return item;
 }
