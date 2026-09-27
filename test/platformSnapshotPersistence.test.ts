@@ -35,6 +35,8 @@ test("production platform state survives a fresh process", () => {
     runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
+      const initial = store.getSnapshot();
+      if (initial.projects.length !== 6 || initial.tasks.length !== 2) throw new Error("Fresh process did not bootstrap the compact tutorial scenario");
       const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       store.createProject({
@@ -245,11 +247,11 @@ test("atomic acquisition persists all linked records or rolls back the entire du
     const subsystem = before.subsystems.find(item => before.projects.some(project => project.id === item.projectId && project.projectType === "robot"));
     const prepared = (helper.default ?? helper).preparePartAcquisition((schemas.default ?? schemas).partDefinitionSchema.parse({
       name: "Durable acquisition", revision: "A", type: "custom", source: "Onshape",
-      acquisition: { method: "purchase", subsystemId: subsystem.id, disciplineId: "design", ownerId: "ava", mentorId: "jordan", dueDate: "2026-10-01" },
+      acquisition: { method: "purchase", subsystemId: subsystem.id, disciplineId: "design", ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01" },
     }), "priya");
     assert.ok(!prepared.error);
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
-    const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: "priya", requestId: "atomic-proof" });
+    const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: "marco", requestId: "atomic-proof" });
     assert.equal(transaction.hasChanges(), true);
     try {
       await transaction.commit(); transaction.release();

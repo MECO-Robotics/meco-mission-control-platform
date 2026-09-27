@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { test } from "node:test";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
-import { createPartDefinition } from "../src/data/store";
+import { createMechanism, createPartDefinition } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
@@ -382,6 +382,11 @@ test("component assemblies can be assigned to an existing parent mechanism", asy
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
     const rivet = createDomainPart({ name: "3/16 Aluminum Rivet", partNumber: "RVT-001", type: "hardware", source: "McMaster-Carr" });
+    const parentMechanism = createMechanism({
+      subsystemId: "drive",
+      name: "Hierarchy Review Parent Mechanism",
+      description: "Explicit target for component assembly assignment coverage.",
+    });
     const imported = await uploadStep(app, "assigned-component-parent", hierarchyCadFixture({
       includeMechanism: false,
     }));
@@ -402,7 +407,7 @@ test("component assemblies can be assigned to an existing parent mechanism", asy
       payload: {
         assemblyDecisions: [
           { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: "drive", status: "CONFIRMED" },
-          { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", parentMechanismId: "chassis", status: "CONFIRMED" },
+          { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", parentMechanismId: parentMechanism.id, status: "CONFIRMED" },
         ],
         partMatchConfirmations: [
           { cadPartDefinitionSourceId: "part-rivet", targetPartDefinitionId: rivet.id, status: "CONFIRMED" },

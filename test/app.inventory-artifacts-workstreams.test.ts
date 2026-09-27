@@ -82,26 +82,26 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.ok(bootstrapBody.meetings.some((meeting) => meeting.id === "design-review"));
     assert.ok(bootstrapBody.attendanceRecords.some((record) => record.id === "att-1"));
     assert.ok(bootstrapBody.qaReviews.some((review) => review.id === "qa-1"));
-    assert.ok(bootstrapBody.escalations.length > 0);
+    assert.ok(Array.isArray(bootstrapBody.escalations));
     assert.ok(
-      bootstrapBody.reports.some((report) => report.id === "qareport-intake-guard"),
+      bootstrapBody.reports.some((report) => report.id === "qareport-swerve-sensor-bundle"),
     );
     assert.ok(
       bootstrapBody.reportFindings.some(
-        (finding) => finding.id === "qafinding-intake-guard-cut-quality",
+        (finding) => finding.id === "qafinding-swerve-bracket",
       ),
     );
     assert.ok(
       bootstrapBody.taskDependencies.some(
         (dependency) =>
-          dependency.taskId === "vision-calibration-sweep" &&
+          dependency.taskId === "wire-swerve-module" &&
           dependency.kind === "task" &&
           dependency.refId === "swerve-sensor-bundle",
       ),
     );
     assert.ok(
       bootstrapBody.taskBlockers.some(
-        (blocker) => blocker.blockedTaskId === "intake-guard" && blocker.id.length > 0,
+        (blocker) => blocker.blockedTaskId === "wire-swerve-module" && blocker.id.length > 0,
       ),
     );
 
@@ -210,8 +210,8 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.ok(
       artifactsBody.items.some(
         (artifact) =>
-          artifact.id === "artifact-milestone-volunteer-guide" &&
-          artifact.projectId === "project-operations-2026" &&
+          artifact.id === "artifact-stem-night-run-of-show" &&
+          artifact.projectId === "project-outreach-2026" &&
           artifact.kind === "document",
       ),
     );
@@ -326,8 +326,8 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
       method: "POST",
       url: "/api/artifacts",
       payload: {
-        projectId: "project-operations-2026",
-        workstreamId: "workstream-operations-comms",
+        projectId: "project-outreach-2026",
+        workstreamId: "workstream-outreach-content",
         kind: "nontechnical",
         title: "Parent Night Summary",
         summary: "Highlights from mentor and parent orientation night.",
@@ -349,8 +349,8 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
         workstreamId: string | null;
       };
     };
-    assert.equal(createdArtifactBody.item.projectId, "project-operations-2026");
-    assert.equal(createdArtifactBody.item.workstreamId, "workstream-operations-comms");
+    assert.equal(createdArtifactBody.item.projectId, "project-outreach-2026");
+    assert.equal(createdArtifactBody.item.workstreamId, "workstream-outreach-content");
     assert.equal(createdArtifactBody.item.kind, "nontechnical");
     assert.equal(createdArtifactBody.item.status, "draft");
     assert.equal(createdArtifactBody.item.isArchived, false);

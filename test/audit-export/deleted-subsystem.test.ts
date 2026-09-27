@@ -1,17 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { authEnv, signTestToken } from "./helpers";
+import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 import { withIntegrationApp } from "../helpers/appIntegrationHarness";
 
 test("audit export preserves subsystem-owned rows after subsystem deletion", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
       const {
+        createProject,
         createMechanism,
         createPartDefinition,
         createPartInstance,
         createSubsystem,
+        getSnapshot,
         removeSubsystem,
         updateMechanism,
         updatePartInstance,
@@ -20,15 +22,39 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",
       });
+      const admin = getSnapshot().members.find((member) => member.email === auditAdminMember.email);
+      assert.ok(admin);
+      const robotProject = createProject({ name: "Robot Audit Test", seasonId: "default-season", projectType: "robot" });
+      const operationsProject = createProject({ name: "Operations Audit Test", seasonId: "default-season", projectType: "operations" });
 
       const subsystem = createSubsystem({
-        projectId: "project-robot-2026",
+        projectId: robotProject.id,
         name: "Audit Export Deleted Subsystem",
         color: "#4F86C6",
         description: "Temporary subsystem for audit export retention coverage.",
-        parentSubsystemId: "drive",
-        responsibleEngineerId: "maya",
-        mentorIds: ["jordan"],
+        parentSubsystemId: null,
+        responsibleEngineerId: admin.id,
+        mentorIds: [],
+        risks: [],
+      });
+      const operationsSubsystem = createSubsystem({
+        projectId: operationsProject.id,
+        name: "Operations Audit Subsystem",
+        color: "#4F86C6",
+        description: "Destination for audit export move coverage.",
+        parentSubsystemId: null,
+        responsibleEngineerId: admin.id,
+        mentorIds: [],
+        risks: [],
+      });
+      const sourceSubsystem = createSubsystem({
+        projectId: robotProject.id,
+        name: "Robot Audit Move Source",
+        color: "#4F86C6",
+        description: "Source for audit export move coverage.",
+        parentSubsystemId: null,
+        responsibleEngineerId: admin.id,
+        mentorIds: [],
         risks: [],
       });
       const mechanism = createMechanism({
@@ -62,7 +88,7 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
 
       const mechanismProjectResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=mechanism&projectId=project-robot-2026",
+        url: `/api/audit/export?entityType=mechanism&projectId=${robotProject.id}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -93,17 +119,17 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
       );
 
       const movedMechanism = createMechanism({
-        subsystemId: "drive",
+        subsystemId: sourceSubsystem.id,
         name: "Audit Export Moved Mechanism",
         description: "Mechanism audit row should keep old and new project scope.",
       });
-      assert.ok(updateMechanism(movedMechanism.id, { subsystemId: "operations" }));
+      assert.ok(updateMechanism(movedMechanism.id, { subsystemId: operationsSubsystem.id }));
 
       resetLimits();
 
       const oldMechanismProjectResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=mechanism&projectId=project-robot-2026",
+        url: `/api/audit/export?entityType=mechanism&projectId=${robotProject.id}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -123,7 +149,7 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
 
       const newMechanismProjectResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=mechanism&projectId=project-operations-2026",
+        url: `/api/audit/export?entityType=mechanism&projectId=${operationsProject.id}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -150,7 +176,7 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         seasonId: "default-season",
       });
       const movedPartInstance = createPartInstance({
-        subsystemId: "drive",
+        subsystemId: sourceSubsystem.id,
         mechanismId: null,
         partDefinitionId: movedPartDefinition.id,
         name: "Audit Export Moved Part Instance",
@@ -158,13 +184,13 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         trackIndividually: false,
         status: "not ready",
       });
-      assert.ok(updatePartInstance(movedPartInstance.id, { subsystemId: "operations" }));
+      assert.ok(updatePartInstance(movedPartInstance.id, { subsystemId: operationsSubsystem.id }));
 
       resetLimits();
 
       const oldPartProjectResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=part-instance&projectId=project-robot-2026",
+        url: `/api/audit/export?entityType=part-instance&projectId=${robotProject.id}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -184,7 +210,7 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
 
       const newPartProjectResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=part-instance&projectId=project-operations-2026",
+        url: `/api/audit/export?entityType=part-instance&projectId=${operationsProject.id}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -200,6 +226,6 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
           ),
       );
     },
-    { env: authEnv },
+    { env: authEnv, members: [auditAdminMember] },
   );
 });

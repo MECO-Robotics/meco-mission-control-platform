@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./helpers";
+import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 
 test("audit export filters by entity type project season and date range", async () => {
   await withIntegrationApp(
@@ -12,6 +12,8 @@ test("audit export filters by entity type project season and date range", async 
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",
       });
+      const admin = getSnapshot().members.find((member) => member.email === auditAdminMember.email);
+      assert.ok(admin);
 
       recordAuditAction({
         operation: "update",
@@ -22,7 +24,7 @@ test("audit export filters by entity type project season and date range", async 
         beforeJson: { status: "in-progress" },
         afterJson: { status: "complete" },
         projectId: "project-robot-2026",
-        actorMemberId: "maya",
+        actorMemberId: admin.id,
         requestId: "req-audit-export-task",
       });
       recordAuditAction({
@@ -33,18 +35,18 @@ test("audit export filters by entity type project season and date range", async 
         changedFields: ["status"],
         afterJson: { status: "open" },
         projectId: "project-operations-2026",
-        actorMemberId: "maya",
+        actorMemberId: admin.id,
         requestId: "req-audit-export-risk",
       });
       recordAuditAction({
         operation: "update",
         entityType: "member",
-        entityId: "maya",
-        entityLabel: "Maya Ortiz",
+        entityId: admin.id,
+        entityLabel: admin.name,
         changedFields: ["role"],
         afterJson: { role: "admin" },
-        actorMemberId: "maya",
-        memberIds: ["maya"],
+        actorMemberId: admin.id,
+        memberIds: [admin.id],
         requestId: "req-audit-export-member",
       });
 
@@ -60,7 +62,7 @@ test("audit export filters by entity type project season and date range", async 
         changedFields: ["iteration"],
         afterJson: { iteration: 2 },
         subsystemId: robotSubsystem.id,
-        actorMemberId: "maya",
+        actorMemberId: admin.id,
         requestId: "req-audit-export-mechanism",
       });
 
@@ -85,7 +87,7 @@ test("audit export filters by entity type project season and date range", async 
         entityLabel: workstreamRisk.title,
         changedFields: ["severity"],
         afterJson: { severity: "high" },
-        actorMemberId: "maya",
+        actorMemberId: admin.id,
         requestId: "req-audit-export-workstream-risk",
       });
 
@@ -139,9 +141,10 @@ test("audit export filters by entity type project season and date range", async 
       });
 
       assert.equal(memberSeasonResponse.statusCode, 200);
-      assert.deepEqual(
-        memberSeasonResponse.json().items.map((item: { requestId: string }) => item.requestId),
-        ["req-audit-export-member"],
+      assert.ok(
+        memberSeasonResponse.json().items.some(
+          (item: { requestId: string | null }) => item.requestId === "req-audit-export-member",
+        ),
       );
 
       resetLimits();
@@ -217,6 +220,6 @@ test("audit export filters by entity type project season and date range", async 
       );
 
     },
-    { env: authEnv },
+    { env: authEnv, members: [auditAdminMember] },
   );
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { createWorkflowAuthHeaders, workflowAuthEnv } from "./helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "./helpers/workflowAuth";
 import type { SnapshotView } from "../src/domain/types";
 
 interface TutorialResetResponse {
@@ -272,7 +272,7 @@ test("tutorial reset rejects invalid payload modes", async () => {
 
 
 test("HTTP tutorial mutations stage publication, serialize lifecycle changes and isolate users", { timeout: 30_000 }, async () => {
-  await withIntegrationApp(async ({ app }) => {
+  await withWorkflowAuthApp(async ({ app }) => {
     const alice = await createWorkflowAuthHeaders("mentor");
     const bob = await createWorkflowAuthHeaders("admin");
     const global = await createWorkflowAuthHeaders("lead");
@@ -428,5 +428,5 @@ test("HTTP tutorial mutations stage publication, serialize lifecycle changes and
     } finally {
       held?.release();
     }
-  }, { env: { ...workflowAuthEnv, API_RATE_LIMIT_MAX_REQUESTS: "1000" } });
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "1000" } });
 });

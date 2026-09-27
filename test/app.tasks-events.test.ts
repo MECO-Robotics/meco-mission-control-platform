@@ -35,9 +35,9 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         name: "Mobile Test Intake",
         description: "Subsystem created with the mobile app payload shape.",
-        parentSubsystemId: "manipulator",
+        parentSubsystemId: "drive",
         responsibleEngineerId: mobileMemberCreatedBody.item.id,
-        mentorIds: ["riley"],
+        mentorIds: ["marco"],
         risks: [],
       },
     });
@@ -66,7 +66,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         targetMilestoneId: null,
         ownerId: mobileMemberCreatedBody.item.id,
         assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
-        mentorId: "riley",
+        mentorId: "marco",
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
@@ -101,21 +101,37 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     );
 
     resetLimits();
+    const mediaSubsystemResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        projectId: "project-media-2026",
+        name: "Media validation subsystem",
+        description: "Provides a valid target for project-discipline validation.",
+        parentSubsystemId: null,
+        responsibleEngineerId: null,
+        mentorIds: [],
+        risks: [],
+      },
+    });
+    assert.equal(mediaSubsystemResponse.statusCode, 201);
+    const mediaSubsystemId = mediaSubsystemResponse.json().item.id as string;
+    resetLimits();
 
     const invalidOperationsTaskResponse = await app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
-        projectId: "project-operations-2026",
-        workstreamIds: ["workstream-operations-logistics"],
+        projectId: "project-media-2026",
+        workstreamIds: [],
         title: "Invalid operations discipline",
         summary: "Attempts to use a robot-only discipline on a business task.",
-        subsystemIds: ["pit-readiness"],
+        subsystemIds: [mediaSubsystemId],
         disciplineId: "design",
-        mechanismIds: ["pit-board"],
-        partInstanceIds: ["pi-pit-board-frame"],
-        targetMilestoneId: "pit-freeze-apr-28",
-        ownerId: "sofia",
+        mechanismIds: [],
+        partInstanceIds: [],
+        targetMilestoneId: null,
+        ownerId: "ava",
         mentorId: "marco",
         dueDate: "2026-05-01",
         priority: "medium",
@@ -133,22 +149,54 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     );
 
     resetLimits();
+    const controlsSubsystemResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        projectId: "project-robot-2026",
+        name: "Controls",
+        description: "Test-local multi-target subsystem.",
+        parentSubsystemId: null,
+        responsibleEngineerId: null,
+        mentorIds: [],
+        risks: [],
+      },
+    });
+    assert.equal(controlsSubsystemResponse.statusCode, 201);
+    const controlsSubsystem = controlsSubsystemResponse.json().item;
+    resetLimits();
+    const controlsWorkstreamResponse = await app.inject({
+      method: "POST",
+      url: "/api/workstreams",
+      payload: { projectId: "project-robot-2026", name: "Controls", description: "Test-local multi-target workstream." },
+    });
+    assert.equal(controlsWorkstreamResponse.statusCode, 201);
+    const controlsWorkstream = controlsWorkstreamResponse.json().item;
+    resetLimits();
+    const controlsMechanismResponse = await app.inject({
+      method: "POST",
+      url: "/api/mechanisms",
+      payload: { subsystemId: controlsSubsystem.id, name: "Controls IO", description: "Test-local multi-target mechanism." },
+    });
+    assert.equal(controlsMechanismResponse.statusCode, 201);
+    const controlsMechanism = controlsMechanismResponse.json().item;
+    resetLimits();
 
     const multiTargetTaskCreateResponse = await app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
         projectId: "project-robot-2026",
-        workstreamIds: ["workstream-drive", "workstream-controls"],
+        workstreamIds: ["workstream-drive", controlsWorkstream.id],
         title: "Multi-target task payload",
         summary: "Created with multiple linked workstreams, subsystems, mechanisms, and parts.",
-        subsystemIds: ["drive", "controls"],
+        subsystemIds: ["drive", controlsSubsystem.id],
         disciplineId: "design",
-        mechanismIds: ["swerve-module", "auto-safety"],
+        mechanismIds: ["swerve-module", controlsMechanism.id],
         partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
         targetMilestoneId: null,
         ownerId: mobileMemberCreatedBody.item.id,
-        mentorId: "riley",
+        mentorId: "marco",
         dueDate: "2026-05-08",
         priority: "high",
         status: "not-started",
@@ -171,12 +219,12 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     };
     assert.deepEqual(multiTargetTaskCreatedBody.item.workstreamIds, [
       "workstream-drive",
-      "workstream-controls",
+      controlsWorkstream.id,
     ]);
-    assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, ["drive", "controls"]);
+    assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, ["drive", controlsSubsystem.id]);
     assert.deepEqual(multiTargetTaskCreatedBody.item.mechanismIds, [
       "swerve-module",
-      "auto-safety",
+      controlsMechanism.id,
     ]);
     assert.deepEqual(multiTargetTaskCreatedBody.item.partInstanceIds, [
       "pi-swerve-encoder-bracket-front-left",
@@ -274,7 +322,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       method: "PATCH",
       url: `/api/milestones/${createdMilestoneBody.item.id}`,
       payload: {
-        projectIds: ["project-outreach-2026"],
+        projectIds: ["project-robot-2026"],
         photoUrl: "https://cdn.example.test/forms/milestone-demo-v2.png",
       },
     });
@@ -286,7 +334,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         photoUrl: string;
       };
     };
-    assert.deepEqual(updatedMilestoneBody.item.projectIds, ["project-outreach-2026"]);
+    assert.deepEqual(updatedMilestoneBody.item.projectIds, ["project-robot-2026"]);
     assert.equal(
       updatedMilestoneBody.item.photoUrl,
       "https://cdn.example.test/forms/milestone-demo-v2.png",
@@ -374,24 +422,24 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     };
     assert.equal(inferredTasksBody.milestoneId, createdMilestoneBody.item.id);
     assert.ok(
-      inferredTasksBody.items.some((item) => item.taskId === "outreach-kiosk-assembly"),
+      inferredTasksBody.items.some((item) => item.taskId === "swerve-sensor-bundle"),
     );
 
     resetLimits();
 
     const taskMilestonesResponse = await app.inject({
       method: "GET",
-      url: "/api/tasks/outreach-kiosk-assembly/milestones",
+      url: "/api/tasks/swerve-sensor-bundle/milestones",
     });
     assert.equal(taskMilestonesResponse.statusCode, 200);
     const taskMilestonesBody = taskMilestonesResponse.json() as {
       taskId: string;
       items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isLegacyLink: boolean }>;
     };
-    assert.equal(taskMilestonesBody.taskId, "outreach-kiosk-assembly");
+    assert.equal(taskMilestonesBody.taskId, "swerve-sensor-bundle");
     assert.ok(
       taskMilestonesBody.items.some((item) =>
-        ["outreach-milestone-may-05", createdMilestoneBody.item.id].includes(item.milestoneId),
+        ["tutorial-robot-checkpoint-feb-21", createdMilestoneBody.item.id].includes(item.milestoneId),
       ),
     );
   });
@@ -411,8 +459,8 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
         partInstanceIds: [],
         targetMilestoneId: null,
         ownerId: "ava",
-        assigneeIds: ["ava", "priya"],
-        mentorId: "riley",
+        assigneeIds: ["ava", "demo-alex-morgan"],
+        mentorId: "marco",
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
@@ -427,7 +475,7 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
       item: { id: string; assigneeIds: string[]; ownerId: string | null };
     };
     assert.equal(taskCreateBody.item.ownerId, "ava");
-    assert.deepEqual(taskCreateBody.item.assigneeIds, ["ava", "priya"]);
+    assert.deepEqual(taskCreateBody.item.assigneeIds, ["ava", "demo-alex-morgan"]);
 
     resetLimits();
 
@@ -435,7 +483,7 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
       method: "POST",
       url: `/api/tasks/${taskCreateBody.item.id}/reassign`,
       payload: {
-        ownerId: "lucas",
+        ownerId: "demo-alex-morgan",
       },
     });
 
@@ -443,8 +491,8 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
     const reassignBody = reassignResponse.json() as {
       item: { assigneeIds: string[]; ownerId: string | null };
     };
-    assert.equal(reassignBody.item.ownerId, "lucas");
-    assert.deepEqual(reassignBody.item.assigneeIds, ["priya", "lucas"]);
+    assert.equal(reassignBody.item.ownerId, "demo-alex-morgan");
+    assert.deepEqual(reassignBody.item.assigneeIds, ["demo-alex-morgan"]);
 
     resetLimits();
 
@@ -461,6 +509,6 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
       item: { assigneeIds: string[]; ownerId: string | null };
     };
     assert.equal(unassignBody.item.ownerId, null);
-    assert.deepEqual(unassignBody.item.assigneeIds, ["priya"]);
+    assert.deepEqual(unassignBody.item.assigneeIds, []);
   });
 });

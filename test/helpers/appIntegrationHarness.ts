@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 
 import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
 import type { WebSessionStore } from "../../src/auth/webSessionStore";
-import { createMember, resetStore, type MemberInput } from "../../src/data/store";
+import { createMember, getSnapshot, resetStore, type MemberInput } from "../../src/data/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -185,6 +185,7 @@ export async function withIntegrationApp(
   options?: {
     env?: Partial<Record<AppEnvKey, string | undefined>>;
     members?: MemberInput[];
+    snapshot?: import("../../src/domain/types").SnapshotView;
     mobileSessionStore?: MobileSessionStore;
     webSessionStore?: WebSessionStore;
   },
@@ -195,16 +196,17 @@ export async function withIntegrationApp(
   try {
     configureEnv(options?.env);
     resetIntegrationEnvModuleCache();
-    resetStore();
-
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
     const app = await buildApp({
       userPreferencesPath: join(preferencesDirectory, "preferences.json"),
       mobileSessionStore: options?.mobileSessionStore ?? testMobileSessionStore,
       webSessionStore: options?.webSessionStore ?? new MemoryWebSessionStore(),
     });
+    resetStore(options?.snapshot);
     for (const member of options?.members ?? []) {
-      createMember(member);
+      if (!getSnapshot().members.some((candidate) => candidate.email === member.email)) {
+        createMember(member);
+      }
     }
 
     try {

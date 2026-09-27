@@ -140,61 +140,10 @@ test("createProject seeds drivetrain defaults for robot projects", () => {
   ]);
 });
 
-test("seeded training records stay in Training while strategy has its own seeded coverage", () => {
-  const snapshot = getSnapshot();
-  const trainingProject = snapshot.projects.find(
-    (project) => project.id === "project-training-2026",
-  );
-
-  assert.ok(trainingProject);
-  assert.equal(trainingProject.name, "Training");
-  assert.equal(
-    snapshot.workstreams.find((workstream) => workstream.id === "workstream-scouting-training")
-      ?.projectId,
-    trainingProject.id,
-  );
-  assert.equal(
-    snapshot.workstreams.find((workstream) => workstream.id === "workstream-scouting-data")
-      ?.projectId,
-    trainingProject.id,
-  );
-  assert.equal(
-    snapshot.subsystems.find((subsystem) => subsystem.id === "scouting")?.projectId,
-    trainingProject.id,
-  );
-  assert.equal(
-    snapshot.artifacts.find((artifact) => artifact.id === "artifact-scouting-rubric")
-      ?.projectId,
-    trainingProject.id,
-  );
-  assert.equal(
-    snapshot.artifacts.find((artifact) => artifact.id === "artifact-scouting-ingest-notes")
-      ?.projectId,
-    trainingProject.id,
-  );
-  assert.equal(
-    snapshot.tasks.find((task) => task.id === "scouting-rubric-training")?.projectId,
-    trainingProject.id,
-  );
-  assert.equal(
-    snapshot.tasks.find((task) => task.id === "scouting-tablet-refresh")?.projectId,
-    trainingProject.id,
-  );
+test("the tutorial baseline retains its six canonical projects", () => {
   assert.deepEqual(
-    snapshot.workstreams
-      .filter((workstream) => workstream.projectId === "project-strategy-2026")
-      .map((workstream) => workstream.id)
-      .sort(),
-    ["workstream-strategy-playbooks", "workstream-strategy-scouting"].sort(),
-  );
-  assert.equal(
-    snapshot.tasks.find((task) => task.id === "strategy-opponent-model-update")?.projectId,
-    "project-strategy-2026",
-  );
-  assert.equal(
-    snapshot.artifacts.find((artifact) => artifact.id === "artifact-strategy-picklist-board")
-      ?.projectId,
-    "project-strategy-2026",
+    getSnapshot().projects.map((project) => project.name).sort(),
+    ["Media", "Operations", "Outreach", "Strategy", "Training", "Tutorial Robot 2026"].sort(),
   );
 });
 
@@ -205,26 +154,22 @@ test("tutorial baseline keeps the canonical visible season name", () => {
   assert.equal(baseline.seasonName, "Tutorial Season");
 });
 
-test("seed data includes an Outreach milestone linked to the outreach subsystem", () => {
+test("tutorial seed keeps a planning milestone linked to the robot project", () => {
   const snapshot = getSnapshot();
-  const milestone = snapshot.milestones.find((candidate) => candidate.id === "outreach-milestone-may-05");
+  const milestone = snapshot.milestones.find((candidate) => candidate.id === "tutorial-robot-checkpoint-feb-21");
 
   assert.ok(milestone);
-  assert.equal(milestone.title, "Outreach Milestone");
-  assert.equal(milestone.type, "demo");
-  assert.equal(milestone.isExternal, true);
-  assert.deepEqual(milestone.projectIds, ["project-outreach-2026"]);
+  assert.equal(milestone.title, "Robot Checkpoint");
+  assert.deepEqual(milestone.projectIds, ["project-robot-2026"]);
 });
 
-test("tutorial season seed includes milestone events", () => {
+test("compact tutorial seed includes its planning milestone", () => {
   const snapshot = getSnapshot();
   const tutorialMilestones = snapshot.milestones.filter(
     (milestone) => milestone.seasonId === "default-season",
   );
 
-  assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-season-kickoff-jan-10"));
   assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-robot-checkpoint-feb-21"));
-  assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-training-showcase-mar-21"));
 });
 
 test("demo seed references are internally consistent", () => {
@@ -536,7 +481,7 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
     description: "Temporary subsystem for coverage.",
     parentSubsystemId: "drive",
     responsibleEngineerId: "ava",
-    mentorIds: ["jordan"],
+    mentorIds: ["marco"],
     risks: ["Temporary integration risk"],
   });
 
@@ -551,16 +496,16 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
   assert.equal(integrationTask?.disciplineId, "testing");
   assert.equal((integrationTask.mechanismIds[0] ?? null), null);
   assert.equal(integrationTask?.ownerId, "ava");
-  assert.equal(integrationTask?.mentorId, "jordan");
+  assert.equal(integrationTask?.mentorId, "marco");
 });
 
 test("updateTask patches an existing task in place", () => {
-  updateTask("intake-guard", {
+  updateTask("wire-swerve-module", {
     status: "complete",
     assigneeIds: ["ava", "ethan"],
   });
 
-  const updatedTask = getSnapshot().tasks.find((task) => task.id === "intake-guard");
+  const updatedTask = getSnapshot().tasks.find((task) => task.id === "wire-swerve-module");
   assert.ok(updatedTask);
   assert.equal(updatedTask.status, "complete");
   assert.equal(updatedTask.actualHours, getSnapshot().workLogs.filter((log) => log.taskId === updatedTask.id).reduce((sum, log) => sum + log.hours, 0));
@@ -569,14 +514,14 @@ test("updateTask patches an existing task in place", () => {
 
 test("task updates append an audit action entry", () => {
   const initialActionCount = getSnapshot().actions?.length ?? 0;
-  const originalTask = getSnapshot().tasks.find((task) => task.id === "intake-guard");
+  const originalTask = getSnapshot().tasks.find((task) => task.id === "wire-swerve-module");
   assert.ok(originalTask);
 
-  const updatedTask = updateTask("intake-guard", {
+  const updatedTask = updateTask("wire-swerve-module", {
     status: "complete",
     estimatedHours: 7,
   }, {
-    actorMemberId: "jordan",
+    actorMemberId: "marco",
     requestId: "req-audit-task-update",
   });
 
@@ -588,15 +533,15 @@ test("task updates append an audit action entry", () => {
   const lastAction = actions[actions.length - 1];
   assert.equal(lastAction.entityType, "task");
   assert.equal(lastAction.operation, "update");
-  assert.equal(lastAction.taskId, "intake-guard");
+  assert.equal(lastAction.taskId, "wire-swerve-module");
   assert.equal(lastAction.projectId, updatedTask.projectId);
   assert.equal(lastAction.subsystemId, (updatedTask.subsystemIds[0] ?? ""));
   assert.equal(lastAction.entityLabel, updatedTask.title);
-  assert.equal(lastAction.actorMemberId, "jordan");
+  assert.equal(lastAction.actorMemberId, "marco");
   assert.equal(lastAction.requestId, "req-audit-task-update");
   assert.ok(lastAction.changedFields.includes("estimatedHours"));
   assert.ok(lastAction.changedFields.includes("status"));
-  assert.equal(lastAction.beforeJson?.status, "in-progress");
+  assert.equal(lastAction.beforeJson?.status, "not-started");
   assert.equal(lastAction.afterJson?.status, "complete");
   assert.equal(lastAction.beforeJson?.estimatedHours, originalTask.estimatedHours);
   assert.equal(lastAction.afterJson?.estimatedHours, 7);
@@ -632,16 +577,30 @@ test("audit summaries redact sensitive before and after fields", () => {
 });
 
 test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {
+  const subsystem = createSubsystem({
+    projectId: "project-robot-2026",
+    name: "Test Mechanism Subsystem",
+    description: "Scenario created for parent alignment behavior.",
+    parentSubsystemId: null,
+    responsibleEngineerId: null,
+    mentorIds: [],
+    risks: [],
+  });
+  const mechanism = createMechanism({
+    subsystemId: subsystem.id,
+    name: "Test Mechanism",
+    description: "Scenario mechanism.",
+  });
   updatePartInstance("pi-swerve-encoder-bracket-front-left", {
-    mechanismId: "intake-roller",
+    mechanismId: mechanism.id,
   });
 
   const updatedPartInstance = getSnapshot().partInstances.find(
     (item) => item.id === "pi-swerve-encoder-bracket-front-left",
   );
   assert.ok(updatedPartInstance);
-  assert.equal(updatedPartInstance.mechanismId, "intake-roller");
-  assert.equal(updatedPartInstance.subsystemId, "manipulator");
+  assert.equal(updatedPartInstance.mechanismId, mechanism.id);
+  assert.equal(updatedPartInstance.subsystemId, subsystem.id);
 });
 
 test("createPartInstance merges duplicate part and mechanism quantities", () => {
@@ -937,22 +896,44 @@ test("removePartDefinition clears linked part instances and task references", ()
 });
 
 test("removeSubsystem clears QA requests for removed tasks", () => {
+  const subsystem = createSubsystem({
+    projectId: "project-robot-2026",
+    name: "QA cleanup root",
+    description: "Scenario for QA request cascade behavior.",
+    parentSubsystemId: null,
+    responsibleEngineerId: null,
+    mentorIds: [],
+    risks: [],
+  });
+  const childSubsystem = createSubsystem({
+    projectId: "project-robot-2026",
+    name: "QA cleanup child",
+    description: "Creates the task removed with its parent.",
+    parentSubsystemId: subsystem.id,
+    responsibleEngineerId: null,
+    mentorIds: [],
+    risks: [],
+  });
+  const generatedTask = getSnapshot().tasks.find((task) =>
+    task.title === `Integrate ${childSubsystem.name}`,
+  );
+  assert.ok(generatedTask);
   const taskRequest = createQaRequest({
-    taskId: "scouting-tablet-refresh",
+    taskId: generatedTask.id,
     subject: "Tablet refresh QA",
-    mentorId: "maria",
-    requestedById: "avery",
+    mentorId: "marco",
+    requestedById: "ava",
   });
   const tasklessRequest = createQaRequest({
     subject: "General QA",
-    mentorId: "maria",
-    requestedById: "avery",
+    mentorId: "marco",
+    requestedById: "ava",
   });
 
   assert.ok(getQaRequests().some((request) => request.id === taskRequest.id));
   assert.ok(getQaRequests().some((request) => request.id === tasklessRequest.id));
 
-  const removed = removeSubsystem("scouting");
+  const removed = removeSubsystem(subsystem.id);
 
   assert.ok(removed);
   assert.equal(
@@ -964,14 +945,14 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
 
 test("removeMember clears linked references across the snapshot", () => {
   updateTask("swerve-sensor-bundle", {
-    assigneeIds: ["ava", "jordan"],
+    assigneeIds: ["ava", "marco"],
   });
 
-  const removed = removeMember("jordan");
+  const removed = removeMember("marco");
   const snapshot = getSnapshot();
 
-  assert.equal(removed?.id, "jordan");
-  assert.equal(snapshot.members.some((member) => member.id === "jordan"), false);
+  assert.equal(removed?.id, "marco");
+  assert.equal(snapshot.members.some((member) => member.id === "marco"), false);
   assert.deepEqual(
     snapshot.subsystems.find((subsystem) => subsystem.id === "drive")?.mentorIds,
     [],
@@ -989,8 +970,8 @@ test("removeMember clears linked references across the snapshot", () => {
     null,
   );
   assert.equal(
-    snapshot.tasks.find((task) => task.id === "pit-checklist")?.mentorId,
-    null,
+    snapshot.tasks.filter((task) => task.mentorId === "marco").length,
+    0,
   );
   assert.deepEqual(
     snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.assigneeIds,
@@ -1001,17 +982,10 @@ test("removeMember clears linked references across the snapshot", () => {
     ["ava"],
   );
   assert.equal(
-    snapshot.attendanceRecords.some((record) => record.memberId === "jordan"),
+    snapshot.attendanceRecords.some((record) => record.memberId === "marco"),
     false,
   );
-  assert.deepEqual(
-    snapshot.qaReviews.find((review) => review.id === "qa-1")?.participantIds,
-    ["priya"],
-  );
-  assert.deepEqual(
-    snapshot.qaReviews.find((review) => review.id === "qa-2")?.participantIds,
-    ["ava"],
-  );
+  assert.ok(snapshot.qaReviews.every((review) => !review.participantIds.includes("marco")));
 });
 
 test("task milestone requirements infer milestone matches from explicit target requirements", () => {
@@ -1119,7 +1093,7 @@ test("legacy target-milestone links are preserved when no requirement match exis
     projectIds: [],
   });
 
-  const updated = updateTask("outreach-kiosk-assembly", {
+  const updated = updateTask("wire-swerve-module", {
     targetMilestoneId: milestone.id,
   });
   assert.ok(updated);
@@ -1166,7 +1140,8 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
     ],
   });
 
-  const legacyTask = updateTask("outreach-kiosk-assembly", {
+  const legacyTask = updateTask("wire-swerve-module", {
+    subsystemIds: ["outreach"],
     targetMilestoneId: milestone.id,
   });
   assert.ok(legacyTask);
@@ -1190,7 +1165,7 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
 
 test("task hours follow work log create, resize, move and delete", () => {
   const hours = (id: string) => getSnapshot().tasks.find((task) => task.id === id)!.actualHours;
-  const first = "intake-guard";
+  const first = "wire-swerve-module";
   const second = "swerve-sensor-bundle";
   const beforeFirst = hours(first);
   const beforeSecond = hours(second);

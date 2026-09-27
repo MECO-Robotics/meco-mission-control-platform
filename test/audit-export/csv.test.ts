@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./helpers";
+import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 
 test("audit export supports csv format", async () => {
   await withIntegrationApp(
@@ -39,6 +39,6 @@ test("audit export supports csv format", async () => {
       assert.match(response.body, /req-audit-export-csv/);
       assert.match(response.body, /"'=Audit Export, CSV Task"/);
     },
-    { env: authEnv },
+    { env: authEnv, members: [auditAdminMember] },
   );
 });

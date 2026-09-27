@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
 test("manufacturing review is protected while internal users can make adjacent progress", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const studentHeaders = await createWorkflowAuthHeaders("student");
     const leadHeaders = await createWorkflowAuthHeaders("lead");
     const mentorHeaders = await createWorkflowAuthHeaders("mentor");
@@ -62,11 +61,11 @@ test("manufacturing review is protected while internal users can make adjacent p
     }
 
     resetLimits();
-    const deniedLeadDelete = await app.inject({ method: "DELETE", url: "/api/manufacturing/tablet-bracket-cut", headers: leadHeaders });
+    const deniedLeadDelete = await app.inject({ method: "DELETE", url: "/api/manufacturing/guard-cnc", headers: leadHeaders });
     assert.equal(deniedLeadDelete.statusCode, 403);
 
     resetLimits();
-    const allowedMentorDelete = await app.inject({ method: "DELETE", url: "/api/manufacturing/tablet-bracket-cut", headers: mentorHeaders });
+    const allowedMentorDelete = await app.inject({ method: "DELETE", url: "/api/manufacturing/guard-cnc", headers: mentorHeaders });
     assert.equal(allowedMentorDelete.statusCode, 200);
-  }, { env: workflowAuthEnv });
+  });
 });
