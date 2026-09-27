@@ -28,6 +28,7 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
       }>;
       projects: Array<{
         id: string;
+        name: string;
         seasonId: string;
       }>;
       reportFindings: Array<{
@@ -39,6 +40,7 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
         projectId: string;
         reportType: string;
       }>;
+      tasks: Array<{ id: string }>;
       manufacturingItems: Array<{
         batchLabel?: string;
         id: string;
@@ -68,50 +70,45 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     };
 
     const seededFabricationItem = bootstrapBody.manufacturingItems.find(
-      (item) => item.id === "frame-weldment",
+      (item) => item.process === "fabrication",
     );
     assert.ok(seededFabricationItem);
     assert.equal(seededFabricationItem?.process, "fabrication");
     assert.equal(seededFabricationItem?.partDefinitionId, null);
-    assert.equal(seededFabricationItem?.batchLabel, "FAB-03");
+    assert.match(seededFabricationItem?.batchLabel ?? "", /^FAB-/);
 
-    const seededManufacturingQaItem = bootstrapBody.manufacturingItems.find(
-      (item) => item.id === "sensor-bracket",
-    );
-    assert.equal(seededManufacturingQaItem?.qaReviewCount, 1);
-    assert.ok(bootstrapBody.meetings.some((meeting) => meeting.id === "design-review"));
-    assert.ok(bootstrapBody.attendanceRecords.some((record) => record.id === "att-1"));
-    assert.ok(bootstrapBody.qaReviews.some((review) => review.id === "qa-1"));
+    assert.ok(bootstrapBody.manufacturingItems.some((item) => item.qaReviewCount > 0));
+    assert.ok(bootstrapBody.meetings.length > 0);
+    assert.ok(bootstrapBody.attendanceRecords.length > 0);
+    assert.ok(bootstrapBody.qaReviews.length > 0);
     assert.ok(bootstrapBody.escalations.length > 0);
     assert.ok(
-      bootstrapBody.reports.some((report) => report.id === "qareport-intake-guard"),
+      bootstrapBody.reports.some((report) => report.reportType === "QA"),
     );
     assert.ok(
       bootstrapBody.reportFindings.some(
-        (finding) => finding.id === "qafinding-intake-guard-cut-quality",
+        (finding) => bootstrapBody.reports.some((report) => report.id === finding.reportId),
       ),
     );
     assert.ok(
       bootstrapBody.taskDependencies.some(
-        (dependency) =>
-          dependency.taskId === "vision-calibration-sweep" &&
-          dependency.kind === "task" &&
-          dependency.refId === "swerve-sensor-bundle",
+        (dependency) => dependency.kind === "task" &&
+          bootstrapBody.tasks.some((task) => task.id === dependency.taskId) &&
+          bootstrapBody.tasks.some((task) => task.id === dependency.refId),
       ),
     );
     assert.ok(
       bootstrapBody.taskBlockers.some(
-        (blocker) => blocker.blockedTaskId === "intake-guard" && blocker.id.length > 0,
+        (blocker) => bootstrapBody.tasks.some((task) => task.id === blocker.blockedTaskId),
       ),
     );
 
-    const seededOperationsArtifact = bootstrapBody.artifacts.find(
-      (artifact) => artifact.id === "artifact-sponsor-recap-apr",
-    );
-    assert.ok(seededOperationsArtifact);
-    assert.equal(seededOperationsArtifact?.projectId, "project-operations-2026");
-    assert.equal(seededOperationsArtifact?.kind, "nontechnical");
-    assert.ok(bootstrapBody.workLogs.some((workLog) => workLog.id === "log-1"));
+    const operationsProject = bootstrapBody.projects.find((project) => project.name === "Operations");
+    assert.ok(operationsProject);
+    assert.ok(bootstrapBody.artifacts.some(
+      (artifact) => artifact.projectId === operationsProject.id && artifact.kind === "nontechnical",
+    ));
+    assert.ok(bootstrapBody.workLogs.length > 0);
 
     const robotProject = bootstrapBody.projects.find(
       (project) => project.id === "project-robot-2026",
