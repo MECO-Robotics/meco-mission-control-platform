@@ -58,12 +58,26 @@ test("members and part definitions activate per season in matching bootstrap sco
         .partDefinitions.some((candidate: { id: string }) => candidate.id === partDefinition.id),
       false,
     );
-    const { getSnapshot, updateMember } = await import("../src/data/store");
-    const member = getSnapshot().members.find((candidate) => candidate.id === "priya");
-    assert.ok(member);
-    updateMember(member.id, {
-      activeSeasonIds: [...(member.activeSeasonIds ?? []), seasonId],
+    resetLimits();
+    const membersResponse = await app.inject({
+      method: "GET",
+      url: "/api/members?pageSize=60",
     });
+    assert.equal(membersResponse.statusCode, 200);
+    const member = membersResponse.json().items.find(
+      (candidate: { id: string }) => candidate.id === "priya",
+    ) as { activeSeasonIds?: string[]; id: string } | undefined;
+    assert.ok(member);
+
+    resetLimits();
+    const activateMemberResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/members/${member.id}`,
+      payload: {
+        activeSeasonIds: [...(member.activeSeasonIds ?? []), seasonId],
+      },
+    });
+    assert.equal(activateMemberResponse.statusCode, 200);
 
     resetLimits();
 
