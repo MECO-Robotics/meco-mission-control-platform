@@ -37,6 +37,11 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   assert.ok(seed.workLogs.every((log) => taskIds.has(log.taskId) && log.participantIds.every((id) => memberIds.has(id))));
   assert.ok(seed.attendanceRecords.every((record) => memberIds.has(record.memberId)));
   assert.ok(seed.manufacturingItems.every((item) => subsystemIds.has(item.subsystemId) && (!item.partDefinitionId || partDefinitionIds.has(item.partDefinitionId)) && (!item.partInstanceId || partInstanceIds.has(item.partInstanceId))));
+  assert.ok(seed.manufacturingItems.every((item) => {
+    if (!item.partDefinitionId) return true;
+    const partDefinition = seed.partDefinitions.find(({ id }) => id === item.partDefinitionId);
+    return partDefinition?.materialId === item.materialId;
+  }));
   assert.ok(seed.purchaseItems.every((item) => subsystemIds.has(item.subsystemId) && (!item.partDefinitionId || partDefinitionIds.has(item.partDefinitionId))));
   assert.ok(seed.qaReviews.every((review) => seed.manufacturingItems.some((item) => item.id === review.subjectId)));
 
