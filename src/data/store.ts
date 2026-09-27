@@ -1,4 +1,5 @@
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
+import { uniqueIds } from "../domain/ids";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
@@ -825,12 +826,6 @@ function uniqueId(base: string, existingIds: Set<string>) {
   }
 
   return `${base}-${counter}`;
-}
-
-function uniqueIds(values: Array<string | null | undefined>) {
-  return Array.from(
-    new Set(values.filter((value): value is string => Boolean(value))),
-  );
 }
 
 function getPartInstanceMergeKey(

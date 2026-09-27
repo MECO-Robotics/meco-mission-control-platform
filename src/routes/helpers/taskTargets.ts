@@ -1,5 +1,6 @@
 import type { TaskTargets } from "../../domain/taskTargets";
 import type { ReadonlyData } from "../../domain/types";
+import { uniqueIds } from "../../domain/ids";
 import {
   findMechanism,
   findPartInstance,
@@ -27,12 +28,6 @@ export function resolveProjectId(input: {
   }
 
   return getDefaultProjectId();
-}
-
-export function uniqueIds(values: ReadonlyArray<string | null | undefined>) {
-  return Array.from(
-    new Set(values.filter((value): value is string => Boolean(value))),
-  );
 }
 
 export function normalizeTaskTargets(

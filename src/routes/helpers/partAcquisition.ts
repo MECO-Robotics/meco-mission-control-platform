@@ -5,7 +5,8 @@ import {
 } from "../../data/store";
 import type { partDefinitionSchema } from "../routeSchemas";
 import { validatePartDefinitionMaterialId, validateSubsystemPeople, validateTaskLinks } from "./linkValidation";
-import { normalizeTaskTargets, uniqueIds } from "./taskTargets";
+import { uniqueIds } from "../../domain/ids";
+import { normalizeTaskTargets } from "./taskTargets";
 
 export function preparePartAcquisition(
   input: z.infer<typeof partDefinitionSchema>,

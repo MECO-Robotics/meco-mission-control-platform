@@ -1,5 +1,6 @@
 import type { PartDefinition, PlatformSnapshot, Task } from "../domain/types";
 import { TASK_DISCIPLINE_DEFINITIONS } from "../domain/taskDisciplines";
+import { uniqueIds } from "../domain/ids";
 import type {
   SeedMechanism,
   SeedPartDefinition,
@@ -7,12 +8,6 @@ import type {
   SeedTask,
   SeedWorkstream,
 } from "./seedTypes";
-
-function uniqueIds(values: Array<string | null | undefined>) {
-  return Array.from(
-    new Set(values.filter((value): value is string => Boolean(value))),
-  );
-}
 
 function normalizeIteration(iteration: number | undefined) {
   return Number.isFinite(iteration) && iteration && iteration >= 1

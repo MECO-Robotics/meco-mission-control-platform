@@ -127,8 +127,8 @@ import {
   getDefaultProjectId,
   normalizeTaskTargets,
   resolveProjectId,
-  uniqueIds,
 } from "./helpers/taskTargets";
+import { uniqueIds } from "../domain/ids";
 
 import {
   validateArtifactLinks,

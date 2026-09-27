@@ -17,7 +17,7 @@ import {
   getTestResults,
 } from "../../data/store";
 import { isTaskDisciplineAllowedForProject } from "../../domain/taskDisciplines";
-import { uniqueIds } from "./taskTargets";
+import { uniqueIds } from "../../domain/ids";
 
 function memberIsActiveInSeason(
   member: { seasonId: string; activeSeasonIds?: readonly string[] },
