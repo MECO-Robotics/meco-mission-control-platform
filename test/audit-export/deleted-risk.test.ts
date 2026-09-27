@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { authEnv, signTestToken } from "./helpers";
+import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 import { withIntegrationApp } from "../helpers/appIntegrationHarness";
 
 test("audit export preserves workstream risk scope after deletion", async () => {
@@ -132,6 +132,6 @@ test("audit export preserves workstream risk scope after deletion", async () => 
           ),
       );
     },
-    { env: authEnv },
+    { env: authEnv, members: [auditAdminMember] },
   );
 });

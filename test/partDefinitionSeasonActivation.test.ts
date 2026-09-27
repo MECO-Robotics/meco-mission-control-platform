@@ -65,7 +65,7 @@ test("members and part definitions activate per season in matching bootstrap sco
     });
     assert.equal(membersResponse.statusCode, 200);
     const member = membersResponse.json().items.find(
-      (candidate: { id: string }) => candidate.id === "priya",
+      (candidate: { id: string }) => candidate.id === "demo-alex-morgan",
     ) as { activeSeasonIds?: string[]; id: string } | undefined;
     assert.ok(member);
 

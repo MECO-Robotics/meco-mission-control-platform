@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
 test("purchase approval and transitions are mentor/admin-only adjacent operations", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const studentHeaders = await createWorkflowAuthHeaders("student");
     const leadHeaders = await createWorkflowAuthHeaders("lead");
     const mentorHeaders = await createWorkflowAuthHeaders("mentor");
@@ -65,17 +64,17 @@ test("purchase approval and transitions are mentor/admin-only adjacent operation
     assert.equal(revokeAfterPurchase.statusCode, 409);
 
     resetLimits();
-    const deniedLeadDelete = await app.inject({ method: "DELETE", url: "/api/purchases/climber-ratchet-kit", headers: leadHeaders });
+    const deniedLeadDelete = await app.inject({ method: "DELETE", url: "/api/purchases/ferrule-kit", headers: leadHeaders });
     assert.equal(deniedLeadDelete.statusCode, 403);
 
     resetLimits();
-    const allowedMentorDelete = await app.inject({ method: "DELETE", url: "/api/purchases/climber-ratchet-kit", headers: mentorHeaders });
+    const allowedMentorDelete = await app.inject({ method: "DELETE", url: "/api/purchases/ferrule-kit", headers: mentorHeaders });
     assert.equal(allowedMentorDelete.statusCode, 200);
-  }, { env: workflowAuthEnv });
+  });
 });
 
 test("purchase creation cannot self-approve and missing workflow records return 404", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const studentHeaders = await createWorkflowAuthHeaders("student");
     const mentorHeaders = await createWorkflowAuthHeaders("mentor");
     const adminHeaders = await createWorkflowAuthHeaders("admin");
@@ -98,12 +97,12 @@ test("purchase creation cannot self-approve and missing workflow records return 
     assert.equal(forgedCreate.statusCode, 403);
 
     resetLimits();
-    const adminApproval = await app.inject({ method: "PUT", url: "/api/purchases/climber-ratchet-kit/approval", headers: adminHeaders, payload: { approved: true } });
+    const adminApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: adminHeaders, payload: { approved: true } });
     assert.equal(adminApproval.statusCode, 200);
     assert.equal(adminApproval.json().item.approvedById, "maya");
 
     resetLimits();
     const missing = await app.inject({ method: "PUT", url: "/api/purchases/missing/approval", headers: mentorHeaders, payload: { approved: true } });
     assert.equal(missing.statusCode, 404);
-  }, { env: workflowAuthEnv });
+  });
 });

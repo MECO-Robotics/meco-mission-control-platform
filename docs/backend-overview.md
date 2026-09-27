@@ -24,7 +24,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Data Model
 
-- Seed task records declare canonical discipline IDs and nondefault values; `buildSeedTask` in `src/data/mockData.ts` owns task defaults, allocates independent collections, and derives logged hours and target links.
+- `src/data/mockData.ts` contains a compact typed tutorial scenario with explicit task fields and canonical target arrays. Snapshot normalization in `src/data/store.ts` assigns task serials and derives actual hours from work logs; it does not generate seed task records or infer task targets.
 - Core state loads the production snapshot when present; fresh/tutorial initialization uses the clock-relative fixture factory in `src/data/tutorialSnapshot.ts`.
 - Snapshot publication clones inputs and recursively freezes plain data. Getters and finders expose stable readonly values; only store commands can publish replacements. Caller inputs and command results cannot mutate published state. Non-JSON mutable objects and cyclic metadata are rejected before publication. Optional undefined domain fields are retained in memory. Tests seed disposable fixtures through the existing non-production `resetStore(snapshot)` boundary.
 - Core platform reads and writes go through `src/data/store.ts`. Store input types derive from the domain entities, excluding generated fields and making only store-defaulted fields optional. Request schemas still own transport validation and coercion.

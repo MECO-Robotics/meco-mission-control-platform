@@ -8,23 +8,25 @@ import { preparePartAcquisition } from "../src/routes/helpers/partAcquisition";
 import { partDefinitionSchema } from "../src/routes/routeSchemas";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 import { issueTestMobileToken } from "./helpers/sessionAuth";
-import { createWorkflowAuthHeaders, workflowAuthEnv } from "./helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "./helpers/workflowAuth";
 
 function payload(method: "stock" | "manufacture" | "purchase" = "manufacture") {
   const snapshot = getSnapshot();
   const subsystem = snapshot.subsystems.find((item) => !item.isArchived && snapshot.projects.some((project) => project.id === item.projectId && project.projectType === "robot"))!;
+  const mentorId = snapshot.members.find((member) => member.id === "jordan")?.id ??
+    snapshot.members.find((member) => member.role === "mentor")!.id;
   return {
     name: "Acquisition Plate", revision: "A", source: "Onshape", type: "custom",
     materialId: snapshot.materials[0].id,
     acquisition: method === "stock" ? { method } : {
       method, subsystemId: subsystem.id, disciplineId: "design",
-      ownerId: "ava", mentorId: "jordan", dueDate: "2026-10-01",
+      ownerId: "ava", mentorId, dueDate: "2026-10-01",
     },
   };
 }
 
 test("part acquisition creates linked records with trusted workflow defaults and distinct actor/owner", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const headers = await createWorkflowAuthHeaders("lead");
     for (const method of ["stock", "manufacture", "purchase"] as const) {
       const before = getSnapshot();
@@ -57,11 +59,11 @@ test("part acquisition creates linked records with trusted workflow defaults and
       }
       resetLimits();
     }
-  }, { env: workflowAuthEnv });
+  });
 });
 
 test("part acquisition rejects forbidden or inconsistent input without publishing any records", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const before = getSnapshot();
     const denied = await app.inject({ method: "POST", url: "/api/part-definitions", headers: await createWorkflowAuthHeaders("student"), payload: payload() });
     assert.equal(denied.statusCode, 403);
@@ -92,7 +94,7 @@ test("part acquisition rejects forbidden or inconsistent input without publishin
     const wrongSeason = await app.inject({ method: "POST", url: "/api/part-definitions", headers, payload: valid });
     assert.equal(wrongSeason.statusCode, 400, wrongSeason.body);
     assert.equal(getSnapshot(), scopedBefore);
-  }, { env: workflowAuthEnv });
+  });
 });
 
 test("acquisition draft failures discard earlier commands globally and inside isolated tutorials", () => {
@@ -100,7 +102,9 @@ test("acquisition draft failures discard earlier commands globally and inside is
   const global = getSnapshot();
   const exercise = () => {
     const before = getSnapshot();
-    const prepared = preparePartAcquisition(partDefinitionSchema.parse(payload()), null);
+    const tutorialPayload = payload();
+    tutorialPayload.acquisition.mentorId = "marco";
+    const prepared = preparePartAcquisition(partDefinitionSchema.parse(tutorialPayload), null);
     assert.ok(!("error" in prepared));
     assert.ok(prepared.plan);
     // Force publication failure in the last command, after definition and acquisition creation.
@@ -122,7 +126,7 @@ test("acquisition draft failures discard earlier commands globally and inside is
 
 test("auth-off and unmatched authenticated acquisition requesters remain unattributed", async () => {
   for (const authenticated of [false, true]) {
-    await withIntegrationApp(async ({ app }) => {
+    const run = async ({ app }: { app: import("fastify").FastifyInstance }) => {
       const headers = authenticated ? {
         authorization: `Bearer ${await issueTestMobileToken({
           accountId: "unmatched-mentor", authProvider: "email", email: "unmatched@mecorobotics.org",
@@ -137,6 +141,11 @@ test("auth-off and unmatched authenticated acquisition requesters remain unattri
       const audits = (getSnapshot().actions ?? []).slice((before.actions ?? []).length);
       assert.equal(audits.length, 3);
       assert.ok(audits.every((audit) => audit.actorMemberId === null));
-    }, authenticated ? { env: { ...workflowAuthEnv, AUTH_MENTOR_EMAILS: "unmatched@mecorobotics.org" } } : undefined);
+    };
+    if (authenticated) {
+      await withWorkflowAuthApp(run, { env: { AUTH_MENTOR_EMAILS: "unmatched@mecorobotics.org" } });
+    } else {
+      await withIntegrationApp(run);
+    }
   }
 });

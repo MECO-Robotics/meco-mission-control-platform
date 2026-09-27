@@ -202,7 +202,7 @@ test("qa report and milestone report endpoints support create flows with link va
       url: "/api/qa-reports",
       payload: {
         taskId: "swerve-sensor-bundle",
-        participantIds: ["priya", "lucas", "priya"],
+        participantIds: ["ava", "marco", "ava"],
         result: "minor-fix",
         mentorApproved: false,
         notes: "  QA report from web form  ",
@@ -225,7 +225,7 @@ test("qa report and milestone report endpoints support create flows with link va
       };
     };
     assert.equal(qaReportCreatedBody.item.taskId, "swerve-sensor-bundle");
-    assert.deepEqual(qaReportCreatedBody.item.participantIds, ["priya", "lucas"]);
+    assert.deepEqual(qaReportCreatedBody.item.participantIds, ["ava", "marco"]);
     assert.equal(qaReportCreatedBody.item.result, "minor-fix");
     assert.equal(qaReportCreatedBody.item.mentorApproved, false);
     assert.equal(qaReportCreatedBody.item.notes, "QA report from web form");
@@ -242,7 +242,7 @@ test("qa report and milestone report endpoints support create flows with link va
       url: "/api/qa-reports",
       payload: {
         taskId: "missing-task",
-        participantIds: ["priya"],
+        participantIds: ["ava"],
         result: "pass",
         mentorApproved: true,
         notes: "Invalid task linkage",
@@ -264,7 +264,7 @@ test("qa report and milestone report endpoints support create flows with link va
       payload: {
         taskId: "swerve-sensor-bundle",
         subject: "Swerve sensor QA",
-        mentorId: "riley",
+        mentorId: "marco",
         requestedById: "ava",
       },
     });
@@ -282,7 +282,7 @@ test("qa report and milestone report endpoints support create flows with link va
     };
     assert.equal(qaRequestCreatedBody.item.taskId, "swerve-sensor-bundle");
     assert.equal(qaRequestCreatedBody.item.subject, "Swerve sensor QA");
-    assert.equal(qaRequestCreatedBody.item.mentorId, "riley");
+    assert.equal(qaRequestCreatedBody.item.mentorId, "marco");
     assert.equal(qaRequestCreatedBody.item.requestedById, "ava");
     assert.equal(qaRequestCreatedBody.item.status, "requested");
 
@@ -294,7 +294,7 @@ test("qa report and milestone report endpoints support create flows with link va
       payload: {
         taskId: null,
         subject: "General pit QA",
-        mentorId: "riley",
+        mentorId: "marco",
         requestedById: "ava",
       },
     });
@@ -354,7 +354,7 @@ test("qa report and milestone report endpoints support create flows with link va
       method: "POST",
       url: "/api/test-results",
       payload: {
-        milestoneId: "outreach-milestone-may-05",
+        milestoneId: "tutorial-robot-checkpoint-feb-21",
         title: "Milestone report route test",
         status: "pass",
         findings: ["Drive team aligned", "Drive team aligned", "Checklist complete"],
@@ -373,7 +373,7 @@ test("qa report and milestone report endpoints support create flows with link va
         photoUrl: string;
       };
     };
-    assert.equal(milestoneReportCreatedBody.item.milestoneId, "outreach-milestone-may-05");
+    assert.equal(milestoneReportCreatedBody.item.milestoneId, "tutorial-robot-checkpoint-feb-21");
     assert.equal(milestoneReportCreatedBody.item.title, "Milestone report route test");
     assert.equal(milestoneReportCreatedBody.item.status, "pass");
     assert.equal(
@@ -492,7 +492,7 @@ test("web report and task planning contract endpoints persist records", async ()
       payload: {
         taskId: "swerve-sensor-bundle",
         kind: "task",
-        refId: "intake-guard",
+        refId: "wire-swerve-module",
         requiredState: "complete",
         dependencyType: "hard",
       },
@@ -526,9 +526,9 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "pit-bin-labeling",
+        taskId: "swerve-sensor-bundle",
         kind: "task",
-        refId: "pit-board-refresh",
+        refId: "wire-swerve-module",
         requiredState: "complete",
         dependencyType: "soft",
       },
@@ -663,14 +663,6 @@ test("web report and task planning contract endpoints persist records", async ()
       bootstrapBody.taskDependencies.some(
         (dependency) =>
           dependency.id === softDependencyBody.item.id &&
-          dependency.dependencyType === "soft",
-      ),
-    );
-    assert.ok(
-      bootstrapBody.taskDependencies.some(
-        (dependency) =>
-          dependency.taskId === "pit-bin-labeling" &&
-          dependency.refId === "pit-board-refresh" &&
           dependency.dependencyType === "soft",
       ),
     );
@@ -943,7 +935,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(milestonesBody.pagination.pageSize, 60);
-    assert.ok(milestonesBody.items.some((milestone) => milestone.id === "outreach-milestone-may-05"));
+    assert.ok(milestonesBody.items.some((milestone) => milestone.id === "tutorial-robot-checkpoint-feb-21"));
 
     resetLimits();
 
@@ -1014,6 +1006,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     };
     assert.equal(iterationsBody.pagination.pageSize, 60);
     assert.ok(iterationsBody.items.length > 0);
+    assert.ok(iterationsBody.items.some(({ id }) => id === "iteration-swerve-bracket-recheck"));
 
     resetLimits();
 
@@ -1242,9 +1235,9 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         name: "Roster Insights Dedupe Subsystem",
         description: "Temporary subsystem for roster insights coverage.",
-        parentSubsystemId: "manipulator",
+        parentSubsystemId: "drive",
         responsibleEngineerId: "ava",
-        mentorIds: ["riley"],
+        mentorIds: ["marco"],
         risks: [],
       },
     });
@@ -1269,8 +1262,8 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         partInstanceIds: [],
         targetMilestoneId: null,
         ownerId: "ava",
-        assigneeIds: ["ava", "priya"],
-        mentorId: "riley",
+        assigneeIds: ["ava", "demo-alex-morgan"],
+        mentorId: "marco",
         dueDate: "2026-04-01",
         priority: "high",
         status: "waiting-for-qa",
