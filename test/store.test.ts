@@ -227,7 +227,7 @@ test("tutorial season seed includes milestone events", () => {
   assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-training-showcase-mar-21"));
 });
 
-test("offseason FRC sample data has internally consistent references", () => {
+test("demo seed references are internally consistent", () => {
   const snapshot = getSnapshot();
   const ids = {
     artifacts: new Set(snapshot.artifacts.map((item) => item.id)),

@@ -7,11 +7,6 @@ import type {
   SeedTask,
   SeedWorkstream,
 } from "./seedTypes";
-import {
-  offseasonSeedAdditions,
-  offseasonTaskBlockers,
-  offseasonTaskDependencies,
-} from "./offseasonSeed";
 
 function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
@@ -94,7 +89,7 @@ function buildSeedTask(task: SeedTask): Task {
     estimatedHours,
     requiresDocumentation,
     documentationLinked,
-    actualHours: combinedSnapshotSeed.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0),
+    actualHours: snapshotSeed.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0),
     workstreamIds: task.workstreamIds ?? [],
     subsystemIds: task.subsystemIds ?? [],
     mechanismIds: task.mechanismIds ?? [],
@@ -2656,47 +2651,10 @@ const snapshotSeed: Omit<
   ],
 };
 
-const combinedSnapshotSeed: typeof snapshotSeed = {
-  ...snapshotSeed,
-  members: [...snapshotSeed.members, ...offseasonSeedAdditions.members],
-  mechanisms: [...snapshotSeed.mechanisms, ...offseasonSeedAdditions.mechanisms],
-  materials: [...snapshotSeed.materials, ...offseasonSeedAdditions.materials],
-  artifacts: [...snapshotSeed.artifacts, ...offseasonSeedAdditions.artifacts],
-  partDefinitions: [
-    ...snapshotSeed.partDefinitions,
-    ...offseasonSeedAdditions.partDefinitions,
-  ],
-  partInstances: [...snapshotSeed.partInstances, ...offseasonSeedAdditions.partInstances],
-  milestones: [...snapshotSeed.milestones, ...offseasonSeedAdditions.milestones],
-  tasks: [...snapshotSeed.tasks, ...offseasonSeedAdditions.tasks],
-  qaReports: [...snapshotSeed.qaReports, ...offseasonSeedAdditions.qaReports],
-  testResults: [...snapshotSeed.testResults, ...offseasonSeedAdditions.testResults],
-  qaFindings: [...snapshotSeed.qaFindings, ...offseasonSeedAdditions.qaFindings],
-  testFindings: [...snapshotSeed.testFindings, ...offseasonSeedAdditions.testFindings],
-  designIterations: [
-    ...snapshotSeed.designIterations,
-    ...offseasonSeedAdditions.designIterations,
-  ],
-  risks: [...snapshotSeed.risks, ...offseasonSeedAdditions.risks],
-  workLogs: [...snapshotSeed.workLogs, ...offseasonSeedAdditions.workLogs],
-  meetings: [...snapshotSeed.meetings, ...offseasonSeedAdditions.meetings],
-  attendanceRecords: [
-    ...snapshotSeed.attendanceRecords,
-    ...offseasonSeedAdditions.attendanceRecords,
-  ],
-  manufacturingItems: [
-    ...snapshotSeed.manufacturingItems,
-    ...offseasonSeedAdditions.manufacturingItems,
-  ],
-  purchaseItems: [...snapshotSeed.purchaseItems, ...offseasonSeedAdditions.purchaseItems],
-  qaReviews: [...snapshotSeed.qaReviews, ...offseasonSeedAdditions.qaReviews],
-  escalations: [...snapshotSeed.escalations, ...offseasonSeedAdditions.escalations],
-};
-
 export const snapshot: PlatformSnapshot = {
-  ...combinedSnapshotSeed,
-  members: combinedSnapshotSeed.members.map((member) =>
-    normalizeMemberSeasonMembership(member, combinedSnapshotSeed.seasons[0]?.id ?? "default-season"),
+  ...snapshotSeed,
+  members: snapshotSeed.members.map((member) =>
+    normalizeMemberSeasonMembership(member, snapshotSeed.seasons[0]?.id ?? "default-season"),
   ),
   taskDependencies: [
     {"id": "dep-auto-safety-review-swerve-sensor-bundle", "taskId": "auto-safety-review", "kind": "task", "refId": "swerve-sensor-bundle", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-04-22"},
@@ -2712,12 +2670,6 @@ export const snapshot: PlatformSnapshot = {
     {"id": "dep-media-highlight-cut-outreach-kiosk-assembly", "taskId": "media-highlight-cut", "kind": "task", "refId": "outreach-kiosk-assembly", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-02"},
     {"id": "dep-strategy-opponent-model-update-scouting-tablet-refresh", "taskId": "strategy-opponent-model-update", "kind": "task", "refId": "scouting-tablet-refresh", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-01"},
     {"id": "dep-strategy-playoff-scenario-cards-strategy-opponent-model-update", "taskId": "strategy-playoff-scenario-cards", "kind": "task", "refId": "strategy-opponent-model-update", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-02"},
-    {"id": "dep-drive-module-spares-audit-swerve-sensor-bundle", "taskId": "drive-module-spares-audit", "kind": "task", "refId": "swerve-sensor-bundle", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-28"},
-    {"id": "dep-scouting-schema-normalization-scouting-tablet-refresh", "taskId": "scouting-schema-normalization", "kind": "task", "refId": "scouting-tablet-refresh", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-05-27"},
-    {"id": "dep-scrimmage-spares-loadout-drive-module-spares-audit", "taskId": "scrimmage-spares-loadout", "kind": "task", "refId": "drive-module-spares-audit", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-03"},
-    {"id": "dep-open-house-demo-loop-media-social-rollout", "taskId": "open-house-demo-loop", "kind": "task", "refId": "media-social-rollout", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-05"},
-    {"id": "dep-scrimmage-drive-coach-cards-strategy-opponent-model-update", "taskId": "scrimmage-drive-coach-cards", "kind": "task", "refId": "strategy-opponent-model-update", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-04"},
-    {"id": "dep-sponsor-open-house-media-package-media-social-rollout", "taskId": "sponsor-open-house-media-package", "kind": "task", "refId": "media-social-rollout", "requiredState": "complete", "dependencyType": "hard", "createdAt": "2026-06-05"},
 
     {
       id: "dep-media-social-rollout-task",
@@ -2755,7 +2707,6 @@ export const snapshot: PlatformSnapshot = {
       dependencyType: "soft",
       createdAt: "2026-05-06T08:00:00-04:00",
     },
-    ...offseasonTaskDependencies,
   ],
   taskBlockers: [
     {"id": "blocker-intake-guard-1", "blockedTaskId": "intake-guard", "blockerType": "external", "blockerId": null, "description": "Waiting on CNC batch B-17 to clear the router.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-18", "resolvedAt": null},
@@ -2763,8 +2714,6 @@ export const snapshot: PlatformSnapshot = {
     {"id": "blocker-vision-calibration-sweep-1", "blockedTaskId": "vision-calibration-sweep", "blockerType": "external", "blockerId": null, "description": "Need final vibration pass after mount hardware arrives.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-24", "resolvedAt": null},
     {"id": "blocker-climb-load-test-1", "blockedTaskId": "climb-load-test", "blockerType": "external", "blockerId": null, "description": "Ratchet service kit still pending order approval.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-27", "resolvedAt": null},
     {"id": "blocker-scouting-tablet-refresh-1", "blockedTaskId": "scouting-tablet-refresh", "blockerType": "external", "blockerId": null, "description": "Need venue Wi-Fi test window from milestone contacts.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-04-24", "resolvedAt": null},
-    {"id": "blocker-auto-replay-suite-1", "blockedTaskId": "auto-replay-suite", "blockerType": "external", "blockerId": null, "description": "Driver station image is waiting on firmware and DS log tooling updates.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-05-30", "resolvedAt": null},
-    {"id": "blocker-apriltag-field-calibration-1", "blockedTaskId": "apriltag-field-calibration", "blockerType": "external", "blockerId": null, "description": "Practice field tag stands are short two bases until the purchase lands.", "severity": "medium", "status": "open", "createdByMemberId": null, "createdAt": "2026-06-08", "resolvedAt": null},
 
     {
       id: "blocker-media-brand-approval",
@@ -2802,13 +2751,12 @@ export const snapshot: PlatformSnapshot = {
       createdAt: "2026-05-05T08:15:00-04:00",
       resolvedAt: null,
     },
-    ...offseasonTaskBlockers,
   ],
-  workstreams: combinedSnapshotSeed.workstreams.map(withArchiveState),
-  subsystems: combinedSnapshotSeed.subsystems.map(withIteration).map(withArchiveState),
-  mechanisms: combinedSnapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
-  partDefinitions: combinedSnapshotSeed.partDefinitions.map((partDefinition) =>
-    withPartDefinitionSeasonMembership(partDefinition, combinedSnapshotSeed.seasons[0]?.id ?? "default-season"),
+  workstreams: snapshotSeed.workstreams.map(withArchiveState),
+  subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
+  mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
+  partDefinitions: snapshotSeed.partDefinitions.map((partDefinition) =>
+    withPartDefinitionSeasonMembership(partDefinition, snapshotSeed.seasons[0]?.id ?? "default-season"),
   ),
-  tasks: combinedSnapshotSeed.tasks.map(buildSeedTask),
+  tasks: snapshotSeed.tasks.map(buildSeedTask),
 };
