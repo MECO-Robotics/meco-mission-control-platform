@@ -479,7 +479,24 @@ export const snapshot: PlatformSnapshot = {
       updatedAt: "2026-04-23T17:30:00-04:00",
     },
   ],
-  designIterations: [],
+  designIterations: [
+    {
+      id: "iteration-swerve-bracket-recheck",
+      sourceType: "qa",
+      findingId: "qafinding-swerve-bracket",
+      projectId: robotProjectId,
+      workstreamId: "workstream-drive",
+      subsystemId: "drive",
+      mechanismId: "swerve-module",
+      partInstanceId: "pi-swerve-encoder-bracket-front-left",
+      artifactId: null,
+      taskId: "swerve-sensor-bundle",
+      notes: "Recheck the printed bracket edge before final assembly.",
+      status: "planned",
+      createdAt: "2026-04-23T17:30:00-04:00",
+      updatedAt: "2026-04-23T17:30:00-04:00",
+    },
+  ],
   risks: [
     {
       id: "risk-swerve-bracket-review",

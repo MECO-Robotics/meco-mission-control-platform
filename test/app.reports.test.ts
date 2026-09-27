@@ -1005,7 +1005,8 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(iterationsBody.pagination.pageSize, 60);
-    assert.ok(Array.isArray(iterationsBody.items));
+    assert.ok(iterationsBody.items.length > 0);
+    assert.ok(iterationsBody.items.some(({ id }) => id === "iteration-swerve-bracket-recheck"));
 
     resetLimits();
 
