@@ -1970,22 +1970,13 @@ export function getTaskTargets() {
   return currentSnapshot.tasks.flatMap((task) => flattenTaskTargets(task));
 }
 
-export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
-  if (!task) {
-    return [];
-  }
+function matchTaskTargetsToMilestoneRequirements(
+  targets: ReturnType<typeof flattenTaskTargets>,
+  requirements: readonly MilestoneRequirement[],
+) {
+  const matchedRequirementIdsByMilestone = new Map<string, Set<string>>();
 
-  const taskTargets = flattenTaskTargets(task);
-  const matchedMilestoneIds = new Map<string, Set<string>>();
-  const hasLegacyMilestoneTarget = new Set(
-    taskTargets
-      .filter((target) => target.targetType === "milestone")
-      .map((target) => target.targetId),
-  );
-  const requirements = getMilestoneRequirements();
-
-  for (const target of taskTargets) {
+  for (const target of targets) {
     for (const requirement of requirements) {
       if (
         !matchesMilestoneRequirement({
@@ -1997,11 +1988,32 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
         continue;
       }
 
-      const previous = matchedMilestoneIds.get(requirement.milestoneId) ?? new Set<string>();
-      previous.add(requirement.id);
-      matchedMilestoneIds.set(requirement.milestoneId, previous);
+      const matchedRequirementIds =
+        matchedRequirementIdsByMilestone.get(requirement.milestoneId) ?? new Set<string>();
+      matchedRequirementIds.add(requirement.id);
+      matchedRequirementIdsByMilestone.set(requirement.milestoneId, matchedRequirementIds);
     }
   }
+
+  return matchedRequirementIdsByMilestone;
+}
+
+export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) {
+    return [];
+  }
+
+  const taskTargets = flattenTaskTargets(task);
+  const matchedMilestoneIds = matchTaskTargetsToMilestoneRequirements(
+    taskTargets,
+    getMilestoneRequirements(),
+  );
+  const hasLegacyMilestoneTarget = new Set(
+    taskTargets
+      .filter((target) => target.targetType === "milestone")
+      .map((target) => target.targetId),
+  );
 
   for (const milestoneId of hasLegacyMilestoneTarget) {
     if (!matchedMilestoneIds.has(milestoneId)) {
@@ -2026,44 +2038,19 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
 }
 
 export function getTasksForMilestone(milestoneId: string): TaskMilestoneMatch[] {
-  const requirements = getMilestoneRequirements().filter((requirement) => requirement.milestoneId === milestoneId);
-  if (requirements.length === 0) {
-    return currentSnapshot.tasks
-      .filter((task) =>
-        flattenTaskTargets(task).some(
-          (target) => target.targetType === "milestone" && target.targetId === milestoneId,
-        ),
-      )
-      .map((task) => ({
-        taskId: task.id,
-        matchedRequirementIds: [],
-        isLegacyLink: true,
-      }));
-  }
+  const requirements = getMilestoneRequirements().filter(
+    (requirement) => requirement.milestoneId === milestoneId,
+  );
 
-  const matches = currentSnapshot.tasks
+  return currentSnapshot.tasks
     .map((task) => {
       const taskTargets = flattenTaskTargets(task);
-      const matchedRequirementIds = new Set<string>();
-      let isLegacyLink = false;
-
-      for (const target of taskTargets) {
-        if (target.targetType === "milestone" && target.targetId === milestoneId) {
-          isLegacyLink = true;
-        }
-
-        for (const requirement of requirements) {
-          if (
-            matchesMilestoneRequirement({
-              milestoneRequirement: requirement,
-              targetType: target.targetType,
-              targetId: target.targetId,
-            })
-          ) {
-            matchedRequirementIds.add(requirement.id);
-          }
-        }
-      }
+      const matchedRequirementIds =
+        matchTaskTargetsToMilestoneRequirements(taskTargets, requirements).get(milestoneId) ??
+        new Set<string>();
+      const isLegacyLink = taskTargets.some(
+        (target) => target.targetType === "milestone" && target.targetId === milestoneId,
+      );
 
       if (matchedRequirementIds.size > 0 || isLegacyLink) {
         return {
@@ -2076,8 +2063,6 @@ export function getTasksForMilestone(milestoneId: string): TaskMilestoneMatch[] 
       return null;
     })
     .filter((match): match is TaskMilestoneMatch => match !== null);
-
-  return matches;
 }
 
 export function getRisks(): SnapshotView["risks"] {

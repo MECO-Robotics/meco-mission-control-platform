@@ -1064,10 +1064,10 @@ test("task milestone requirements infer milestone matches from explicit target r
   const driveMatch = matches.find((match) => match.milestoneId === milestone.id);
   assert.ok(driveMatch);
   assert.equal(driveMatch.isLegacyLink, false);
-  assert.deepEqual(
-    new Set(driveMatch.matchedRequirementIds),
-    new Set(["drive-check-iteration", "drive-check-part-state"]),
-  );
+  assert.deepEqual(driveMatch.matchedRequirementIds, [
+    "drive-check-iteration",
+    "drive-check-part-state",
+  ]);
 });
 
 test("project-scoped requirements match through project task target inference", () => {
@@ -1180,10 +1180,7 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
 
   assert.ok(inferredTask);
   assert.equal(inferredTask.isLegacyLink, false);
-  assert.deepEqual(
-    new Set(inferredTask.matchedRequirementIds),
-    new Set(["drive-readiness-iteration"]),
-  );
+  assert.deepEqual(inferredTask.matchedRequirementIds, ["drive-readiness-iteration"]);
 
   assert.ok(legacyTaskMatch);
   assert.equal(legacyTaskMatch.isLegacyLink, true);
