@@ -21,6 +21,7 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   const testResultIds = ids(seed.testResults);
 
   assert.ok(seed.projects.every((project) => seed.seasons.some((season) => season.id === project.seasonId)));
+  assert.ok(seed.members.some((member) => member.role === "admin"));
   assert.ok(seed.workstreams.every((workstream) => projectIds.has(workstream.projectId)));
   assert.ok(seed.subsystems.every((subsystem) => projectIds.has(subsystem.projectId)));
   assert.ok(seed.mechanisms.every((mechanism) => subsystemIds.has(mechanism.subsystemId)));
@@ -88,6 +89,7 @@ test("compact bootstrap supports tutorial chapters, resets, and sanitized demo a
     assert.equal(demo.projects.length, 6);
     assert.ok(demo.members.some((member: { role: string }) => member.role === "student"));
     assert.ok(demo.members.some((member: { role: string }) => member.role === "mentor"));
+    assert.ok(demo.members.every((member: { role: string }) => member.role !== "admin"));
     assert.ok(demo.attendanceRecords.some((record: { date: string }) => record.date === new Date().toISOString().slice(0, 10)));
     assert.ok(demo.members.every((member: { id: string; email?: string }) => /^demo-member-\d+$/.test(member.id) && member.email === undefined));
     assert.ok(demo.reports.length > 0 && demo.artifacts.length > 0);

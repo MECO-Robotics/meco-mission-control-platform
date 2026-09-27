@@ -106,6 +106,15 @@ export const snapshot: PlatformSnapshot = {
       activeSeasonIds: [seasonId],
     },
     {
+      id: "maya",
+      name: "Maya Ortiz",
+      email: "maya.ortiz@mecorobotics.org",
+      role: "admin",
+      elevated: true,
+      seasonId,
+      activeSeasonIds: [seasonId],
+    },
+    {
       id: "demo-alex-morgan",
       name: "Alex Morgan",
       email: "demo.alex.morgan@example.com",
