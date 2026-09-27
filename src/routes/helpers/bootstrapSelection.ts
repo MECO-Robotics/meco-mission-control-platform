@@ -21,7 +21,7 @@ import type {
 } from "../../domain/types";
 import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
-import { uniqueIds } from "./taskTargets";
+import { uniqueIds } from "../../domain/ids";
 
 export interface BootstrapSelection {
   personId: string | null;
