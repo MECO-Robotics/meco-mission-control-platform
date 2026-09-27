@@ -18,32 +18,25 @@ import {
 } from "../../data/store";
 import { isTaskDisciplineAllowedForProject } from "../../domain/taskDisciplines";
 import { uniqueIds } from "../../domain/ids";
+import { isActiveInSeason } from "../../domain/seasonMembership";
 
-function memberIsActiveInSeason(
-  member: { seasonId: string; activeSeasonIds?: readonly string[] },
-  seasonId: string,
-) {
-  return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
+function taskParticipantLinksError(taskId: string, participantIds: readonly string[]) {
+  if (!getTasks().some((task) => task.id === taskId)) {
+    return "The selected task does not exist.";
+  }
+
+  const memberIds = new Set(getMembers().map((member) => member.id));
+  const missingParticipant = participantIds.find(
+    (participantId) => !memberIds.has(participantId),
+  );
+  return missingParticipant ? "One or more selected participants do not exist." : null;
 }
 
 export function validateWorkLogLinks(input: {
   taskId: string;
   participantIds: readonly string[];
 }) {
-  const taskExists = getTasks().some((task) => task.id === input.taskId);
-  if (!taskExists) {
-    return "The selected task does not exist.";
-  }
-
-  const memberIds = new Set(getMembers().map((member) => member.id));
-  const missingParticipant = input.participantIds.find(
-    (participantId) => !memberIds.has(participantId),
-  );
-  if (missingParticipant) {
-    return "One or more selected participants do not exist.";
-  }
-
-  return null;
+  return taskParticipantLinksError(input.taskId, input.participantIds);
 }
 
 export function validateQaReportLinks(input: {
@@ -53,17 +46,9 @@ export function validateQaReportLinks(input: {
   taskId: string;
   participantIds: readonly string[];
 }) {
-  const taskExists = getTasks().some((task) => task.id === input.taskId);
-  if (!taskExists) {
-    return "The selected task does not exist.";
-  }
-
-  const memberIds = new Set(getMembers().map((member) => member.id));
-  const missingParticipant = input.participantIds.find(
-    (participantId) => !memberIds.has(participantId),
-  );
-  if (missingParticipant) {
-    return "One or more selected participants do not exist.";
+  const linkError = taskParticipantLinksError(input.taskId, input.participantIds);
+  if (linkError) {
+    return linkError;
   }
 
   if ((input.proposedRiskSeverity || input.proposedRiskStatus) && !input.targetRiskId) {
@@ -497,7 +482,7 @@ export function validateSubsystemPeople(input: {
     !members.some(
       (member) =>
         member.id === input.responsibleEngineerId &&
-        memberIsActiveInSeason(member, seasonId),
+        isActiveInSeason(member, seasonId),
     )
   ) {
     return "The responsible engineer must belong to the project's season.";
@@ -517,7 +502,7 @@ export function validateSubsystemPeople(input: {
         (mentorId) =>
           !members.some(
             (member) =>
-              member.id === mentorId && memberIsActiveInSeason(member, seasonId),
+              member.id === mentorId && isActiveInSeason(member, seasonId),
           ),
       )
     ) {

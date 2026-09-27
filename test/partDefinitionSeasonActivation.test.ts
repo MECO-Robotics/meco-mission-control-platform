@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
-test("part definitions activate per season and appear in matching bootstrap scopes", async () => {
+test("members and part definitions activate per season in matching bootstrap scopes", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const seasonResponse = await app.inject({
       method: "POST",
@@ -58,6 +58,12 @@ test("part definitions activate per season and appear in matching bootstrap scop
         .partDefinitions.some((candidate: { id: string }) => candidate.id === partDefinition.id),
       false,
     );
+    const { getSnapshot, updateMember } = await import("../src/data/store");
+    const member = getSnapshot().members.find((candidate) => candidate.id === "priya");
+    assert.ok(member);
+    updateMember(member.id, {
+      activeSeasonIds: [...(member.activeSeasonIds ?? []), seasonId],
+    });
 
     resetLimits();
 
@@ -87,6 +93,12 @@ test("part definitions activate per season and appear in matching bootstrap scop
       activeBootstrapResponse
         .json()
         .partDefinitions.some((candidate: { id: string }) => candidate.id === partDefinition.id),
+      true,
+    );
+    assert.equal(
+      activeBootstrapResponse
+        .json()
+        .members.some((candidate: { id: string }) => candidate.id === member.id),
       true,
     );
   });

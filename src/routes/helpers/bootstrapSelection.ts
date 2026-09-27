@@ -8,7 +8,6 @@ import type {
   AuditAction,
   Milestone,
   MilestoneRequirement,
-  Member,
   SnapshotView,
   Report,
   ReportFinding,
@@ -21,7 +20,7 @@ import type {
 } from "../../domain/types";
 import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
-import { uniqueIds } from "../../domain/ids";
+import { isActiveInSeason } from "../../domain/seasonMembership";
 
 export interface BootstrapSelection {
   personId: string | null;
@@ -35,19 +34,6 @@ export interface BootstrapResponseOptions {
 
 function readScopedId(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function isMemberActiveInSeason(member: Pick<ReadonlyData<Member>, "seasonId" | "activeSeasonIds">, seasonId: string) {
-  return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
-}
-
-function isPartDefinitionActiveInSeason(
-  partDefinition: Pick<SnapshotView["partDefinitions"][number], "seasonId" | "activeSeasonIds">,
-  seasonId: string,
-) {
-  return uniqueIds([...(partDefinition.activeSeasonIds ?? []), partDefinition.seasonId]).includes(
-    seasonId,
-  );
 }
 
 // Bootstrap chooses an in-scope milestone project and intentionally omits photos.
@@ -143,7 +129,7 @@ export function buildBootstrapResponse(
   const scopedSubsystemIds = new Set(scopedSubsystems.map((subsystem) => subsystem.id));
   const scopedPartDefinitions = (selectedSeasonId
     ? snapshot.partDefinitions.filter((partDefinition) =>
-        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
+        isActiveInSeason(partDefinition, selectedSeasonId),
       )
     : snapshot.partDefinitions).map(normalizePmCadProvenance);
   const scopedMechanisms = snapshot.mechanisms
@@ -313,7 +299,7 @@ export function buildBootstrapResponse(
     return true;
   });
   const scopedMembers = selectedSeasonId
-    ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
+    ? snapshot.members.filter((member) => isActiveInSeason(member, selectedSeasonId))
     : snapshot.members;
   const scopedMemberIds = new Set(scopedMembers.map((member) => member.id));
   const scopedAttendanceRecords = snapshot.attendanceRecords.filter((record) => {
