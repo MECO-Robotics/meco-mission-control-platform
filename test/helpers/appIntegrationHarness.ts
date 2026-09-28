@@ -2,6 +2,7 @@ import { testMobileSessionStore } from "./sessionAuth";
 import { MemoryWebSessionStore } from "./webSessionMemoryStore";
 import { saveEnv, restoreEnv } from "./environment";
 import type { FastifyInstance } from "fastify";
+import type { PrismaClient } from "@prisma/client";
 
 import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
 import type { WebSessionStore } from "../../src/auth/webSessionStore";
@@ -188,6 +189,7 @@ export async function withIntegrationApp(
     snapshot?: import("../../src/domain/types").SnapshotView;
     mobileSessionStore?: MobileSessionStore;
     webSessionStore?: WebSessionStore;
+    prisma?: PrismaClient;
   },
 ) {
   const envSnapshot = saveEnv(APP_ENV_KEYS);
@@ -201,6 +203,7 @@ export async function withIntegrationApp(
       userPreferencesPath: join(preferencesDirectory, "preferences.json"),
       mobileSessionStore: options?.mobileSessionStore ?? testMobileSessionStore,
       webSessionStore: options?.webSessionStore ?? new MemoryWebSessionStore(),
+      prisma: options?.prisma,
     });
     resetStore(options?.snapshot);
     for (const member of options?.members ?? []) {

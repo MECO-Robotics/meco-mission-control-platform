@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { PrismaClient } from "@prisma/client";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("closing an app does not disconnect an injected Prisma client", async () => {
+  let disconnectCalls = 0;
+  const prisma = {
+    $disconnect: async () => {
+      disconnectCalls += 1;
+    },
+  } as unknown as PrismaClient;
+
+  await withIntegrationApp(async () => {}, { prisma });
+
+  assert.equal(disconnectCalls, 0);
+});
 
 test("buildApp serves health and public auth config without auth enabled", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {

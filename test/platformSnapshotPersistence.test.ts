@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
+import { loadPlatformSnapshotFile } from "../src/data/platformSnapshotFile";
+
 function runProductionStoreScript(snapshotPath: string, source: string) {
   const result = spawnSync(
     process.execPath,
@@ -26,6 +28,21 @@ function runProductionStoreScript(snapshotPath: string, source: string) {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 }
+
+test("snapshot loading rejects parseable JSON missing a required collection", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-incomplete-snapshot-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+
+  try {
+    writeFileSync(snapshotPath, JSON.stringify({ seasons: [], projects: [], members: [], tasks: [] }), "utf8");
+    assert.throws(
+      () => loadPlatformSnapshotFile(snapshotPath),
+      /is not a valid platform snapshot/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("production platform state survives a fresh process", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-snapshot-"));

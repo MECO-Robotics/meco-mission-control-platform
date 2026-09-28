@@ -5,16 +5,59 @@ import { dirname } from "node:path";
 
 import type { PlatformSnapshot } from "../domain/types";
 
+const snapshotCollectionKeys = [
+  "seasons",
+  "projects",
+  "workstreams",
+  "members",
+  "subsystems",
+  "disciplines",
+  "mechanisms",
+  "materials",
+  "artifacts",
+  "partDefinitions",
+  "partInstances",
+  "tasks",
+  "milestones",
+  "milestoneRequirements",
+  "taskDependencies",
+  "taskBlockers",
+  "qaReports",
+  "qaRequests",
+  "testResults",
+  "qaFindings",
+  "testFindings",
+  "designIterations",
+  "risks",
+  "workLogs",
+  "meetings",
+  "attendanceRecords",
+  "manufacturingItems",
+  "purchaseItems",
+  "qaReviews",
+  "escalations",
+  "actions",
+] as const satisfies readonly (keyof PlatformSnapshot)[];
+type UnvalidatedSnapshotKeys = Exclude<keyof PlatformSnapshot, (typeof snapshotCollectionKeys)[number]>;
+type AssertNever<T extends never> = T;
+type _AssertAllSnapshotCollectionsAreListed = AssertNever<UnvalidatedSnapshotKeys>;
+
+const optionalSnapshotCollectionKeys = new Set<keyof PlatformSnapshot>([
+  "milestoneRequirements",
+  "qaRequests",
+  "actions",
+]);
+
 function looksLikePlatformSnapshot(value: unknown): value is PlatformSnapshot {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
 
   const snapshot = value as Partial<Record<keyof PlatformSnapshot, unknown>>;
-  return Array.isArray(snapshot.seasons) &&
-    Array.isArray(snapshot.projects) &&
-    Array.isArray(snapshot.members) &&
-    Array.isArray(snapshot.tasks);
+  return snapshotCollectionKeys.every((key) => {
+    const collection = snapshot[key];
+    return optionalSnapshotCollectionKeys.has(key) && collection === undefined || Array.isArray(collection);
+  });
 }
 
 export function loadPlatformSnapshotFile(path: string) {

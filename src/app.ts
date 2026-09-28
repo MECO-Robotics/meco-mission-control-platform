@@ -56,6 +56,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     resetOnshapeRuntimeStore();
   }
 
+  const ownsPrisma = options.prisma === undefined;
   const prisma = options.prisma ?? new PrismaClient();
   const app = Fastify({
     logger: true,
@@ -150,7 +151,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.addHook("onResponse", async (request) => releaseMutationTransaction(request));
 
   app.addHook("onClose", async () => {
-    await prisma.$disconnect();
+    if (ownsPrisma) {
+      await prisma.$disconnect();
+    }
   });
 
   await registerRoutes(app, { mobileSessionService, webSessionService });
