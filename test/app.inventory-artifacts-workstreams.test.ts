@@ -94,8 +94,10 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.ok(
       bootstrapBody.taskDependencies.some(
         (dependency) =>
-          dependency.taskId === "wire-swerve-module" &&
-          dependency.kind === "task" &&
+          dependency.workItemId === "wire-swerve-module" &&
+          dependency.sourceType === "task" &&
+          dependency.kind === "work_item" &&
+          dependency.refType === "task" &&
           dependency.refId === "swerve-sensor-bundle",
       ),
     );
@@ -187,8 +189,8 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     );
     assert.ok(
       scopedBootstrapBody.taskDependencies.every((dependency) =>
-        scopedBootstrapBody.tasks.some((task) => task.id === dependency.taskId) &&
-        scopedBootstrapBody.tasks.some((task) => task.id === dependency.refId),
+        scopedBootstrapBody.workItems.some((item) => item.sourceId === dependency.workItemId && item.sourceType === dependency.sourceType) &&
+        (dependency.kind !== "work_item" || scopedBootstrapBody.workItems.some((item) => item.sourceId === dependency.refId && item.sourceType === dependency.refType)),
       ),
     );
 

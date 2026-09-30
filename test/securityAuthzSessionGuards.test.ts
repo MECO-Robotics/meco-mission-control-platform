@@ -217,7 +217,7 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
 test("QA workflow submission requires task mutation authority independently of approval", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
-    const task = getSnapshot().tasks.find((item) => !item.blockers.length && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const task = getSnapshot().tasks.find((item) => !item.blockers.length && !getSnapshot().taskDependencies.some((edge) => edge.sourceType === "task" && edge.workItemId === item.id))!;
     updateTask(task.id, { status: "waiting-for-qa" });
     const payload = { taskId: task.id, participantIds: ["ava"], result: "pass", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: false };
     const url = "/api/qa-reports/submit";

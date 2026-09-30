@@ -273,9 +273,11 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const taskDependency of snapshot.taskDependencies) {
-    expectId(ids.tasks, taskDependency.taskId, `task dependency ${taskDependency.id} taskId`);
-    if (taskDependency.kind === "task") {
+    expectId(taskDependency.sourceType === "task" ? ids.tasks : ids.manufacturing, taskDependency.workItemId, `task dependency ${taskDependency.id} workItemId`);
+    if (taskDependency.kind === "work_item" && taskDependency.refType === "task") {
       expectId(ids.tasks, taskDependency.refId, `task dependency ${taskDependency.id} refId`);
+    } else if (taskDependency.kind === "work_item" && taskDependency.refType === "manufacturing") {
+      expectId(ids.manufacturing, taskDependency.refId, `task dependency ${taskDependency.id} refId`);
     } else if (taskDependency.kind === "milestone") {
       expectId(ids.milestones, taskDependency.refId, `task dependency ${taskDependency.id} refId`);
     } else {

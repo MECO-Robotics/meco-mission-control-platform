@@ -17,9 +17,11 @@ import type {
   TestFinding,
   TestResult,
   Task,
+  TaskDependency,
+  WorkItem,
 } from "../../domain/types";
 import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
-import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
+import { isTaskWaitingOnDependencies, isWorkItemWaitingOnDependencies } from "../../domain/taskDependencyState";
 import { isActiveInSeason } from "../../domain/seasonMembership";
 
 export interface BootstrapSelection {
@@ -30,6 +32,68 @@ export interface BootstrapSelection {
 
 export interface BootstrapResponseOptions {
   sanitizeEscalations?: boolean;
+}
+
+function getPairedManufacturingTasks(tasks: readonly ReadonlyData<Task>[], manufacturingItems: SnapshotView["manufacturingItems"]) {
+  const linkedTasksByManufacturingId = new Map<string, ReadonlyData<Task>[]>();
+  for (const task of tasks) for (const id of task.linkedManufacturingIds) {
+    const matches = linkedTasksByManufacturingId.get(id) ?? [];
+    matches.push(task);
+    linkedTasksByManufacturingId.set(id, matches);
+  }
+  const pairedTasks = new Map<string, ReadonlyData<Task>>();
+  for (const item of manufacturingItems) {
+    const linked = linkedTasksByManufacturingId.get(item.id) ?? [];
+    const typedManufacturingTasks = linked.filter((task) => task.workType === "Manufacturing");
+    const sameTitleTasks = linked.filter((task) => task.title.trim().toLocaleLowerCase() === item.title.trim().toLocaleLowerCase());
+    const candidates = typedManufacturingTasks.length > 0 ? typedManufacturingTasks : sameTitleTasks;
+    if (candidates.length === 1) pairedTasks.set(item.id, candidates[0]);
+  }
+  return pairedTasks;
+}
+
+export function toWorkItems(tasks: readonly ReadonlyData<Task>[], manufacturingItems: SnapshotView["manufacturingItems"]): WorkItem[] {
+  const taskByManufacturingId = getPairedManufacturingTasks(tasks, manufacturingItems);
+  const manufacturingIds = new Set(manufacturingItems.map((item) => item.id));
+  const taskItems = tasks
+    .filter((task) => !task.linkedManufacturingIds.some((id) => manufacturingIds.has(id) && taskByManufacturingId.get(id)?.id === task.id))
+    .map((task): WorkItem => ({
+      id: `task:${task.id}`, sourceType: "task", sourceId: task.id, taskId: task.id,
+      title: task.title, workType: task.workType ?? "Design", responsibleGroup: task.responsibleGroup ?? null,
+      manufacturingProcess: null, subsystemId: task.subsystemIds[0] ?? "", dueDate: task.dueDate, status: task.status, isWaitingOnDependency: false,
+      quantity: null, material: null, materialId: null, partDefinitionId: null,
+      partInstanceIds: [...task.partInstanceIds], batchLabel: null, mentorReviewed: null,
+    }));
+  const manufacturingWork = manufacturingItems.map((item): WorkItem => {
+    const task = taskByManufacturingId.get(item.id);
+    return {
+      id: `manufacturing:${item.id}`, sourceType: "manufacturing", sourceId: item.id,
+      taskId: task?.id ?? null, title: item.title, workType: "Manufacturing",
+      responsibleGroup: task?.responsibleGroup ?? item.responsibleGroup ?? "Mechanical",
+      manufacturingProcess: item.process, subsystemId: item.subsystemId, dueDate: item.dueDate,
+      status: item.status, isWaitingOnDependency: false, quantity: item.quantity, material: item.material, materialId: item.materialId ?? null,
+      partDefinitionId: item.partDefinitionId ?? null, partInstanceIds: [...item.partInstanceIds],
+      batchLabel: item.batchLabel ?? null, mentorReviewed: item.mentorReviewed,
+    };
+  });
+  return [...taskItems, ...manufacturingWork];
+}
+
+function projectWorkDependencies(tasks: readonly ReadonlyData<Task>[], manufacturingItems: SnapshotView["manufacturingItems"], dependencies: readonly ReadonlyData<TaskDependency>[]) {
+  const taskToManufacturingId = new Map(
+    [...getPairedManufacturingTasks(tasks, manufacturingItems)].map(([itemId, task]) => [task.id, itemId]),
+  );
+  const projected = new Map<string, TaskDependency>();
+  for (const dependency of dependencies) {
+    const sourceType = dependency.sourceType === "task" && taskToManufacturingId.has(dependency.workItemId) ? "manufacturing" : dependency.sourceType;
+    const workItemId = dependency.sourceType === "task" ? taskToManufacturingId.get(dependency.workItemId) ?? dependency.workItemId : dependency.workItemId;
+    const refType = dependency.kind === "work_item" && dependency.refType === "task" && taskToManufacturingId.has(dependency.refId) ? "manufacturing" : dependency.refType;
+    const refId = dependency.kind === "work_item" && dependency.refType === "task" ? taskToManufacturingId.get(dependency.refId) ?? dependency.refId : dependency.refId;
+    const item: TaskDependency = { ...dependency, sourceType, workItemId, ...(dependency.kind === "work_item" ? { refType, refId } : {}) };
+    const key = [item.workItemId, item.sourceType, item.kind, item.refType ?? "", item.refId, item.requiredState, item.dependencyType].join(":");
+    if (!projected.has(key)) projected.set(key, item);
+  }
+  return [...projected.values()];
 }
 
 function readScopedId(value: unknown) {
@@ -325,15 +389,17 @@ export function buildBootstrapResponse(
     return true;
   });
   const scopedTaskDependencies = snapshot.taskDependencies.filter((dependency) =>
-    scopedTaskIds.has(dependency.taskId),
+    dependency.sourceType === "task" ? scopedTaskIds.has(dependency.workItemId) : scopedManufacturingItemIds.has(dependency.workItemId),
   );
+  const projectedTaskDependencies = projectWorkDependencies(scopedTasks, scopedManufacturingItems, scopedTaskDependencies);
   const scopedTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
     scopedTaskIds.has(blocker.blockedTaskId),
   );
   const scopedSnapshot = {
     ...snapshot,
     tasks: scopedTasks,
-    taskDependencies: scopedTaskDependencies,
+    manufacturingItems: scopedManufacturingItems,
+    taskDependencies: projectedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
   } as SnapshotView;
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
@@ -354,6 +420,15 @@ export function buildBootstrapResponse(
       (manufacturingQaReviewCounts.get(review.subjectId) ?? 0) + 1,
     );
   }
+  const tasks = scopedTasks.map((task) => ({
+    ...task,
+    isBlocked: scopedTaskBlockers.some((blocker) => blocker.blockedTaskId === task.id && blocker.status === "open"),
+    isWaitingOnDependency: isTaskWaitingOnDependencies(task, scopedSnapshot),
+  }));
+  const manufacturingItems = scopedManufacturingItems.map((item) => ({
+    ...item,
+    qaReviewCount: manufacturingQaReviewCounts.get(item.id) ?? 0,
+  }));
   const scopedActions = (snapshot.actions ?? [])
     .filter((action) => {
       const actionProjectIds =
@@ -433,22 +508,17 @@ export function buildBootstrapResponse(
     qaRequests: scopedQaRequests,
     testResults: scopedTestResults,
     risks: scopedRisks,
-    tasks: scopedTasks.map((task) => ({
-      ...task,
-      isBlocked: scopedTaskBlockers.some(
-        (blocker) => blocker.blockedTaskId === task.id && blocker.status === "open",
-      ),
-      isWaitingOnDependency: isTaskWaitingOnDependencies(task, scopedSnapshot),
+    tasks,
+    workItems: toWorkItems(tasks, manufacturingItems).map((item) => ({
+      ...item,
+      isWaitingOnDependency: isWorkItemWaitingOnDependencies(item.sourceId, item.sourceType, scopedSnapshot),
     })),
-    taskDependencies: scopedTaskDependencies,
+    taskDependencies: projectedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
     workLogs: scopedWorkLogs,
     meetings: scopedMeetings,
     attendanceRecords: scopedAttendanceRecords,
-    manufacturingItems: scopedManufacturingItems.map((item) => ({
-      ...item,
-      qaReviewCount: manufacturingQaReviewCounts.get(item.id) ?? 0,
-    })),
+    manufacturingItems,
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
     escalations: options.sanitizeEscalations ? [] : snapshot.escalations,

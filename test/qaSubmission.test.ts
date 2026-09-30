@@ -7,7 +7,7 @@ const env = { API_RATE_LIMIT_MAX_REQUESTS: "100" };
 test("QA submission persists evidence, completes ready task and closes its pending requests", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((item) => item.blockers.length === 0 && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const task = snapshot.tasks.find((item) => item.blockers.length === 0 && !snapshot.taskDependencies.some((edge) => edge.sourceType === "task" && edge.workItemId === item.id))!;
     updateTask(task.id, { status: "waiting-for-qa" });
     const request = createQaRequest({ taskId: task.id, subject: task.title, mentorId: snapshot.members[0].id, requestedById: snapshot.members[1].id });
     const payload = { taskId: task.id, participantIds: [snapshot.members[0].id], result: "pass", mentorApproved: false, notes: "Checked", evidenceNotes: "Measured 12V", reviewedAt: "2026-09-09", qaRequestId: request.id };
@@ -49,7 +49,7 @@ test("failed QA produces persisted follow-up and only iteration results create b
 test("QA pass uses authoritative readiness and rejects stale task/request links without writes", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((item) => item.blockers.length === 0 && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const task = snapshot.tasks.find((item) => item.blockers.length === 0 && !snapshot.taskDependencies.some((edge) => edge.sourceType === "task" && edge.workItemId === item.id))!;
     const payload = { taskId: task.id, participantIds: [snapshot.members[0].id], result: "pass", notes: "Checked", reviewedAt: "2026-09-09" };
     updateTask(task.id, { status: "not-started" });
     const reject = async (extra = {}) => {
@@ -60,7 +60,7 @@ test("QA pass uses authoritative readiness and rejects stale task/request links 
     await reject();
     updateTask(task.id, { status: "waiting-for-qa" });
     await reject({ qaRequestId: "missing" });
-    const dependency = createTaskDependency({ taskId: task.id, kind: "task", refId: "missing", requiredState: "complete", dependencyType: "hard" });
+    const dependency = createTaskDependency({ workItemId: task.id, sourceType: "task", kind: "work_item", refType: "task", refId: "missing", requiredState: "complete", dependencyType: "hard" });
     await reject();
     removeTaskDependency(dependency.id);
     createTaskBlocker({ blockedTaskId: task.id, blockerType: "external", blockerId: null, description: "Open issue", severity: "high" });

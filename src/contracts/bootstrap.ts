@@ -14,6 +14,14 @@ const taskDependencyRecordSchema = z.discriminatedUnion("kind", [
 ]);
 
 const bootstrapCollectionSchema = z.array(z.record(z.string(), z.unknown()));
+const workItemSchema = z.object({
+  id: z.string(), sourceType: z.enum(["task", "manufacturing"]), sourceId: z.string(), taskId: z.string().nullable(),
+  title: z.string(), workType: z.enum(["Design", "Manufacturing", "Assembly", "Electrical/Wiring", "Programming", "Testing", "Driving"]),
+  responsibleGroup: z.enum(["Mechanical", "Electrical", "Programming"]).nullable(),
+  manufacturingProcess: z.enum(["3d-print", "cnc", "fabrication"]).nullable(), subsystemId: z.string(), dueDate: z.string(), status: z.string(),
+  quantity: z.number().nullable(), material: z.string().nullable(), materialId: z.string().nullable(), partDefinitionId: z.string().nullable(),
+  partInstanceIds: z.array(z.string()), batchLabel: z.string().nullable(), mentorReviewed: z.boolean().nullable(), isWaitingOnDependency: z.boolean(),
+});
 const pmCadSourceValues = ["manual", "step", "onshape"] as const;
 const pmCadImportSourceValues = [
   "MANUAL",
@@ -55,6 +63,7 @@ export const bootstrapPayloadSchema = z
     testResults: bootstrapCollectionSchema,
     risks: bootstrapCollectionSchema,
     tasks: z.array(taskRecordTargetsSchema.safeExtend({ id: z.string(), status: taskSchema.shape.status, checklistItems: z.array(z.string()), blockers: z.array(z.string()), isBlocked: z.boolean(), isWaitingOnDependency: z.boolean() })),
+    workItems: z.array(workItemSchema),
     taskDependencies: z.array(taskDependencyRecordSchema),
     taskBlockers: bootstrapCollectionSchema,
     workLogs: bootstrapCollectionSchema,

@@ -163,7 +163,7 @@ git diff -- docs
 
 ## Current task and reporting contract
 
-The affected command objects reject unknown fields. `taskDependencies` and `taskBlockers` are the authoritative relation collections; task commands do not accept `dependencyIds` or `blockers`. Dependency commands require explicit `taskId`, `kind`, `refId`, `requiredState`, and `dependencyType`; legacy upstream/downstream aliases are rejected. Task blocker descriptions and readiness booleans are derived for bootstrap. Task `checklistItems` round-trip as a string array, defaulting to empty.
+The affected command objects reject unknown fields. `taskDependencies` and `taskBlockers` are the authoritative relation collections; task commands do not accept `dependencyIds` or `blockers`. Dependency commands require `workItemId`, `sourceType`, `kind`, `refId`, `requiredState`, and `dependencyType`; `kind: "work_item"` also requires `refType`. Legacy JSON task edges normalize to these fields at snapshot load. Task blocker descriptions and readiness booleans are derived for bootstrap. Task `checklistItems` round-trip as a string array, defaulting to empty.
 
 QA and test findings share the common finding-record fields, but remain distinct boundary records: QA findings identify `qaReportId`, while test findings identify `testResultId` and may carry `milestoneId`. Keep those source-specific fields explicit when extending either model.
 

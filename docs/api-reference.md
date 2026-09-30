@@ -41,6 +41,7 @@ Mobile access credentials expire after one hour. Device sessions expire after 30
 - `GET /api/dashboard`: platform dashboard summary from the current seeded snapshot.
 - `GET /api/home`: Slack-style home summary for the current user.
 - `GET /api/bootstrap`: selected bootstrap payload for initial frontend hydration.
+- The bootstrap `workItems` collection is a shared read projection over Tasks and ManufacturingItems. Its `sourceType`/`sourceId` identify the canonical source record; paired Manufacturing work is shown once while its Task ID remains available for reports and work logs. Task and ManufacturingItem collections remain specialized and authoritative.
 - `GET /api/metrics`: workflow and delivery metrics.
 - `GET /api/roster/insights`: roster participation and contribution insights.
 
@@ -112,6 +113,7 @@ Retention policy:
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
 - `GET /api/task-dependencies`: list dependencies.
+- `/api/task-dependencies` CRUD uses unified work identity: `workItemId` + `sourceType` identify the dependent work; `kind: "work_item"`, `refType`, and `refId` identify a Task or ManufacturingItem prerequisite. Milestone and part-instance prerequisites retain their readiness states. Legacy saved Task edges normalize to this contract on load.
 - `POST /api/task-dependencies`: create a dependency.
 - `PATCH /api/task-dependencies/:dependencyId`: update a dependency.
 - `DELETE /api/task-dependencies/:dependencyId`: delete a dependency.
@@ -252,3 +254,5 @@ The independent optional `issueType` classifies the problem: `external`,
 `shipping-delay`, `manufacturing-unavailable`, `qa-failed`, or `other`.
 New records default to `external` when no issue category is supplied.
 Changing the issue category does not change or relax source-link validation.
+
+Robot work types are Design, Manufacturing, Assembly, Electrical/Wiring, Programming, Testing, and Driving. `responsibleGroup` is independent of `workType` and accepts Mechanical, Electrical, or Programming. Manufacturing keeps its process values (`cnc`, `3d-print`, `fabrication`) and its part/material, quantity, batch, mentor-review, QA, purchasing, and acquisition fields.

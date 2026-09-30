@@ -1,4 +1,4 @@
-import type { ReadonlyData, MilestoneStatus, SnapshotView, Task, TaskDependency } from "./types";
+import type { ReadonlyData, MilestoneStatus, SnapshotView, Task, TaskDependency, WorkItemSourceType } from "./types";
 
 const WORKFLOW_STATUS_ORDER: Record<MilestoneStatus, number> = {
   "not ready": 0,
@@ -56,7 +56,12 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Snapsho
     return true;
   }
 
-  if (dependency.kind === "task") {
+  if (dependency.kind === "work_item") {
+    if (dependency.refType === "manufacturing") {
+      const item = snapshot.manufacturingItems.find((candidate) => candidate.id === dependency.refId);
+      const stateByManufacturingStatus = { requested: "not-started", approved: "not-started", "in-progress": "in-progress", qa: "waiting-for-qa", complete: "complete" } as const;
+      return item ? stateByManufacturingStatus[item.status] === dependency.requiredState : false;
+    }
     return getTaskById(snapshot, dependency.refId)?.status === dependency.requiredState;
   }
 
@@ -77,10 +82,23 @@ export function getTaskWaitingOnDependencyRecords(
 ) {
   return snapshot.taskDependencies.filter(
     (dependency) =>
-      dependency.taskId === taskId &&
+      dependency.workItemId === taskId && dependency.sourceType === "task" &&
       dependency.dependencyType !== "soft" &&
       !isTaskDependencySatisfied(dependency, snapshot),
   );
+}
+
+export function getWorkItemWaitingOnDependencyRecords(workItemId: string, sourceType: WorkItemSourceType, snapshot: SnapshotView) {
+  return snapshot.taskDependencies.filter((dependency) =>
+    dependency.workItemId === workItemId && dependency.sourceType === sourceType &&
+    dependency.dependencyType !== "soft" && !isTaskDependencySatisfied(dependency, snapshot));
+}
+
+export function isWorkItemWaitingOnDependencies(workItemId: string, sourceType: WorkItemSourceType, snapshot: SnapshotView) {
+  const status = sourceType === "task"
+    ? getTaskById(snapshot, workItemId)?.status
+    : snapshot.manufacturingItems.find((item) => item.id === workItemId)?.status;
+  return status !== "complete" && getWorkItemWaitingOnDependencyRecords(workItemId, sourceType, snapshot).length > 0;
 }
 
 export function isTaskWaitingOnDependencies(

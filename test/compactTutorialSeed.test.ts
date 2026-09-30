@@ -28,7 +28,12 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   assert.ok(seed.partDefinitions.every((part) => seed.seasons.some((season) => season.id === part.seasonId)));
   assert.ok(seed.partInstances.every((part) => subsystemIds.has(part.subsystemId) && partDefinitionIds.has(part.partDefinitionId)));
   assert.ok(seed.tasks.every((task) => projectIds.has(task.projectId) && task.workstreamIds.every((id) => workstreamIds.has(id)) && task.subsystemIds.every((id) => subsystemIds.has(id)) && task.mechanismIds.every((id) => mechanismIds.has(id)) && task.partInstanceIds.every((id) => partInstanceIds.has(id)) && task.artifactIds.every((id) => artifactIds.has(id))));
-  assert.ok(seed.taskDependencies.every((dependency) => taskIds.has(dependency.taskId) && (dependency.kind !== "task" || taskIds.has(dependency.refId))));
+  const manufacturingItemIds = ids(seed.manufacturingItems);
+  assert.ok(seed.taskDependencies.every((dependency) =>
+    (dependency.sourceType === "task" ? taskIds.has(dependency.workItemId) : manufacturingItemIds.has(dependency.workItemId)) &&
+    (dependency.kind !== "work_item" || (dependency.refType === "task" ? taskIds.has(dependency.refId) : manufacturingItemIds.has(dependency.refId))) &&
+    (dependency.kind !== "milestone" || milestoneIds.has(dependency.refId)) &&
+    (dependency.kind !== "part_instance" || partInstanceIds.has(dependency.refId))));
   assert.ok(seed.taskBlockers.every((blocker) => taskIds.has(blocker.blockedTaskId)));
   assert.ok(seed.qaReports.every((report) => taskIds.has(report.taskId) && report.participantIds.every((id) => memberIds.has(id))));
   assert.ok(seed.qaFindings.every((finding) => taskIds.has(finding.taskId ?? "") && (!finding.qaReportId || reportIds.has(finding.qaReportId))));
