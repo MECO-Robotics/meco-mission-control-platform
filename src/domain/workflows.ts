@@ -1,5 +1,6 @@
 import type { ReadonlyData, SnapshotView, QaReview, Task, TaskStatus } from "./types";
 import { isTaskWaitingOnDependencies } from "./taskDependencyState";
+import { partInstanceMechanismId } from "./partInstanceLocation";
 
 export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: SnapshotView) {
   const workLogs = snapshot.workLogs.filter((workLog) => workLog.taskId === task.id);
@@ -13,7 +14,9 @@ export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: Snaps
     missing.push("required work log");
   }
 
-  if (task.requiresDocumentation && !task.documentationLinked) {
+  if (task.requiresDocumentation && !snapshot.artifacts.some((artifact) =>
+    artifact.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id),
+  )) {
     missing.push("notebook or documentation evidence");
   }
 
@@ -39,10 +42,10 @@ export function buildDashboard(snapshot: SnapshotView) {
   const waitingForQa = snapshot.tasks.filter(
     (task) => task.status === "waiting-for-qa",
   ).length;
-  const blocked = snapshot.tasks.filter((task) => task.blockers.length > 0).length;
+  const blocked = snapshot.tasks.filter((task) => task.isBlocked).length;
   const nextTasks = snapshot.tasks
     .filter((task) => {
-      if (task.status === "complete" || task.blockers.length > 0 || isTaskWaitingOnDependencies(task, snapshot)) {
+      if (task.status === "complete" || task.isBlocked || isTaskWaitingOnDependencies(task, snapshot)) {
         return false;
       }
       return true;
@@ -99,7 +102,7 @@ export function buildMetrics(snapshot: SnapshotView) {
     (review) => review.result === "pass" && review.mentorApproved,
   ).length;
   const deliveredPurchases = snapshot.purchaseItems.filter(
-    (purchase) => purchase.status === "delivered",
+    (purchase) => purchase.orderStatus === "delivered",
   ).length;
   const lowStockMaterials = snapshot.materials.filter(
     (material) => material.onHandQuantity <= material.reorderPoint,
@@ -120,7 +123,7 @@ export function buildMetrics(snapshot: SnapshotView) {
     trackedMaterials: snapshot.materials.length,
     waitingForQa: snapshot.tasks.filter((task) => task.status === "waiting-for-qa")
       .length,
-    blockerCount: snapshot.tasks.reduce((sum, task) => sum + task.blockers.length, 0),
+    blockerCount: snapshot.tasks.filter((task) => task.isBlocked).length,
     attendanceHours: snapshot.attendanceRecords.reduce((sum, record) => {
       return sum + record.totalHours;
     }, 0),
@@ -159,7 +162,7 @@ function buildTaskMetrics(
   const taskIds = new Set(tasks.map((task) => task.id));
   const completeTaskCount = tasks.filter((task) => task.status === "complete").length;
   const waitingForQaCount = tasks.filter((task) => task.status === "waiting-for-qa").length;
-  const blockerCount = tasks.reduce((sum, task) => sum + task.blockers.length, 0);
+  const blockerCount = tasks.filter((task) => task.isBlocked).length;
   const plannedHours = tasks.reduce((sum, task) => sum + task.estimatedHours, 0);
   const loggedHours = tasks.reduce(
     (sum, task) => sum + (workHoursByTaskId.get(task.id) ?? 0),
@@ -242,7 +245,7 @@ function buildMechanismMetrics(
       )?.name ?? "Unknown subsystem";
       const taskMetrics = buildTaskMetrics(snapshot, tasks, workHoursByTaskId);
       const partInstanceCount = snapshot.partInstances.filter((partInstance) => {
-        return partInstance.mechanismId === mechanism.id;
+        return partInstanceMechanismId(partInstance) === mechanism.id;
       }).length;
 
       return {

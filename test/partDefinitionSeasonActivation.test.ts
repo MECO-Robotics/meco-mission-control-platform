@@ -31,7 +31,7 @@ test("members and part definitions activate per season in matching bootstrap sco
         revision: "A",
         iteration: 1,
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Scoped by active seasons.",
       },

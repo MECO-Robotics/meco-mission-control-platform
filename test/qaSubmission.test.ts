@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { createQaRequest, getSnapshot, updateTask, createTaskDependency, removeTaskDependency, createTaskBlocker } from "../src/data/store";
+import { createQaRequest, getSnapshot, updateTask, createTaskDependency, removeTaskDependency } from "../src/data/store";
 
 const env = { API_RATE_LIMIT_MAX_REQUESTS: "100" };
 test("QA submission persists evidence, completes ready task and closes its pending requests", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((item) => item.blockers.length === 0 && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const task = snapshot.tasks.find((item) => !snapshot.risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
     updateTask(task.id, { status: "waiting-for-qa" });
     const request = createQaRequest({ taskId: task.id, subject: task.title, mentorId: snapshot.members[0].id, requestedById: snapshot.members[1].id });
     const payload = { taskId: task.id, participantIds: [snapshot.members[0].id], result: "pass", mentorApproved: false, notes: "Checked", evidenceNotes: "Measured 12V", reviewedAt: "2026-09-09", qaRequestId: request.id };
     const response = await app.inject({ method: "POST", url: "/api/qa-reports/submit", payload });
     assert.equal(response.statusCode, 201, response.body);
     const bootstrap = (await app.inject({ method: "GET", url: "/api/bootstrap" })).json();
-    const report = bootstrap.qaReports.find((item: { id: string }) => item.id === response.json().item.id);
+    const report = bootstrap.reports.find((item: { id: string }) => item.id === response.json().item.id);
     assert.equal(report.evidenceNotes, "Measured 12V");
     assert.equal(report.requestedById, snapshot.members[1].id);
     assert.equal(bootstrap.reports.find((item: { id: string }) => item.id === report.id).evidenceNotes, "Measured 12V");
@@ -41,7 +41,7 @@ test("failed QA produces persisted follow-up and only iteration results create b
       const followUp = after.tasks.find((item) => item.title === `Repair ${result}`)!;
       assert.match(followUp.summary, /Continuity failed/);
       assert.equal(followUp.status, "not-started");
-      assert.equal(after.taskBlockers.length, before.taskBlockers.length + (result === "iteration-worthy" ? 1 : 0));
+      assert.equal(after.risks.length, before.risks.length + (result === "iteration-worthy" ? 1 : 0));
     }
   }, { env });
 });
@@ -49,7 +49,7 @@ test("failed QA produces persisted follow-up and only iteration results create b
 test("QA pass uses authoritative readiness and rejects stale task/request links without writes", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((item) => item.blockers.length === 0 && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const task = snapshot.tasks.find((item) => !snapshot.risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
     const payload = { taskId: task.id, participantIds: [snapshot.members[0].id], result: "pass", notes: "Checked", reviewedAt: "2026-09-09" };
     updateTask(task.id, { status: "not-started" });
     const reject = async (extra = {}) => {
@@ -63,7 +63,9 @@ test("QA pass uses authoritative readiness and rejects stale task/request links 
     const dependency = createTaskDependency({ taskId: task.id, kind: "task", refId: "missing", requiredState: "complete", dependencyType: "hard" });
     await reject();
     removeTaskDependency(dependency.id);
-    createTaskBlocker({ blockedTaskId: task.id, blockerType: "external", blockerId: null, description: "Open issue", severity: "high" });
+    const projectId = task.projectId;
+    const { createRisk } = await import("../src/data/store");
+    createRisk({ projectId, title: "Open issue", detail: "Blocks completion", category: "dependency", severity: "high", status: "open", blocksWork: true, source: { kind: "manual" }, relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null, ownerGroupId: null });
     await reject();
   }, { env });
 });

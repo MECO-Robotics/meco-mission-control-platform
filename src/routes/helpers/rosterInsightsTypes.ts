@@ -96,10 +96,6 @@ export interface RosterInsightsSource {
     id: string;
     name: string;
   }>;
-  taskBlockers?: ReadonlyArray<{
-    blockedTaskId: string;
-    status: "open" | "resolved";
-  }>;
   tasks: ReadonlyArray<{
     id: string;
     projectId: string;
@@ -114,4 +110,3 @@ export interface RosterInsightsSource {
     isBlocked?: boolean;
   }>;
 }
-

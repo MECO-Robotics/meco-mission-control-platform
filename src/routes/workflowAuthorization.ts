@@ -1,10 +1,8 @@
 import type {
   ReadonlyData,
-  ManufacturingItem,
-  ManufacturingStatus,
   MemberRole,
   PurchaseItem,
-  PurchaseStatus,
+  PurchaseOrderStatus,
 } from "../domain/types";
 
 export type WorkflowPolicyFailure = {
@@ -12,22 +10,17 @@ export type WorkflowPolicyFailure = {
   statusCode: 403 | 409;
 };
 
-const purchaseTransitions: Partial<Record<PurchaseStatus, PurchaseStatus>> = {
-  approved: "purchased",
-  purchased: "shipped",
+const purchaseTransitions: Partial<Record<PurchaseOrderStatus, PurchaseOrderStatus>> = {
+  "not-ordered": "ordered",
+  ordered: "shipped",
   shipped: "delivered",
 };
 
-const manufacturingTransitions: Partial<Record<ManufacturingStatus, ManufacturingStatus>> = {
-  approved: "in-progress",
-  "in-progress": "qa",
-  qa: "complete",
-};
+
 
 export function isWorkflowApproverRole(role: MemberRole | undefined) {
   return role === "mentor" || role === "admin";
 }
-
 function valuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -79,55 +72,20 @@ export function assessGenericPatch(args: {
 
 export function validatePurchaseApproval(
   item: ReadonlyData<PurchaseItem>,
-  approved: boolean,
+  approvalStatus: "approved" | "rejected",
 ): WorkflowPolicyFailure | null {
-  if (approved) {
-    return item.status === "requested"
-      ? null
-      : { statusCode: 409, message: "Only requested purchases can be approved." };
-  }
-
-  return item.status === "requested" || item.status === "approved"
-    ? null
-    : { statusCode: 409, message: "Purchase approval cannot be revoked after purchasing begins." };
+  if (!item.selectedQuoteId || !item.quotes.some((quote) => quote.id === item.selectedQuoteId)) return { statusCode: 409, message: "Select a quote before approving or rejecting a purchase." };
+  if (item.orderStatus !== "not-ordered") return { statusCode: 409, message: "Approval can only change before ordering." };
+  if (item.approvalStatus === approvalStatus) return null;
+  if (item.approvalStatus !== "pending") return { statusCode: 409, message: "A decision can only change while approval is pending." };
+  return null;
 }
 
 export function validatePurchaseTransition(
-  current: PurchaseStatus,
-  next: PurchaseStatus,
+  current: PurchaseOrderStatus,
+  next: PurchaseOrderStatus,
 ): WorkflowPolicyFailure | null {
-  return purchaseTransitions[current] === next
+  return purchaseTransitions[current] === next || (next === "cancelled" && current !== "delivered" && current !== "cancelled")
     ? null
     : { statusCode: 409, message: `Purchase cannot transition from ${current} to ${next}.` };
-}
-
-export function validateManufacturingReview(
-  item: ReadonlyData<ManufacturingItem>,
-  reviewed: boolean,
-): WorkflowPolicyFailure | null {
-  if (reviewed) {
-    return item.status === "requested"
-      ? null
-      : { statusCode: 409, message: "Only requested manufacturing items can be reviewed." };
-  }
-
-  return item.status === "requested" || item.status === "approved"
-    ? null
-    : { statusCode: 409, message: "Manufacturing review cannot be revoked after work begins." };
-}
-
-export function validateManufacturingTransition(
-  item: ReadonlyData<ManufacturingItem>,
-  next: ManufacturingStatus,
-): WorkflowPolicyFailure | null {
-  if (!item.mentorReviewed) {
-    return { statusCode: 409, message: "Manufacturing work requires active mentor review." };
-  }
-
-  return manufacturingTransitions[item.status] === next
-    ? null
-    : {
-        statusCode: 409,
-        message: `Manufacturing cannot transition from ${item.status} to ${next}.`,
-      };
 }

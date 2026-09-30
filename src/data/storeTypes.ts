@@ -1,6 +1,5 @@
 import type {
   Artifact,
-  ManufacturingItem,
   Material,
   Mechanism,
   Meeting,
@@ -18,7 +17,6 @@ import type {
   Season,
   Subsystem,
   Task,
-  TaskBlocker,
   TaskDependency,
   TestResult,
   WorkLog,
@@ -35,12 +33,11 @@ export type TaskInput = OptionalFields<
     | "createdAt"
     | "serialNumber"
     | "serial"
-    | "blockers"
     | "isBlocked"
     | "isWaitingOnDependency"
     | "actualHours"
   >,
-  "checklistItems"
+  "checklistItems" | "responsibleGroupId" | "requestedById" | "scheduleRefs" | "manufacturingDetails"
 >;
 
 export type WorkLogInput = Omit<WorkLog, "id">;
@@ -70,14 +67,10 @@ export type ProjectInput = OptionalFields<
 
 export type PurchaseItemInput = Omit<PurchaseItem, "id">;
 
-export type ManufacturingItemInput = OptionalFields<
-  Omit<ManufacturingItem, "id">,
-  "materialId" | "partInstanceId" | "partInstanceIds" | "inHouse"
->;
 
 export type MaterialInput = Omit<Material, "id">;
 
-export type ArtifactInput = OptionalFields<Omit<Artifact, "id">, "isArchived">;
+export type ArtifactInput = OptionalFields<Omit<Artifact, "id" | "targetRefs">, "isArchived"> & { targetRefs?: Artifact["targetRefs"] };
 
 export type WorkstreamInput = OptionalFields<Omit<Workstream, "id">, "isArchived">;
 
@@ -111,19 +104,19 @@ export type MilestoneInput = Pick<
   | "photoUrl"
 >;
 
-export type QaReportInput = Omit<QaReport, "id">;
+export type QaReportInput = Omit<QaReport, "id" | "targetRefs"> & { targetRefs?: QaReport["targetRefs"] };
 
 export type QaRequestInput = OptionalFields<
   Omit<QaRequest, "id" | "createdAt" | "status">,
-  "taskId" | "requestedById"
+  "taskId" | "requestedById" | "projectId" | "targetRefs"
 >;
 
-export type TestResultInput = Omit<TestResult, "id">;
+export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId"> & { targetRefs?: TestResult["targetRefs"]; projectId?: string };
 
 export type ReportInput = Omit<
   Report,
-  "id" | "evidenceNotes" | "qaRequestId" | "mentorId" | "requestedById"
->;
+  "id" | "targetRefs" | "evidenceNotes" | "qaRequestId" | "mentorId" | "requestedById"
+> & { targetRefs?: Report["targetRefs"] };
 
 export type ReportFindingInput = Pick<
   ReportFinding,
@@ -139,11 +132,13 @@ export type ReportFindingInput = Pick<
   | "spawnedRiskId"
 >;
 
-export type TaskDependencyInput = Omit<TaskDependency, "id" | "createdAt">;
+export type TaskDependencyInput = TaskDependency extends infer Dependency
+  ? Dependency extends TaskDependency
+    ? Omit<Dependency, "id" | "createdAt">
+    : never
+  : never;
 
-export type TaskBlockerInput = OptionalFields<
-  Omit<TaskBlocker, "id" | "createdAt" | "resolvedAt">,
-  "status" | "createdByMemberId"
->;
 
-export type RiskInput = Omit<Risk, "id">;
+export type RiskInput = Omit<Risk, "id" | "createdAt" | "updatedAt" | "resolvedAt"> & {
+  resolvedAt?: string | null;
+};

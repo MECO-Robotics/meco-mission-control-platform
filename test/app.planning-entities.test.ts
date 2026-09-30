@@ -52,17 +52,14 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         name?: string;
         partNumber?: string;
         revision?: string;
-        source?: string;
+        defaultAcquisitionMethod?: string;
         type?: string;
       }>;
       partInstances: Array<{
         id: string;
-        mechanismId?: string | null;
         partDefinitionId?: string;
-        quantity?: number;
-        status?: string;
-        subsystemId?: string;
-        trackIndividually?: boolean;
+        location?: { kind: string; subsystemId?: string; mechanismId?: string | null };
+        readinessStatus?: string;
       }>;
     };
     const bootstrapMechanism = ownershipBootstrapBody.mechanisms.find(
@@ -90,35 +87,27 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         id: bootstrapPartDefinition?.id,
         partNumber: bootstrapPartDefinition?.partNumber,
         revision: bootstrapPartDefinition?.revision,
-        source: bootstrapPartDefinition?.source,
+        defaultAcquisitionMethod: bootstrapPartDefinition?.defaultAcquisitionMethod,
         type: bootstrapPartDefinition?.type,
       },
       {
         id: "pd-swerve-encoder-bracket",
         partNumber: "DRV-101",
         revision: "B",
-        source: "Manual",
+        defaultAcquisitionMethod: "manufacture",
         type: "custom",
       },
     );
     assert.deepEqual(
       {
         id: bootstrapPartInstance?.id,
-        mechanismId: bootstrapPartInstance?.mechanismId,
         partDefinitionId: bootstrapPartInstance?.partDefinitionId,
-        quantity: bootstrapPartInstance?.quantity,
-        status: bootstrapPartInstance?.status,
-        subsystemId: bootstrapPartInstance?.subsystemId,
-        trackIndividually: bootstrapPartInstance?.trackIndividually,
+        location: bootstrapPartInstance?.location,
       },
       {
         id: "pi-swerve-encoder-bracket-front-left",
-        mechanismId: "swerve-module",
         partDefinitionId: "pd-swerve-encoder-bracket",
-        quantity: 1,
-        status: "ready",
-        subsystemId: "drive",
-        trackIndividually: true,
+        location: { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" },
       },
     );
 
@@ -133,7 +122,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         revision: "A",
         iteration: 4,
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Created from the app test suite.",
         photoUrl: "https://cdn.example.test/parts/route-test-part.png",
@@ -171,7 +160,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         revision: "A",
         iteration: 1,
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Created without part number to validate auto serialization.",
         photoUrl: "",
@@ -207,13 +196,10 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        subsystemId: "drive",
-        mechanismId: "swerve-module",
+        intendedSubsystemId: "drive",
+        intendedMechanismId: "swerve-module",
         partDefinitionId: partDefinitionBody.item.id,
-        name: "Route test part instance",
-        quantity: 2,
-        trackIndividually: true,
-        status: "ready",
+        location: { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" },
         photoUrl: "https://cdn.example.test/parts/route-test-instance.png",
       },
     });
@@ -221,15 +207,11 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     assert.equal(partInstanceResponse.statusCode, 201);
     const partInstanceBody = partInstanceResponse.json() as {
       item: {
-        mechanismId: string | null;
-        status: string;
-        subsystemId: string;
+        location: { kind: string; subsystemId?: string; mechanismId?: string | null };
         photoUrl: string;
       };
     };
-    assert.equal(partInstanceBody.item.mechanismId, "swerve-module");
-    assert.equal(partInstanceBody.item.subsystemId, "drive");
-    assert.equal(partInstanceBody.item.status, "ready");
+    assert.deepEqual(partInstanceBody.item.location, { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" });
     assert.equal(
       partInstanceBody.item.photoUrl,
       "https://cdn.example.test/parts/route-test-instance.png",
@@ -241,13 +223,10 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        subsystemId: "outreach",
-        mechanismId: "swerve-module",
+        intendedSubsystemId: "outreach",
+        intendedMechanismId: "swerve-module",
         partDefinitionId: partDefinitionBody.item.id,
-        name: "Invalid relationship",
-        quantity: 1,
-        trackIndividually: false,
-        status: "not ready",
+        location: { kind: "unlocated" },
         photoUrl: "https://cdn.example.test/parts/invalid.png",
       },
     });

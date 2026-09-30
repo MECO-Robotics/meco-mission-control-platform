@@ -67,20 +67,20 @@ test("dependency commands reject impossible states and validate the full merged 
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 
-test("duplicate blocker descriptions stay visible until the last open record resolves", async () => {
+test("blocking task summaries derive from canonical unresolved Risks", async () => {
   await withIntegrationApp(async ({ app }) => {
+    const { createRisk, getSnapshot } = await import("../src/data/store");
     const task = getSnapshot().tasks[0];
-    const create = () => app.inject({ method: "POST", url: "/api/task-blockers", payload: {
-      blockedTaskId: task.id, blockerType: "external", blockerId: null,
-      description: "Waiting on shared delivery", severity: "medium", status: "open", createdByMemberId: null,
-    }});
-    const a = await create(); const b = await create();
-    assert.equal(a.statusCode, 201, a.body); assert.equal(b.statusCode, 201, b.body);
-    const first = await app.inject({ method: "PATCH", url: `/api/task-blockers/${a.json().item.id}`, payload: { status: "resolved" }});
-    assert.equal(first.statusCode, 200, first.body);
-    assert.ok(getSnapshot().tasks.find((item) => item.id === task.id)!.blockers.includes("Waiting on shared delivery"));
-    await app.inject({ method: "DELETE", url: `/api/task-blockers/${b.json().item.id}` });
-    assert.ok(!getSnapshot().tasks.find((item) => item.id === task.id)!.blockers.includes("Waiting on shared delivery"));
+    const risk = createRisk({
+      projectId: task.projectId, title: "Waiting on shared delivery", detail: "Blocking risk.",
+      category: "supply", severity: "medium", status: "open", blocksWork: true,
+      source: { kind: "manual" }, relatedTargets: [{ kind: "task", id: task.id }],
+      mitigationTaskId: null, ownerGroupId: null,
+    });
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)!.isBlocked, true);
+    const risks = await app.inject({ method: "GET", url: "/api/risks" });
+    assert.ok(risks.json().items.some((item: { id: string }) => item.id === risk.id));
+    assert.equal((await app.inject({ method: "GET", url: "/api/task-blockers" })).statusCode, 404);
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 

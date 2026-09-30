@@ -1,5 +1,6 @@
 import type { TaskTargets } from "../../domain/taskTargets";
 import type { ReadonlyData } from "../../domain/types";
+import { partInstanceMechanismId, partInstanceSubsystemId } from "../../domain/partInstanceLocation";
 import { uniqueIds } from "../../domain/ids";
 import {
   findMechanism,
@@ -38,7 +39,7 @@ export function normalizeTaskTargets(
   const partInstances = partInstanceIds.flatMap((id) => findPartInstance(id) ?? []);
   const mechanismIds = uniqueIds([
     ...(input.mechanismIds ?? fallback?.mechanismIds ?? []),
-    ...partInstances.map((part) => part.mechanismId),
+    ...partInstances.map(partInstanceMechanismId),
   ]);
   const mechanisms = mechanismIds.flatMap((id) => findMechanism(id) ?? []);
   return {
@@ -46,10 +47,9 @@ export function normalizeTaskTargets(
     subsystemIds: uniqueIds([
       ...(input.subsystemIds ?? fallback?.subsystemIds ?? []),
       ...mechanisms.map((mechanism) => mechanism.subsystemId),
-      ...partInstances.map((part) => part.subsystemId),
+      ...partInstances.map(partInstanceSubsystemId),
     ]),
     mechanismIds,
     partInstanceIds,
-    artifactIds: uniqueIds(input.artifactIds ?? fallback?.artifactIds ?? []),
   };
 }

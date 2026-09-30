@@ -71,14 +71,12 @@ test("audit export filters by entity type project season and date range", async 
       );
       assert.ok(robotWorkstream);
       const workstreamRisk = createRisk({
+        projectId: robotWorkstream.projectId,
         title: "Audit Export Workstream Risk",
         detail: "Risk attached through a project workstream.",
-        severity: "medium",
-        sourceType: "qa-report",
-        sourceId: "qa-report-audit-export",
-        attachmentType: "workstream",
-        attachmentId: robotWorkstream.id,
-        mitigationTaskId: null,
+        severity: "medium", category: "supply", status: "open", blocksWork: false,
+        source: { kind: "manual" }, relatedTargets: [{ kind: "workstream", id: robotWorkstream.id }],
+        mitigationTaskId: null, ownerGroupId: null,
       });
       recordAuditAction({
         operation: "update",

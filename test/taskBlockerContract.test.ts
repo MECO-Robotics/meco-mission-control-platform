@@ -1,50 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
-import { getTasks } from "../src/data/store";
 
-test("task blocker issue categories round-trip separately from validated source links", async () => {
+test("unresolved risks are the canonical source of task blocking", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const tasks = getTasks();
-    assert.ok(tasks.length >= 2);
-    const payload = {
-      blockedTaskId: tasks[0].id,
-      blockerType: "task",
-      blockerId: tasks[1].id,
-      issueType: "broken-part",
-      description: "Replace damaged part before assembly",
-      severity: "high",
-    };
-    const created = await app.inject({ method: "POST", url: "/api/task-blockers", payload });
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrap.statusCode, 200);
+    const task = bootstrap.json().tasks[0];
+    const created = await app.inject({ method: "POST", url: "/api/risks", payload: {
+      projectId: task.projectId, title: "Broken part before assembly", detail: "Replace damaged part before assembly.",
+      category: "manufacturing", severity: "high", status: "open", blocksWork: true,
+      source: { kind: "manual" }, relatedTargets: [{ kind: "task", id: task.id }],
+      mitigationTaskId: null, ownerGroupId: null,
+    }});
     assert.equal(created.statusCode, 201, created.body);
-    const blocker = created.json().item;
-    assert.equal(blocker.issueType, "broken-part");
-    assert.equal(blocker.blockerType, "task");
-    assert.equal(blocker.blockerId, tasks[1].id);
+    assert.equal(created.json().item.relatedTargets[0].kind, "task");
     resetLimits();
-    const resolved = await app.inject({ method: "PATCH", url: `/api/task-blockers/${blocker.id}`, payload: { status: "resolved" } });
-    assert.equal(resolved.statusCode, 200, resolved.body);
-    const resolvedAt = resolved.json().item.resolvedAt;
-    assert.ok(resolvedAt);
+    const taskResponse = await app.inject({ method: "GET", url: "/api/tasks" });
+    assert.equal(taskResponse.statusCode, 200);
+    assert.equal(taskResponse.json().items.find((item: { id: string }) => item.id === task.id).isBlocked, true);
     resetLimits();
-    const edited = await app.inject({ method: "PATCH", url: `/api/task-blockers/${blocker.id}`, payload: { issueType: "shipping-delay" } });
-    assert.equal(edited.statusCode, 200, edited.body);
-    assert.equal(edited.json().item.blockerId, tasks[1].id);
-    assert.equal(edited.json().item.status, "resolved");
-    assert.equal(edited.json().item.resolvedAt, resolvedAt);
-    resetLimits();
-    const read = await app.inject({ method: "GET", url: "/api/task-blockers?seasonId=default-season" });
-    assert.equal(read.statusCode, 200, read.body);
-    assert.equal(read.json().items.find((item: { id: string }) => item.id === blocker.id)?.issueType, "shipping-delay");
-    for (const invalid of [
-      { ...payload, blockerId: "missing-task" },
-      { ...payload, blockerType: "external" },
-      { ...payload, issueType: "unrecognized-category" },
-      { ...payload, blockerType: "broken-part" },
-    ]) {
-      resetLimits();
-      const response = await app.inject({ method: "POST", url: "/api/task-blockers", payload: invalid });
-      assert.equal(response.statusCode, 400, response.body);
-    }
-  });
+    assert.equal((await app.inject({ method: "GET", url: "/api/task-blockers" })).statusCode, 404);
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });

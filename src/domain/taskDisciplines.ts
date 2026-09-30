@@ -1,4 +1,17 @@
-import type { Discipline, Project } from "./types";
+import type { Discipline, Project, ProjectType, WorkType } from "./types";
+
+const WORK_TYPE_NAMES: Record<ProjectType, readonly [string, string][]> = {
+  robot: [["design", "Design"], ["manufacturing", "Manufacturing"], ["assembly", "Assembly"], ["electrical-wiring", "Electrical/Wiring"], ["programming", "Programming"], ["testing", "Testing"], ["driving", "Driving"], ["planning", "Planning"]],
+  media: [["photography", "Photography"], ["video", "Video"], ["graphics", "Graphics"], ["writing", "Writing"], ["web", "Web"], ["social-media", "Social Media"]],
+  outreach: [["engagement", "Engagement"], ["presentation", "Presentation"], ["documentation", "Documentation"], ["media-production", "Media Production"], ["partnerships", "Partnerships"]],
+  operations: [["communications", "Communications"], ["finance", "Finance"], ["research", "Research"], ["documentation", "Documentation"], ["planning", "Planning"]],
+  strategy: [["game-analysis", "Game Analysis"], ["scouting", "Scouting"], ["data-analysis", "Data Analysis"], ["documentation", "Documentation"], ["risk-review", "Risk Review"]],
+  training: [["curriculum", "Curriculum"], ["instruction", "Instruction"], ["documentation", "Documentation"], ["practice", "Practice"], ["assessment", "Assessment"], ["planning", "Planning"]],
+};
+
+export const INITIAL_WORK_TYPES: WorkType[] = Object.entries(WORK_TYPE_NAMES).flatMap(([projectType, names]) =>
+  names.map(([code, name]) => ({ id: `${projectType}:${code}`, projectType: projectType as ProjectType, code, name, isActive: true })),
+);
 
 export type TaskDisciplineBucket =
   | "robot"

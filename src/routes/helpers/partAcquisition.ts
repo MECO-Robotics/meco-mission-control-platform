@@ -4,7 +4,7 @@ import {
   type PartAcquisitionPlan, type PartDefinitionInput,
 } from "../../data/store";
 import type { partDefinitionSchema } from "../routeSchemas";
-import { validatePartDefinitionMaterialId, validateSubsystemPeople, validateTaskLinks } from "./linkValidation";
+import { validatePartDefinitionMaterialId, validateSubsystemPeople } from "./linkValidation";
 import { uniqueIds } from "../../domain/ids";
 import { normalizeTaskTargets } from "./taskTargets";
 
@@ -35,9 +35,6 @@ export function preparePartAcquisition(
   if (definition.isArchived) {
     return { error: "Archived part definitions cannot start acquisition work." };
   }
-  if (definition.source.length < 2) {
-    return { error: "Acquisition source must contain at least two characters." };
-  }
   const owner = getMembers().find((member) => member.id === acquisition.ownerId);
   const mentor = getMembers().find((member) => member.id === acquisition.mentorId);
   if (!owner || owner.role === "external") {
@@ -62,7 +59,20 @@ export function preparePartAcquisition(
     summary: acquisition.method === "manufacture"
       ? `Manufacture ${definition.name} and move it through QA.`
       : `Purchase ${definition.name} and confirm it is ready for installation.`,
-    disciplineId: acquisition.disciplineId,
+    workTypeId: acquisition.workTypeId,
+    responsibleGroupId: null,
+    requestedById: actorMemberId,
+    scheduleRefs: [],
+    manufacturingDetails: acquisition.method === "manufacture" ? {
+      part: { kind: "part-definition" as const, partDefinitionId: "" },
+      quantity: 1,
+      processId: "cnc",
+      fulfillmentSource: acquisition.method === "manufacture" ? acquisition.fulfillmentSource : "in-house",
+      material: definition.materialId ? { kind: "inventory-material" as const, materialId: definition.materialId } : { kind: "specified-material" as const, name: definition.type },
+      fileArtifactIds: [],
+      tolerances: [],
+      qaRequirements: [],
+    } : null,
     ownerId: owner.id,
     assigneeIds: [],
     mentorId: mentor.id,
@@ -71,16 +81,9 @@ export function preparePartAcquisition(
     dueDate: acquisition.dueDate,
     priority: "medium" as const,
     status: "not-started" as const,
-    linkedManufacturingIds: [],
-    linkedPurchaseIds: [],
     estimatedHours: 0,
     requiresDocumentation: false,
-    documentationLinked: false,
   };
-  const taskError = validateTaskLinks(task);
-  if (taskError) {
-    return { error: taskError };
-  }
   return {
     definition: { ...definition, seasonId, activeSeasonIds },
     plan: { method: acquisition.method, requestedById: actorMemberId, task },

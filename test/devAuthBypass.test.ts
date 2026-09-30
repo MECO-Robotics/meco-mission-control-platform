@@ -354,7 +354,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           title: "Student-created task",
           summary: "Students should not be allowed to create tasks.",
           subsystemIds: ["drive"],
-          disciplineId: "design",
+          workTypeId: "robot:design",
           mechanismIds: [],
           partInstanceIds: [],
           targetMilestoneId: null,
@@ -363,8 +363,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           dueDate: "2026-05-06",
           priority: "medium",
           status: "not-started",
-          linkedManufacturingIds: [],
-          linkedPurchaseIds: [],
           estimatedHours: 0,
         },
       });
@@ -419,7 +417,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         title: "Claimable student task",
         summary: "Students can claim this task from mobile.",
         subsystemIds: ["drive"],
-        disciplineId: "design",
+        workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
         targetMilestoneId: null,
@@ -428,8 +426,6 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 0,
       };
       const claimableTaskResponse = await app.inject({

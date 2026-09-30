@@ -121,7 +121,7 @@ test("production platform state survives a fresh process", () => {
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
       const initial = store.getSnapshot();
-      if (initial.projects.length !== 6 || initial.tasks.length !== 2) throw new Error("Fresh process did not bootstrap the compact tutorial scenario");
+      if (initial.projects.length !== 6 || initial.tasks.length !== 3) throw new Error("Fresh process did not bootstrap the compact tutorial scenario");
       const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       store.createProject({
@@ -136,10 +136,12 @@ test("production platform state survives a fresh process", () => {
       const source = store.getSnapshot();
       store.createWorkLog({ taskId: source.tasks[0].id, date: "2026-09-09", hours: 1.25, participantIds: [source.members[0].id], notes: "Durable hours" });
       store.createQaReport({ taskId: source.tasks[0].id, participantIds: [source.members[0].id], result: "pass", mentorApproved: true, notes: "Persistent proposal", reviewedAt: "2026-09-08", targetRiskId: source.risks[0].id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" });
-      store.createTaskBlocker({
-        blockedTaskId: store.getTasks()[0].id,
-        blockerType: "external", blockerId: null, issueType: "broken-part",
-        description: "Durable issue category", severity: "high",
+      store.createRisk({
+        projectId: store.getTasks()[0].projectId, title: "Durable issue category",
+        detail: "A blocking risk survives restart.", category: "dependency", severity: "high",
+        status: "open", blocksWork: true, source: { kind: "manual" },
+        relatedTargets: [{ kind: "task", id: store.getTasks()[0].id }],
+        mitigationTaskId: null, ownerGroupId: null,
       });
       await transaction.commit();
       transaction.release();
@@ -157,11 +159,11 @@ test("production platform state survives a fresh process", () => {
     const loadedIssue = runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
-      const blocker = store.getTaskBlockers().find((item) => item.description === "Durable issue category");
-      process.stdout.write(JSON.stringify([blocker.issueType, blocker.blockerType, blocker.blockerId]));
+      const risk = store.getRisks().find((item) => item.title === "Durable issue category");
+      process.stdout.write(JSON.stringify([risk.category, risk.blocksWork, risk.source.kind]));
       process.exit(0);
     `);
-    assert.deepEqual(JSON.parse(loadedIssue), ["broken-part", "external", null]);
+    assert.deepEqual(JSON.parse(loadedIssue), ["dependency", true, "manual"]);
     const persisted = JSON.parse(readFileSync(snapshotPath, "utf8"));
     const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
@@ -247,11 +249,11 @@ test("QA workflow effects survive restart and roll back together when persistenc
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
       const snapshot = store.getSnapshot();
       const report = snapshot.qaReports.find(item => item.notes === "Durable QA");
-      process.stdout.write(JSON.stringify({ report, followup: snapshot.tasks.find(item => item.title === "Durable repair"), blockers: snapshot.taskBlockers.filter(item => item.blockedTaskId === report.taskId && item.issueType === "qa-failed"), requests: snapshot.qaRequests.filter(item => item.taskId === report.taskId) }));
+      process.stdout.write(JSON.stringify({ report, followup: snapshot.tasks.find(item => item.title === "Durable repair"), risks: snapshot.risks.filter(item => item.source.kind === "report" && item.source.id === report.id), requests: snapshot.qaRequests.filter(item => item.taskId === report.taskId) }));
     `));
     assert.equal(restored.report.evidenceNotes, "Broken lead");
     assert.equal(restored.followup.status, "not-started");
-    assert.ok(restored.blockers.length > 0);
+    assert.ok(restored.risks.length > 0);
     assert.deepEqual(restored.requests, []);
     assert.equal(runProductionStoreScript("/dev/null/qa-snapshot.json", submit), "rolled-back");
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -333,8 +335,8 @@ test("atomic acquisition persists all linked records or rolls back the entire du
     const before = store.getSnapshot();
     const subsystem = before.subsystems.find(item => before.projects.some(project => project.id === item.projectId && project.projectType === "robot"));
     const prepared = (helper.default ?? helper).preparePartAcquisition((schemas.default ?? schemas).partDefinitionSchema.parse({
-      name: "Durable acquisition", revision: "A", type: "custom", source: "Onshape",
-      acquisition: { method: "purchase", subsystemId: subsystem.id, disciplineId: "design", ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01" },
+      name: "Durable acquisition", revision: "A", type: "custom", defaultAcquisitionMethod: "purchase-cots",
+      acquisition: { method: "purchase-cots", subsystemId: subsystem.id, workTypeId: "robot:planning", ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01" },
     }), "priya");
     assert.ok(!prepared.error);
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
@@ -342,7 +344,7 @@ test("atomic acquisition persists all linked records or rolls back the entire du
     assert.equal(transaction.hasChanges(), true);
     try {
       await transaction.commit(); transaction.release();
-      process.stdout.write(JSON.stringify({ definitionId: result.item.id, acquisitionId: result.acquisitionItem.id, taskId: result.task.id }));
+      process.stdout.write(JSON.stringify({ definitionId: result.item.id, acquisitionId: result.purchaseItem.id, taskId: result.task.id }));
     } catch {
       transaction.release();
       assert.equal(store.getSnapshot(), before);
@@ -362,7 +364,7 @@ test("atomic acquisition persists all linked records or rolls back the entire du
       }));
     `));
     assert.equal(restored.acquisition.partDefinitionId, restored.definition.id);
-    assert.deepEqual(restored.task.linkedPurchaseIds, [restored.acquisition.id]);
+    assert.equal(restored.task.id, restored.acquisition.taskId);
     assert.equal(restored.audits.length, 3);
     assert.equal(runProductionStoreScript("/dev/null/acquisition.json", submit), "rolled-back");
   } finally {
@@ -482,7 +484,6 @@ test("obsolete task snapshots are archived and startup restores canonical bootst
     const snapshot = JSON.parse(runProductionStoreScript(path, readSnapshot));
     for (const obsolete of [
       { ...snapshot.tasks[0], subsystemId: snapshot.tasks[0].subsystemIds[0] },
-      { ...snapshot.tasks[0], artifactIds: undefined },
     ]) {
       writeFileSync(path, JSON.stringify({ ...snapshot, tasks: [obsolete] }));
       const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
@@ -492,7 +493,7 @@ test("obsolete task snapshots are archived and startup restores canonical bootst
     const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
     assert.deepEqual(restored.tasks.map((task: { id: string }) => task.id), snapshot.tasks.map((task: { id: string }) => task.id));
     assert.ok(restored.tasks.every((task: Record<string, unknown>) =>
-      ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds", "artifactIds"].every((field) =>
+      ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds"].every((field) =>
         Array.isArray(task[field]) && !(field.slice(0, -1) in task),
       ),
     ));

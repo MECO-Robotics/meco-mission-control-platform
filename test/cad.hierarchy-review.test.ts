@@ -18,7 +18,7 @@ function createDomainPart(input: { name: string; partNumber: string; type?: stri
     partNumber: input.partNumber,
     revision: "A",
     type: input.type ?? "custom",
-    source: input.source ?? "Onshape",
+    defaultAcquisitionMethod: "stock",
     materialId: null,
     description: `${input.name} test fixture`,
   });

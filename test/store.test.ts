@@ -15,7 +15,6 @@ import {
   removeWorkLog,
   createProject,
   createSeason,
-  createManufacturingItem,
   createMechanism,
   createSubsystem,
   createWorkstream,
@@ -37,7 +36,6 @@ import {
   resetStore,
   updateSubsystem,
   updatePartDefinition,
-  updateManufacturingItem,
   updateMember,
   updatePartInstance,
   updateTask,
@@ -143,7 +141,7 @@ test("createProject seeds drivetrain defaults for robot projects", () => {
 test("the tutorial baseline retains its six canonical projects", () => {
   assert.deepEqual(
     getSnapshot().projects.map((project) => project.name).sort(),
-    ["Media", "Operations", "Outreach", "Strategy", "Training", "Tutorial Robot 2026"].sort(),
+    ["Media", "Operations", "Outreach", "Robot", "Strategy", "Training"].sort(),
   );
 });
 
@@ -176,7 +174,6 @@ test("demo seed references are internally consistent", () => {
   const snapshot = getSnapshot();
   const ids = {
     artifacts: new Set(snapshot.artifacts.map((item) => item.id)),
-    manufacturing: new Set(snapshot.manufacturingItems.map((item) => item.id)),
     materials: new Set(snapshot.materials.map((item) => item.id)),
     mechanisms: new Set(snapshot.mechanisms.map((item) => item.id)),
     members: new Set(snapshot.members.map((item) => item.id)),
@@ -206,33 +203,15 @@ test("demo seed references are internally consistent", () => {
     expectId(ids.subsystems, (task.subsystemIds[0] ?? ""), `task ${task.id} subsystemId`);
     expectId(ids.mechanisms, (task.mechanismIds[0] ?? null), `task ${task.id} mechanismId`);
     expectId(ids.partInstances, (task.partInstanceIds[0] ?? null), `task ${task.id} partInstanceId`);
-    expectId(ids.artifacts, (task.artifactIds[0] ?? null), `task ${task.id} artifactId`);
     expectId(ids.milestones, task.targetMilestoneId, `task ${task.id} targetMilestoneId`);
     expectId(ids.members, task.ownerId, `task ${task.id} ownerId`);
     expectId(ids.members, task.mentorId, `task ${task.id} mentorId`);
     task.assigneeIds.forEach((id) => expectId(ids.members, id, `task ${task.id} assigneeIds`));
-    task.linkedManufacturingIds.forEach((id) =>
-      expectId(ids.manufacturing, id, `task ${task.id} linkedManufacturingIds`),
-    );
-    task.linkedPurchaseIds.forEach((id) =>
-      expectId(ids.purchases, id, `task ${task.id} linkedPurchaseIds`),
-    );
-  }
 
-  for (const manufacturingItem of snapshot.manufacturingItems) {
-    expectId(ids.subsystems, manufacturingItem.subsystemId, `manufacturing ${manufacturingItem.id} subsystemId`);
-    expectId(ids.members, manufacturingItem.requestedById, `manufacturing ${manufacturingItem.id} requestedById`);
-    expectId(ids.materials, manufacturingItem.materialId, `manufacturing ${manufacturingItem.id} materialId`);
-    expectId(ids.partDefinitions, manufacturingItem.partDefinitionId, `manufacturing ${manufacturingItem.id} partDefinitionId`);
-    expectId(ids.partInstances, manufacturingItem.partInstanceId, `manufacturing ${manufacturingItem.id} partInstanceId`);
-    manufacturingItem.partInstanceIds.forEach((id) =>
-      expectId(ids.partInstances, id, `manufacturing ${manufacturingItem.id} partInstanceIds`),
-    );
   }
 
   for (const purchaseItem of snapshot.purchaseItems) {
-    expectId(ids.subsystems, purchaseItem.subsystemId, `purchase ${purchaseItem.id} subsystemId`);
-    expectId(ids.members, purchaseItem.requestedById, `purchase ${purchaseItem.id} requestedById`);
+    expectId(ids.tasks, purchaseItem.taskId, `purchase ${purchaseItem.id} taskId`);
     expectId(ids.partDefinitions, purchaseItem.partDefinitionId, `purchase ${purchaseItem.id} partDefinitionId`);
   }
 
@@ -241,8 +220,12 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const partInstance of snapshot.partInstances) {
-    expectId(ids.subsystems, partInstance.subsystemId, `part instance ${partInstance.id} subsystemId`);
-    expectId(ids.mechanisms, partInstance.mechanismId, `part instance ${partInstance.id} mechanismId`);
+    expectId(ids.subsystems, partInstance.intendedSubsystemId, `part instance ${partInstance.id} intendedSubsystemId`);
+    expectId(ids.mechanisms, partInstance.intendedMechanismId, `part instance ${partInstance.id} intendedMechanismId`);
+    if (partInstance.location.kind === "installed") {
+      expectId(ids.subsystems, partInstance.location.subsystemId, `part instance ${partInstance.id} location subsystemId`);
+      expectId(ids.mechanisms, partInstance.location.mechanismId, `part instance ${partInstance.id} location mechanismId`);
+    }
     expectId(ids.partDefinitions, partInstance.partDefinitionId, `part instance ${partInstance.id} partDefinitionId`);
   }
 
@@ -283,11 +266,6 @@ test("demo seed references are internally consistent", () => {
     }
   }
 
-  for (const taskBlocker of snapshot.taskBlockers) {
-    expectId(ids.tasks, taskBlocker.blockedTaskId, `task blocker ${taskBlocker.id} blockedTaskId`);
-    expectId(ids.members, taskBlocker.createdByMemberId, `task blocker ${taskBlocker.id} createdByMemberId`);
-  }
-
   for (const qaFinding of snapshot.qaFindings) {
     expectId(ids.qaReports, qaFinding.qaReportId, `qa finding ${qaFinding.id} qaReportId`);
     expectId(ids.tasks, qaFinding.taskId, `qa finding ${qaFinding.id} taskId`);
@@ -324,17 +302,17 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const risk of snapshot.risks) {
-    const sourceSet = risk.sourceType === "qa-report" ? ids.qaReports : ids.testResults;
-    expectId(sourceSet, risk.sourceId, `risk ${risk.id} sourceId`);
-    if (risk.attachmentType === "project") {
-      expectId(ids.projects, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    } else if (risk.attachmentType === "workstream") {
-      expectId(ids.workstreams, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    } else if (risk.attachmentType === "mechanism") {
-      expectId(ids.mechanisms, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    } else {
-      expectId(ids.partInstances, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    }
+    if (risk.source.kind === "qa-finding") expectId(ids.qaFindings, risk.source.id, `risk ${risk.id} source`);
+    else if (risk.source.kind === "test-finding") expectId(ids.testFindings, risk.source.id, `risk ${risk.id} source`);
+    else if (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") expectId(ids.tasks, risk.source.id, `risk ${risk.id} source`);
+    else if (risk.source.kind === "part-instance") expectId(ids.partInstances, risk.source.id, `risk ${risk.id} source`);
+    expectId(ids.projects, risk.projectId, `risk ${risk.id} projectId`);
+    risk.relatedTargets.forEach((target) => {
+      if (target.kind === "task") expectId(ids.tasks, target.id, `risk ${risk.id} target`);
+      if (target.kind === "project") expectId(ids.projects, target.id, `risk ${risk.id} target`);
+      if (target.kind === "part-instance") expectId(ids.partInstances, target.id, `risk ${risk.id} target`);
+      if (target.kind === "workstream") expectId(ids.workstreams, target.id, `risk ${risk.id} target`);
+    });
     expectId(ids.tasks, risk.mitigationTaskId, `risk ${risk.id} mitigationTaskId`);
   }
 });
@@ -414,7 +392,7 @@ test("createPartDefinition defaults active season membership and can be reactiva
     partNumber: "SEA-001",
     revision: "A",
     type: "custom",
-    source: "Onshape",
+    defaultAcquisitionMethod: "stock",
     materialId: "mat-onyx-filament",
     description: "Season-scoped part definition.",
     seasonId: "default-season",
@@ -470,7 +448,7 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
 
   assert.ok(wiringTask);
   assert.equal((wiringTask.subsystemIds[0] ?? ""), "drive");
-  assert.equal(wiringTask?.disciplineId, "electrical");
+  assert.equal(wiringTask?.workTypeId, "robot:electrical-wiring");
 });
 
 test("createSubsystem auto-generates a testing task for its parent subsystem", () => {
@@ -493,7 +471,7 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
   assert.equal(subsystem.parentSubsystemId, "drive");
   assert.ok(integrationTask);
   assert.equal((integrationTask.subsystemIds[0] ?? ""), "drive");
-  assert.equal(integrationTask?.disciplineId, "testing");
+  assert.equal(integrationTask?.workTypeId, "robot:testing");
   assert.equal((integrationTask.mechanismIds[0] ?? null), null);
   assert.equal(integrationTask?.ownerId, "ava");
   assert.equal(integrationTask?.mentorId, "marco");
@@ -576,280 +554,26 @@ test("audit summaries redact sensitive before and after fields", () => {
   assert.equal(lastAction.afterJson?.name, "Practice API v2");
 });
 
-test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {
-  const subsystem = createSubsystem({
-    projectId: "project-robot-2026",
-    name: "Test Mechanism Subsystem",
-    description: "Scenario created for parent alignment behavior.",
-    parentSubsystemId: null,
-    responsibleEngineerId: null,
-    mentorIds: [],
-    risks: [],
-  });
-  const mechanism = createMechanism({
-    subsystemId: subsystem.id,
-    name: "Test Mechanism",
-    description: "Scenario mechanism.",
-  });
-  updatePartInstance("pi-swerve-encoder-bracket-front-left", {
-    mechanismId: mechanism.id,
-  });
+test("PartInstance records one physical item's location separately from readiness", () => {
+  const seeded = getSnapshot().partInstances.find((part) => part.id === "pi-swerve-encoder-bracket-front-left");
+  assert.ok(seeded);
+  assert.equal(seeded.location.kind, "installed");
 
-  const updatedPartInstance = getSnapshot().partInstances.find(
-    (item) => item.id === "pi-swerve-encoder-bracket-front-left",
-  );
-  assert.ok(updatedPartInstance);
-  assert.equal(updatedPartInstance.mechanismId, mechanism.id);
-  assert.equal(updatedPartInstance.subsystemId, subsystem.id);
+  const updated = updatePartInstance(seeded.id, { location: { kind: "repair", location: "Pit repair cart" }, readinessStatus: "ready" });
+  assert.equal(updated?.location.kind, "repair");
+  assert.equal(updated?.readinessStatus, "ready");
 });
 
-test("createPartInstance merges duplicate part and mechanism quantities", () => {
-  const temporaryPartDefinition = createPartDefinition({
-    name: "Temporary Merge Part",
-    partNumber: "TMP-MERGE-000",
-    revision: "A",
-    type: "custom",
-    source: "Onshape",
-    materialId: "mat-onyx-filament",
-    description: "Temporary fixture for merge coverage.",
-  });
+test("manufacturing technical state belongs to the Robot Kanban Task", () => {
+  const task = getSnapshot().tasks.find((candidate) => candidate.id === "swerve-sensor-bundle");
+  assert.ok(task);
+  assert.equal(task.workTypeId, "robot:manufacturing");
+  assert.equal(task.manufacturingDetails?.processId, "3d-print");
+  assert.equal(task.manufacturingDetails?.fulfillmentSource, "outsourced");
+  assert.deepEqual(task.manufacturingDetails?.part, { kind: "part-definition", partDefinitionId: "pd-swerve-encoder-bracket" });
 
-  const firstPartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Encoder bracket set",
-    quantity: 2,
-    trackIndividually: false,
-    status: "not ready",
-  });
-
-  const mergedPartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Encoder bracket set",
-    quantity: 3,
-    trackIndividually: true,
-    status: "ready",
-  });
-
-  const matchingPartInstances = getSnapshot().partInstances.filter(
-    (partInstance) =>
-      partInstance.subsystemId === "drive" &&
-      partInstance.mechanismId === "swerve-module" &&
-      partInstance.partDefinitionId === temporaryPartDefinition.id,
-  );
-
-  assert.equal(matchingPartInstances.length, 1);
-  assert.equal(mergedPartInstance.id, firstPartInstance.id);
-  assert.equal(matchingPartInstances[0].quantity, 5);
-});
-
-test("createPartInstance keeps shared definitions separate by mechanism ownership", () => {
-  const sharedPartDefinition = createPartDefinition({
-    name: "Temporary Shared Hardware",
-    partNumber: "TMP-SHARED-000",
-    revision: "A",
-    type: "hardware",
-    source: "COTS",
-    materialId: "mat-onyx-filament",
-    description: "Temporary fixture for mechanism ownership coverage.",
-  });
-
-  const drivePartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: sharedPartDefinition.id,
-    name: "Drive shared hardware",
-    quantity: 2,
-    trackIndividually: false,
-    status: "not ready",
-  });
-  const intakePartInstance = createPartInstance({
-    subsystemId: "manipulator",
-    mechanismId: "intake-roller",
-    partDefinitionId: sharedPartDefinition.id,
-    name: "Intake shared hardware",
-    quantity: 3,
-    trackIndividually: false,
-    status: "ready",
-  });
-
-  const matchingPartInstances = getSnapshot().partInstances.filter(
-    (partInstance) => partInstance.partDefinitionId === sharedPartDefinition.id,
-  );
-
-  assert.notEqual(drivePartInstance.id, intakePartInstance.id);
-  assert.equal(matchingPartInstances.length, 2);
-  assert.deepEqual(
-    matchingPartInstances.map((partInstance) => ({
-      mechanismId: partInstance.mechanismId,
-      quantity: partInstance.quantity,
-      subsystemId: partInstance.subsystemId,
-    })),
-    [
-      { mechanismId: "swerve-module", quantity: 2, subsystemId: "drive" },
-      { mechanismId: "intake-roller", quantity: 3, subsystemId: "manipulator" },
-    ],
-  );
-});
-
-test("updatePartInstance merges onto an existing part and retargets task references", () => {
-  const temporaryPartDefinition = createPartDefinition({
-    name: "Temporary Merge Part",
-    partNumber: "TMP-MERGE-001",
-    revision: "A",
-    type: "custom",
-    source: "Onshape",
-    materialId: "mat-onyx-filament",
-    description: "Temporary fixture for merge coverage.",
-  });
-
-  const drivePartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Drive merge part",
-    quantity: 2,
-    trackIndividually: false,
-    status: "not ready",
-  });
-  const intakePartInstance = createPartInstance({
-    subsystemId: "manipulator",
-    mechanismId: "intake-roller",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Intake merge part",
-    quantity: 3,
-    trackIndividually: false,
-    status: "blocked",
-  });
-
-  updateTask("swerve-sensor-bundle", {
-    partInstanceIds: [intakePartInstance.id],
-  });
-
-  const mergedPartInstance = updatePartInstance(intakePartInstance.id, {
-    mechanismId: "swerve-module",
-  });
-
-  const matchingPartInstances = getSnapshot().partInstances.filter(
-    (partInstance) => partInstance.partDefinitionId === temporaryPartDefinition.id,
-  );
-  const updatedTask = getSnapshot().tasks.find((task) => task.id === "swerve-sensor-bundle");
-
-  assert.ok(mergedPartInstance);
-  assert.equal(mergedPartInstance.id, drivePartInstance.id);
-  assert.equal(matchingPartInstances.length, 1);
-  assert.equal(matchingPartInstances[0].quantity, 5);
-  assert.equal(matchingPartInstances[0].mechanismId, "swerve-module");
-  assert.equal(updatedTask?.partInstanceIds[0], drivePartInstance.id);
-});
-
-test("fabrication manufacturing items stay seeded and update cleanly", () => {
-  const seededFabricationItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === "frame-weldment",
-  );
-
-  assert.ok(seededFabricationItem);
-  assert.equal(seededFabricationItem?.process, "fabrication");
-  assert.equal(seededFabricationItem?.partDefinitionId, null);
-
-  const createdFabricationItem = createManufacturingItem({
-    title: "Temporary Weldment",
-    subsystemId: "drive",
-    requestedById: "ava",
-    process: "fabrication",
-    dueDate: "2026-04-30",
-    material: "1/8 aluminum tube",
-    partDefinitionId: null,
-    quantity: 1,
-    status: "requested",
-    mentorReviewed: false,
-    batchLabel: "FAB-99",
-  });
-
-  assert.equal(createdFabricationItem.process, "fabrication");
-  assert.equal(createdFabricationItem.partDefinitionId, null);
-  assert.equal(createdFabricationItem.batchLabel, "FAB-99");
-
-  updateManufacturingItem(createdFabricationItem.id, {
-    title: "Temporary Weldment Rev B",
-    status: "approved",
-  });
-
-  const updatedFabricationItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === createdFabricationItem.id,
-  );
-  assert.ok(updatedFabricationItem);
-  assert.equal(updatedFabricationItem.process, "fabrication");
-  assert.equal(updatedFabricationItem.title, "Temporary Weldment Rev B");
-  assert.equal(updatedFabricationItem.status, "approved");
-});
-
-test("cnc manufacturing items keep the in-house flag through create and update", () => {
-  const createdCncItem = createManufacturingItem({
-    title: "Temporary CNC Plate",
-    subsystemId: "drive",
-    requestedById: "ava",
-    process: "cnc",
-    dueDate: "2026-05-01",
-    material: "6061 aluminum",
-    partDefinitionId: "pd-swerve-encoder-bracket",
-    quantity: 2,
-    status: "requested",
-    mentorReviewed: false,
-    batchLabel: "CNC-99",
-    inHouse: false,
-  });
-
-  assert.equal(createdCncItem.inHouse, false);
-
-  updateManufacturingItem(createdCncItem.id, {
-    inHouse: true,
-  });
-
-  const updatedCncItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === createdCncItem.id,
-  );
-  assert.ok(updatedCncItem);
-  assert.equal(updatedCncItem.inHouse, true);
-});
-
-test("manufacturing items keep linked part instances through create and update", () => {
-  const createdCncItem = createManufacturingItem({
-    title: "Temporary Encoder Bracket",
-    subsystemId: "drive",
-    requestedById: "ava",
-    process: "cnc",
-    dueDate: "2026-05-01",
-    material: "6061 aluminum",
-    partDefinitionId: "pd-swerve-encoder-bracket",
-    partInstanceId: "pi-swerve-encoder-bracket-front-left",
-    partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
-    quantity: 2,
-    status: "requested",
-    mentorReviewed: false,
-    batchLabel: "CNC-100",
-    inHouse: true,
-  });
-
-  assert.equal(createdCncItem.partInstanceId, "pi-swerve-encoder-bracket-front-left");
-  assert.deepEqual(createdCncItem.partInstanceIds, ["pi-swerve-encoder-bracket-front-left"]);
-
-  updateManufacturingItem(createdCncItem.id, {
-    subsystemId: "manipulator",
-    partDefinitionId: "pd-intake-guard",
-    partInstanceId: "pi-intake-guard-set",
-    partInstanceIds: ["pi-intake-guard-set"],
-  });
-
-  const updatedCncItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === createdCncItem.id,
-  );
-  assert.ok(updatedCncItem);
-  assert.equal(updatedCncItem.partInstanceId, "pi-intake-guard-set");
-  assert.deepEqual(updatedCncItem.partInstanceIds, ["pi-intake-guard-set"]);
+  const outsourcedTask = task;
+  assert.ok(getSnapshot().purchaseItems.some((item) => item.taskId === outsourcedTask.id && item.kind === "manufacturing-service"));
 });
 
 test("removePartDefinition clears linked part instances and task references", () => {
@@ -858,19 +582,16 @@ test("removePartDefinition clears linked part instances and task references", ()
     partNumber: "TMP-001",
     revision: "A",
     type: "custom",
-    source: "Onshape",
+    defaultAcquisitionMethod: "stock",
     materialId: "mat-onyx-filament",
     description: "Temporary fixture for store coverage.",
   });
   assert.equal(createdPartDefinition.isArchived, false);
   const createdPartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
     partDefinitionId: createdPartDefinition.id,
-    name: "Temporary test part instance",
-    quantity: 1,
-    trackIndividually: false,
-    status: "not ready",
+    intendedSubsystemId: "drive",
+    intendedMechanismId: "swerve-module",
+    location: { kind: "stock", location: "Test bin" },
   });
 
   updateTask("swerve-sensor-bundle", {
@@ -1038,10 +759,7 @@ test("task milestone requirements infer milestone matches from explicit target r
   const driveMatch = matches.find((match) => match.milestoneId === milestone.id);
   assert.ok(driveMatch);
   assert.equal(driveMatch.isLegacyLink, false);
-  assert.deepEqual(driveMatch.matchedRequirementIds, [
-    "drive-check-iteration",
-    "drive-check-part-state",
-  ]);
+  assert.deepEqual(driveMatch.matchedRequirementIds, ["drive-check-iteration"]);
 });
 
 test("project-scoped requirements match through project task target inference", () => {
@@ -1189,7 +907,6 @@ test("task targets preserve kind order, first-target context, and unique array l
     subsystemIds: ["shared", "primary-subsystem"],
     mechanismIds: ["mechanism", "mechanism"],
     partInstanceIds: ["part"],
-    artifactIds: ["artifact", "artifact", "primary-artifact"],
     targetMilestoneId: "milestone",
   };
   updateTask(task.id, targets);
@@ -1203,8 +920,6 @@ test("task targets preserve kind order, first-target context, and unique array l
     ["subsystem", "primary-subsystem"],
     ["mechanism", "mechanism"],
     ["part-instance", "part"],
-    ["artifact", "artifact"],
-    ["artifact", "primary-artifact"],
     ["milestone", "milestone"],
   ]);
   for (const link of links) {
@@ -1225,7 +940,7 @@ test("missing update targets leave the published snapshot and audit trail untouc
   for (const update of [
     updateProject, updateWorkstream, updateRisk, updateMaterial, updateArtifact,
     updateMember, updatePartDefinition, updateSubsystem, updateMechanism,
-    updateWorkLog, updatePurchaseItem, updateManufacturingItem,
+    updateWorkLog, updatePurchaseItem,
   ]) {
     assert.equal(update("missing-update-target", {}), null);
     assert.equal(getSnapshot(), before);
@@ -1235,7 +950,7 @@ test("missing update targets leave the published snapshot and audit trail untouc
 test("prepared updates retain detached results, audit changes, and reject invalid publication", () => {
   const material = createMaterial({
     name: "Update contract stock", category: "metal", unit: "sheet",
-    onHandQuantity: 5, reorderPoint: 1, location: "Rack", vendor: "Supplier", notes: "Retain notes",
+    onHandQuantity: 5, reorderPoint: 1, location: "Rack", preferredVendorId: "vendor-tutorial-supplier", notes: "Retain notes",
   });
   const before = getSnapshot();
   const updated = updateMaterial(material.id, { onHandQuantity: 3 });

@@ -217,7 +217,7 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
 test("QA workflow submission requires task mutation authority independently of approval", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
-    const task = getSnapshot().tasks.find((item) => !item.blockers.length && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const task = getSnapshot().tasks.find((item) => !getSnapshot().risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
     updateTask(task.id, { status: "waiting-for-qa" });
     const payload = { taskId: task.id, participantIds: ["ava"], result: "pass", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: false };
     const url = "/api/qa-reports/submit";
@@ -329,7 +329,7 @@ test("auth-off public demo bootstrap is sanitized while the local workspace rema
       assert.ok(!demoResponse.body.includes(member.name));
       assert.ok(!demoResponse.body.includes(member.email));
       assert.ok(!demoResponse.body.includes("Private attendance notes"));
-      assert.deepEqual(demo.escalations, []);
+      assert.equal("escalations" in demo, false);
       assert.deepEqual(demo.actions, []);
     }
   });
@@ -338,7 +338,7 @@ test("auth-off public demo bootstrap is sanitized while the local workspace rema
 test("unsigned users can read only the demo season bootstrap", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createMember, createTaskBlocker, createQaReport } = await import("../src/data/store");
+      const { createMember, createRisk, createQaReport } = await import("../src/data/store");
       const publicProbeMember = createMember({
         name: "Public Demo Global Audit Probe",
         email: "public-demo-audit-probe@mecorobotics.org",
@@ -355,13 +355,12 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         seasonId: "season-2030",
         activeSeasonIds: ["season-2030"],
       });
-      const staleReferenceBlocker = createTaskBlocker({
-        blockedTaskId: "swerve-sensor-bundle",
-        blockerType: "external",
-        blockerId: null,
-        description: "Public demo stale member reference blocker.",
-        severity: "medium",
-        createdByMemberId: staleReferenceMember.id,
+      const staleReferenceRisk = createRisk({
+        projectId: "project-robot-2026", title: "Public demo stale member reference risk",
+        detail: "Risk records have no member owner field.", category: "dependency", severity: "medium",
+        status: "open", blocksWork: false, source: { kind: "manual" },
+        relatedTargets: [{ kind: "task", id: "swerve-sensor-bundle" }],
+        mitigationTaskId: null, ownerGroupId: null,
       });
 
       createQaReport({
@@ -384,8 +383,8 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         meetings: Array<{ seasonId?: string; projectIds?: string[] }>;
         members: Array<Record<string, unknown>>;
         milestones: Array<{ seasonId?: string; projectIds: string[] }>;
-        manufacturingItems: Array<{ requestedById: string | null; reviewedById: string | null }>;
         projects: Array<{ id: string; seasonId: string }>;
+        risks: Array<{ id: string }>;
         purchaseItems: Array<{ requestedById: string | null; approvedById: string | null }>;
         qaReports: Array<{ participantIds: string[]; mentorId?: string | null; requestedById?: string | null }>;
         qaRequests: Array<{ mentorId: string; requestedById: string | null; taskId: string | null }>;
@@ -393,7 +392,6 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         reports: Array<{ createdByMemberId: string | null; participantIds?: string[]; mentorId?: string | null; requestedById?: string | null }>;
         seasons: Array<{ id: string; startDate: string; endDate: string }>;
         subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;
-        taskBlockers: Array<{ createdByMemberId: string | null; description: string }>;
         tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
         workLogs: Array<{ participantIds: string[]; createdById: string | null }>;
       };
@@ -435,16 +433,14 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         ),
         true,
       );
-      const disciplineIds = new Set(demoBody.disciplines.map((discipline) => discipline.id));
       for (const member of demoBody.members) {
         assert.equal(member.seasonId, "default-season");
-        if (member.disciplineId) assert.ok(disciplineIds.has(String(member.disciplineId)));
         if (Array.isArray(member.activeSeasonIds)) assert.ok(member.activeSeasonIds.every((id) => id === "default-season"));
       }
       assert.ok(demoBody.members.length > 0);
       assert.ok(demoBody.members.some((member) => member.role === "student"));
       assert.ok(demoBody.members.some((member) => member.role === "mentor"));
-      assert.equal(demoBody.escalations.length, 0);
+      assert.equal("escalations" in demoBody, false);
       const demoSeason = demoBody.seasons[0];
       assert.ok(demoSeason);
       assert.equal(
@@ -473,11 +469,9 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         true,
       );
       assert.equal(demoBody.qaRequests.every((request) => request.taskId !== null), true);
-      const sanitizedStaleReferenceBlocker = demoBody.taskBlockers.find(
-        (blocker) => blocker.description === staleReferenceBlocker.description,
-      );
-      assert.ok(sanitizedStaleReferenceBlocker);
-      assert.equal(sanitizedStaleReferenceBlocker.createdByMemberId, null);
+      assert.equal("manufacturingItems" in demoBody, false);
+      assert.equal("taskBlockers" in demoBody, false);
+      assert.ok(demoBody.risks.some((risk: { id: string }) => risk.id === staleReferenceRisk.id));
       const memberReferences = [
         ...demoBody.subsystems.flatMap((subsystem) => [
           subsystem.responsibleEngineerId,
@@ -488,14 +482,10 @@ test("unsigned users can read only the demo season bootstrap", async () => {
           ...(report.participantIds ?? []),
         ]),
         ...demoBody.tasks.flatMap((task) => [task.ownerId, task.mentorId, ...task.assigneeIds]),
-        ...demoBody.taskBlockers.map((blocker) => blocker.createdByMemberId),
         ...demoBody.workLogs.flatMap((workLog) => [workLog.createdById, ...workLog.participantIds]),
         ...demoBody.attendanceRecords.map((record) => record.memberId),
-        ...demoBody.manufacturingItems.flatMap((item) => [item.requestedById, item.reviewedById]),
-        ...demoBody.purchaseItems.flatMap((item) => [item.requestedById, item.approvedById]),
-        ...demoBody.qaReports.flatMap((report) => [report.mentorId, report.requestedById, ...report.participantIds]),
+        ...demoBody.purchaseItems.flatMap((item) => [item.approvedById]),
         ...demoBody.qaRequests.flatMap((request) => [request.mentorId, request.requestedById]),
-        ...demoBody.qaReviews.flatMap((review) => review.participantIds),
       ].filter((memberId): memberId is string => typeof memberId === "string" && memberId.length > 0);
       assert.ok(memberReferences.length > 0);
       assert.equal(memberReferences.every((memberId) => demoMemberIds.has(memberId)), true);
@@ -602,7 +592,7 @@ test("authenticated season bootstrap preserves escalations", async () => {
         seasons: Array<{ id: string }>;
       };
       assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
-    assert.ok(Array.isArray(body.escalations));
+    assert.equal("escalations" in body, false);
       const authenticatedProbeRecord = body.members.find(
         (member) => member.id === authenticatedProbeMember.id,
       );

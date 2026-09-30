@@ -1,18 +1,20 @@
 import { existsSync, linkSync, readFileSync, unlinkSync } from "node:fs";
 import { mkdir, rename as renameAsync, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { z } from "zod";
 
 import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
+import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemSchema, qaReportSchema, riskSchema, taskSchema, testResultSchema } from "../routes/routeSchemas";
 
 export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 
 const snapshotCollectionKeys = [
-  "seasons", "projects", "workstreams", "members", "subsystems", "disciplines", "mechanisms",
+  "seasons", "projects", "workTypes", "responsibleGroups", "workstreams", "vendors", "members", "subsystems", "disciplines", "mechanisms",
   "materials", "artifacts", "partDefinitions", "partInstances", "tasks", "milestones",
-  "milestoneRequirements", "taskDependencies", "taskBlockers", "qaReports", "qaRequests",
+  "milestoneRequirements", "taskDependencies", "qaReports", "qaRequests",
   "testResults", "qaFindings", "testFindings", "designIterations", "risks", "workLogs", "meetings",
-  "attendanceRecords", "manufacturingItems", "purchaseItems", "qaReviews", "escalations", "actions",
+  "attendanceRecords", "events", "manufacturingProcesses", "purchaseItems", "qaReviews", "escalations", "actions",
 ] as const satisfies readonly (keyof PlatformSnapshot)[];
 type UnvalidatedSnapshotKeys = Exclude<keyof PlatformSnapshot, (typeof snapshotCollectionKeys)[number] | "snapshotSchemaVersion">;
 type AssertNever<T extends never> = T;
@@ -21,6 +23,23 @@ type _AssertAllSnapshotCollectionsAreListed = AssertNever<UnvalidatedSnapshotKey
 const optionalSnapshotCollectionKeys = new Set<keyof PlatformSnapshot>([
   "milestoneRequirements", "qaRequests", "actions",
 ]);
+const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
+  tasks: taskSchema.passthrough().extend({ id: z.string() }),
+  artifacts: artifactSchema.extend({ id: z.string() }).strict(),
+  materials: materialSchema.extend({ id: z.string() }).strict(),
+  partDefinitions: partDefinitionSchema.extend({ id: z.string() }).strict(),
+  partInstances: partInstanceSchema.extend({ id: z.string() }).strict(),
+  purchaseItems: purchaseItemSchema.extend({ id: z.string() }).strict(),
+  risks: riskSchema.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string(), resolvedAt: z.string().nullable() }).strict(),
+  qaReports: qaReportSchema.extend({
+    id: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })),
+    evidenceNotes: z.string().optional(), qaRequestId: z.string().nullable().optional(),
+    mentorId: z.string().nullable().optional(), requestedById: z.string().nullable().optional(),
+    targetRiskId: z.string().nullable().optional(), proposedRiskSeverity: z.string().nullable().optional(),
+    proposedRiskStatus: z.string().nullable().optional(),
+  }).passthrough(),
+  testResults: testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })) }).strict(),
+};
 
 export class IncompatibleSnapshotError extends Error {
   constructor(readonly reportedVersion: unknown, message: string, options?: ErrorOptions) {
@@ -35,7 +54,9 @@ function looksLikePlatformSnapshot(value: unknown): value is PlatformSnapshot {
   return snapshot.snapshotSchemaVersion === PLATFORM_SNAPSHOT_SCHEMA_VERSION && snapshotCollectionKeys.every((key) => {
     const collection = snapshot[key];
     if (optionalSnapshotCollectionKeys.has(key) && collection === undefined) return true;
-    return Array.isArray(collection) && collection.every((record) => typeof record === "object" && record !== null && !Array.isArray(record) && typeof (record as { id?: unknown }).id === "string");
+    if (!Array.isArray(collection)) return false;
+    const schema = rowSchemas[key];
+    return collection.every((record) => typeof record === "object" && record !== null && !Array.isArray(record) && typeof (record as { id?: unknown }).id === "string" && (!schema || schema.safeParse(record).success));
   });
 }
 

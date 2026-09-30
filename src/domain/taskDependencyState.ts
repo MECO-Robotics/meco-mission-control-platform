@@ -1,7 +1,7 @@
-import type { ReadonlyData, MilestoneStatus, SnapshotView, Task, TaskDependency } from "./types";
+import type { ReadonlyData, ReadinessStatus, SnapshotView, Task, TaskDependency } from "./types";
 
-const WORKFLOW_STATUS_ORDER: Record<MilestoneStatus, number> = {
-  "not ready": 0,
+const WORKFLOW_STATUS_ORDER: Record<ReadinessStatus, number> = {
+  "not-ready": 0,
   blocked: 1,
   qa: 2,
   ready: 3,
@@ -22,32 +22,27 @@ function getPartInstanceById(snapshot: SnapshotView, partInstanceId: string) {
 function isMilestoneDependencySatisfied(
   snapshot: SnapshotView,
   milestoneId: string,
-  requiredState: string | undefined,
+  requiredState: ReadinessStatus | undefined,
 ) {
   const milestone = getMilestoneById(snapshot, milestoneId);
   if (!milestone) {
     return false;
   }
 
-  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState as MilestoneStatus];
-  const targetOrder = WORKFLOW_STATUS_ORDER[milestone.status ?? "not ready"];
+  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState ?? "not-ready"];
+  const targetOrder = WORKFLOW_STATUS_ORDER[milestone.readinessStatus ?? "not-ready"];
 
   return targetOrder >= requiredOrder;
 }
 
-function isPartInstanceDependencySatisfied(
-  snapshot: SnapshotView,
-  partInstanceId: string,
-  requiredState: string | undefined,
-) {
+function isPartInstanceDependencySatisfied(snapshot: SnapshotView, partInstanceId: string, condition: Extract<TaskDependency, { kind: "part-instance" }>['requiredCondition']) {
   const partInstance = getPartInstanceById(snapshot, partInstanceId);
   if (!partInstance) {
     return false;
   }
-
-  const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState as MilestoneStatus];
-  const targetOrder = WORKFLOW_STATUS_ORDER[partInstance.status];
-
+  if (condition.kind === "physical-location") return partInstance.location.kind === condition.value;
+  const requiredOrder = WORKFLOW_STATUS_ORDER[condition.value];
+  const targetOrder = WORKFLOW_STATUS_ORDER[partInstance.readinessStatus ?? "not-ready"];
   return targetOrder >= requiredOrder;
 }
 
@@ -60,8 +55,8 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Snapsho
     return getTaskById(snapshot, dependency.refId)?.status === dependency.requiredState;
   }
 
-  if (dependency.kind === "part_instance") {
-    return isPartInstanceDependencySatisfied(snapshot, dependency.refId, dependency.requiredState);
+  if (dependency.kind === "part-instance") {
+    return isPartInstanceDependencySatisfied(snapshot, dependency.refId, dependency.requiredCondition);
   }
 
   if (dependency.kind === "milestone") {

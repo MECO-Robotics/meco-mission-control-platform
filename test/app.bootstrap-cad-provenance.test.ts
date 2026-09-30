@@ -22,7 +22,7 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         partNumber: "ONSHAPE-096",
         revision: "A",
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: null,
         description: "Part definition created from Onshape API provenance.",
         cadImportSource: "ONSHAPE_API",
@@ -111,7 +111,7 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         partNumber: "STP-096",
         revision: "A",
         type: "custom",
-        source: "STEP_UPLOAD",
+        defaultAcquisitionMethod: "stock",
         materialId: null,
         description: "Part definition created from STEP provenance.",
         cadImportSource: "STEP_UPLOAD",
@@ -129,9 +129,10 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         partNumber: "BOM-096",
         revision: "A",
         type: "custom",
-        source: "Onshape BOM",
+        defaultAcquisitionMethod: "stock",
         materialId: null,
         description: "Part definition created from Onshape BOM source text.",
+        cadImportSource: "ONSHAPE_BOM_CSV",
       },
     });
     assert.equal(onshapeBomPartDefinitionResponse.statusCode, 201);
@@ -151,13 +152,11 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        subsystemId: subsystem.id,
-        mechanismId: mechanism.id,
+        intendedSubsystemId: subsystem.id,
+        intendedMechanismId: mechanism.id,
         partDefinitionId: partDefinition.id,
-        name: "STEP Imported Plate Instance",
-        quantity: 1,
-        trackIndividually: true,
-        status: "qa",
+        location: { kind: "unlocated" },
+        readinessStatus: "qa",
         cadImportSource: "STEP_UPLOAD",
       },
     });
@@ -169,19 +168,17 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        subsystemId: subsystem.id,
-        mechanismId: mechanism.id,
+        intendedSubsystemId: subsystem.id,
+        intendedMechanismId: mechanism.id,
         partDefinitionId: partDefinition.id,
-        name: "STEP Imported Plate Instance",
-        quantity: 1,
-        trackIndividually: true,
-        status: "qa",
+        location: { kind: "unlocated" },
+        readinessStatus: "qa",
         cadImportSource: "ONSHAPE_API",
       },
     });
     assert.equal(mergedPartInstanceResponse.statusCode, 201);
     const partInstance = mergedPartInstanceResponse.json().item as ProvenanceRecord;
-    assert.equal(partInstance.id, stepPartInstance.id);
+    assert.notEqual(partInstance.id, stepPartInstance.id);
     assert.equal(partInstance.cadSource, "onshape");
     assert.equal(partInstance.cadImportSource, "ONSHAPE_API");
 
@@ -192,7 +189,7 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       payload: {
         cadSource: partInstance.cadSource,
         cadImportSource: partInstance.cadImportSource,
-        status: "ready",
+        readinessStatus: "ready",
       },
     });
     assert.equal(editedPartInstanceResponse.statusCode, 200);
@@ -210,6 +207,8 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       partDefinitions: ProvenanceRecord[];
       partInstances: ProvenanceRecord[];
     };
+    assert.ok(finalBody.partInstances.some((item) => item.id === stepPartInstance.id));
+    assert.ok(finalBody.partInstances.some((item) => item.id === partInstance.id));
 
     assert.deepEqual(
       {
