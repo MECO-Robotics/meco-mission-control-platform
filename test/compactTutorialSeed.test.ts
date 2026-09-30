@@ -57,6 +57,12 @@ test("compact tutorial seed keeps chapter and demo examples referentially comple
     "Tutorial Robot 2026", "Media", "Outreach", "Operations", "Strategy", "Training",
   ]);
   assert.deepEqual(new Set(snapshot.manufacturingItems.map((item) => item.process)), new Set(["3d-print", "cnc", "fabrication"]));
+  assert.equal(snapshot.manufacturingItems.find((item) => item.id === "sensor-bracket")?.material, "Onyx");
+  assert.equal(snapshot.manufacturingItems.find((item) => item.id === "sensor-bracket")?.inHouse, false);
+  assert.equal(snapshot.manufacturingItems.find((item) => item.id === "guard-cnc")?.material, "1/8 polycarbonate");
+  assert.equal(snapshot.manufacturingItems.find((item) => item.id === "guard-cnc")?.inHouse, true);
+  assert.equal(snapshot.manufacturingItems.find((item) => item.id === "frame-weldment")?.material, "Aluminum tube");
+  assert.equal(snapshot.manufacturingItems.find((item) => item.id === "frame-weldment")?.inHouse, false);
   assert.ok(snapshot.qaReports.length > 0 && snapshot.qaFindings.length > 0 && snapshot.testResults.length > 0 && snapshot.testFindings.length > 0);
   assert.ok(snapshot.meetings.length > 0 && snapshot.attendanceRecords.length > 0);
   assert.ok(snapshot.artifacts.some((artifact) => artifact.projectId === "project-operations-2026" && artifact.kind === "nontechnical"));
