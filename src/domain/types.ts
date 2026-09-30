@@ -314,7 +314,6 @@ export interface Task extends TaskTargets {
   manufacturingDetails: ManufacturingDetails | null;
   title: string;
   summary: string;
-  targetMilestoneId: string | null;
   photoUrl?: string;
   ownerId: string | null;
   assigneeIds: string[];
@@ -774,7 +773,7 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
-  snapshotSchemaVersion: 2;
+  snapshotSchemaVersion: 3;
   seasons: Season[];
   projects: Project[];
   workTypes: WorkType[];

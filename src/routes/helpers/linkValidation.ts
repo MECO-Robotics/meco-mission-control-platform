@@ -184,7 +184,6 @@ export function validateTaskLinks(input: {
   subsystemIds: readonly string[];
   mechanismIds?: readonly string[];
   partInstanceIds?: readonly string[];
-  targetMilestoneId?: string | null;
   assigneeIds?: readonly string[];
 }) {
   const project = findProject(input.projectId);
@@ -272,10 +271,12 @@ export function validateTaskLinks(input: {
     }
   }
 
-  if (input.targetMilestoneId) {
-    const milestone = getMilestones().find((candidate) => candidate.id === input.targetMilestoneId);
-    if (!milestone) {
-      return "The selected milestone does not exist.";
+  for (const ref of input.scheduleRefs ?? []) {
+    const records = ref.kind === "meeting" ? getSnapshot().meetings
+      : ref.kind === "event" ? getSnapshot().events
+        : getMilestones();
+    if (!records.some((record) => record.id === ref.id)) {
+      return `The selected ${ref.kind} does not exist.`;
     }
   }
 

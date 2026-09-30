@@ -110,13 +110,13 @@ export type {
 export interface MilestoneMatch {
   milestoneId: string;
   matchedRequirementIds: string[];
-  isLegacyLink: boolean;
+  isExplicitScheduleRef: boolean;
 }
 
 export interface TaskMilestoneMatch {
   taskId: string;
   matchedRequirementIds: string[];
-  isLegacyLink: boolean;
+  isExplicitScheduleRef: boolean;
 }
 
 export interface AuditMutationContext {
@@ -947,9 +947,7 @@ function flattenTaskTargets(task: Task): TaskTargetLink[] {
   appendTargets("subsystem", uniqueIds(task.subsystemIds));
   appendTargets("mechanism", uniqueIds(task.mechanismIds));
   appendTargets("part-instance", uniqueIds(task.partInstanceIds));
-  if (task.targetMilestoneId) {
-    appendTargets("milestone", [task.targetMilestoneId]);
-  }
+  appendTargets("milestone", task.scheduleRefs.filter((ref) => ref.kind === "milestone").map(({ id }) => id));
 
   return links;
 }
@@ -1109,7 +1107,6 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     subsystemIds: [subsystem.id],
     mechanismIds: [mechanism.id],
     partInstanceIds: [],
-    targetMilestoneId: null,
     ownerId: subsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([subsystem.responsibleEngineerId]),
     mentorId: subsystem.mentorIds[0] ?? null,
@@ -1168,7 +1165,6 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     subsystemIds: [parentSubsystem.id],
     mechanismIds: [],
     partInstanceIds: [],
-    targetMilestoneId: null,
     ownerId: parentSubsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([parentSubsystem.responsibleEngineerId]),
     mentorId: parentSubsystem.mentorIds[0] ?? null,
@@ -1856,13 +1852,13 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
     taskTargets,
     getMilestoneRequirements(),
   );
-  const hasLegacyMilestoneTarget = new Set(
+  const explicitScheduleMilestoneIds = new Set(
     taskTargets
       .filter((target) => target.targetType === "milestone")
       .map((target) => target.targetId),
   );
 
-  for (const milestoneId of hasLegacyMilestoneTarget) {
+  for (const milestoneId of explicitScheduleMilestoneIds) {
     if (!matchedMilestoneIds.has(milestoneId)) {
       matchedMilestoneIds.set(milestoneId, new Set<string>());
     }
@@ -1880,7 +1876,7 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
     .map(([milestoneId, requirementIds]) => ({
       milestoneId,
       matchedRequirementIds: Array.from(requirementIds),
-      isLegacyLink: hasLegacyMilestoneTarget.has(milestoneId),
+      isExplicitScheduleRef: explicitScheduleMilestoneIds.has(milestoneId),
     }));
 }
 
@@ -1895,15 +1891,15 @@ export function getTasksForMilestone(milestoneId: string): TaskMilestoneMatch[] 
       const matchedRequirementIds =
         matchTaskTargetsToMilestoneRequirements(taskTargets, requirements).get(milestoneId) ??
         new Set<string>();
-      const isLegacyLink = taskTargets.some(
+      const isExplicitScheduleRef = taskTargets.some(
         (target) => target.targetType === "milestone" && target.targetId === milestoneId,
       );
 
-      if (matchedRequirementIds.size > 0 || isLegacyLink) {
+      if (matchedRequirementIds.size > 0 || isExplicitScheduleRef) {
         return {
           taskId: task.id,
           matchedRequirementIds: Array.from(matchedRequirementIds),
-          isLegacyLink,
+          isExplicitScheduleRef,
         };
       }
 
@@ -2979,7 +2975,7 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     workTypeId: input.workTypeId,
     responsibleGroupId: input.responsibleGroupId ?? null,
     requestedById: input.requestedById ?? null,
-    scheduleRefs: input.scheduleRefs ?? (input.targetMilestoneId ? [{ kind: "milestone", id: input.targetMilestoneId }] : []),
+    scheduleRefs: input.scheduleRefs ?? [],
     manufacturingDetails: input.manufacturingDetails ?? null,
     workstreamIds: input.workstreamIds,
     title: input.title,
@@ -2987,7 +2983,6 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     subsystemIds: input.subsystemIds,
     mechanismIds: input.mechanismIds,
     partInstanceIds: input.partInstanceIds,
-    targetMilestoneId: input.targetMilestoneId,
     photoUrl: input.photoUrl ?? "",
     ownerId: input.ownerId,
     assigneeIds: input.assigneeIds,
@@ -3510,7 +3505,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
         return true;
       }
 
-      // Keep non-scope requirements untouched. Scope requirements are synced to legacy fields.
+      // Keep non-scope requirements untouched. Scope requirements track milestone project membership.
       if (!req.id.startsWith(`${updatedMilestone!.id}:scope:`)) {
         return true;
       }
@@ -3559,14 +3554,10 @@ export function removeMilestone(milestoneId: string) {
       (requirement) => requirement.milestoneId !== milestoneId,
     ),
     testResults: currentSnapshot.testResults.filter((result) => result.milestoneId !== milestoneId),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.targetMilestoneId === milestoneId
-        ? {
-            ...task,
-            targetMilestoneId: null,
-          }
-        : task,
-    ),
+    tasks: currentSnapshot.tasks.map((task) => ({
+      ...task,
+      scheduleRefs: task.scheduleRefs.filter((ref) => ref.kind !== "milestone" || ref.id !== milestoneId),
+    })),
   });
 
   recordAuditAction({

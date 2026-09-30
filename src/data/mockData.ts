@@ -5,7 +5,7 @@ const seasonId = "default-season";
 const robotProjectId = "project-robot-2026";
 
 export const snapshot: PlatformSnapshot = {
-  snapshotSchemaVersion: 2,
+  snapshotSchemaVersion: 3,
   seasons: [
     {
       id: seasonId,
@@ -361,7 +361,6 @@ export const snapshot: PlatformSnapshot = {
       subsystemIds: ["drive"],
       mechanismIds: ["swerve-module"],
       partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
-      targetMilestoneId: "tutorial-robot-checkpoint-feb-21",
       ownerId: "ava",
       assigneeIds: ["ava"],
       mentorId: "marco",
@@ -388,7 +387,6 @@ export const snapshot: PlatformSnapshot = {
       subsystemIds: ["drive"],
       mechanismIds: ["swerve-module"],
       partInstanceIds: [],
-      targetMilestoneId: "tutorial-robot-checkpoint-feb-21",
       ownerId: "ava",
       assigneeIds: ["ava"],
       mentorId: "marco",
@@ -415,7 +413,6 @@ export const snapshot: PlatformSnapshot = {
       subsystemIds: ["drive"],
       mechanismIds: [],
       partInstanceIds: [],
-      targetMilestoneId: null,
       ownerId: "ava",
       assigneeIds: ["ava"],
       mentorId: "marco",

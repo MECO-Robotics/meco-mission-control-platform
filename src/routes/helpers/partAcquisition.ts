@@ -76,7 +76,6 @@ export function preparePartAcquisition(
     ownerId: owner.id,
     assigneeIds: [],
     mentorId: mentor.id,
-    targetMilestoneId: null,
     startDate: acquisition.dueDate,
     dueDate: acquisition.dueDate,
     priority: "medium" as const,

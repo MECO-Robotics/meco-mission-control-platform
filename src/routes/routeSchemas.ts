@@ -99,7 +99,6 @@ const taskFieldsSchema = z.object({
   }).strict().nullable().optional(),
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
-  targetMilestoneId: z.string().trim().min(1).nullable(),
   photoUrl: z.string().trim(),
   ownerId: z.string().trim().min(1).nullable(),
   assigneeIds: z.array(z.string().trim().min(1)),

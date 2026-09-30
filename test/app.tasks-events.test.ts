@@ -63,7 +63,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: mobileMemberCreatedBody.item.id,
         assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
         mentorId: "marco",
@@ -128,7 +128,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: "ava",
         mentorId: "marco",
         dueDate: "2026-05-01",
@@ -190,7 +190,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         workTypeId: "robot:design",
         mechanismIds: ["swerve-module", controlsMechanism.id],
         partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: mobileMemberCreatedBody.item.id,
         mentorId: "marco",
         dueDate: "2026-05-08",
@@ -411,7 +411,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       items: Array<{
         taskId: string;
         matchedRequirementIds: string[];
-        isLegacyLink: boolean;
+        isExplicitScheduleRef: boolean;
       }>;
     };
     assert.equal(inferredTasksBody.milestoneId, createdMilestoneBody.item.id);
@@ -428,7 +428,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     assert.equal(taskMilestonesResponse.statusCode, 200);
     const taskMilestonesBody = taskMilestonesResponse.json() as {
       taskId: string;
-      items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isLegacyLink: boolean }>;
+      items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isExplicitScheduleRef: boolean }>;
     };
     assert.equal(taskMilestonesBody.taskId, "swerve-sensor-bundle");
     assert.ok(
@@ -451,7 +451,7 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
         workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: "ava",
         assigneeIds: ["ava", "demo-alex-morgan"],
         mentorId: "marco",

@@ -35,7 +35,6 @@ function makeTask(overrides: Partial<Task> = {}) {
     subsystemIds: ["drive"],
     mechanismIds: [],
     partInstanceIds: [],
-    targetMilestoneId: null,
     ownerId: "ava",
     assigneeIds: ["ava"],
     mentorId: "jordan",

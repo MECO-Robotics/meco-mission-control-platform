@@ -7,7 +7,7 @@ import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
 import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemSchema, qaReportSchema, riskSchema, taskSchema, testResultSchema } from "../routes/routeSchemas";
 
-export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 2 as const;
+export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 3 as const;
 
 const snapshotCollectionKeys = [
   "seasons", "projects", "workTypes", "responsibleGroups", "workstreams", "vendors", "members", "subsystems", "mechanisms",

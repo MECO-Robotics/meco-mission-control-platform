@@ -1470,7 +1470,6 @@ export async function registerRoutes(
       subsystemIds: task.subsystemIds,
       mechanismIds: task.mechanismIds,
       partInstanceIds: task.partInstanceIds,
-      targetMilestoneId: task.targetMilestoneId,
       ownerId: task.ownerId,
       assigneeIds: task.assigneeIds ?? [],
       mentorId: task.mentorId,
@@ -2185,10 +2184,6 @@ export async function registerRoutes(
           parsed.data.assigneeIds === undefined
             ? currentTask.assigneeIds ?? []
             : uniqueIds(parsed.data.assigneeIds),
-        targetMilestoneId:
-          parsed.data.targetMilestoneId === undefined
-            ? currentTask.targetMilestoneId
-            : parsed.data.targetMilestoneId,
       };
 
       const taskValidationError = validateTaskLinks(nextTaskShape);

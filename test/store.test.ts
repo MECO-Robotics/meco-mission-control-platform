@@ -203,7 +203,7 @@ test("demo seed references are internally consistent", () => {
     expectId(ids.subsystems, (task.subsystemIds[0] ?? ""), `task ${task.id} subsystemId`);
     expectId(ids.mechanisms, (task.mechanismIds[0] ?? null), `task ${task.id} mechanismId`);
     expectId(ids.partInstances, (task.partInstanceIds[0] ?? null), `task ${task.id} partInstanceId`);
-    expectId(ids.milestones, task.targetMilestoneId, `task ${task.id} targetMilestoneId`);
+    task.scheduleRefs.filter((ref) => ref.kind === "milestone").forEach((ref) => expectId(ids.milestones, ref.id, `task ${task.id} scheduleRefs`));
     expectId(ids.members, task.ownerId, `task ${task.id} ownerId`);
     expectId(ids.members, task.mentorId, `task ${task.id} mentorId`);
     task.assigneeIds.forEach((id) => expectId(ids.members, id, `task ${task.id} assigneeIds`));
@@ -758,7 +758,7 @@ test("task milestone requirements infer milestone matches from explicit target r
 
   const driveMatch = matches.find((match) => match.milestoneId === milestone.id);
   assert.ok(driveMatch);
-  assert.equal(driveMatch.isLegacyLink, false);
+  assert.equal(driveMatch.isExplicitScheduleRef, false);
   assert.deepEqual(driveMatch.matchedRequirementIds, ["drive-check-iteration"]);
 });
 
@@ -796,42 +796,42 @@ test("project-scoped requirements match through project task target inference", 
   const scopeMatch = matches.find((match) => match.milestoneId === milestone.id);
 
   assert.ok(scopeMatch);
-  assert.equal(scopeMatch.isLegacyLink, false);
+  assert.equal(scopeMatch.isExplicitScheduleRef, false);
   assert.ok(scopeMatch.matchedRequirementIds.includes("robot-scope-match"));
 });
 
-test("legacy target-milestone links are preserved when no requirement match exists", () => {
+test("explicit schedule milestone references are preserved when no requirement match exists", () => {
   const milestone = createMilestone({
-    title: "Legacy-Only Milestone",
+    title: "Direct-Reference Milestone",
     type: "deadline",
     startDateTime: "2026-07-10T09:00:00-04:00",
     endDateTime: null,
     isExternal: false,
-    description: "Legacy-only mapping validation fixture.",
+    description: "Direct schedule reference validation fixture.",
     projectIds: [],
   });
 
   const updated = updateTask("wire-swerve-module", {
-    targetMilestoneId: milestone.id,
+    scheduleRefs: [{ kind: "milestone", id: milestone.id }],
   });
   assert.ok(updated);
 
   const matches = getMilestonesForTask(updated.id);
 
-  const legacyMatch = matches.find((match) => match.milestoneId === milestone.id);
-  assert.ok(legacyMatch);
-  assert.equal(legacyMatch.isLegacyLink, true);
-  assert.deepEqual(legacyMatch.matchedRequirementIds, []);
+  const explicitMatch = matches.find((match) => match.milestoneId === milestone.id);
+  assert.ok(explicitMatch);
+  assert.equal(explicitMatch.isExplicitScheduleRef, true);
+  assert.deepEqual(explicitMatch.matchedRequirementIds, []);
 });
 
-test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
+test("getTasksForMilestone aggregates inferred and explicit schedule references", () => {
   const milestone = createMilestone({
     title: "Drive Milestone",
     type: "deadline",
     startDateTime: "2026-08-12T11:00:00-04:00",
     endDateTime: null,
     isExternal: false,
-    description: "Drive milestone that supports inferred and legacy matches.",
+    description: "Drive milestone that supports inferred and explicit task references.",
     projectIds: [],
   });
 
@@ -858,26 +858,26 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
     ],
   });
 
-  const legacyTask = updateTask("wire-swerve-module", {
+  const explicitTask = updateTask("wire-swerve-module", {
     subsystemIds: ["outreach"],
-    targetMilestoneId: milestone.id,
+    scheduleRefs: [{ kind: "milestone", id: milestone.id }],
   });
-  assert.ok(legacyTask);
+  assert.ok(explicitTask);
 
   const matches = getTasksForMilestone(milestone.id);
 
   const inferredTask = matches.find((match) =>
     match.taskId === "swerve-sensor-bundle",
   );
-  const legacyTaskMatch = matches.find((match) => match.taskId === legacyTask.id);
+  const explicitTaskMatch = matches.find((match) => match.taskId === explicitTask.id);
 
   assert.ok(inferredTask);
-  assert.equal(inferredTask.isLegacyLink, false);
+  assert.equal(inferredTask.isExplicitScheduleRef, false);
   assert.deepEqual(inferredTask.matchedRequirementIds, ["drive-readiness-iteration"]);
 
-  assert.ok(legacyTaskMatch);
-  assert.equal(legacyTaskMatch.isLegacyLink, true);
-  assert.deepEqual(legacyTaskMatch.matchedRequirementIds, []);
+  assert.ok(explicitTaskMatch);
+  assert.equal(explicitTaskMatch.isExplicitScheduleRef, true);
+  assert.deepEqual(explicitTaskMatch.matchedRequirementIds, []);
 });
 
 
@@ -907,7 +907,7 @@ test("task targets preserve kind order, first-target context, and unique array l
     subsystemIds: ["shared", "primary-subsystem"],
     mechanismIds: ["mechanism", "mechanism"],
     partInstanceIds: ["part"],
-    targetMilestoneId: "milestone",
+    scheduleRefs: [{ kind: "milestone" as const, id: "milestone" }],
   };
   updateTask(task.id, targets);
 
@@ -930,7 +930,7 @@ test("task targets preserve kind order, first-target context, and unique array l
     assert.equal(link.subsystemId, "shared");
   }
 
-  updateTask(task.id, { targetMilestoneId: null });
+  updateTask(task.id, { scheduleRefs: [] });
   assert.deepEqual(getTaskTargets().filter((link) => link.taskId === task.id), links.slice(0, -1));
 });
 

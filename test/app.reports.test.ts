@@ -1172,7 +1172,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         subsystemIds: [rosterSummarySubsystemBody.item.id],
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
         ownerId: "ava",
         assigneeIds: ["ava", "demo-alex-morgan"],
         mentorId: "marco",

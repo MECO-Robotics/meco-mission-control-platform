@@ -17,7 +17,7 @@ test("task commands infer ordered ancestors, preserve omitted targets, and keep 
     const payload = {
       title: "Array target task", summary: "Exercise ordered nested targets", workTypeId: "robot:design",
       partInstanceIds: ["pi-swerve-encoder-bracket-front-left", "pi-swerve-encoder-bracket-front-left"],
-      targetMilestoneId: null, ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01",
+      scheduleRefs: [], ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01",
       priority: "medium", status: "not-started", estimatedHours: 2,
     };
     const created = await app.inject({ method: "POST", url: "/api/tasks", payload });

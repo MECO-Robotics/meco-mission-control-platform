@@ -2913,17 +2913,6 @@
           "type": "string",
           "minLength": 3
         },
-        "targetMilestoneId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "photoUrl": {
           "default": "",
           "type": "string"
@@ -3007,7 +2996,6 @@
         "workTypeId",
         "title",
         "summary",
-        "targetMilestoneId",
         "ownerId",
         "mentorId",
         "dueDate",
@@ -3295,17 +3283,6 @@
         "summary": {
           "type": "string",
           "minLength": 3
-        },
-        "targetMilestoneId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "photoUrl": {
           "type": "string"
