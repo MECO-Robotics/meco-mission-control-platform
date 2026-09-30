@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
-import { loadPlatformSnapshotFile } from "../src/data/platformSnapshotFile";
+import { loadOrArchiveIncompatibleSnapshot, loadPlatformSnapshotFile } from "../src/data/platformSnapshotFile";
+import { snapshot } from "../src/data/mockData";
 
 function runProductionStoreScript(snapshotPath: string, source: string) {
   const result = spawnSync(
@@ -37,8 +38,75 @@ test("snapshot loading rejects parseable JSON missing a required collection", ()
     writeFileSync(snapshotPath, JSON.stringify({ seasons: [], projects: [], members: [], tasks: [] }), "utf8");
     assert.throws(
       () => loadPlatformSnapshotFile(snapshotPath),
-      /is not a valid platform snapshot/,
+      /incompatible with supported schema/,
     );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("incompatible snapshots are archived unchanged and startup can reseed", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-incompatible-snapshot-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  const original = JSON.stringify({ snapshotSchemaVersion: 0, tasks: [{ id: "legacy-task" }] });
+  writeFileSync(snapshotPath, original, "utf8");
+  const messages: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => messages.push(message);
+
+  try {
+    assert.equal(loadOrArchiveIncompatibleSnapshot(snapshotPath), null);
+    assert.equal(existsSync(snapshotPath), false);
+    const archive = readdirSync(directory).find((name) => name.includes("incompatible-v0"));
+    assert.ok(archive);
+    assert.equal(readFileSync(join(directory, archive), "utf8"), original);
+    assert.match(messages[0] ?? "", /schema 0.*Archived unchanged.*clean canonical seed/);
+  } finally {
+    console.error = originalError;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("current schema snapshots load without rewriting and reset archives the configured file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-current-snapshot-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  const contents = `${JSON.stringify(snapshot)}\n`;
+  writeFileSync(snapshotPath, contents, "utf8");
+
+  try {
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 1);
+    assert.equal(readFileSync(snapshotPath, "utf8"), contents);
+    const { archivePlatformSnapshotFile } = await import("../src/data/platformSnapshotFile");
+    const archive = archivePlatformSnapshotFile(snapshotPath);
+    assert.ok(archive);
+    assert.equal(readFileSync(archive, "utf8"), contents);
+    assert.equal(existsSync(snapshotPath), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("snapshot:reset archives the configured snapshot and is safe when it is absent", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-reset-command-"));
+  const snapshotPath = join(directory, "custom-snapshot.json");
+  const original = `${JSON.stringify(snapshot)}\n`;
+  const runReset = () => spawnSync(process.execPath, ["--import", "tsx", "scripts/snapshot-reset.ts"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...process.env, PLATFORM_SNAPSHOT_PATH: snapshotPath },
+  });
+
+  try {
+    writeFileSync(snapshotPath, original, "utf8");
+    const first = runReset();
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(existsSync(snapshotPath), false);
+    const archive = readdirSync(directory).find((name) => name.startsWith("custom-snapshot.json.reset-"));
+    assert.ok(archive);
+    assert.equal(readFileSync(join(directory, archive), "utf8"), original);
+    const second = runReset();
+    assert.equal(second.status, 0, second.stderr);
+    assert.match(second.stdout, /No platform snapshot exists/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -139,16 +207,18 @@ test("failed production persistence does not publish staged state", () => {
   assert.equal(result, "not-published");
 });
 
-test("production startup rejects a corrupt durable snapshot instead of reseeding", () => {
+test("production startup archives a corrupt durable snapshot and reseeds", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-corrupt-snapshot-"));
   const snapshotPath = join(directory, "platform-snapshot.json");
 
   try {
     writeFileSync(snapshotPath, "{not-json}\n", "utf8");
-    assert.throws(
-      () => runProductionStoreScript(snapshotPath, `await import("./src/data/store.ts");`),
-      /Platform snapshot .* could not be read/,
-    );
+    const seeded = JSON.parse(runProductionStoreScript(snapshotPath, `const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported; process.stdout.write(JSON.stringify(store.getSnapshot()));`));
+    assert.equal(seeded.projects.length, 6);
+    assert.equal(existsSync(snapshotPath), false);
+    const archives = readdirSync(directory).filter((name) => name.includes("incompatible-vunknown"));
+    assert.equal(archives.length, 1);
+    assert.equal(readFileSync(join(directory, archives[0]!), "utf8"), "{not-json}\n");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -401,7 +471,7 @@ test("production tutorial commits and lifecycle changes stay off disk while glob
 });
 
 
-test("obsolete task snapshots fail startup and deleting them restores canonical bootstrap", () => {
+test("obsolete task snapshots are archived and startup restores canonical bootstrap", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-array-target-reset-"));
   const path = join(directory, "snapshot.json");
   const readSnapshot = `
@@ -415,9 +485,10 @@ test("obsolete task snapshots fail startup and deleting them restores canonical 
       { ...snapshot.tasks[0], artifactIds: undefined },
     ]) {
       writeFileSync(path, JSON.stringify({ ...snapshot, tasks: [obsolete] }));
-      assert.throws(() => runProductionStoreScript(path, readSnapshot), /Unsupported task targets.*PLATFORM_SNAPSHOT_PATH/);
+      const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
+      assert.equal(restored.projects.length, 6);
+      assert.equal(existsSync(path), false);
     }
-    rmSync(path);
     const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
     assert.deepEqual(restored.tasks.map((task: { id: string }) => task.id), snapshot.tasks.map((task: { id: string }) => task.id));
     assert.ok(restored.tasks.every((task: Record<string, unknown>) =>

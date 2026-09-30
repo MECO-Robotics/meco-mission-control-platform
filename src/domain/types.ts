@@ -697,6 +697,7 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
+  snapshotSchemaVersion: 1;
   seasons: Season[];
   projects: Project[];
   workstreams: Workstream[];

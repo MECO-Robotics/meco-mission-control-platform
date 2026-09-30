@@ -61,7 +61,7 @@ import {
   reportFromTestResult,
   type FindingListItem,
 } from "./store/reportDerivations";
-import { assertSnapshotTaskTargets, loadPlatformSnapshotFile, savePlatformSnapshotFile } from "./platformSnapshotFile";
+import { assertSnapshotTaskTargets, loadOrArchiveIncompatibleSnapshot, savePlatformSnapshotFile } from "./platformSnapshotFile";
 import type {
   ArtifactInput,
   MilestoneInput,
@@ -637,9 +637,7 @@ const platformSnapshotPath = resolve(
   process.cwd(),
   process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json",
 );
-const persistedProductionSnapshot = process.env.NODE_ENV === "production"
-  ? loadPlatformSnapshotFile(platformSnapshotPath)
-  : null;
+const persistedProductionSnapshot = loadOrArchiveIncompatibleSnapshot(platformSnapshotPath);
 const globalSnapshotState: SnapshotState = {
   current: ownSnapshot(canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot())),
   interactive: null,
