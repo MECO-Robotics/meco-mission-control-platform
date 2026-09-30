@@ -67,19 +67,16 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         partNumber: "AUD-EXP-SUB",
         revision: "A",
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Part fixture for deleted subsystem audit coverage.",
         seasonId: "default-season",
       });
       const partInstance = createPartInstance({
-        subsystemId: subsystem.id,
-        mechanismId: mechanism.id,
+        intendedSubsystemId: subsystem.id,
+        intendedMechanismId: mechanism.id,
         partDefinitionId: partDefinition.id,
-        name: "Audit Export Deleted Part Instance",
-        quantity: 1,
-        trackIndividually: false,
-        status: "not ready",
+        location: { kind: "stock", location: "Audit fixture" },
       });
 
       assert.ok(removeSubsystem(subsystem.id));
@@ -170,21 +167,18 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         partNumber: "AUD-EXP-MOVE",
         revision: "A",
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Part definition for moved part instance audit coverage.",
         seasonId: "default-season",
       });
       const movedPartInstance = createPartInstance({
-        subsystemId: sourceSubsystem.id,
-        mechanismId: null,
+        intendedSubsystemId: sourceSubsystem.id,
+        intendedMechanismId: null,
         partDefinitionId: movedPartDefinition.id,
-        name: "Audit Export Moved Part Instance",
-        quantity: 1,
-        trackIndividually: false,
-        status: "not ready",
+        location: { kind: "stock", location: "Audit export bin" },
       });
-      assert.ok(updatePartInstance(movedPartInstance.id, { subsystemId: operationsSubsystem.id }));
+      assert.ok(updatePartInstance(movedPartInstance.id, { intendedSubsystemId: operationsSubsystem.id }));
 
       resetLimits();
 

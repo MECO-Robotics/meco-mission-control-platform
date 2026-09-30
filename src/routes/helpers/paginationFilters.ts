@@ -1,5 +1,4 @@
 import {
-  getManufacturingItems,
   getPurchaseItems,
   getSnapshot,
   getTasks,
@@ -23,7 +22,6 @@ function parsePaginationQuery(query: unknown) {
     pageSize,
   };
 }
-
 export function paginateItems<T>(items: readonly T[], query: unknown) {
   const { page: requestedPage, pageSize } = parsePaginationQuery(query);
   const totalItems = items.length;
@@ -75,16 +73,11 @@ export function filterPurchaseItemsForPerson(personId: string | null) {
     return items;
   }
 
-  return items.filter((item) => item.requestedById === personId);
-}
-
-export function filterManufacturingItemsForPerson(personId: string | null) {
-  const items = getManufacturingItems();
-  if (!personId) {
-    return items;
-  }
-
-  return items.filter((item) => item.requestedById === personId);
+  const tasks = new Map(getTasks().map((task) => [task.id, task] as const));
+  return items.filter((item) => {
+    const task = tasks.get(item.taskId);
+    return task?.requestedById === personId || task?.ownerId === personId || task?.assigneeIds.includes(personId);
+  });
 }
 
 export function filterWorkLogsForPerson(personId: string | null) {
@@ -94,23 +87,4 @@ export function filterWorkLogsForPerson(personId: string | null) {
   }
 
   return workLogs.filter((workLog) => workLog.participantIds.includes(personId));
-}
-
-export function withManufacturingQaReviewCounts(
-  items: ReturnType<typeof getManufacturingItems>,
-  snapshot = getSnapshot(),
-) {
-  const counts = new Map<string, number>();
-  for (const review of snapshot.qaReviews) {
-    if (review.subjectType !== "manufacturing") {
-      continue;
-    }
-
-    counts.set(review.subjectId, (counts.get(review.subjectId) ?? 0) + 1);
-  }
-
-  return items.map((item) => ({
-    ...item,
-    qaReviewCount: counts.get(item.id) ?? 0,
-  }));
 }

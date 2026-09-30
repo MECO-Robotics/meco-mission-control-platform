@@ -1,4 +1,5 @@
 import type { ReadonlyData, AuditAction, SnapshotView } from "../../domain/types";
+import { partInstanceSubsystemId } from "../../domain/partInstanceLocation";
 
 function getActionProjectIds(action: ReadonlyData<AuditAction>) {
   return new Set(
@@ -22,12 +23,6 @@ export function getRelatedProjectIds(
   const subsystemsById = new Map(
     snapshot.subsystems.map((subsystem) => [subsystem.id, subsystem] as const),
   );
-  const workstreamsById = new Map(
-    snapshot.workstreams.map((workstream) => [workstream.id, workstream] as const),
-  );
-  const mechanismsById = new Map(
-    snapshot.mechanisms.map((mechanism) => [mechanism.id, mechanism] as const),
-  );
   const partInstancesById = new Map(
     snapshot.partInstances.map((partInstance) => [partInstance.id, partInstance] as const),
   );
@@ -44,26 +39,7 @@ export function getRelatedProjectIds(
   }
   if (action.entityType === "risk") {
     const risk = snapshot.risks.find((candidate) => candidate.id === action.entityId);
-    if (risk?.attachmentType === "project") {
-      addIfPresent(projectIds, risk.attachmentId);
-    }
-    if (risk?.attachmentType === "workstream") {
-      addIfPresent(projectIds, workstreamsById.get(risk.attachmentId)?.projectId);
-    }
-    if (risk?.attachmentType === "mechanism") {
-      const mechanism = mechanismsById.get(risk.attachmentId);
-      addIfPresent(
-        projectIds,
-        mechanism ? subsystemsById.get(mechanism.subsystemId)?.projectId : null,
-      );
-    }
-    if (risk?.attachmentType === "part-instance") {
-      const partInstance = partInstancesById.get(risk.attachmentId);
-      addIfPresent(
-        projectIds,
-        partInstance ? subsystemsById.get(partInstance.subsystemId)?.projectId : null,
-      );
-    }
+    addIfPresent(projectIds, risk?.projectId);
   }
   addIfPresent(
     projectIds,

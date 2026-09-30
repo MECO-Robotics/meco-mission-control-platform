@@ -16,10 +16,133 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "teamId": {
+            "type": "string"
+          },
+          "seasonId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "projectType": {
+            "type": "string",
+            "enum": [
+              "robot",
+              "media",
+              "outreach",
+              "operations",
+              "strategy",
+              "training"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "active",
+              "paused",
+              "complete"
+            ]
+          }
         },
-        "additionalProperties": {}
+        "required": [
+          "id",
+          "teamId",
+          "seasonId",
+          "name",
+          "projectType",
+          "description",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "workTypes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectType": {
+            "type": "string",
+            "enum": [
+              "robot",
+              "media",
+              "outreach",
+              "operations",
+              "strategy",
+              "training"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "projectType",
+          "code",
+          "name",
+          "isActive"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "responsibleGroups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "seasonId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isArchived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "seasonId",
+          "name",
+          "projectIds",
+          "memberIds",
+          "isArchived"
+        ],
+        "additionalProperties": false
       }
     },
     "workstreams": {
@@ -30,6 +153,40 @@
           "type": "string"
         },
         "additionalProperties": {}
+      }
+    },
+    "vendors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isArchived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "website",
+          "isArchived"
+        ],
+        "additionalProperties": false
       }
     },
     "members": {
@@ -160,16 +317,6 @@
         "additionalProperties": {}
       }
     },
-    "disciplines": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    },
     "mechanisms": {
       "type": "array",
       "items": {
@@ -222,20 +369,175 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "metal",
+              "plastic",
+              "filament",
+              "electronics",
+              "hardware",
+              "consumable",
+              "other"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "onHandQuantity": {
+            "type": "number"
+          },
+          "reorderPoint": {
+            "type": "number"
+          },
+          "location": {
+            "type": "string"
+          },
+          "preferredVendorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "type": "string"
+          },
+          "photoUrl": {
+            "type": "string"
+          }
         },
-        "additionalProperties": {}
+        "required": [
+          "id",
+          "name",
+          "category",
+          "unit",
+          "onHandQuantity",
+          "reorderPoint",
+          "location",
+          "preferredVendorId",
+          "notes"
+        ],
+        "additionalProperties": false
       }
     },
     "artifacts": {
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "document",
+              "nontechnical"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 2
+          },
+          "summary": {
+            "default": "",
+            "type": "string"
+          },
+          "status": {
+            "default": "draft",
+            "type": "string",
+            "enum": [
+              "draft",
+              "in-review",
+              "published"
+            ]
+          },
+          "link": {
+            "default": "",
+            "type": "string"
+          },
+          "isArchived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "string"
+          }
         },
-        "additionalProperties": {}
+        "required": [
+          "projectId",
+          "targetRefs",
+          "kind",
+          "title",
+          "summary",
+          "status",
+          "link",
+          "isArchived",
+          "id"
+        ],
+        "additionalProperties": false
       }
     },
     "partDefinitions": {
@@ -243,6 +545,63 @@
       "items": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string"
+          },
+          "seasonId": {
+            "type": "string"
+          },
+          "activeSeasonIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "partNumber": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "iteration": {
+            "type": "number"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isHardware": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          },
+          "defaultAcquisitionMethod": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "purchase-cots",
+              "manufacture"
+            ]
+          },
+          "materialId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "photoUrl": {
+            "type": "string"
+          },
           "cadSource": {
             "type": "string",
             "enum": [
@@ -279,11 +638,23 @@
           }
         },
         "required": [
+          "id",
+          "seasonId",
+          "activeSeasonIds",
+          "name",
+          "partNumber",
+          "revision",
+          "iteration",
+          "isArchived",
+          "type",
+          "defaultAcquisitionMethod",
+          "materialId",
+          "description",
           "cadSource",
           "cadImportSource",
           "cadEditedAfterImport"
         ],
-        "additionalProperties": {}
+        "additionalProperties": false
       }
     },
     "partInstances": {
@@ -291,6 +662,160 @@
       "items": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string"
+          },
+          "partDefinitionId": {
+            "type": "string"
+          },
+          "intendedSubsystemId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intendedMechanismId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "stock"
+                  },
+                  "location": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "location"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "installed"
+                  },
+                  "subsystemId": {
+                    "type": "string"
+                  },
+                  "mechanismId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "subsystemId",
+                  "mechanismId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "repair"
+                  },
+                  "location": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "location"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "retired"
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "location"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "lost"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "unlocated"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "readinessStatus": {
+            "type": "string",
+            "enum": [
+              "not-ready",
+              "blocked",
+              "qa",
+              "ready"
+            ]
+          },
+          "photoUrl": {
+            "type": "string"
+          },
           "cadSource": {
             "type": "string",
             "enum": [
@@ -327,11 +852,16 @@
           }
         },
         "required": [
+          "id",
+          "partDefinitionId",
+          "intendedSubsystemId",
+          "intendedMechanismId",
+          "location",
           "cadSource",
           "cadImportSource",
           "cadEditedAfterImport"
         ],
-        "additionalProperties": {}
+        "additionalProperties": false
       }
     },
     "milestones": {
@@ -408,31 +938,117 @@
               "QA",
               "MilestoneTest"
             ]
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "id",
-          "reportType"
+          "reportType",
+          "targetRefs"
         ],
         "additionalProperties": {}
       }
     },
-    "reportFindings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    },
-    "qaReports": {
+    "qaRequests": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "targetRiskId": {
+          "projectId": {
+            "type": "string"
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "taskId": {
             "anyOf": [
               {
                 "type": "string",
@@ -443,29 +1059,19 @@
               }
             ]
           },
-          "proposedRiskSeverity": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "high",
-                  "medium",
-                  "low"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "subject": {
+            "type": "string",
+            "minLength": 2
           },
-          "proposedRiskStatus": {
+          "mentorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requestedById": {
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "partial-mitigation",
-                  "full-mitigation"
-                ]
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -475,13 +1081,81 @@
           "id": {
             "type": "string"
           },
+          "createdAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "requested"
+          }
+        },
+        "required": [
+          "projectId",
+          "targetRefs",
+          "subject",
+          "mentorId",
+          "id",
+          "createdAt",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "qaFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
           "taskId": {
-            "type": "string"
-          },
-          "evidenceNotes": {
-            "type": "string"
-          },
-          "qaRequestId": {
             "anyOf": [
               {
                 "type": "string"
@@ -491,7 +1165,204 @@
               }
             ]
           },
-          "mentorId": {
+          "projectId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "accepted",
+              "resolved"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "targetRefs",
+          "taskId",
+          "projectId",
+          "title",
+          "detail",
+          "severity",
+          "status",
+          "createdAt"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "testResults": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "milestoneId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 2
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "blocked"
+            ]
+          },
+          "findings": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "photoUrl": {
+            "default": "",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "targetRefs",
+          "milestoneId",
+          "title",
+          "status",
+          "findings",
+          "photoUrl",
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "testFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "taskId": {
             "anyOf": [
               {
                 "type": "string"
@@ -500,6 +1371,381 @@
                 "type": "null"
               }
             ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "accepted",
+              "resolved"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "targetRefs",
+          "taskId",
+          "projectId",
+          "title",
+          "detail",
+          "severity",
+          "status",
+          "createdAt"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 2
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 2
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "dependency",
+              "design",
+              "manufacturing",
+              "supply",
+              "schedule",
+              "qa",
+              "inventory",
+              "other"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "status": {
+            "default": "open",
+            "type": "string",
+            "enum": [
+              "open",
+              "mitigating",
+              "accepted",
+              "resolved"
+            ]
+          },
+          "blocksWork": {
+            "default": false,
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "manual"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "task",
+                      "task-dependency",
+                      "qa-finding",
+                      "test-finding",
+                      "qa-request",
+                      "test-result",
+                      "report",
+                      "event",
+                      "milestone",
+                      "manufacturing-details",
+                      "part-instance",
+                      "material"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "relatedTargets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "mitigationTaskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerGroupId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "title",
+          "detail",
+          "category",
+          "severity",
+          "status",
+          "blocksWork",
+          "source",
+          "relatedTargets",
+          "id",
+          "createdAt",
+          "updatedAt",
+          "resolvedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "serialNumber": {
+            "type": "number"
+          },
+          "serial": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "workTypeId": {
+            "type": "string"
+          },
+          "responsibleGroupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workstreamIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "photoUrl": {
+            "type": "string"
+          },
+          "subsystemIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mechanismIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "partInstanceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scheduleRefs": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "meeting"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "event"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "milestone"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
           },
           "requestedById": {
             "anyOf": [
@@ -511,94 +1757,46 @@
               }
             ]
           },
-          "mentorApproved": {
-            "type": "boolean"
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "reviewedAt": {
+          "assigneeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mentorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startDate": {
             "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "taskId",
-          "mentorApproved",
-          "reviewedAt"
-        ],
-        "additionalProperties": {}
-      }
-    },
-    "qaRequests": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    },
-    "testResults": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    },
-    "risks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    },
-    "tasks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "workstreamIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
           },
-          "subsystemIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "mechanismIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "partInstanceIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "artifactIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "id": {
+          "dueDate": {
             "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
           },
           "status": {
             "type": "string",
@@ -615,11 +1813,152 @@
               "type": "string"
             }
           },
-          "blockers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "estimatedHours": {
+            "type": "number"
+          },
+          "actualHours": {
+            "type": "number"
+          },
+          "requiresDocumentation": {
+            "type": "boolean"
+          },
+          "manufacturingDetails": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "part": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "part-definition"
+                          },
+                          "partDefinitionId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "partDefinitionId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "provisional"
+                          },
+                          "partNumber": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "partNumber",
+                          "revision"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "quantity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "processId": {
+                    "type": "string"
+                  },
+                  "fulfillmentSource": {
+                    "type": "string",
+                    "enum": [
+                      "in-house",
+                      "outsourced"
+                    ]
+                  },
+                  "material": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "inventory-material"
+                          },
+                          "materialId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "materialId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "specified-material"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "fileArtifactIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tolerances": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "qaRequirements": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "batchLabel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "part",
+                  "quantity",
+                  "processId",
+                  "fulfillmentSource",
+                  "material",
+                  "fileArtifactIds",
+                  "tolerances",
+                  "qaRequirements"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "isBlocked": {
             "type": "boolean"
@@ -629,19 +1968,34 @@
           }
         },
         "required": [
+          "id",
+          "projectId",
+          "workTypeId",
+          "responsibleGroupId",
           "workstreamIds",
+          "title",
+          "summary",
           "subsystemIds",
           "mechanismIds",
           "partInstanceIds",
-          "artifactIds",
-          "id",
+          "scheduleRefs",
+          "requestedById",
+          "ownerId",
+          "assigneeIds",
+          "mentorId",
+          "startDate",
+          "dueDate",
+          "priority",
           "status",
           "checklistItems",
-          "blockers",
+          "estimatedHours",
+          "actualHours",
+          "requiresDocumentation",
+          "manufacturingDetails",
           "isBlocked",
           "isWaitingOnDependency"
         ],
-        "additionalProperties": {}
+        "additionalProperties": false
       }
     },
     "taskDependencies": {
@@ -722,7 +2076,7 @@
               "requiredState": {
                 "type": "string",
                 "enum": [
-                  "not ready",
+                  "not-ready",
                   "blocked",
                   "qa",
                   "ready"
@@ -766,15 +2120,58 @@
               },
               "kind": {
                 "type": "string",
-                "const": "part_instance"
+                "const": "part-instance"
               },
-              "requiredState": {
-                "type": "string",
-                "enum": [
-                  "not ready",
-                  "blocked",
-                  "qa",
-                  "ready"
+              "requiredCondition": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "physical-location"
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "stock",
+                          "installed",
+                          "repair",
+                          "retired",
+                          "lost",
+                          "unlocated"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "derived-readiness"
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "not-ready",
+                          "blocked",
+                          "qa",
+                          "ready"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
                 ]
               },
               "id": {
@@ -789,23 +2186,13 @@
               "refId",
               "dependencyType",
               "kind",
-              "requiredState",
+              "requiredCondition",
               "id",
               "createdAt"
             ],
             "additionalProperties": false
           }
         ]
-      }
-    },
-    "taskBlockers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
       }
     },
     "workLogs": {
@@ -828,7 +2215,7 @@
         "additionalProperties": {}
       }
     },
-    "attendanceRecords": {
+    "events": {
       "type": "array",
       "items": {
         "type": "object",
@@ -838,7 +2225,34 @@
         "additionalProperties": {}
       }
     },
-    "manufacturingItems": {
+    "manufacturingProcesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "isActive"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "attendanceRecords": {
       "type": "array",
       "items": {
         "type": "object",
@@ -852,30 +2266,304 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cots-goods",
+              "manufacturing-service"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 3
+          },
+          "partDefinitionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "materialId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quantity": {
+            "type": "number",
+            "minimum": 1
+          },
+          "quotes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "vendorId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reference": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "amount": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "amount": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "currency": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "amount",
+                        "currency"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "url": {
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "quotedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "vendorId",
+                "reference",
+                "amount",
+                "quotedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "selectedQuoteId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approvalStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "approvedById": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purchaseOrderNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orderStatus": {
+            "type": "string",
+            "enum": [
+              "not-ordered",
+              "ordered",
+              "shipped",
+              "delivered",
+              "cancelled"
+            ]
+          },
+          "finalCost": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "currency": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedDeliveryDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trackingNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trackingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orderedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
         },
-        "additionalProperties": {}
-      }
-    },
-    "qaReviews": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    },
-    "escalations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
+        "required": [
+          "taskId",
+          "kind",
+          "title",
+          "partDefinitionId",
+          "materialId",
+          "quantity",
+          "quotes",
+          "selectedQuoteId",
+          "approvalStatus",
+          "approvedById",
+          "approvedAt",
+          "purchaseOrderNumber",
+          "orderStatus",
+          "finalCost",
+          "expectedDeliveryDate",
+          "trackingNumber",
+          "trackingUrl",
+          "orderedAt",
+          "deliveredAt",
+          "id"
+        ],
+        "additionalProperties": false
       }
     },
     "actions": {
@@ -902,10 +2590,12 @@
   "required": [
     "seasons",
     "projects",
+    "workTypes",
+    "responsibleGroups",
     "workstreams",
+    "vendors",
     "members",
     "subsystems",
-    "disciplines",
     "mechanisms",
     "materials",
     "artifacts",
@@ -914,27 +2604,25 @@
     "milestones",
     "milestoneRequirements",
     "reports",
-    "reportFindings",
-    "qaReports",
     "qaRequests",
+    "qaFindings",
     "testResults",
+    "testFindings",
     "risks",
     "tasks",
     "taskDependencies",
-    "taskBlockers",
     "workLogs",
     "meetings",
+    "events",
+    "manufacturingProcesses",
     "attendanceRecords",
-    "manufacturingItems",
     "purchaseItems",
-    "qaReviews",
-    "escalations",
     "actions"
   ],
   "additionalProperties": false,
   "$id": "https://contracts.meco.ai/platform/bootstrap-v1.schema.json",
   "title": "MissionControlPlatformBootstrapContract",
-  "description": "Current bootstrap contract. Task/dependency and QA/layout records are validated; remaining collections retain collection-shape agreement.",
+  "description": "Current bootstrap contract with target FRC domain identities and strict domain-owned collections.",
   "x_contract": {
     "contractName": "meco-mission-control-platform-bootstrap",
     "contractVersion": 1,
@@ -974,30 +2662,16 @@
             "minLength": 1
           }
         },
-        "artifactIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "projectId": {
           "type": "string",
           "minLength": 1
         },
-        "title": {
-          "type": "string",
-          "minLength": 3
-        },
-        "summary": {
-          "type": "string",
-          "minLength": 3
-        },
-        "disciplineId": {
+        "workTypeId": {
           "type": "string",
           "minLength": 1
         },
-        "targetMilestoneId": {
+        "responsibleGroupId": {
+          "default": null,
           "anyOf": [
             {
               "type": "string",
@@ -1007,6 +2681,237 @@
               "type": "null"
             }
           ]
+        },
+        "requestedById": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scheduleRefs": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "meeting"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "event"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "milestone"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "manufacturingDetails": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "part-definition"
+                        },
+                        "partDefinitionId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "partDefinitionId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "provisional"
+                        },
+                        "partNumber": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "revision": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "partNumber",
+                        "revision"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "quantity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "processId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fulfillmentSource": {
+                  "type": "string",
+                  "enum": [
+                    "in-house",
+                    "outsourced"
+                  ]
+                },
+                "material": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "inventory-material"
+                        },
+                        "materialId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "materialId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "specified-material"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "fileArtifactIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "tolerances": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "qaRequirements": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "batchLabel": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "part",
+                "quantity",
+                "processId",
+                "fulfillmentSource",
+                "material",
+                "fileArtifactIds",
+                "tolerances",
+                "qaRequirements"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 3
         },
         "photoUrl": {
           "default": "",
@@ -1082,36 +2987,15 @@
             "minLength": 1
           }
         },
-        "linkedManufacturingIds": {
-          "default": [],
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "linkedPurchaseIds": {
-          "default": [],
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "requiresDocumentation": {
-          "default": false,
-          "type": "boolean"
-        },
-        "documentationLinked": {
           "default": false,
           "type": "boolean"
         }
       },
       "required": [
+        "workTypeId",
         "title",
         "summary",
-        "disciplineId",
-        "targetMilestoneId",
         "ownerId",
         "mentorId",
         "dueDate",
@@ -1153,30 +3037,15 @@
             "minLength": 1
           }
         },
-        "artifactIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "projectId": {
           "type": "string",
           "minLength": 1
         },
-        "title": {
-          "type": "string",
-          "minLength": 3
-        },
-        "summary": {
-          "type": "string",
-          "minLength": 3
-        },
-        "disciplineId": {
+        "workTypeId": {
           "type": "string",
           "minLength": 1
         },
-        "targetMilestoneId": {
+        "responsibleGroupId": {
           "anyOf": [
             {
               "type": "string",
@@ -1186,6 +3055,234 @@
               "type": "null"
             }
           ]
+        },
+        "requestedById": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scheduleRefs": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "meeting"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "event"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "milestone"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "manufacturingDetails": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "part-definition"
+                        },
+                        "partDefinitionId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "partDefinitionId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "provisional"
+                        },
+                        "partNumber": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "revision": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "partNumber",
+                        "revision"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "quantity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "processId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fulfillmentSource": {
+                  "type": "string",
+                  "enum": [
+                    "in-house",
+                    "outsourced"
+                  ]
+                },
+                "material": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "inventory-material"
+                        },
+                        "materialId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "materialId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "specified-material"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "fileArtifactIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "tolerances": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "qaRequirements": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "batchLabel": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "part",
+                "quantity",
+                "processId",
+                "fulfillmentSource",
+                "material",
+                "fileArtifactIds",
+                "tolerances",
+                "qaRequirements"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 3
         },
         "photoUrl": {
           "type": "string"
@@ -1258,24 +3355,7 @@
             "minLength": 1
           }
         },
-        "linkedManufacturingIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "linkedPurchaseIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "requiresDocumentation": {
-          "type": "boolean"
-        },
-        "documentationLinked": {
           "type": "boolean"
         }
       },
@@ -1689,6 +3769,52 @@
             }
           ]
         },
+        "targetRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "workstream",
+                  "responsible-group",
+                  "task",
+                  "subsystem",
+                  "mechanism",
+                  "part-definition",
+                  "part-instance",
+                  "material",
+                  "vendor",
+                  "manufacturing-details",
+                  "purchase-item",
+                  "meeting",
+                  "event",
+                  "milestone",
+                  "qa-request",
+                  "test-result",
+                  "report",
+                  "artifact",
+                  "qa-finding",
+                  "test-finding",
+                  "task-dependency",
+                  "risk",
+                  "design-iteration"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
         "reportType": {
           "type": "string",
           "enum": [
@@ -1859,6 +3985,52 @@
           "type": "string",
           "minLength": 1
         },
+        "targetRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "workstream",
+                  "responsible-group",
+                  "task",
+                  "subsystem",
+                  "mechanism",
+                  "part-definition",
+                  "part-instance",
+                  "material",
+                  "vendor",
+                  "manufacturing-details",
+                  "purchase-item",
+                  "meeting",
+                  "event",
+                  "milestone",
+                  "qa-request",
+                  "test-result",
+                  "report",
+                  "artifact",
+                  "qa-finding",
+                  "test-finding",
+                  "task-dependency",
+                  "risk",
+                  "design-iteration"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
         "participantIds": {
           "minItems": 1,
           "type": "array",
@@ -1949,6 +4121,52 @@
           "type": "string",
           "minLength": 1
         },
+        "targetRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "workstream",
+                  "responsible-group",
+                  "task",
+                  "subsystem",
+                  "mechanism",
+                  "part-definition",
+                  "part-instance",
+                  "material",
+                  "vendor",
+                  "manufacturing-details",
+                  "purchase-item",
+                  "meeting",
+                  "event",
+                  "milestone",
+                  "qa-request",
+                  "test-result",
+                  "report",
+                  "artifact",
+                  "qa-finding",
+                  "test-finding",
+                  "task-dependency",
+                  "risk",
+                  "design-iteration"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
         "participantIds": {
           "minItems": 1,
           "type": "array",
@@ -2006,6 +4224,482 @@
         "participantIds",
         "result",
         "reviewedAt"
+      ],
+      "additionalProperties": false
+    },
+    "risk": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 2
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "dependency",
+            "design",
+            "manufacturing",
+            "supply",
+            "schedule",
+            "qa",
+            "inventory",
+            "other"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "status": {
+          "default": "open",
+          "type": "string",
+          "enum": [
+            "open",
+            "mitigating",
+            "accepted",
+            "resolved"
+          ]
+        },
+        "blocksWork": {
+          "default": false,
+          "type": "boolean"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "manual"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "task",
+                    "task-dependency",
+                    "qa-finding",
+                    "test-finding",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "event",
+                    "milestone",
+                    "manufacturing-details",
+                    "part-instance",
+                    "material"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "relatedTargets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "workstream",
+                  "responsible-group",
+                  "task",
+                  "subsystem",
+                  "mechanism",
+                  "part-definition",
+                  "part-instance",
+                  "material",
+                  "vendor",
+                  "manufacturing-details",
+                  "purchase-item",
+                  "meeting",
+                  "event",
+                  "milestone",
+                  "qa-request",
+                  "test-result",
+                  "report",
+                  "artifact",
+                  "qa-finding",
+                  "test-finding",
+                  "task-dependency",
+                  "risk",
+                  "design-iteration"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "mitigationTaskId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerGroupId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "projectId",
+        "title",
+        "detail",
+        "category",
+        "severity",
+        "source",
+        "relatedTargets"
+      ],
+      "additionalProperties": false
+    },
+    "purchaseItem": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cots-goods",
+            "manufacturing-service"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3
+        },
+        "partDefinitionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "materialId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "type": "number",
+          "minimum": 1
+        },
+        "quotes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "vendorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reference": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "amount": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "amount": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "currency": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "amount",
+                      "currency"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quotedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "vendorId",
+              "reference",
+              "amount",
+              "quotedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "selectedQuoteId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvalStatus": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "approvedById": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purchaseOrderNumber": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "orderStatus": {
+          "type": "string",
+          "enum": [
+            "not-ordered",
+            "ordered",
+            "shipped",
+            "delivered",
+            "cancelled"
+          ]
+        },
+        "finalCost": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "currency": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "amount",
+                "currency"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expectedDeliveryDate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trackingNumber": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trackingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "orderedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "taskId",
+        "kind",
+        "title",
+        "partDefinitionId",
+        "materialId",
+        "quantity",
+        "quotes",
+        "selectedQuoteId",
+        "approvalStatus",
+        "approvedById",
+        "approvedAt",
+        "purchaseOrderNumber",
+        "orderStatus",
+        "finalCost",
+        "expectedDeliveryDate",
+        "trackingNumber",
+        "trackingUrl",
+        "orderedAt",
+        "deliveredAt"
       ],
       "additionalProperties": false
     },
@@ -2078,7 +4772,7 @@
             "requiredState": {
               "type": "string",
               "enum": [
-                "not ready",
+                "not-ready",
                 "blocked",
                 "qa",
                 "ready"
@@ -2114,15 +4808,58 @@
             },
             "kind": {
               "type": "string",
-              "const": "part_instance"
+              "const": "part-instance"
             },
-            "requiredState": {
-              "type": "string",
-              "enum": [
-                "not ready",
-                "blocked",
-                "qa",
-                "ready"
+            "requiredCondition": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "physical-location"
+                    },
+                    "value": {
+                      "type": "string",
+                      "enum": [
+                        "stock",
+                        "installed",
+                        "repair",
+                        "retired",
+                        "lost",
+                        "unlocated"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "derived-readiness"
+                    },
+                    "value": {
+                      "type": "string",
+                      "enum": [
+                        "not-ready",
+                        "blocked",
+                        "qa",
+                        "ready"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
               ]
             }
           },
@@ -2131,99 +4868,11 @@
             "refId",
             "dependencyType",
             "kind",
-            "requiredState"
+            "requiredCondition"
           ],
           "additionalProperties": false
         }
       ]
-    },
-    "taskBlocker": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "issueType": {
-          "type": "string",
-          "enum": [
-            "external",
-            "lost-part",
-            "broken-part",
-            "lost-tool",
-            "broken-tool",
-            "design-issue",
-            "shipping-delay",
-            "manufacturing-unavailable",
-            "qa-failed",
-            "other"
-          ]
-        },
-        "blockedTaskId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "blockerType": {
-          "type": "string",
-          "enum": [
-            "task",
-            "milestone",
-            "workstream",
-            "mechanism",
-            "part_instance",
-            "artifact_instance",
-            "external"
-          ]
-        },
-        "blockerId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1
-        },
-        "severity": {
-          "type": "string",
-          "enum": [
-            "low",
-            "medium",
-            "high",
-            "critical"
-          ]
-        },
-        "status": {
-          "default": "open",
-          "type": "string",
-          "enum": [
-            "open",
-            "resolved"
-          ]
-        },
-        "createdByMemberId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "blockedTaskId",
-        "blockerType",
-        "blockerId",
-        "description",
-        "severity"
-      ],
-      "additionalProperties": false
     }
   }
 }

@@ -1,6 +1,7 @@
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import { uniqueIds } from "../domain/ids";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
+import { partInstanceSubsystemId, partInstanceMechanismId } from "../domain/partInstanceLocation";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 
@@ -15,7 +16,6 @@ import type {
   MilestoneRequirement,
   Milestone,
   MilestoneStatus,
-  ManufacturingItem,
   Material,
   Mechanism,
   Member,
@@ -32,17 +32,12 @@ import type {
   Season,
   Subsystem,
   Task,
-  TaskBlocker,
   TaskDependency,
   TestResult,
   TestFinding,
   Workstream,
   WorkLog,
 } from "../domain/types";
-import {
-  getDefaultTaskDisciplineIdForProject,
-  isTaskDisciplineAllowedForProject,
-} from "../domain/taskDisciplines";
 import {
   isManualPmCadImportSource,
   markPmCadEditedAfterImport,
@@ -61,11 +56,10 @@ import {
   reportFromTestResult,
   type FindingListItem,
 } from "./store/reportDerivations";
-import { assertSnapshotTaskTargets, loadPlatformSnapshotFile, savePlatformSnapshotFile } from "./platformSnapshotFile";
+import { assertSnapshotTaskTargets, loadOrArchiveIncompatibleSnapshot, savePlatformSnapshotFile } from "./platformSnapshotFile";
 import type {
   ArtifactInput,
   MilestoneInput,
-  ManufacturingItemInput,
   MaterialInput,
   MeetingInput,
   MechanismInput,
@@ -81,7 +75,6 @@ import type {
   PurchaseItemInput,
   SeasonInput,
   SubsystemInput,
-  TaskBlockerInput,
   TaskDependencyInput,
   TaskInput,
   TestResultInput,
@@ -92,7 +85,6 @@ import type {
 export type {
   ArtifactInput,
   MilestoneInput,
-  ManufacturingItemInput,
   MaterialInput,
   MeetingInput,
   MechanismInput,
@@ -108,7 +100,6 @@ export type {
   PurchaseItemInput,
   SeasonInput,
   SubsystemInput,
-  TaskBlockerInput,
   TaskDependencyInput,
   TaskInput,
   TestResultInput,
@@ -119,13 +110,13 @@ export type {
 export interface MilestoneMatch {
   milestoneId: string;
   matchedRequirementIds: string[];
-  isLegacyLink: boolean;
+  isExplicitScheduleRef: boolean;
 }
 
 export interface TaskMilestoneMatch {
   taskId: string;
   matchedRequirementIds: string[];
-  isLegacyLink: boolean;
+  isExplicitScheduleRef: boolean;
 }
 
 export interface AuditMutationContext {
@@ -178,7 +169,7 @@ function extractComparableState(targetType: MilestoneRequirement["targetType"], 
       return null;
     }
 
-    return normalizeStateValue(partInstance.status);
+    return normalizeStateValue(partInstance.readinessStatus ?? "not-ready");
   }
 
   return null;
@@ -487,15 +478,10 @@ function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnaps
 function deriveTaskSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
   const hours = new Map<string, number>();
   for (const log of snapshot.workLogs) hours.set(log.taskId, (hours.get(log.taskId) ?? 0) + log.hours);
-  const summaries = new Map<string, Set<string>>();
-  for (const blocker of snapshot.taskBlockers) {
-    if (blocker.status !== "open") continue;
-    const descriptions = summaries.get(blocker.blockedTaskId) ?? new Set<string>();
-    descriptions.add(blocker.description);
-    summaries.set(blocker.blockedTaskId, descriptions);
-  }
+  const blockedTaskIds = new Set(snapshot.risks.filter((risk) => risk.blocksWork && risk.status !== "resolved")
+    .flatMap((risk) => risk.relatedTargets.filter((target) => target.kind === "task").map((target) => target.id)));
   return { ...snapshot, tasks: snapshot.tasks.map((task) => ({
-    ...task, actualHours: hours.get(task.id) ?? 0, checklistItems: task.checklistItems ?? [], blockers: [...(summaries.get(task.id) ?? [])],
+    ...task, actualHours: hours.get(task.id) ?? 0, checklistItems: task.checklistItems ?? [], isBlocked: blockedTaskIds.has(task.id),
   })) };
 }
 
@@ -569,16 +555,10 @@ function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
       ...workLog,
       createdById: workLog.createdById ?? null,
     })),
-    manufacturingItems: clonedSnapshot.manufacturingItems.map((item) => ({
-      ...item,
-      reviewedById: item.reviewedById ?? null,
-      reviewedAt: item.reviewedAt ?? null,
-    })),
     purchaseItems: clonedSnapshot.purchaseItems.map((item) => ({
       ...item,
       approvedById: item.approvedById ?? null,
       approvedAt: item.approvedAt ?? null,
-      purchasedAt: item.purchasedAt ?? null,
       deliveredAt: item.deliveredAt ?? null,
     })),
     meetings: clonedSnapshot.meetings.map((meeting) =>
@@ -637,9 +617,7 @@ const platformSnapshotPath = resolve(
   process.cwd(),
   process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json",
 );
-const persistedProductionSnapshot = process.env.NODE_ENV === "production"
-  ? loadPlatformSnapshotFile(platformSnapshotPath)
-  : null;
+const persistedProductionSnapshot = loadOrArchiveIncompatibleSnapshot(platformSnapshotPath);
 const globalSnapshotState: SnapshotState = {
   current: ownSnapshot(canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot())),
   interactive: null,
@@ -828,131 +806,14 @@ function uniqueId(base: string, existingIds: Set<string>) {
   return `${base}-${counter}`;
 }
 
-function getPartInstanceMergeKey(
-  partInstance: Pick<PartInstance, "subsystemId" | "mechanismId" | "partDefinitionId">,
-) {
-  return [partInstance.subsystemId, partInstance.mechanismId ?? "", partInstance.partDefinitionId].join(
-    "::",
-  );
-}
-
-function remapPartInstanceReferences(
-  snapshot: PlatformSnapshot,
-  remappedPartInstanceIds: Map<string, string>,
-) {
-  if (remappedPartInstanceIds.size === 0) {
-    return snapshot;
-  }
-
-  const remapId = (value: string | null | undefined) => {
-    if (!value) {
-      return null;
-    }
-
-    return remappedPartInstanceIds.get(value) ?? value;
-  };
-
-  const remapIdList = (values: string[]) => uniqueIds(values.map((value) => remapId(value)));
-
+function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
   return {
     ...snapshot,
-    tasks: snapshot.tasks.map((task) => {
-      const partInstanceIds = remapIdList(task.partInstanceIds);
-      return partInstanceIds.length === task.partInstanceIds.length &&
-        partInstanceIds.every((id, index) => id === task.partInstanceIds[index])
-        ? task
-        : normalizeTaskTargets({ ...task, partInstanceIds });
-    }),
-    manufacturingItems: snapshot.manufacturingItems.map((item) => {
-      const partInstanceId = remapId(item.partInstanceId);
-      const partInstanceIds = remapIdList(item.partInstanceIds);
-
-      if (partInstanceId === item.partInstanceId && partInstanceIds.length === item.partInstanceIds.length) {
-        let matches = true;
-        for (let index = 0; index < partInstanceIds.length; index += 1) {
-          if (partInstanceIds[index] !== item.partInstanceIds[index]) {
-            matches = false;
-            break;
-          }
-        }
-
-        if (matches) {
-          return item;
-        }
-      }
-
-      return {
-        ...item,
-        partInstanceId,
-        partInstanceIds,
-      };
-    }),
-    risks: snapshot.risks.map((risk) =>
-      risk.attachmentType === "part-instance"
-        ? {
-            ...risk,
-            attachmentId: remappedPartInstanceIds.get(risk.attachmentId) ?? risk.attachmentId,
-          }
-        : risk,
-    ),
-    qaFindings: snapshot.qaFindings.map((finding) => ({
-      ...finding,
-      partInstanceId: remapId(finding.partInstanceId),
-    })),
-    testFindings: snapshot.testFindings.map((finding) => ({
-      ...finding,
-      partInstanceId: remapId(finding.partInstanceId),
-    })),
-    designIterations: snapshot.designIterations.map((iteration) => ({
-      ...iteration,
-      partInstanceId: remapId(iteration.partInstanceId),
+    partInstances: snapshot.partInstances.map((partInstance) => ({
+      ...partInstance,
+      photoUrl: typeof partInstance.photoUrl === "string" ? partInstance.photoUrl : "",
     })),
   };
-}
-
-function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
-  const remappedPartInstanceIds = new Map<string, string>();
-  const partInstanceByKey = new Map<string, PartInstance>();
-  const normalizedPartInstances: PartInstance[] = [];
-
-  for (const partInstance of snapshot.partInstances) {
-    const normalizedPartInstance = {
-      ...partInstance,
-      status: normalizePartInstanceStatus(partInstance.status),
-      photoUrl: typeof partInstance.photoUrl === "string" ? partInstance.photoUrl : "",
-    };
-    const mergeKey = getPartInstanceMergeKey(normalizedPartInstance);
-    const existingPartInstance = partInstanceByKey.get(mergeKey);
-
-    if (existingPartInstance) {
-      const existingProvenance = normalizePmCadProvenance(existingPartInstance);
-      const incomingProvenance = normalizePmCadProvenance(normalizedPartInstance);
-      if (
-        isManualPmCadImportSource(existingProvenance.cadImportSource) ||
-        !isManualPmCadImportSource(incomingProvenance.cadImportSource)
-      ) {
-        existingPartInstance.cadSource = incomingProvenance.cadSource;
-        existingPartInstance.cadImportSource = incomingProvenance.cadImportSource;
-        existingPartInstance.cadEditedAfterImport = incomingProvenance.cadEditedAfterImport;
-        existingPartInstance.cadSourceLabel = incomingProvenance.cadSourceLabel;
-        existingPartInstance.cadUpdatedAt = incomingProvenance.cadUpdatedAt;
-      }
-      existingPartInstance.quantity += normalizedPartInstance.quantity;
-      remappedPartInstanceIds.set(normalizedPartInstance.id, existingPartInstance.id);
-      continue;
-    }
-
-    partInstanceByKey.set(mergeKey, normalizedPartInstance);
-    normalizedPartInstances.push(normalizedPartInstance);
-  }
-
-  return remapPartInstanceReferences(
-    {
-      ...snapshot,
-      partInstances: normalizedPartInstances,
-    },
-    remappedPartInstanceIds,
-  );
 }
 
 function normalizeMilestoneStatus(
@@ -975,28 +836,6 @@ function normalizeMilestoneStatus(
   }
 
   if (status === "complete") {
-    return "ready";
-  }
-
-  return "not ready";
-}
-
-function normalizePartInstanceStatus(
-  status: PartInstance["status"] | "planned" | "needed" | "available" | "installed" | "retired" | undefined,
-): PartInstance["status"] {
-  if (status === "not ready" || status === "blocked" || status === "qa" || status === "ready") {
-    return status;
-  }
-
-  if (status === "planned" || status === "retired") {
-    return "not ready";
-  }
-
-  if (status === "needed") {
-    return "blocked";
-  }
-
-  if (status === "available" || status === "installed") {
     return "ready";
   }
 
@@ -1060,7 +899,6 @@ function normalizeTaskTargets(task: Task): Task {
     subsystemIds: uniqueIds(task.subsystemIds),
     mechanismIds: uniqueIds(task.mechanismIds),
     partInstanceIds: uniqueIds(task.partInstanceIds),
-    artifactIds: uniqueIds(task.artifactIds),
     assigneeIds: uniqueIds(assigneeIds.length > 0 ? assigneeIds : [task.ownerId]),
   };
 }
@@ -1109,10 +947,7 @@ function flattenTaskTargets(task: Task): TaskTargetLink[] {
   appendTargets("subsystem", uniqueIds(task.subsystemIds));
   appendTargets("mechanism", uniqueIds(task.mechanismIds));
   appendTargets("part-instance", uniqueIds(task.partInstanceIds));
-  appendTargets("artifact", uniqueIds(task.artifactIds));
-  if (task.targetMilestoneId) {
-    appendTargets("milestone", [task.targetMilestoneId]);
-  }
+  appendTargets("milestone", task.scheduleRefs.filter((ref) => ref.kind === "milestone").map(({ id }) => id));
 
   return links;
 }
@@ -1123,17 +958,17 @@ const DEFAULT_SEASON_PROJECTS: Array<{
   projectType: Project["projectType"];
 }> = [
   { key: "robot", name: "Robot", projectType: "robot" },
-  { key: "media", name: "Media", projectType: "other" },
+  { key: "media", name: "Media", projectType: "media" },
   { key: "outreach", name: "Outreach", projectType: "outreach" },
   { key: "operations", name: "Operations", projectType: "operations" },
-  { key: "strategy", name: "Strategy", projectType: "other" },
-  { key: "training", name: "Training", projectType: "other" },
+  { key: "strategy", name: "Strategy", projectType: "strategy" },
+  { key: "training", name: "Training", projectType: "training" },
 ];
 
 const TUTORIAL_SEASON_ID = "default-season";
 const TUTORIAL_SEASON_NAME = "Tutorial Season";
 const EXPECTED_TUTORIAL_PROJECT_NAMES = [
-  "Tutorial Robot 2026",
+  "Robot",
   "Media",
   "Outreach",
   "Operations",
@@ -1261,15 +1096,17 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     id: uniqueId(toSlug(`Wire ${mechanism.name}`) || "wire-task", taskIds),
     createdAt: new Date().toISOString(),
     projectId: ownership.projectId,
+    workTypeId: workTypeIdForProject(ownership.projectId, "electrical-wiring"),
+    responsibleGroupId: null,
+    requestedById: null,
+    scheduleRefs: [],
+    manufacturingDetails: null,
     workstreamIds: [],
     title: `Wire ${mechanism.name}`,
     summary: `Complete wiring and harness verification for ${mechanism.name}.`,
     subsystemIds: [subsystem.id],
-    disciplineId: "electrical",
     mechanismIds: [mechanism.id],
     partInstanceIds: [],
-    artifactIds: [],
-    targetMilestoneId: null,
     ownerId: subsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([subsystem.responsibleEngineerId]),
     mentorId: subsystem.mentorIds[0] ?? null,
@@ -1280,22 +1117,19 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     estimatedHours: 4,
     actualHours: 0,
     checklistItems: [],
-    blockers: [],
 
-    linkedManufacturingIds: [],
-    linkedPurchaseIds: [],
     requiresDocumentation: true,
-    documentationLinked: false,
   };
 
   return task;
 }
 
-function normalizeDisciplineIdForProject(projectId: string, disciplineId: string) {
+function workTypeIdForProject(projectId: string, code: string) {
   const project = currentSnapshot.projects.find((candidate) => candidate.id === projectId);
-  return isTaskDisciplineAllowedForProject(project, disciplineId)
-    ? disciplineId
-    : getDefaultTaskDisciplineIdForProject(project);
+  const requestedId = project ? `${project.projectType}:${code}` : "";
+  return currentSnapshot.workTypes.some((workType) => workType.id === requestedId && workType.isActive)
+    ? requestedId
+    : currentSnapshot.workTypes.find((workType) => workType.projectType === project?.projectType && workType.isActive)?.id ?? "robot:planning";
 }
 
 function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
@@ -1320,15 +1154,17 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     id: uniqueId(toSlug(`Integrate ${subsystem.name}`) || "integration-task", taskIds),
     createdAt: new Date().toISOString(),
     projectId: ownership.projectId,
+    workTypeId: workTypeIdForProject(ownership.projectId, "testing"),
+    responsibleGroupId: null,
+    requestedById: null,
+    scheduleRefs: [],
+    manufacturingDetails: null,
     workstreamIds: [],
     title: `Integrate ${subsystem.name}`,
     summary: `Complete integration and interface verification for ${subsystem.name}.`,
     subsystemIds: [parentSubsystem.id],
-    disciplineId: "testing",
     mechanismIds: [],
     partInstanceIds: [],
-    artifactIds: [],
-    targetMilestoneId: null,
     ownerId: parentSubsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([parentSubsystem.responsibleEngineerId]),
     mentorId: parentSubsystem.mentorIds[0] ?? null,
@@ -1339,12 +1175,8 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     estimatedHours: 4,
     actualHours: 0,
     checklistItems: [],
-    blockers: [],
 
-    linkedManufacturingIds: [],
-    linkedPurchaseIds: [],
     requiresDocumentation: true,
-    documentationLinked: false,
   };
 
   return task;
@@ -1898,10 +1730,6 @@ export function getSubsystems(): SnapshotView["subsystems"] {
   return currentSnapshot.subsystems;
 }
 
-export function getDisciplines(): SnapshotView["disciplines"] {
-  return currentSnapshot.disciplines;
-}
-
 export function getMechanisms(): SnapshotView["mechanisms"] {
   return currentSnapshot.mechanisms;
 }
@@ -1938,10 +1766,6 @@ export function getTaskDependencies(): SnapshotView["taskDependencies"] {
   return currentSnapshot.taskDependencies;
 }
 
-export function getTaskBlockers(): SnapshotView["taskBlockers"] {
-  return currentSnapshot.taskBlockers;
-}
-
 export function getQaReports(): SnapshotView["qaReports"] {
   return currentSnapshot.qaReports;
 }
@@ -1967,7 +1791,26 @@ export function getFindings(): FindingListItem[] {
 }
 
 export function getTaskTargets() {
-  return currentSnapshot.tasks.flatMap((task) => flattenTaskTargets(task));
+  const taskTargets = currentSnapshot.tasks.flatMap((task) => flattenTaskTargets(task));
+  const taskById = new Map(currentSnapshot.tasks.map((task) => [task.id, task]));
+  const evidenceTargets = currentSnapshot.artifacts.flatMap((artifact) =>
+    artifact.targetRefs.flatMap((ref) => {
+      if (ref.kind !== "task") return [];
+      const task = taskById.get(ref.id);
+      if (!task) return [];
+      return [{
+        id: `${task.id}:artifact:${artifact.id}`,
+        taskId: task.id,
+        taskTitle: task.title,
+        projectId: task.projectId,
+        workstreamId: task.workstreamIds[0] ?? null,
+        subsystemId: task.subsystemIds[0] ?? "",
+        targetType: "artifact" as const,
+        targetId: artifact.id,
+      }];
+    }),
+  );
+  return [...taskTargets, ...evidenceTargets];
 }
 
 function matchTaskTargetsToMilestoneRequirements(
@@ -2009,13 +1852,13 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
     taskTargets,
     getMilestoneRequirements(),
   );
-  const hasLegacyMilestoneTarget = new Set(
+  const explicitScheduleMilestoneIds = new Set(
     taskTargets
       .filter((target) => target.targetType === "milestone")
       .map((target) => target.targetId),
   );
 
-  for (const milestoneId of hasLegacyMilestoneTarget) {
+  for (const milestoneId of explicitScheduleMilestoneIds) {
     if (!matchedMilestoneIds.has(milestoneId)) {
       matchedMilestoneIds.set(milestoneId, new Set<string>());
     }
@@ -2033,7 +1876,7 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
     .map(([milestoneId, requirementIds]) => ({
       milestoneId,
       matchedRequirementIds: Array.from(requirementIds),
-      isLegacyLink: hasLegacyMilestoneTarget.has(milestoneId),
+      isExplicitScheduleRef: explicitScheduleMilestoneIds.has(milestoneId),
     }));
 }
 
@@ -2048,15 +1891,15 @@ export function getTasksForMilestone(milestoneId: string): TaskMilestoneMatch[] 
       const matchedRequirementIds =
         matchTaskTargetsToMilestoneRequirements(taskTargets, requirements).get(milestoneId) ??
         new Set<string>();
-      const isLegacyLink = taskTargets.some(
+      const isExplicitScheduleRef = taskTargets.some(
         (target) => target.targetType === "milestone" && target.targetId === milestoneId,
       );
 
-      if (matchedRequirementIds.size > 0 || isLegacyLink) {
+      if (matchedRequirementIds.size > 0 || isExplicitScheduleRef) {
         return {
           taskId: task.id,
           matchedRequirementIds: Array.from(matchedRequirementIds),
-          isLegacyLink,
+          isExplicitScheduleRef,
         };
       }
 
@@ -2092,59 +1935,17 @@ function getSeasonAuditDetails(...records: Array<{
 }
 
 function getRiskProjectIds(risk: Risk) {
-  const projectIds: Array<string | null | undefined> = [];
-
-  if (risk.attachmentType === "project") {
-    projectIds.push(risk.attachmentId);
-  }
-
-  if (risk.attachmentType === "workstream") {
-    const workstream = currentSnapshot.workstreams.find(
-      (candidate) => candidate.id === risk.attachmentId,
-    );
-    projectIds.push(workstream?.projectId);
-  }
-
-  if (risk.attachmentType === "mechanism") {
-    const mechanism = currentSnapshot.mechanisms.find(
-      (candidate) => candidate.id === risk.attachmentId,
-    );
-    const subsystem = currentSnapshot.subsystems.find(
-      (candidate) => candidate.id === mechanism?.subsystemId,
-    );
-    projectIds.push(subsystem?.projectId);
-  }
-
-  if (risk.attachmentType === "part-instance") {
-    const partInstance = currentSnapshot.partInstances.find(
-      (candidate) => candidate.id === risk.attachmentId,
-    );
-    const subsystem = currentSnapshot.subsystems.find(
-      (candidate) => candidate.id === partInstance?.subsystemId,
-    );
-    projectIds.push(subsystem?.projectId);
-  }
-
-  const mitigationTask = currentSnapshot.tasks.find(
-    (candidate) => candidate.id === risk.mitigationTaskId,
-  );
-  projectIds.push(mitigationTask?.projectId);
-
-  return uniqueIds(projectIds);
+  return [risk.projectId];
 }
 
 export function createRisk(input: RiskInput) {
   const riskIds = new Set(currentSnapshot.risks.map((risk) => risk.id));
   const risk: Risk = {
     id: uniqueId(toSlug(input.title) || "risk", riskIds),
-    title: input.title,
-    detail: input.detail,
-    severity: input.severity,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    attachmentType: input.attachmentType,
-    attachmentId: input.attachmentId,
-    mitigationTaskId: input.mitigationTaskId,
+    ...input,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    resolvedAt: input.resolvedAt ?? (input.status === "resolved" ? new Date().toISOString() : null),
   };
 
   replaceCurrentSnapshot({
@@ -2173,6 +1974,8 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
   const updatedRisk: Risk = {
     ...previousRisk,
     ...input,
+    updatedAt: new Date().toISOString(),
+    resolvedAt: input.status === "resolved" ? input.resolvedAt ?? new Date().toISOString() : input.status ? null : previousRisk.resolvedAt,
     mitigationTaskId:
       input.mitigationTaskId === undefined
         ? previousRisk.mitigationTaskId
@@ -2226,8 +2029,8 @@ export function removeRisk(riskId: string) {
     projectIds,
     taskId: risk.mitigationTaskId,
     detailsJson: {
-      attachmentType: risk.attachmentType,
-      attachmentId: risk.attachmentId,
+      source: risk.source,
+      relatedTargets: risk.relatedTargets,
       projectIds,
     },
   });
@@ -2237,10 +2040,6 @@ export function removeRisk(riskId: string) {
 
 export function getPurchaseItems(): SnapshotView["purchaseItems"] {
   return currentSnapshot.purchaseItems;
-}
-
-export function getManufacturingItems(): SnapshotView["manufacturingItems"] {
-  return currentSnapshot.manufacturingItems;
 }
 
 export function createMaterial(input: MaterialInput) {
@@ -2253,7 +2052,7 @@ export function createMaterial(input: MaterialInput) {
     onHandQuantity: input.onHandQuantity,
     reorderPoint: input.reorderPoint,
     location: input.location,
-    vendor: input.vendor,
+    preferredVendorId: input.preferredVendorId,
     notes: input.notes,
   };
 
@@ -2334,7 +2133,7 @@ export function createArtifact(input: ArtifactInput) {
   const artifact: Artifact = {
     id: uniqueId(toSlug(input.title) || "artifact", artifactIds),
     projectId: input.projectId,
-    workstreamId: input.workstreamId,
+    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? [{ kind: "project", id: input.projectId }],
     kind: input.kind,
     title: input.title,
     summary: input.summary,
@@ -2406,19 +2205,6 @@ export function removeArtifact(artifactId: string) {
     artifacts: currentSnapshot.artifacts.filter(
       (candidate) => candidate.id !== artifactId,
     ),
-    tasks: currentSnapshot.tasks.map((task) => {
-      if (!task.artifactIds.includes(artifactId)) {
-        return task;
-      }
-
-      const artifactIds = task.artifactIds.filter(
-        (candidateArtifactId) => candidateArtifactId !== artifactId,
-      );
-      return normalizeTaskTargets({
-        ...task,
-        artifactIds,
-      });
-    }),
     designIterations: currentSnapshot.designIterations.map((iteration) =>
       iteration.artifactId === artifactId
         ? {
@@ -2598,19 +2384,14 @@ export function removeSubsystem(subsystemId: string) {
     currentSnapshot.partInstances
       .filter(
         (partInstance) =>
-          subsystemIdsToRemove.has(partInstance.subsystemId) ||
-          mechanismIdsToRemove.has(partInstance.mechanismId ?? ""),
+          subsystemIdsToRemove.has(partInstanceSubsystemId(partInstance) ?? "") ||
+          mechanismIdsToRemove.has(partInstanceMechanismId(partInstance) ?? ""),
       )
       .map((partInstance) => partInstance.id),
   );
-  const manufacturingItemIdsToRemove = new Set(
-    currentSnapshot.manufacturingItems
-      .filter((item) => subsystemIdsToRemove.has(item.subsystemId))
-      .map((item) => item.id),
-  );
   const purchaseItemIdsToRemove = new Set(
     currentSnapshot.purchaseItems
-      .filter((item) => subsystemIdsToRemove.has(item.subsystemId))
+      .filter((item) => subsystemIdsToRemove.has(currentSnapshot.tasks.find((task) => task.id === item.taskId)?.subsystemIds[0] ?? ""))
       .map((item) => item.id),
   );
   const taskIdsToRemove = new Set(
@@ -2635,17 +2416,7 @@ export function removeSubsystem(subsystemId: string) {
     partInstances: currentSnapshot.partInstances.filter(
       (partInstance) => !partInstanceIdsToRemove.has(partInstance.id),
     ),
-    tasks: currentSnapshot.tasks
-      .filter((task) => !taskIdsToRemove.has(task.id))
-      .map((task) => ({
-        ...task,
-        linkedManufacturingIds: task.linkedManufacturingIds.filter(
-          (itemId) => !manufacturingItemIdsToRemove.has(itemId),
-        ),
-        linkedPurchaseIds: task.linkedPurchaseIds.filter(
-          (itemId) => !purchaseItemIdsToRemove.has(itemId),
-        ),
-      })),
+    tasks: currentSnapshot.tasks.filter((task) => !taskIdsToRemove.has(task.id)),
     workLogs: currentSnapshot.workLogs.filter(
       (workLog) => !taskIdsToRemove.has(workLog.taskId),
     ),
@@ -2653,45 +2424,22 @@ export function removeSubsystem(subsystemId: string) {
     qaReports: currentSnapshot.qaReports.filter(
       (report) => !taskIdsToRemove.has(report.taskId),
     ),
-    qaRequests: getQaRequests().filter(
+    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter(
       (request) => !request.taskId || !taskIdsToRemove.has(request.taskId),
     ),
     risks: currentSnapshot.risks.filter((risk) => {
       if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
         return false;
       }
-
-      if (
-        risk.attachmentType === "mechanism" &&
-        mechanismIdsToRemove.has(risk.attachmentId)
-      ) {
-        return false;
-      }
-
-      if (
-        risk.attachmentType === "part-instance" &&
-        partInstanceIdsToRemove.has(risk.attachmentId)
-      ) {
-        return false;
-      }
+      if (risk.relatedTargets.some((target) => (target.kind === "mechanism" && mechanismIdsToRemove.has(target.id)) || (target.kind === "part-instance" && partInstanceIdsToRemove.has(target.id)))) return false;
 
       return true;
     }),
-    manufacturingItems: currentSnapshot.manufacturingItems.filter(
-      (item) => !manufacturingItemIdsToRemove.has(item.id),
-    ),
     purchaseItems: currentSnapshot.purchaseItems.filter(
       (item) => !purchaseItemIdsToRemove.has(item.id),
     ),
     qaReviews: currentSnapshot.qaReviews.filter((review) => {
       if (review.subjectType === "task" && taskIdsToRemove.has(review.subjectId)) {
-        return false;
-      }
-
-      if (
-        review.subjectType === "manufacturing" &&
-        manufacturingItemIdsToRemove.has(review.subjectId)
-      ) {
         return false;
       }
 
@@ -2736,7 +2484,7 @@ export function createPartDefinition(input: PartDefinitionInput, auditContext: A
     iteration: normalizeIteration(input.iteration),
     isArchived: input.isArchived ?? false,
     type: input.type,
-    source: input.source,
+    defaultAcquisitionMethod: input.defaultAcquisitionMethod,
     materialId: input.materialId,
     description: input.description,
     photoUrl: input.photoUrl ?? "",
@@ -2760,7 +2508,7 @@ export function createPartDefinition(input: PartDefinitionInput, auditContext: A
 }
 
 export interface PartAcquisitionPlan {
-  method: "manufacture" | "purchase";
+  method: "manufacture" | "purchase-cots";
   requestedById: string | null;
   task: TaskInput;
 }
@@ -2776,38 +2524,38 @@ export function createPartDefinitionWithAcquisition(
   const result = snapshotContext.run(draft, () => {
     const item = createPartDefinition(definition, auditContext);
     if (!plan) {
-      return { item, acquisitionItem: null, task: null };
+      return { item, purchaseItem: null, task: null };
     }
-    const common = {
-      title: item.name,
-      subsystemId: plan.task.subsystemIds[0] ?? "",
-      requestedById: plan.requestedById,
-      partDefinitionId: item.id,
-      quantity: 1,
-      status: "requested" as const,
-    };
-    const acquisitionItem = plan.method === "manufacture"
-      ? createManufacturingItem({
-          ...common,
-          process: "cnc",
-          dueDate: plan.task.dueDate,
-          material: item.source,
-          materialId: item.materialId ?? null,
-          mentorReviewed: false,
-        }, auditContext)
-      : createPurchaseItem({
-          ...common,
-          vendor: item.source,
-          linkLabel: "n/a",
-          estimatedCost: 0,
-          approvedByMentor: false,
-        }, auditContext);
     const task = createTask({
       ...plan.task,
-      linkedManufacturingIds: plan.method === "manufacture" ? [acquisitionItem.id] : [],
-      linkedPurchaseIds: plan.method === "purchase" ? [acquisitionItem.id] : [],
-    }, auditContext);
-    return { item, acquisitionItem, task };
+      manufacturingDetails: plan.method === "manufacture" && plan.task.manufacturingDetails
+        ? { ...plan.task.manufacturingDetails, part: { kind: "part-definition", partDefinitionId: item.id } }
+        : null,
+        }, auditContext);
+    const needsPurchasing = plan.method === "purchase-cots" ||
+      (plan.method === "manufacture" && task.manufacturingDetails?.fulfillmentSource === "outsourced");
+    const purchaseItem = needsPurchasing ? createPurchaseItem({
+      taskId: task.id,
+      kind: plan.method === "purchase-cots" ? "cots-goods" : "manufacturing-service",
+      partDefinitionId: item.id,
+      materialId: item.materialId,
+      title: plan.method === "purchase-cots" ? item.name : `${item.name} outsourced fabrication`,
+      quantity: plan.method === "purchase-cots" ? 1 : task.manufacturingDetails?.quantity ?? 1,
+      quotes: [],
+      selectedQuoteId: null,
+      approvalStatus: "pending",
+      approvedById: null,
+      approvedAt: null,
+      purchaseOrderNumber: null,
+      orderStatus: "not-ordered",
+      finalCost: null,
+      expectedDeliveryDate: null,
+      trackingNumber: null,
+      trackingUrl: null,
+      orderedAt: null,
+      deliveredAt: null,
+    }, auditContext) : null;
+    return { item, purchaseItem, task };
   });
   replaceCurrentSnapshot(draft.current);
   return result;
@@ -2904,14 +2652,6 @@ export function removePartDefinition(partDefinitionId: string) {
         partInstanceIds,
       });
     }),
-    manufacturingItems: currentSnapshot.manufacturingItems.map((item) =>
-      item.partDefinitionId === partDefinitionId
-        ? {
-            ...item,
-            partDefinitionId: null,
-          }
-        : item,
-    ),
     purchaseItems: currentSnapshot.purchaseItems.map((item) =>
       item.partDefinitionId === partDefinitionId
         ? {
@@ -2982,50 +2722,28 @@ export function createMechanism(input: MechanismInput) {
 }
 
 export function createPartInstance(input: PartInstanceInput): ReadonlyData<PartInstance> {
-  const partInstanceIds = new Set(
-    currentSnapshot.partInstances.map((partInstance) => partInstance.id),
-  );
+  const id = uniqueId(`part-instance-${input.partDefinitionId}`, new Set(currentSnapshot.partInstances.map((part) => part.id)));
   const partInstance: PartInstance = {
-    id: uniqueId(toSlug(input.name) || "part-instance", partInstanceIds),
+    id,
     ...normalizePmCadProvenance(input),
-    subsystemId: input.subsystemId,
-    mechanismId: input.mechanismId,
     partDefinitionId: input.partDefinitionId,
-    name: input.name,
-    quantity: input.quantity,
-    trackIndividually: input.trackIndividually,
-    status: normalizePartInstanceStatus(input.status),
+    intendedSubsystemId: input.intendedSubsystemId,
+    intendedMechanismId: input.intendedMechanismId,
+    location: input.location,
     photoUrl: input.photoUrl ?? "",
   };
-
-  replaceCurrentSnapshot(normalizePartInstanceSnapshot({
-    ...currentSnapshot,
-    partInstances: [...currentSnapshot.partInstances, partInstance],
-  }));
-
-  const savedPartInstance =
-    currentSnapshot.partInstances.find(
-      (candidate) => getPartInstanceMergeKey(candidate) === getPartInstanceMergeKey(partInstance),
-    ) ?? partInstance;
-
-  recordAuditAction({
-    operation: "create",
-    entityType: "part-instance",
-    entityId: savedPartInstance.id,
-    entityLabel: savedPartInstance.name,
-    projectId: getSubsystemProjectId(savedPartInstance.subsystemId),
-    subsystemId: savedPartInstance.subsystemId,
-  });
-
-  return savedPartInstance;
+  replaceCurrentSnapshot({ ...currentSnapshot, partInstances: [...currentSnapshot.partInstances, partInstance] });
+  const subsystemId = input.location.kind === "installed" ? input.location.subsystemId : input.intendedSubsystemId;
+  recordAuditAction({ operation: "create", entityType: "part-instance", entityId: id,
+    entityLabel: currentSnapshot.partDefinitions.find((part) => part.id === input.partDefinitionId)?.name ?? input.partDefinitionId,
+    projectId: getSubsystemProjectId(subsystemId), subsystemId: subsystemId ?? undefined });
+  return partInstance;
 }
 
 export function updatePartInstance(
   partInstanceId: string,
   input: Partial<PartInstanceInput>,
 ): ReadonlyData<PartInstance> | null {
-  let updatedPartInstance: PartInstance | null = null;
-
   const currentPartInstance = currentSnapshot.partInstances.find(
     (partInstance) => partInstance.id === partInstanceId,
   );
@@ -3033,62 +2751,29 @@ export function updatePartInstance(
     return null;
   }
 
-  const nextMechanismId =
-    input.mechanismId === undefined ? currentPartInstance.mechanismId : input.mechanismId;
-  const nextSubsystemId =
-    input.subsystemId ??
-    (nextMechanismId
-      ? findMechanism(nextMechanismId)?.subsystemId ?? currentPartInstance.subsystemId
-      : currentPartInstance.subsystemId);
-
+  const updatedPartInstance: PartInstance = {
+    ...currentPartInstance,
+    ...input,
+    ...normalizePmCadProvenance({ ...currentPartInstance, ...input,
+      cadEditedAfterImport: markPmCadEditedAfterImport(currentPartInstance, input) }),
+  };
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    partInstances: currentSnapshot.partInstances.map((partInstance) => {
-      if (partInstance.id !== partInstanceId) {
-        return partInstance;
-      }
-
-      updatedPartInstance = {
-        ...partInstance,
-        ...input,
-        ...normalizePmCadProvenance({
-          ...partInstance,
-          ...input,
-          cadEditedAfterImport: markPmCadEditedAfterImport(partInstance, input),
-        }),
-        subsystemId: nextSubsystemId,
-        mechanismId: nextMechanismId,
-        status:
-          input.status === undefined
-            ? partInstance.status
-            : normalizePartInstanceStatus(input.status),
-      };
-
-      return updatedPartInstance;
-    }),
+    partInstances: currentSnapshot.partInstances.map((part) => part.id === partInstanceId ? updatedPartInstance : part),
   });
-
-  replaceCurrentSnapshot(normalizePartInstanceSnapshot(currentSnapshot));
-
-  const savedPartInstance =
-    currentSnapshot.partInstances.find(
-      (candidate) =>
-        candidate.id === partInstanceId ||
-        getPartInstanceMergeKey(candidate) ===
-          getPartInstanceMergeKey(updatedPartInstance ?? currentPartInstance),
-    ) ?? updatedPartInstance;
-
-  if (savedPartInstance) {
+  const savedPartInstance = updatedPartInstance;
+  {
+    const subsystemId = savedPartInstance.location.kind === "installed" ? savedPartInstance.location.subsystemId : savedPartInstance.intendedSubsystemId;
     recordAuditAction({
       operation: "update",
       entityType: "part-instance",
       entityId: savedPartInstance.id,
-      entityLabel: savedPartInstance.name,
+      entityLabel: currentSnapshot.partDefinitions.find((part) => part.id === savedPartInstance.partDefinitionId)?.name ?? savedPartInstance.partDefinitionId,
       projectIds: uniqueIds([
-        getSubsystemProjectId(currentPartInstance.subsystemId),
-        getSubsystemProjectId(savedPartInstance.subsystemId),
+        getSubsystemProjectId(currentPartInstance.intendedSubsystemId),
+        getSubsystemProjectId(subsystemId),
       ]),
-      subsystemId: savedPartInstance.subsystemId,
+      subsystemId: subsystemId ?? undefined,
       changedFields: updatedPartInstance
         ? collectChangedFields(
             currentPartInstance,
@@ -3135,9 +2820,9 @@ export function removePartInstance(partInstanceId: string) {
     operation: "delete",
     entityType: "part-instance",
     entityId: partInstance.id,
-    entityLabel: partInstance.name,
-    projectId: getSubsystemProjectId(partInstance.subsystemId),
-    subsystemId: partInstance.subsystemId,
+    entityLabel: currentSnapshot.partDefinitions.find((part) => part.id === partInstance.partDefinitionId)?.name ?? partInstance.partDefinitionId,
+    projectId: getSubsystemProjectId(partInstance.intendedSubsystemId),
+    subsystemId: partInstance.intendedSubsystemId ?? undefined,
   });
 
   return partInstance;
@@ -3193,10 +2878,11 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       });
     }),
     partInstances: currentSnapshot.partInstances.map((partInstance) =>
-      partInstance.mechanismId === mechanismId
+      partInstanceMechanismId(partInstance) === mechanismId
         ? {
             ...partInstance,
-            subsystemId: nextSubsystemId,
+            intendedSubsystemId: nextSubsystemId,
+            ...(partInstance.location.kind === "installed" ? { location: { ...partInstance.location, subsystemId: nextSubsystemId } } : {}),
           }
         : partInstance,
     ),
@@ -3248,10 +2934,11 @@ export function removeMechanism(mechanismId: string) {
       });
     }),
     partInstances: currentSnapshot.partInstances.map((partInstance) =>
-      partInstance.mechanismId === mechanismId
+      partInstanceMechanismId(partInstance) === mechanismId
         ? {
             ...partInstance,
-            mechanismId: null,
+            intendedMechanismId: null,
+            ...(partInstance.location.kind === "installed" ? { location: { ...partInstance.location, mechanismId: null } } : {}),
           }
         : partInstance,
     ),
@@ -3285,15 +2972,17 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     createdAt: new Date().toISOString(),
     serialNumber: nextSerialNumber,
     projectId: input.projectId,
+    workTypeId: input.workTypeId,
+    responsibleGroupId: input.responsibleGroupId ?? null,
+    requestedById: input.requestedById ?? null,
+    scheduleRefs: input.scheduleRefs ?? [],
+    manufacturingDetails: input.manufacturingDetails ?? null,
     workstreamIds: input.workstreamIds,
     title: input.title,
     summary: input.summary,
     subsystemIds: input.subsystemIds,
-    disciplineId: normalizeDisciplineIdForProject(input.projectId, input.disciplineId),
     mechanismIds: input.mechanismIds,
     partInstanceIds: input.partInstanceIds,
-    artifactIds: input.artifactIds,
-    targetMilestoneId: input.targetMilestoneId,
     photoUrl: input.photoUrl ?? "",
     ownerId: input.ownerId,
     assigneeIds: input.assigneeIds,
@@ -3303,14 +2992,10 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     priority: input.priority,
     status: input.status,
     checklistItems: input.checklistItems ?? [],
-    blockers: [],
 
-    linkedManufacturingIds: input.linkedManufacturingIds,
-    linkedPurchaseIds: input.linkedPurchaseIds,
     estimatedHours: input.estimatedHours,
     actualHours: 0,
     requiresDocumentation: input.requiresDocumentation,
-    documentationLinked: input.documentationLinked,
   };
 
   const normalizedTask = normalizeTaskTargets(task);
@@ -3413,10 +3098,12 @@ export function createMilestone(input: MilestoneInput) {
 }
 
 export function createQaReport(input: QaReportInput) {
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === input.taskId);
   const reportIds = new Set(currentSnapshot.qaReports.map((report) => report.id));
   const report: QaReport = {
     id: uniqueId(toSlug(`${input.taskId} qa`) || "qa-report", reportIds),
     taskId: input.taskId,
+    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? [{ kind: "task", id: input.taskId }],
     participantIds: input.participantIds,
     result: input.result,
     mentorApproved: input.mentorApproved,
@@ -3441,14 +3128,14 @@ export function createQaReport(input: QaReportInput) {
       : risk),
   });
 
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
+  const reportTask = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
   recordAuditAction({
     operation: "create",
     entityType: "report",
     entityId: report.id,
-    entityLabel: task ? `QA: ${task.title}` : `QA report ${report.id}`,
-    projectId: task?.projectId ?? null,
-    subsystemId: task?.subsystemIds[0] ?? null,
+    entityLabel: reportTask ? `QA: ${reportTask.title}` : `QA report ${report.id}`,
+    projectId: reportTask?.projectId ?? null,
+    subsystemId: reportTask?.subsystemIds[0] ?? null,
     taskId: report.taskId,
     memberIds: report.participantIds,
   });
@@ -3467,9 +3154,9 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
   if (input.qaRequestId && (!request || request.taskId !== task.id)) {
     return { error: "The selected QA request is no longer pending for this task." };
   }
-  if (input.result === "pass" && (task.status !== "waiting-for-qa" ||
-      task.blockers.length > 0 || isTaskWaitingOnDependencies(task, currentSnapshot))) {
-    return { error: "A pass requires a task waiting for QA with no blockers or unfinished dependencies." };
+    if (input.result === "pass" && (task.status !== "waiting-for-qa" ||
+      task.isBlocked || isTaskWaitingOnDependencies(task, currentSnapshot))) {
+    return { error: "A pass requires a task waiting for QA with no blocking risks or unfinished dependencies." };
   }
   const report = createQaReport({ ...input, qaRequestId: request?.id ?? null,
     mentorId: request?.mentorId ?? task.mentorId,
@@ -3484,16 +3171,17 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
       startDate: input.reviewedAt, dueDate: input.reviewedAt,
       status: "not-started", priority: input.result === "iteration-worthy" ? "high" : "medium",
       checklistItems: [], estimatedHours: 0,
-      documentationLinked: false,
     });
-    if (input.result === "iteration-worthy") {
-      createTaskBlocker({ blockedTaskId: task.id, blockerType: "external", blockerId: null,
-        issueType: "qa-failed", description: "QA identified iteration-worthy follow-up.",
-        severity: "medium", status: "open" });
-    }
+    if (input.result === "iteration-worthy") createRisk({
+      projectId: task.projectId, title: `QA iteration: ${task.title}`,
+      detail: "QA identified iteration-worthy follow-up.", severity: "medium", category: "qa",
+      status: "open", blocksWork: true, source: { kind: "report", id: report.id },
+      relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null,
+      ownerGroupId: task.responsibleGroupId,
+    });
   }
   replaceCurrentSnapshot({ ...currentSnapshot,
-    qaRequests: getQaRequests().filter((item) => item.taskId !== task.id) });
+    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.taskId !== task.id) });
   return { item: report };
 }
 
@@ -3505,6 +3193,8 @@ export function createQaRequest(input: QaRequestInput) {
   const subject = input.subject.trim();
   const request: QaRequest = {
     id: uniqueId(toSlug(`${subject} qa request`) || "qa-request", requestIds),
+    projectId: input.projectId ?? task?.projectId ?? "",
+    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? (input.taskId ? [{ kind: "task", id: input.taskId }] : []),
     taskId: input.taskId ?? null,
     subject,
     mentorId: input.mentorId,
@@ -3515,7 +3205,7 @@ export function createQaRequest(input: QaRequestInput) {
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    qaRequests: [request, ...getQaRequests()],
+    qaRequests: [request, ...getQaRequests().map((item) => ({ ...item, targetRefs: item.targetRefs.map((ref) => ({ ...ref })) }))],
   });
 
   recordAuditAction({
@@ -3537,6 +3227,8 @@ export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
   const testResult: TestResult = {
     id: uniqueId(toSlug(`${input.title} ${input.milestoneId}`) || "test-result", resultIds),
+    projectId: input.projectId ?? currentSnapshot.milestones.find((item) => item.id === input.milestoneId)?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? "",
+    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? [{ kind: "milestone", id: input.milestoneId }],
     milestoneId: input.milestoneId,
     title: input.title,
     status: input.status,
@@ -3619,6 +3311,13 @@ export function createReportFinding(input: ReportFindingInput) {
       findingIds,
     ),
     taskId: input.spawnedTaskId ?? report.taskId,
+    targetRefs: [
+      { kind: "report", id: input.reportId },
+      ...(input.spawnedTaskId ?? report.taskId ? [{ kind: "task" as const, id: input.spawnedTaskId ?? report.taskId! }] : []),
+      ...(input.mechanismId ? [{ kind: "mechanism" as const, id: input.mechanismId }] : []),
+      ...(input.partInstanceId ? [{ kind: "part-instance" as const, id: input.partInstanceId }] : []),
+      ...(input.artifactInstanceId ? [{ kind: "artifact" as const, id: input.artifactInstanceId }] : []),
+    ],
     projectId: report.projectId,
     workstreamId: report.workstreamId,
     subsystemId: null,
@@ -3663,12 +3362,8 @@ export function createReportFinding(input: ReportFindingInput) {
 export function createTaskDependency(input: TaskDependencyInput) {
   const dependencyIds = new Set(currentSnapshot.taskDependencies.map((dependency) => dependency.id));
   const dependency: TaskDependency = {
+    ...input,
     id: uniqueId(`${input.taskId}-dependency`, dependencyIds),
-    taskId: input.taskId,
-    kind: input.kind,
-    refId: input.refId,
-    requiredState: input.requiredState,
-    dependencyType: input.dependencyType,
     createdAt: new Date().toISOString(),
   };
 
@@ -3701,10 +3396,10 @@ export function updateTaskDependency(
   if (!originalDependency) {
     return null;
   }
-  const savedDependency: TaskDependency = {
+  const savedDependency = {
     ...originalDependency,
     ...input,
-  };
+  } as TaskDependency;
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -3760,109 +3455,6 @@ export function removeTaskDependency(dependencyId: string) {
   return dependency;
 }
 
-export function createTaskBlocker(input: TaskBlockerInput) {
-  const blockerIds = new Set(currentSnapshot.taskBlockers.map((blocker) => blocker.id));
-  const blocker: TaskBlocker = {
-    id: uniqueId(`${input.blockedTaskId}-blocker`, blockerIds),
-    blockedTaskId: input.blockedTaskId,
-    blockerType: input.blockerType,
-    issueType: input.issueType ?? "external",
-    blockerId: input.blockerId,
-    description: input.description,
-    severity: input.severity,
-    status: input.status ?? "open",
-    createdByMemberId: input.createdByMemberId ?? null,
-    createdAt: new Date().toISOString(),
-    resolvedAt: null,
-  };
-
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    taskBlockers: [...currentSnapshot.taskBlockers, blocker],
-  });
-
-  const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
-  recordAuditAction({
-    operation: "create",
-    entityType: "task-blocker",
-    entityId: blocker.id,
-    entityLabel: blocker.description,
-    projectId: blockedTask?.projectId ?? null,
-    taskId: blocker.blockedTaskId,
-    subsystemId: blockedTask?.subsystemIds[0] ?? null,
-    actorMemberId: blocker.createdByMemberId,
-  });
-
-  return blocker;
-}
-
-export function updateTaskBlocker(blockerId: string, input: Partial<TaskBlockerInput>) {
-  const originalBlocker = currentSnapshot.taskBlockers.find(
-    (blocker) => blocker.id === blockerId,
-  );
-  if (!originalBlocker) {
-    return null;
-  }
-  const savedBlocker: TaskBlocker = {
-    ...originalBlocker,
-    ...input,
-    resolvedAt: input.status === "resolved" ? new Date().toISOString() : originalBlocker.resolvedAt,
-  };
-
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    taskBlockers: currentSnapshot.taskBlockers.map((blocker) =>
-      blocker.id === blockerId ? savedBlocker : blocker,
-    ),
-  });
-
-  const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === savedBlocker.blockedTaskId);
-  recordAuditAction({
-    operation: "update",
-    entityType: "task-blocker",
-    entityId: savedBlocker.id,
-    entityLabel: savedBlocker.description,
-    projectId: blockedTask?.projectId ?? null,
-    taskId: savedBlocker.blockedTaskId,
-    subsystemId: blockedTask?.subsystemIds[0] ?? null,
-    actorMemberId: savedBlocker.createdByMemberId,
-    changedFields: collectChangedFields(
-      originalBlocker,
-      savedBlocker,
-    ),
-  });
-
-  return savedBlocker;
-}
-
-export function removeTaskBlocker(blockerId: string) {
-  const blocker = currentSnapshot.taskBlockers.find(
-    (candidate) => candidate.id === blockerId,
-  );
-  if (!blocker) {
-    return null;
-  }
-
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    taskBlockers: currentSnapshot.taskBlockers.filter((candidate) => candidate.id !== blockerId),
-  });
-
-  const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
-  recordAuditAction({
-    operation: "delete",
-    entityType: "task-blocker",
-    entityId: blocker.id,
-    entityLabel: blocker.description,
-    projectId: blockedTask?.projectId ?? null,
-    taskId: blocker.blockedTaskId,
-    subsystemId: blockedTask?.subsystemIds[0] ?? null,
-    actorMemberId: blocker.createdByMemberId,
-  });
-
-  return blocker;
-}
-
 export function updateMilestone(milestoneId: string, input: Partial<MilestoneInput>) {
   const currentMilestone = currentSnapshot.milestones.find((milestone) => milestone.id === milestoneId);
   if (!currentMilestone) {
@@ -3913,7 +3505,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
         return true;
       }
 
-      // Keep non-scope requirements untouched. Scope requirements are synced to legacy fields.
+      // Keep non-scope requirements untouched. Scope requirements track milestone project membership.
       if (!req.id.startsWith(`${updatedMilestone!.id}:scope:`)) {
         return true;
       }
@@ -3962,14 +3554,10 @@ export function removeMilestone(milestoneId: string) {
       (requirement) => requirement.milestoneId !== milestoneId,
     ),
     testResults: currentSnapshot.testResults.filter((result) => result.milestoneId !== milestoneId),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.targetMilestoneId === milestoneId
-        ? {
-            ...task,
-            targetMilestoneId: null,
-          }
-        : task,
-    ),
+    tasks: currentSnapshot.tasks.map((task) => ({
+      ...task,
+      scheduleRefs: task.scheduleRefs.filter((ref) => ref.kind !== "milestone" || ref.id !== milestoneId),
+    })),
   });
 
   recordAuditAction({
@@ -4238,14 +3826,6 @@ export function updateTask(
   let updatedTask = normalizeTaskTargets({
     ...currentTask,
     ...input,
-    ...(input.disciplineId !== undefined
-      ? {
-          disciplineId: normalizeDisciplineIdForProject(
-            input.projectId ?? currentTask.projectId,
-            input.disciplineId,
-          ),
-        }
-      : {}),
   });
 
   if (updatedTask.subsystemIds[0] !== currentTask.subsystemIds[0]) {
@@ -4297,14 +3877,11 @@ export function removeTask(taskId: string) {
     tasks: currentSnapshot.tasks.filter((candidate) => candidate.id !== taskId),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
-    qaRequests: getQaRequests().filter(
+    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter(
       (request) => !request.taskId || request.taskId !== taskId,
     ),
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
-    ),
-    taskBlockers: currentSnapshot.taskBlockers.filter(
-      (blocker) => blocker.blockedTaskId !== taskId,
     ),
     qaReviews: currentSnapshot.qaReviews.filter(
       (review) => review.subjectType !== "task" || review.subjectId !== taskId,
@@ -4330,20 +3907,21 @@ export function removeTask(taskId: string) {
 }
 
 function recordProductionItemAudit(
-  entityType: "purchase-item" | "manufacturing-item",
+  entityType: "purchase-item",
   operation: "create" | "update" | "delete",
-  item: Pick<PurchaseItem, "id" | "title" | "subsystemId" | "requestedById">,
+  item: { id: string; title: string; taskId?: string; subsystemId?: string; requestedById?: string | null },
   auditContext: AuditMutationContext,
   changedFields?: string[],
 ) {
-  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
+  const task = item.taskId ? currentSnapshot.tasks.find((candidate) => candidate.id === item.taskId) : null;
+  const subsystem = item.subsystemId ? currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId) : null;
   recordAuditAction({
     operation,
     entityType,
     entityId: item.id,
     entityLabel: item.title,
-    projectId: subsystem?.projectId ?? null,
-    subsystemId: item.subsystemId,
+    projectId: task?.projectId ?? subsystem?.projectId ?? null,
+    subsystemId: item.subsystemId ?? task?.subsystemIds[0] ?? "",
     actorMemberId: auditContext.actorMemberId ?? item.requestedById,
     requestId: auditContext.requestId ?? null,
     memberIds: [item.requestedById],
@@ -4358,21 +3936,7 @@ export function createPurchaseItem(
   const itemIds = new Set(currentSnapshot.purchaseItems.map((item) => item.id));
   const item: PurchaseItem = {
     id: uniqueId(toSlug(input.title) || "purchase-item", itemIds),
-    title: input.title,
-    subsystemId: input.subsystemId,
-    requestedById: input.requestedById,
-    partDefinitionId: input.partDefinitionId,
-    quantity: input.quantity,
-    vendor: input.vendor,
-    linkLabel: input.linkLabel,
-    estimatedCost: input.estimatedCost,
-    finalCost: input.finalCost,
-    approvedByMentor: input.approvedByMentor,
-    approvedById: input.approvedById ?? null,
-    approvedAt: input.approvedAt ?? null,
-    purchasedAt: input.purchasedAt ?? null,
-    deliveredAt: input.deliveredAt ?? null,
-    status: input.status,
+    ...input,
   };
 
   replaceCurrentSnapshot({
@@ -4434,133 +3998,9 @@ export function removePurchaseItem(
     purchaseItems: currentSnapshot.purchaseItems.filter(
       (candidate) => candidate.id !== itemId,
     ),
-    tasks: currentSnapshot.tasks.map((task) => ({
-      ...task,
-      linkedPurchaseIds: task.linkedPurchaseIds.filter(
-        (linkedItemId) => linkedItemId !== itemId,
-      ),
-    })),
   });
 
   recordProductionItemAudit("purchase-item", "delete", item, auditContext);
-
-  return item;
-}
-
-export function createManufacturingItem(
-  input: ManufacturingItemInput,
-  auditContext: AuditMutationContext = {},
-) {
-  const itemIds = new Set(currentSnapshot.manufacturingItems.map((item) => item.id));
-  const partInstanceIds = uniqueIds([
-    ...(input.partInstanceIds ?? []),
-    input.partInstanceId,
-  ]);
-  const item: ManufacturingItem = {
-    id: uniqueId(toSlug(input.title) || "manufacturing-item", itemIds),
-    title: input.title,
-    subsystemId: input.subsystemId,
-    requestedById: input.requestedById,
-    process: input.process,
-    dueDate: input.dueDate,
-    material: input.material,
-    materialId: input.materialId ?? null,
-    partDefinitionId: input.partDefinitionId,
-    partInstanceId: partInstanceIds[0] ?? null,
-    partInstanceIds,
-    quantity: input.quantity,
-    status: input.status,
-    mentorReviewed: input.mentorReviewed,
-    reviewedById: input.reviewedById ?? null,
-    reviewedAt: input.reviewedAt ?? null,
-    inHouse: input.process === "cnc" ? input.inHouse ?? true : true,
-    batchLabel: input.batchLabel,
-  };
-
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    manufacturingItems: [...currentSnapshot.manufacturingItems, item],
-  });
-
-  recordProductionItemAudit("manufacturing-item", "create", item, auditContext);
-
-  return item;
-}
-
-export function updateManufacturingItem(
-  itemId: string,
-  input: Partial<ManufacturingItemInput>,
-  auditContext: AuditMutationContext = {},
-) {
-  const previousItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
-  if (!previousItem) {
-    return null;
-  }
-
-  const receivedPartInstanceUpdate =
-    input.partInstanceIds !== undefined || input.partInstanceId !== undefined;
-  const partInstanceIds = receivedPartInstanceUpdate
-    ? uniqueIds([...(input.partInstanceIds ?? []), input.partInstanceId])
-    : previousItem.partInstanceIds ?? uniqueIds([previousItem.partInstanceId]);
-
-  const updatedItem: ManufacturingItem = {
-    ...previousItem,
-    ...input,
-    partInstanceId: partInstanceIds[0] ?? null,
-    partInstanceIds,
-    inHouse:
-      (input.process ?? previousItem.process) === "cnc"
-        ? input.inHouse ?? previousItem.inHouse ?? true
-        : true,
-  };
-
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    manufacturingItems: currentSnapshot.manufacturingItems.map((item) =>
-      item.id === itemId ? updatedItem : item,
-    ),
-  });
-
-  recordProductionItemAudit(
-    "manufacturing-item",
-    "update",
-    updatedItem,
-    auditContext,
-    collectChangedFields(previousItem, updatedItem),
-  );
-
-  return updatedItem;
-}
-
-export function removeManufacturingItem(
-  itemId: string,
-  auditContext: AuditMutationContext = {},
-) {
-  const item = currentSnapshot.manufacturingItems.find(
-    (candidate) => candidate.id === itemId,
-  );
-  if (!item) {
-    return null;
-  }
-
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    manufacturingItems: currentSnapshot.manufacturingItems.filter(
-      (candidate) => candidate.id !== itemId,
-    ),
-    tasks: currentSnapshot.tasks.map((task) => ({
-      ...task,
-      linkedManufacturingIds: task.linkedManufacturingIds.filter(
-        (linkedItemId) => linkedItemId !== itemId,
-      ),
-    })),
-    qaReviews: currentSnapshot.qaReviews.filter(
-      (review) =>
-        review.subjectType !== "manufacturing" || review.subjectId !== itemId,
-    ),
-  });
-
-  recordProductionItemAudit("manufacturing-item", "delete", item, auditContext);
 
   return item;
 }
@@ -4570,7 +4010,6 @@ export function createMember(input: MemberInput) {
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
-  const disciplineId = input.disciplineId === undefined ? undefined : input.disciplineId;
   const member: Member = {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
@@ -4578,7 +4017,6 @@ export function createMember(input: MemberInput) {
     photoUrl: (input.photoUrl ?? "").trim(),
     role: input.role,
     elevated: isElevatedMemberRole(input.role),
-    ...(disciplineId !== undefined ? { disciplineId } : null),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     plannedWeeklyAttendanceHours: normalizePlannedWeeklyAttendanceHours(
@@ -4712,20 +4150,15 @@ export function removeMember(memberId: string) {
     attendanceRecords: currentSnapshot.attendanceRecords.filter(
       (record) => record.memberId !== memberId,
     ),
-    manufacturingItems: currentSnapshot.manufacturingItems.map((item) => ({
-      ...item,
-      requestedById: item.requestedById === memberId ? null : item.requestedById,
-      reviewedById: item.reviewedById === memberId ? null : item.reviewedById,
-    })),
     purchaseItems: currentSnapshot.purchaseItems.map((item) => ({
       ...item,
-      requestedById: item.requestedById === memberId ? null : item.requestedById,
       approvedById: item.approvedById === memberId ? null : item.approvedById,
     })),
     qaRequests: getQaRequests()
       .filter((request) => request.mentorId !== memberId)
       .map((request) => ({
         ...request,
+        targetRefs: request.targetRefs.map((ref) => ({ ...ref })),
         requestedById: request.requestedById === memberId ? null : request.requestedById,
       })),
     qaReviews: currentSnapshot.qaReviews.map((review) => ({
@@ -4755,10 +4188,6 @@ export function findSubsystem(subsystemId: string): SnapshotView["subsystems"][n
 
 export function findMilestone(milestoneId: string): SnapshotView["milestones"][number] | undefined {
   return currentSnapshot.milestones.find((milestone) => milestone.id === milestoneId);
-}
-
-export function findDiscipline(disciplineId: string): SnapshotView["disciplines"][number] | undefined {
-  return currentSnapshot.disciplines.find((discipline) => discipline.id === disciplineId);
 }
 
 export function findMechanism(mechanismId: string): SnapshotView["mechanisms"][number] | undefined {

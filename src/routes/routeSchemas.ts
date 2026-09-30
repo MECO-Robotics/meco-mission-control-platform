@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { taskTargetsSchema } from "../domain/taskTargets";
 
+export const domainReferenceSchema = z.object({
+  kind: z.enum(["project", "workstream", "responsible-group", "task", "subsystem", "mechanism", "part-definition", "part-instance", "material", "vendor", "manufacturing-details", "purchase-item", "meeting", "event", "milestone", "qa-request", "test-result", "report", "artifact", "qa-finding", "test-finding", "task-dependency", "risk", "design-iteration"]),
+  id: z.string().trim().min(1),
+}).strict();
 
 const plannedAttendanceDaySchema = z.enum([
   "monday",
@@ -22,7 +26,6 @@ const memberFieldsSchema = z.object({
   photoUrl: z.string().trim(),
   role: z.enum(["student", "lead", "mentor", "admin", "external"]),
   elevated: z.boolean(),
-  disciplineId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80),
@@ -53,7 +56,7 @@ export const seasonSchema = z.object({
 const projectFieldsSchema = z.object({
   seasonId: z.string().trim().min(1),
   name: z.string().trim().min(2),
-  projectType: z.enum(["robot", "operations", "outreach", "other"]),
+  projectType: z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]),
   description: z.string().trim(),
   status: z.enum(["planned", "active", "paused", "complete"]),
 });
@@ -69,10 +72,33 @@ export const projectPatchSchema = projectFieldsSchema.pick({ name: true, descrip
 const taskFieldsSchema = z.object({
   ...taskTargetsSchema.partial().shape,
   projectId: z.string().trim().min(1).optional(),
+  workTypeId: z.string().trim().min(1),
+  responsibleGroupId: z.string().trim().min(1).nullable().optional(),
+  requestedById: z.string().trim().min(1).nullable().optional(),
+  scheduleRefs: z.array(z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("meeting"), id: z.string().trim().min(1) }).strict(),
+    z.object({ kind: z.literal("event"), id: z.string().trim().min(1) }).strict(),
+    z.object({ kind: z.literal("milestone"), id: z.string().trim().min(1) }).strict(),
+  ])).optional(),
+  manufacturingDetails: z.object({
+    part: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("part-definition"), partDefinitionId: z.string().trim().min(1) }).strict(),
+      z.object({ kind: z.literal("provisional"), partNumber: z.string().trim().min(1), revision: z.string().trim().min(1) }).strict(),
+    ]),
+    quantity: z.coerce.number().positive(),
+    processId: z.string().trim().min(1),
+    fulfillmentSource: z.enum(["in-house", "outsourced"]),
+    material: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("inventory-material"), materialId: z.string().trim().min(1) }).strict(),
+      z.object({ kind: z.literal("specified-material"), name: z.string().trim().min(1) }).strict(),
+    ]),
+    fileArtifactIds: z.array(z.string().trim().min(1)),
+    tolerances: z.array(z.string().trim().min(1)),
+    qaRequirements: z.array(z.string().trim().min(1)),
+    batchLabel: z.string().trim().min(1).optional(),
+  }).strict().nullable().optional(),
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
-  disciplineId: z.string().min(1),
-  targetMilestoneId: z.string().trim().min(1).nullable(),
   photoUrl: z.string().trim(),
   ownerId: z.string().trim().min(1).nullable(),
   assigneeIds: z.array(z.string().trim().min(1)),
@@ -83,20 +109,18 @@ const taskFieldsSchema = z.object({
   status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]),
   estimatedHours: z.coerce.number().min(0),
   checklistItems: z.array(z.string().trim().min(1)),
-  linkedManufacturingIds: z.array(z.string().trim().min(1)),
-  linkedPurchaseIds: z.array(z.string().trim().min(1)),
   requiresDocumentation: z.boolean(),
-  documentationLinked: z.boolean(),
 }).strict();
 
 export const taskSchema = taskFieldsSchema.extend({
+  responsibleGroupId: taskFieldsSchema.shape.responsibleGroupId.default(null),
+  requestedById: taskFieldsSchema.shape.requestedById.default(null),
+  scheduleRefs: taskFieldsSchema.shape.scheduleRefs.default([]),
+  manufacturingDetails: taskFieldsSchema.shape.manufacturingDetails.default(null),
   photoUrl: taskFieldsSchema.shape.photoUrl.default(""),
   assigneeIds: taskFieldsSchema.shape.assigneeIds.default([]),
   checklistItems: taskFieldsSchema.shape.checklistItems.default([]),
-  linkedManufacturingIds: taskFieldsSchema.shape.linkedManufacturingIds.default([]),
-  linkedPurchaseIds: taskFieldsSchema.shape.linkedPurchaseIds.default([]),
   requiresDocumentation: taskFieldsSchema.shape.requiresDocumentation.default(false),
-  documentationLinked: taskFieldsSchema.shape.documentationLinked.default(false),
 });
 
 export const taskPatchSchema = taskFieldsSchema.partial();
@@ -166,6 +190,7 @@ export const qaReassessmentSchema = z.object({
 export const qaReportSchema = z.object({
   ...qaReassessmentSchema.shape,
   taskId: z.string().trim().min(1),
+  targetRefs: z.array(domainReferenceSchema).optional(),
   participantIds: z.array(z.string().trim().min(1)).min(1),
   result: z.enum(["pass", "minor-fix", "iteration-worthy"]),
   mentorApproved: z.boolean().default(false),
@@ -181,6 +206,8 @@ export const qaSubmitSchema = qaReportSchema.extend({
 });
 
 export const qaRequestSchema = z.object({
+  projectId: z.string().trim().min(1).optional(),
+  targetRefs: z.array(domainReferenceSchema).optional(),
   taskId: z.string().trim().min(1).nullable().optional(),
   subject: z.string().trim().min(2),
   mentorId: z.string().trim().min(1),
@@ -188,6 +215,8 @@ export const qaRequestSchema = z.object({
 });
 
 export const testResultSchema = z.object({
+  projectId: z.string().trim().min(1).optional(),
+  targetRefs: z.array(domainReferenceSchema).optional(),
   milestoneId: z.string().trim().min(1),
   title: z.string().trim().min(2),
   status: z.enum(["pass", "fail", "blocked"]),
@@ -219,6 +248,7 @@ export const auditExportQuerySchema = z.object({
 
 export const reportSchema = z.object({
   ...qaReassessmentSchema.shape,
+  targetRefs: z.array(domainReferenceSchema).optional(),
   reportType: z.enum(["QA", "MilestoneTest"]),
   projectId: z.string().trim().min(1),
   taskId: z.string().trim().min(1).nullable(),
@@ -257,55 +287,46 @@ const taskDependencyFields = {
   dependencyType: z.enum(["hard", "soft"]),
 };
 const dependencyTaskStateSchema = z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]);
-const dependencyReadinessStateSchema = z.enum(["not ready", "blocked", "qa", "ready"]);
+const dependencyReadinessStateSchema = z.enum(["not-ready", "blocked", "qa", "ready"]);
 export const taskDependencySchema = z.discriminatedUnion("kind", [
   z.object({ ...taskDependencyFields, kind: z.literal("task"), requiredState: dependencyTaskStateSchema }).strict(),
   z.object({ ...taskDependencyFields, kind: z.literal("milestone"), requiredState: dependencyReadinessStateSchema }).strict(),
-  z.object({ ...taskDependencyFields, kind: z.literal("part_instance"), requiredState: dependencyReadinessStateSchema }).strict(),
+  z.object({ ...taskDependencyFields, kind: z.literal("part-instance"), requiredCondition: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("physical-location"), value: z.enum(["stock", "installed", "repair", "retired", "lost", "unlocated"]) }).strict(),
+    z.object({ kind: z.literal("derived-readiness"), value: dependencyReadinessStateSchema }).strict(),
+  ]) }).strict(),
 ]);
 export const taskDependencyPatchSchema = z.object({
   ...taskDependencyFields,
-  kind: z.enum(["task", "milestone", "part_instance"]),
-  requiredState: z.union([dependencyTaskStateSchema, dependencyReadinessStateSchema]),
+  kind: z.enum(["task", "milestone", "part-instance"]),
+  requiredState: z.union([dependencyTaskStateSchema, dependencyReadinessStateSchema]).optional(),
+  requiredCondition: z.object({ kind: z.string(), value: z.string() }).strict().optional(),
 }).strict().partial();
 
-const taskBlockerFieldsSchema = z.object({
-  issueType: z.enum(["external", "lost-part", "broken-part", "lost-tool", "broken-tool",
-    "design-issue", "shipping-delay", "manufacturing-unavailable", "qa-failed", "other"]).optional(),
-  blockedTaskId: z.string().trim().min(1),
-  blockerType: z.enum([
-    "task",
-    "milestone",
-    "workstream",
-    "mechanism",
-    "part_instance",
-    "artifact_instance",
-    "external",
-  ]),
-  blockerId: z.string().trim().min(1).nullable(),
-  description: z.string().trim().min(1),
-  severity: z.enum(["low", "medium", "high", "critical"]),
-  status: z.enum(["open", "resolved"]),
-  createdByMemberId: z.string().trim().min(1).nullable().optional(),
-});
-
-export const taskBlockerSchema = taskBlockerFieldsSchema.extend({
-  status: taskBlockerFieldsSchema.shape.status.default("open"),
-}).strict();
-export const taskBlockerPatchSchema = taskBlockerFieldsSchema.partial();
-
 export const riskSchema = z.object({
+  projectId: z.string().trim().min(1),
   title: z.string().trim().min(2),
   detail: z.string().trim().min(2),
-  severity: z.enum(["high", "medium", "low"]),
-  sourceType: z.enum(["qa-report", "test-result"]),
-  sourceId: z.string().trim().min(1),
-  attachmentType: z.enum(["project", "workstream", "mechanism", "part-instance"]),
-  attachmentId: z.string().trim().min(1),
+  category: z.enum(["dependency", "design", "manufacturing", "supply", "schedule", "qa", "inventory", "other"]),
+  severity: z.enum(["critical", "high", "medium", "low"]),
+  status: z.enum(["open", "mitigating", "accepted", "resolved"]).default("open"),
+  blocksWork: z.boolean().default(false),
+  source: z.union([
+    z.object({ kind: z.literal("manual") }).strict(),
+    z.object({ kind: z.enum(["task", "task-dependency", "qa-finding", "test-finding", "qa-request", "test-result", "report", "event", "milestone", "manufacturing-details", "part-instance", "material"]), id: z.string().trim().min(1) }).strict(),
+  ]),
+  relatedTargets: z.array(z.object({
+    kind: z.enum(["project", "workstream", "responsible-group", "task", "subsystem", "mechanism", "part-definition", "part-instance", "material", "vendor", "manufacturing-details", "purchase-item", "meeting", "event", "milestone", "qa-request", "test-result", "report", "artifact", "qa-finding", "test-finding", "task-dependency", "risk", "design-iteration"]),
+    id: z.string().trim().min(1),
+  }).strict()),
   mitigationTaskId: z.string().trim().min(1).nullable().optional(),
-});
+  ownerGroupId: z.string().trim().min(1).nullable().optional(),
+}).strict();
 
-export const riskPatchSchema = riskSchema.partial();
+export const riskPatchSchema = riskSchema.partial().extend({
+  status: z.enum(["open", "mitigating", "accepted", "resolved"]).optional(),
+  blocksWork: z.boolean().optional(),
+});
 
 const iterationSchema = z.coerce.number().int().min(1);
 const pmCadSourceSchema = z.enum(["manual", "step", "onshape"]);
@@ -400,7 +421,7 @@ export const mechanismPatchSchema = mechanismFieldsSchema.partial();
 
 const acquisitionContext = {
   subsystemId: z.string().trim().min(1),
-  disciplineId: z.string().trim().min(1),
+  workTypeId: z.string().trim().min(1),
   ownerId: z.string().trim().min(1),
   mentorId: z.string().trim().min(1),
   dueDate: z.string().date(),
@@ -408,8 +429,8 @@ const acquisitionContext = {
 
 const partAcquisitionSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("stock") }).strict(),
-  z.object({ method: z.literal("manufacture"), ...acquisitionContext }).strict(),
-  z.object({ method: z.literal("purchase"), ...acquisitionContext }).strict(),
+  z.object({ method: z.literal("manufacture"), ...acquisitionContext, fulfillmentSource: z.enum(["in-house", "outsourced"]).default("in-house") }).strict(),
+  z.object({ method: z.literal("purchase-cots"), ...acquisitionContext }).strict(),
 ]);
 
 const partDefinitionFieldsSchema = z.object({
@@ -424,7 +445,7 @@ const partDefinitionFieldsSchema = z.object({
   iteration: iterationSchema,
   isArchived: z.boolean(),
   type: z.string().trim().min(1),
-  source: z.string().trim().min(1),
+  defaultAcquisitionMethod: z.enum(["stock", "purchase-cots", "manufacture"]),
   materialId: z.string().trim().min(1).nullable().optional(),
   description: z.string().trim(),
   photoUrl: z.string().trim(),
@@ -446,50 +467,59 @@ export const partDefinitionPatchSchema = partDefinitionFieldsSchema.partial().ex
 
 const partInstanceFieldsSchema = z.object({
   ...pmCadProvenanceSchema,
-  subsystemId: z.string().trim().min(1),
-  mechanismId: z.string().trim().min(1).nullable().optional(),
   partDefinitionId: z.string().trim().min(1),
-  name: z.string().trim().min(2),
-  quantity: z.coerce.number().min(1),
-  trackIndividually: z.boolean(),
-  status: z.enum(["not ready", "blocked", "qa", "ready"]),
+  intendedSubsystemId: z.string().trim().min(1).nullable(),
+  intendedMechanismId: z.string().trim().min(1).nullable(),
+  location: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("stock"), location: z.string().trim().min(1) }).strict(),
+    z.object({ kind: z.literal("installed"), subsystemId: z.string().trim().min(1), mechanismId: z.string().trim().min(1).nullable() }).strict(),
+    z.object({ kind: z.literal("repair"), location: z.string().trim().min(1) }).strict(),
+    z.object({ kind: z.literal("retired"), location: z.string().trim().nullable() }).strict(),
+    z.object({ kind: z.literal("lost") }).strict(),
+    z.object({ kind: z.literal("unlocated") }).strict(),
+  ]),
   photoUrl: z.string().trim(),
 });
 
 export const partInstanceSchema = partInstanceFieldsSchema.extend({
-  trackIndividually: partInstanceFieldsSchema.shape.trackIndividually.default(false),
   photoUrl: partInstanceFieldsSchema.shape.photoUrl.default(""),
 });
 
 export const partInstancePatchSchema = partInstanceFieldsSchema.partial();
 
 const purchaseItemFieldsSchema = z.object({
+  taskId: z.string().trim().min(1),
+  kind: z.enum(["cots-goods", "manufacturing-service"]),
   title: z.string().trim().min(3),
-  subsystemId: z.string().min(1),
-  requestedById: z.string().trim().min(1).nullable(),
-  partDefinitionId: z.string().trim().min(1).nullable().optional(),
+  partDefinitionId: z.string().trim().min(1).nullable(),
+  materialId: z.string().trim().min(1).nullable(),
   quantity: z.coerce.number().min(1),
-  vendor: z.string().trim().min(2),
-  linkLabel: z.string().trim().min(2),
-  estimatedCost: z.coerce.number().min(0),
-  finalCost: z.coerce.number().min(0).optional(),
-  approvedByMentor: z.boolean(),
-  status: z.enum(["requested", "approved", "purchased", "shipped", "delivered"]),
-});
+  quotes: z.array(z.object({ id: z.string().trim().min(1), vendorId: z.string().trim().min(1), reference: z.string().nullable(), amount: z.object({ amount: z.number().nonnegative(), currency: z.string().nullable() }).nullable(), url: z.string().optional(), expiresAt: z.string().nullable().optional(), quotedAt: z.string().nullable() }).strict()),
+  selectedQuoteId: z.string().trim().min(1).nullable(),
+  approvalStatus: z.enum(["pending", "approved", "rejected"]),
+  approvedById: z.string().trim().min(1).nullable(),
+  approvedAt: z.string().nullable(),
+  purchaseOrderNumber: z.string().nullable(),
+  orderStatus: z.enum(["not-ordered", "ordered", "shipped", "delivered", "cancelled"]),
+  finalCost: z.object({ amount: z.number().nonnegative(), currency: z.string().nullable() }).nullable(),
+  expectedDeliveryDate: z.string().nullable(),
+  trackingNumber: z.string().nullable(),
+  trackingUrl: z.string().nullable(),
+  orderedAt: z.string().nullable(),
+  deliveredAt: z.string().nullable(),
+}).strict();
 
-export const purchaseItemSchema = purchaseItemFieldsSchema.extend({
-  approvedByMentor: purchaseItemFieldsSchema.shape.approvedByMentor.default(false),
-});
+export const purchaseItemSchema = purchaseItemFieldsSchema;
 
 export const purchaseItemPatchSchema = purchaseItemFieldsSchema.partial();
 
 export const purchaseApprovalSchema = z.object({
-  approved: z.boolean(),
+  approvalStatus: z.enum(["approved", "rejected"]),
 }).strict();
 
 export const purchaseTransitionSchema = z.object({
-  status: z.enum(["purchased", "shipped", "delivered"]),
-  finalCost: z.coerce.number().min(0).optional(),
+  orderStatus: z.enum(["ordered", "shipped", "delivered", "cancelled"]),
+  finalCost: z.object({ amount: z.number().nonnegative(), currency: z.string().nullable() }).nullable().optional(),
 }).strict();
 
 const materialFieldsSchema = z.object({
@@ -507,7 +537,7 @@ const materialFieldsSchema = z.object({
   onHandQuantity: z.coerce.number().min(0),
   reorderPoint: z.coerce.number().min(0),
   location: z.string().trim().min(1),
-  vendor: z.string().trim().min(1),
+  preferredVendorId: z.string().trim().min(1).nullable(),
   notes: z.string().trim(),
 });
 
@@ -519,7 +549,7 @@ export const materialPatchSchema = materialFieldsSchema.partial();
 
 const artifactFieldsSchema = z.object({
   projectId: z.string().trim().min(1),
-  workstreamId: z.string().trim().min(1).nullable().optional(),
+  targetRefs: z.array(domainReferenceSchema).default([]),
   kind: z.enum(["document", "nontechnical"]),
   title: z.string().trim().min(2),
   summary: z.string().trim(),
@@ -536,7 +566,9 @@ export const artifactSchema = artifactFieldsSchema.extend({
   isArchived: artifactFieldsSchema.shape.isArchived.default(false),
 });
 
-export const artifactPatchSchema = artifactFieldsSchema.partial();
+export const artifactPatchSchema = artifactFieldsSchema.partial().extend({
+  targetRefs: z.array(domainReferenceSchema).optional(),
+});
 
 export const mediaUploadRequestSchema = z.object({
   projectId: z.string().trim().min(1),
@@ -544,39 +576,6 @@ export const mediaUploadRequestSchema = z.object({
   contentType: z.string().trim().min(1).max(100),
   sizeBytes: z.coerce.number().int().positive().max(500 * 1024 * 1024),
 });
-
-const manufacturingItemFieldsSchema = z.object({
-  title: z.string().trim().min(3),
-  subsystemId: z.string().min(1),
-  requestedById: z.string().trim().min(1).nullable(),
-  process: z.enum(["3d-print", "cnc", "fabrication"]),
-  dueDate: z.string().date(),
-  material: z.string().trim().min(2),
-  materialId: z.string().trim().min(1).nullable().optional(),
-  partDefinitionId: z.string().trim().min(1).nullable().optional(),
-  partInstanceId: z.string().trim().min(1).nullable().optional(),
-  partInstanceIds: z.array(z.string().trim().min(1)).optional(),
-  quantity: z.coerce.number().min(1),
-  status: z.enum(["requested", "approved", "in-progress", "qa", "complete"]),
-  mentorReviewed: z.boolean(),
-  inHouse: z.boolean(),
-  batchLabel: z.string().trim().min(1).optional(),
-});
-
-export const manufacturingItemSchema = manufacturingItemFieldsSchema.extend({
-  mentorReviewed: manufacturingItemFieldsSchema.shape.mentorReviewed.default(false),
-  inHouse: manufacturingItemFieldsSchema.shape.inHouse.default(true),
-});
-
-export const manufacturingItemPatchSchema = manufacturingItemFieldsSchema.partial();
-
-export const manufacturingReviewSchema = z.object({
-  reviewed: z.boolean(),
-}).strict();
-
-export const manufacturingTransitionSchema = z.object({
-  status: z.enum(["in-progress", "qa", "complete"]),
-}).strict();
 
 const workLogFieldsSchema = z.object({
   taskId: z.string().trim().min(1),

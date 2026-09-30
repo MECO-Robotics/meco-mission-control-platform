@@ -11,7 +11,6 @@ import {
 import {
   createArtifact,
   createMilestone,
-  createManufacturingItem,
   createMaterial,
   createMember,
   createMechanism,
@@ -28,12 +27,10 @@ import {
   createPurchaseItem,
   createRisk,
   createTask,
-  createTaskBlocker,
   createTaskDependency,
   createTestResult,
   createWorkLog,
   createWorkstream,
-  findDiscipline,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -48,7 +45,6 @@ import {
   findSubsystem,
   findWorkstream,
   getMembers,
-  getManufacturingItems,
   getArtifacts,
   getMaterials,
   getPartDefinitions,
@@ -64,7 +60,6 @@ import {
   getTaskTargets,
   getMilestonesForTask,
   getTasks,
-  getTaskBlockers,
   getTaskDependencies,
   getTasksForMilestone,
   getTestResults,
@@ -76,19 +71,16 @@ import {
   removeMaterial,
   removeMember,
   removeMechanism,
-  removeManufacturingItem,
   removePartDefinition,
   removePartInstance,
   removePurchaseItem,
   removeRisk,
   removeSubsystem,
   removeTask,
-  removeTaskBlocker,
   removeTaskDependency,
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
-  updateManufacturingItem,
   updateArtifact,
   updateMaterial,
   updateMember,
@@ -102,7 +94,6 @@ import {
   updateRisk,
   startInteractiveTutorialSession,
   updateTask,
-  updateTaskBlocker,
   updateTaskDependency,
   updateWorkLog,
   updateWorkstream,
@@ -115,12 +106,10 @@ import {
 } from "../domain/workflows";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
-  filterManufacturingItemsForPerson,
   filterPurchaseItemsForPerson,
   filterTasksForPerson,
   paginateItems,
   readPersonFilter,
-  withManufacturingQaReviewCounts,
 } from "./helpers/paginationFilters";
 
 import {
@@ -133,7 +122,6 @@ import { uniqueIds } from "../domain/ids";
 import {
   validateArtifactLinks,
   validateMilestoneProjectLinks,
-  resolveManufacturingItem,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
@@ -141,7 +129,6 @@ import {
   validateQaRequestLinks,
   validateRiskLinks,
   validateSubsystemPeople,
-  validateTaskBlockerLinks,
   validateTaskLinks,
   validateTestResultLinks,
   validateWorkLogLinks,
@@ -163,10 +150,6 @@ import {
   artifactSchema,
   milestonePatchSchema,
   milestoneSchema,
-  manufacturingItemPatchSchema,
-  manufacturingItemSchema,
-  manufacturingReviewSchema,
-  manufacturingTransitionSchema,
   materialPatchSchema,
   materialSchema,
   mediaUploadRequestSchema,
@@ -199,8 +182,6 @@ import {
   taskPatchSchema,
   taskReassignSchema,
   taskSchema,
-  taskBlockerPatchSchema,
-  taskBlockerSchema,
   taskDependencyPatchSchema,
   taskDependencySchema,
   testResultSchema,
@@ -214,8 +195,6 @@ import {
   assessGenericPatch,
   isWorkflowApproverRole,
   isNoopPatch,
-  validateManufacturingReview,
-  validateManufacturingTransition,
   validatePurchaseApproval,
   validatePurchaseTransition,
 } from "./workflowAuthorization";
@@ -297,12 +276,15 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     plannedAttendanceDays: ["tuesday", "thursday"],
     seasonId: member.seasonId,
     activeSeasonIds: member.activeSeasonIds,
-    ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
   }));
 
   return {
     ...selectedBootstrap,
     members,
+    responsibleGroups: selectedBootstrap.responsibleGroups.map((group) => ({
+      ...group,
+      memberIds: rewriteDemoMemberIds(group.memberIds, memberIdsByOriginalId),
+    })),
     subsystems: selectedBootstrap.subsystems.map((subsystem) => ({
       ...subsystem,
       responsibleEngineerId: rewriteDemoMemberId(
@@ -323,16 +305,10 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     })),
     tasks: selectedBootstrap.tasks.map((task) => ({
       ...task,
+      requestedById: rewriteDemoMemberId(task.requestedById, memberIdsByOriginalId),
       ownerId: rewriteDemoMemberId(task.ownerId, memberIdsByOriginalId),
       assigneeIds: rewriteDemoMemberIds(task.assigneeIds, memberIdsByOriginalId),
       mentorId: rewriteDemoMemberId(task.mentorId, memberIdsByOriginalId),
-    })),
-    taskBlockers: selectedBootstrap.taskBlockers.map((blocker) => ({
-      ...blocker,
-      createdByMemberId: rewriteDemoMemberId(
-        blocker.createdByMemberId,
-        memberIdsByOriginalId,
-      ),
     })),
     workLogs: selectedBootstrap.workLogs.map((workLog) => ({
       ...workLog,
@@ -343,30 +319,14 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
       ...record,
       memberId: rewriteDemoMemberId(record.memberId, memberIdsByOriginalId),
     })),
-    manufacturingItems: selectedBootstrap.manufacturingItems.map((item) => ({
-      ...item,
-      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
-      reviewedById: rewriteDemoMemberId(item.reviewedById, memberIdsByOriginalId),
-    })),
     purchaseItems: selectedBootstrap.purchaseItems.map((item) => ({
       ...item,
-      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
       approvedById: rewriteDemoMemberId(item.approvedById, memberIdsByOriginalId),
-    })),
-    qaReports: selectedBootstrap.qaReports.map((report) => ({
-      ...report,
-      mentorId: rewriteDemoMemberId(report.mentorId, memberIdsByOriginalId),
-      requestedById: rewriteDemoMemberId(report.requestedById, memberIdsByOriginalId),
-      participantIds: rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
     })),
     qaRequests: selectedBootstrap.qaRequests.map((request) => ({
       ...request,
       mentorId: rewriteDemoMemberId(request.mentorId, memberIdsByOriginalId),
       requestedById: rewriteDemoMemberId(request.requestedById, memberIdsByOriginalId),
-    })),
-    qaReviews: selectedBootstrap.qaReviews.map((review) => ({
-      ...review,
-      participantIds: rewriteDemoMemberIds(review.participantIds, memberIdsByOriginalId),
     })),
     actions: [],
   };
@@ -561,7 +521,7 @@ export async function registerRoutes(
     return task
       ? {
           ...task,
-          isBlocked: (task.blockers ?? []).length > 0,
+          isBlocked: Boolean(task.isBlocked),
           isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
         }
       : null;
@@ -570,13 +530,13 @@ export async function registerRoutes(
   const isTaskStartReady = (task: ReturnType<typeof getTasks>[number]) => {
     return (
       task.status !== "complete" &&
-      task.blockers.length === 0 &&
+      !task.isBlocked &&
       !isTaskWaitingOnDependencies(task, getSnapshot())
     );
   };
 
   const isValidTaskDependencyTarget = (
-    kind: "task" | "milestone" | "part_instance",
+    kind: "task" | "milestone" | "part-instance",
     refId: string,
   ) => {
     if (kind === "task") {
@@ -587,7 +547,7 @@ export async function registerRoutes(
       return getMilestones().some((milestone) => milestone.id === refId);
     }
 
-    if (kind === "part_instance") {
+    if (kind === "part-instance") {
       return getPartInstances().some((partInstance) => partInstance.id === refId);
     }
 
@@ -699,9 +659,7 @@ export async function registerRoutes(
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
     const isPublicDemoBootstrap = session?.isPublicDemo === true ||
       (!session && (isAuthEnabled() || selection.seasonId === PUBLIC_DEMO_SEASON_ID));
-    const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
-      sanitizeEscalations: isPublicDemoBootstrap,
-    });
+    const selectedBootstrap = buildBootstrapResponse(snapshot, selection);
     const responseBootstrap = isPublicDemoBootstrap
       ? sanitizePublicDemoBootstrap(selectedBootstrap)
       : selectedBootstrap;
@@ -1105,7 +1063,8 @@ export async function registerRoutes(
       getSnapshot(),
       readBootstrapSelection(request.query),
     );
-    const paginated = paginateItems(bootstrap.reportFindings, request.query);
+    const projectIds = new Set(bootstrap.projects.map((project) => project.id));
+    const paginated = paginateItems(getFindings().filter((finding) => projectIds.has(finding.projectId)), request.query);
 
     return {
       items: paginated.items,
@@ -1316,14 +1275,7 @@ export async function registerRoutes(
       });
     }
 
-    const risk = createRisk({
-      ...parsed.data,
-      title: parsed.data.title.trim(),
-      detail: parsed.data.detail.trim(),
-      sourceId: parsed.data.sourceId.trim(),
-      attachmentId: parsed.data.attachmentId.trim(),
-      mitigationTaskId: parsed.data.mitigationTaskId ?? null,
-    });
+    const risk = createRisk({ ...parsed.data, mitigationTaskId: parsed.data.mitigationTaskId ?? null, ownerGroupId: parsed.data.ownerGroupId ?? null });
 
     return reply.code(201).send({
       item: risk,
@@ -1349,16 +1301,7 @@ export async function registerRoutes(
         });
       }
 
-      const nextRiskShape = {
-        sourceType: parsed.data.sourceType ?? currentRisk.sourceType,
-        sourceId: parsed.data.sourceId ?? currentRisk.sourceId,
-        attachmentType: parsed.data.attachmentType ?? currentRisk.attachmentType,
-        attachmentId: parsed.data.attachmentId ?? currentRisk.attachmentId,
-        mitigationTaskId:
-          parsed.data.mitigationTaskId === undefined
-            ? currentRisk.mitigationTaskId
-            : parsed.data.mitigationTaskId,
-      };
+      const nextRiskShape = { ...currentRisk, ...parsed.data };
 
       const validationError = validateRiskLinks(nextRiskShape);
       if (validationError) {
@@ -1516,15 +1459,17 @@ export async function registerRoutes(
     const items = filterTasksForPerson(personId).map((task) => ({
       id: task.id,
       projectId: task.projectId,
+      workTypeId: task.workTypeId,
+      responsibleGroupId: task.responsibleGroupId,
+      requestedById: task.requestedById,
+      scheduleRefs: task.scheduleRefs,
+      manufacturingDetails: task.manufacturingDetails,
       workstreamIds: task.workstreamIds,
       title: task.title,
       summary: task.summary,
       subsystemIds: task.subsystemIds,
-      disciplineId: task.disciplineId,
       mechanismIds: task.mechanismIds,
       partInstanceIds: task.partInstanceIds,
-      artifactIds: task.artifactIds,
-      targetMilestoneId: task.targetMilestoneId,
       ownerId: task.ownerId,
       assigneeIds: task.assigneeIds ?? [],
       mentorId: task.mentorId,
@@ -1536,12 +1481,9 @@ export async function registerRoutes(
       estimatedHours: task.estimatedHours,
       actualHours: task.actualHours,
       gate: evaluateTaskCompletion(task, snapshot),
-      isBlocked: (task.blockers ?? []).length > 0,
+      isBlocked: Boolean(task.isBlocked),
       isWaitingOnDependency: isTaskWaitingOnDependencies(task, snapshot),
-      linkedManufacturingIds: task.linkedManufacturingIds,
-      linkedPurchaseIds: task.linkedPurchaseIds,
-      requiresDocumentation: task.requiresDocumentation,
-      documentationLinked: task.documentationLinked,
+                  requiresDocumentation: task.requiresDocumentation,
     }));
     const paginated = paginateItems(items, request.query);
 
@@ -1925,7 +1867,7 @@ export async function registerRoutes(
 
     const validationError = validateArtifactLinks({
       projectId: parsed.data.projectId,
-      workstreamId: parsed.data.workstreamId ?? null,
+      targetRefs: parsed.data.targetRefs,
     });
     if (validationError) {
       return reply.code(400).send({
@@ -1935,7 +1877,6 @@ export async function registerRoutes(
 
     const artifact = createArtifact({
       ...parsed.data,
-      workstreamId: parsed.data.workstreamId ?? null,
       summary: parsed.data.summary ?? "",
       status: parsed.data.status ?? "draft",
       link: parsed.data.link ?? "",
@@ -1968,13 +1909,10 @@ export async function registerRoutes(
       }
 
       const nextProjectId = parsed.data.projectId ?? currentArtifact.projectId;
-      const nextWorkstreamId =
-        parsed.data.workstreamId === undefined
-          ? currentArtifact.workstreamId
-          : parsed.data.workstreamId;
+      const nextTargetRefs = parsed.data.targetRefs ?? currentArtifact.targetRefs;
       const validationError = validateArtifactLinks({
         projectId: nextProjectId,
-        workstreamId: nextWorkstreamId,
+        targetRefs: nextTargetRefs.map((ref) => ({ ...ref })),
       });
       if (validationError) {
         return reply.code(400).send({
@@ -1985,7 +1923,7 @@ export async function registerRoutes(
       const artifact = updateArtifact(request.params.artifactId, {
         ...parsed.data,
         projectId: nextProjectId,
-        workstreamId: nextWorkstreamId ?? null,
+        targetRefs: nextTargetRefs.map((ref) => ({ ...ref })),
         updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
       });
 
@@ -2046,7 +1984,6 @@ export async function registerRoutes(
       assigneeIds: uniqueIds(parsed.data.assigneeIds ?? []),
       startDate: parsed.data.startDate ?? parsed.data.dueDate,
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
-      documentationLinked: parsed.data.documentationLinked ?? false,
     };
 
     const taskValidationError = validateTaskLinks(taskInput);
@@ -2060,7 +1997,7 @@ export async function registerRoutes(
     return reply.code(201).send({
       item: {
         ...createdTask,
-        isBlocked: (createdTask.blockers ?? []).length > 0,
+        isBlocked: Boolean(createdTask.isBlocked),
         isWaitingOnDependency: isTaskWaitingOnDependencies(createdTask, getSnapshot()),
       },
     });
@@ -2238,16 +2175,15 @@ export async function registerRoutes(
       }) ?? currentTask.projectId;
       const nextTaskShape = {
         projectId: nextProjectId,
+        workTypeId: parsed.data.workTypeId ?? currentTask.workTypeId,
+        responsibleGroupId: parsed.data.responsibleGroupId === undefined ? currentTask.responsibleGroupId : parsed.data.responsibleGroupId,
+        scheduleRefs: parsed.data.scheduleRefs === undefined ? currentTask.scheduleRefs : parsed.data.scheduleRefs,
+        manufacturingDetails: parsed.data.manufacturingDetails === undefined ? currentTask.manufacturingDetails : parsed.data.manufacturingDetails,
         ...targetIds,
         assigneeIds:
           parsed.data.assigneeIds === undefined
             ? currentTask.assigneeIds ?? []
             : uniqueIds(parsed.data.assigneeIds),
-        disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
-        targetMilestoneId:
-          parsed.data.targetMilestoneId === undefined
-            ? currentTask.targetMilestoneId
-            : parsed.data.targetMilestoneId,
       };
 
       const taskValidationError = validateTaskLinks(nextTaskShape);
@@ -2264,13 +2200,12 @@ export async function registerRoutes(
         subsystemIds: nextTaskShape.subsystemIds,
         mechanismIds: nextTaskShape.mechanismIds,
         partInstanceIds: nextTaskShape.partInstanceIds,
-        artifactIds: nextTaskShape.artifactIds,
       }, buildTaskAuditContext(request));
       return {
         item: updatedTask
           ? {
               ...updatedTask,
-              isBlocked: (updatedTask.blockers ?? []).length > 0,
+              isBlocked: Boolean(updatedTask.isBlocked),
               isWaitingOnDependency: isTaskWaitingOnDependencies(updatedTask, getSnapshot()),
             }
           : updatedTask,
@@ -2298,7 +2233,7 @@ export async function registerRoutes(
       return {
         item: {
           ...task,
-          isBlocked: (task.blockers ?? []).length > 0,
+          isBlocked: Boolean(task.isBlocked),
           isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
         },
       };
@@ -2401,13 +2336,16 @@ export async function registerRoutes(
         });
       }
 
-      const merged = taskDependencySchema.safeParse({
+      const mergedPayload = {
         taskId: nextTaskId,
         kind: nextKind,
         refId: nextRefId,
-        requiredState: parsed.data.requiredState ?? currentDependency.requiredState,
         dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,
-      });
+        ...(nextKind === "part-instance"
+          ? { requiredCondition: parsed.data.requiredCondition ?? (currentDependency.kind === "part-instance" ? currentDependency.requiredCondition : undefined) }
+          : { requiredState: parsed.data.requiredState ?? (currentDependency.kind !== "part-instance" ? currentDependency.requiredState : undefined) }),
+      };
+      const merged = taskDependencySchema.safeParse(mergedPayload);
       if (!merged.success) {
         return reply.code(400).send({
           message: "Task dependency update payload is invalid.",
@@ -2436,111 +2374,6 @@ export async function registerRoutes(
 
       return {
         item: dependency,
-      };
-    },
-  );
-
-  app.get("/api/task-blockers", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const bootstrap = buildBootstrapResponse(
-      getSnapshot(),
-      readBootstrapSelection(request.query),
-    );
-    const paginated = paginateItems(bootstrap.taskBlockers, request.query);
-
-    return {
-      items: paginated.items,
-      pagination: paginated.pagination,
-    };
-  });
-
-  app.post<{ Body: unknown }>("/api/task-blockers", { config: { snapshotMutation: true } }, async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const parsed = parseRouteInput(taskBlockerSchema, request.body, reply, "Task blocker payload is invalid.");
-    if (!parsed) {
-      return reply;
-    }
-
-    const validationError = validateTaskBlockerLinks(parsed.data);
-    if (validationError) {
-      return reply.code(400).send({
-        message: validationError,
-      });
-    }
-
-    const blocker = createTaskBlocker(parsed.data);
-    return reply.code(201).send({
-      item: blocker,
-    });
-  });
-
-  app.patch<{ Body: unknown; Params: { blockerId: string } }>(
-    "/api/task-blockers/:blockerId",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        taskBlockerPatchSchema, request.body, reply,
-        "Task blocker update payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentBlocker = getTaskBlockers().find(
-        (blocker) => blocker.id === request.params.blockerId,
-      );
-      if (!currentBlocker) {
-        return reply.code(404).send({
-          message: "Task blocker not found.",
-        });
-      }
-
-      const nextBlockedTaskId = parsed.data.blockedTaskId ?? currentBlocker.blockedTaskId;
-      const validationError = validateTaskBlockerLinks({
-        blockedTaskId: nextBlockedTaskId,
-        blockerType: parsed.data.blockerType ?? currentBlocker.blockerType,
-        blockerId:
-          parsed.data.blockerId === undefined
-            ? currentBlocker.blockerId
-            : parsed.data.blockerId,
-      });
-      if (validationError) {
-        return reply.code(400).send({
-          message: validationError,
-        });
-      }
-
-      const blocker = updateTaskBlocker(request.params.blockerId, parsed.data);
-      return {
-        item: blocker,
-      };
-    },
-  );
-
-  app.delete<{ Params: { blockerId: string } }>(
-    "/api/task-blockers/:blockerId", { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const blocker = removeTaskBlocker(request.params.blockerId);
-      if (!blocker) {
-        return reply.code(404).send({
-          message: "Task blocker not found.",
-        });
-      }
-
-      return {
-        item: blocker,
       };
     },
   );
@@ -2626,16 +2459,6 @@ export async function registerRoutes(
       });
     }
 
-    if (
-      parsed.data.disciplineId !== undefined &&
-      parsed.data.disciplineId !== null &&
-      !findDiscipline(parsed.data.disciplineId)
-    ) {
-      return reply.code(400).send({
-        message: "Roster payload references an unknown discipline.",
-      });
-    }
-
     const member = createMember(parsed.data);
     return reply.code(201).send({
       item: member,
@@ -2706,16 +2529,6 @@ export async function registerRoutes(
       ) {
         return reply.code(400).send({
           message: "Roster update payload references an unknown active season.",
-        });
-      }
-
-      if (
-        parsed.data.disciplineId !== undefined &&
-        parsed.data.disciplineId !== null &&
-        !findDiscipline(parsed.data.disciplineId)
-      ) {
-        return reply.code(400).send({
-          message: "Roster update payload references an unknown discipline.",
         });
       }
 
@@ -3152,10 +2965,7 @@ export async function registerRoutes(
       });
     }
 
-    const partInstance = createPartInstance({
-      ...parsed.data,
-      mechanismId: parsed.data.mechanismId ?? null,
-    });
+    const partInstance = createPartInstance(parsed.data);
 
     return reply.code(201).send({
       item: partInstance,
@@ -3185,11 +2995,9 @@ export async function registerRoutes(
       }
 
       const nextPartInstanceShape = {
-        subsystemId: parsed.data.subsystemId ?? currentPartInstance.subsystemId,
-        mechanismId:
-          parsed.data.mechanismId === undefined
-            ? currentPartInstance.mechanismId
-            : parsed.data.mechanismId,
+        location: parsed.data.location ?? currentPartInstance.location,
+        intendedSubsystemId: parsed.data.intendedSubsystemId ?? currentPartInstance.intendedSubsystemId,
+        intendedMechanismId: parsed.data.intendedMechanismId ?? currentPartInstance.intendedMechanismId,
         partDefinitionId:
           parsed.data.partDefinitionId === undefined
             ? currentPartInstance.partDefinitionId
@@ -3205,8 +3013,6 @@ export async function registerRoutes(
 
       const partInstance = updatePartInstance(request.params.partInstanceId, {
         ...parsed.data,
-        subsystemId: nextPartInstanceShape.subsystemId,
-        mechanismId: nextPartInstanceShape.mechanismId ?? null,
         partDefinitionId: nextPartInstanceShape.partDefinitionId,
       });
 
@@ -3274,290 +3080,9 @@ export async function registerRoutes(
       attendanceRecords: scopedAttendance,
       members: snapshot.members,
       projects: snapshot.projects,
-      taskBlockers: snapshot.taskBlockers,
-      tasks: snapshot.tasks,
+            tasks: snapshot.tasks,
     });
   });
-
-  app.get("/api/manufacturing", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const snapshot = getSnapshot();
-    const personId = readPersonFilter(request);
-    const paginated = paginateItems(
-      filterManufacturingItemsForPerson(personId),
-      request.query,
-    );
-
-    return {
-      items: withManufacturingQaReviewCounts(paginated.items, snapshot),
-      pagination: paginated.pagination,
-      qaReviews: snapshot.qaReviews.filter(
-        (review) => review.subjectType === "manufacturing",
-      ),
-    };
-  });
-
-  app.post<{ Body: unknown }>("/api/manufacturing", { config: { snapshotMutation: true } }, async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const parsed = parseRouteInput(manufacturingItemSchema, request.body, reply, "Manufacturing payload is invalid.");
-    if (!parsed) {
-      return reply;
-    }
-
-    const initialPolicyFailure = assessGenericPatch({
-      current: { status: "requested", mentorReviewed: false },
-      patch: {
-        status: parsed.data.status,
-        mentorReviewed: parsed.data.mentorReviewed,
-      },
-      protectedFields: ["status", "mentorReviewed"],
-      isApprover: hasWorkflowApprovalPermission(request),
-      isPending: true,
-      entityLabel: "Manufacturing item",
-    });
-    if (initialPolicyFailure) {
-      return reply.code(initialPolicyFailure.statusCode).send({
-        message: initialPolicyFailure.message,
-      });
-    }
-
-    const resolved = resolveManufacturingItem(parsed.data);
-    if ("error" in resolved) {
-      return reply.code(400).send({ message: resolved.error });
-    }
-
-    const partInstanceIds = uniqueIds([
-      ...(parsed.data.partInstanceIds ?? []),
-      parsed.data.partInstanceId,
-    ]);
-    const item = createManufacturingItem({
-      ...parsed.data,
-      status: "requested",
-      mentorReviewed: false,
-      reviewedById: null,
-      reviewedAt: null,
-      materialId: resolved.materialId,
-      partDefinitionId: parsed.data.partDefinitionId ?? null,
-      partInstanceId: partInstanceIds[0] ?? null,
-      partInstanceIds,
-      title: resolved.title,
-    }, buildTaskAuditContext(request));
-    return reply.code(201).send({
-      item: withManufacturingQaReviewCounts([item])[0],
-    });
-  });
-
-  app.patch<{ Body: unknown; Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        manufacturingItemPatchSchema, request.body, reply,
-        "Manufacturing update payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
-      if (!currentItem) {
-        return reply.code(404).send({
-          message: "Manufacturing item not found.",
-        });
-      }
-
-
-      const policyFailure = assessGenericPatch({
-        current: currentItem as unknown as Record<string, unknown>,
-        patch: parsed.data as Record<string, unknown>,
-        protectedFields: ["status", "mentorReviewed", "reviewedById", "reviewedAt"],
-        isApprover: hasWorkflowApprovalPermission(request),
-        isPending: currentItem.status === "requested",
-        entityLabel: "Manufacturing item",
-      });
-      if (policyFailure) {
-        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
-      }
-      if (isNoopPatch(
-        currentItem as unknown as Record<string, unknown>,
-        parsed.data as Record<string, unknown>,
-      )) {
-        return { item: withManufacturingQaReviewCounts([currentItem])[0] };
-      }
-
-      const nextItemShape = {
-        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
-        process: parsed.data.process ?? currentItem.process,
-        partDefinitionId:
-          parsed.data.partDefinitionId === undefined
-            ? currentItem.partDefinitionId
-            : parsed.data.partDefinitionId,
-        partInstanceId:
-          parsed.data.partInstanceId === undefined
-            ? currentItem.partInstanceId
-            : parsed.data.partInstanceId,
-        partInstanceIds:
-          parsed.data.partInstanceIds === undefined &&
-          parsed.data.partInstanceId === undefined
-            ? currentItem.partInstanceIds ?? uniqueIds([currentItem.partInstanceId])
-            : uniqueIds([
-                ...(parsed.data.partInstanceIds ?? []),
-                parsed.data.partInstanceId,
-              ]),
-      };
-
-      const resolved = resolveManufacturingItem({
-        ...nextItemShape,
-        title: parsed.data.title ?? currentItem.title,
-        materialId: parsed.data.materialId,
-      }, currentItem.materialId);
-      if ("error" in resolved) {
-        return reply.code(400).send({ message: resolved.error });
-      }
-
-      const item = updateManufacturingItem(request.params.itemId, {
-        ...parsed.data,
-        materialId: resolved.materialId,
-        partDefinitionId: nextItemShape.partDefinitionId ?? null,
-        partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
-        partInstanceIds: [...nextItemShape.partInstanceIds],
-        title: resolved.title,
-      }, buildTaskAuditContext(request));
-
-      return {
-        item: item ? withManufacturingQaReviewCounts([item])[0] : item,
-      };
-    },
-  );
-
-  app.put<{ Body: unknown; Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId/review",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-      if (!requireWorkflowApprovalPermission(
-        request,
-        reply,
-        "Only mentors and admins can review manufacturing items.",
-      )) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        manufacturingReviewSchema, request.body, reply,
-        "Manufacturing review payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
-      if (!currentItem) {
-        return reply.code(404).send({ message: "Manufacturing item not found." });
-      }
-
-      if (
-        currentItem.mentorReviewed === parsed.data.reviewed &&
-        ((parsed.data.reviewed && currentItem.status === "approved") ||
-          (!parsed.data.reviewed && currentItem.status === "requested"))
-      ) {
-        return { item: withManufacturingQaReviewCounts([currentItem])[0] };
-      }
-
-      const policyFailure = validateManufacturingReview(currentItem, parsed.data.reviewed);
-      if (policyFailure) {
-        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
-      }
-
-      const actor = getWorkflowApprovalMember(request);
-      if (!actor) {
-        return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
-      }
-      const reviewedAt = parsed.data.reviewed ? new Date().toISOString() : null;
-      const item = updateManufacturingItem(request.params.itemId, {
-        mentorReviewed: parsed.data.reviewed,
-        status: parsed.data.reviewed ? "approved" : "requested",
-        reviewedById: parsed.data.reviewed ? actor.id : null,
-        reviewedAt,
-      }, buildTaskAuditContext(request, actor.id));
-
-      return { item: item ? withManufacturingQaReviewCounts([item])[0] : item };
-    },
-  );
-
-  app.post<{ Body: unknown; Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId/transition",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        manufacturingTransitionSchema, request.body, reply,
-        "Manufacturing transition payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
-      if (!currentItem) {
-        return reply.code(404).send({ message: "Manufacturing item not found." });
-      }
-
-      const policyFailure = validateManufacturingTransition(currentItem, parsed.data.status);
-      if (policyFailure) {
-        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
-      }
-
-      const item = updateManufacturingItem(
-        request.params.itemId,
-        { status: parsed.data.status },
-        buildTaskAuditContext(request),
-      );
-      return { item: item ? withManufacturingQaReviewCounts([item])[0] : item };
-    },
-  );
-
-  app.delete<{ Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId", { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      if (!requireWorkflowApprovalPermission(
-        request,
-        reply,
-        "Only mentors and admins can delete manufacturing items.",
-      )) {
-        return;
-      }
-
-      const item = removeManufacturingItem(
-        request.params.itemId,
-        buildTaskAuditContext(request),
-      );
-      if (!item) {
-        return reply.code(404).send({
-          message: "Manufacturing item not found.",
-        });
-      }
-
-      return {
-        item,
-      };
-    },
-  );
 
   app.get("/api/purchases", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -3583,22 +3108,13 @@ export async function registerRoutes(
       return reply;
     }
 
-    const initialPolicyFailure = assessGenericPatch({
-      current: { status: "requested", approvedByMentor: false, finalCost: undefined },
-      patch: {
-        status: parsed.data.status,
-        approvedByMentor: parsed.data.approvedByMentor,
-        finalCost: parsed.data.finalCost,
-      },
-      protectedFields: ["status", "approvedByMentor", "finalCost"],
-      isApprover: hasWorkflowApprovalPermission(request),
-      isPending: true,
-      entityLabel: "Purchase item",
-    });
-    if (initialPolicyFailure) {
-      return reply.code(initialPolicyFailure.statusCode).send({
-        message: initialPolicyFailure.message,
-      });
+    if (
+      parsed.data.approvalStatus !== "pending" || parsed.data.approvedById !== null ||
+      parsed.data.approvedAt !== null || parsed.data.orderStatus !== "not-ordered" ||
+      parsed.data.purchaseOrderNumber !== null || parsed.data.finalCost !== null ||
+      parsed.data.orderedAt !== null || parsed.data.deliveredAt !== null
+    ) {
+      return reply.code(403).send({ message: "Approval and order state must use the purchasing workflow." });
     }
 
     const validationError = validatePurchaseItemLinks(parsed.data);
@@ -3608,27 +3124,7 @@ export async function registerRoutes(
       });
     }
 
-    const partDefinition = parsed.data.partDefinitionId
-      ? findPartDefinition(parsed.data.partDefinitionId)
-      : null;
-    if (parsed.data.partDefinitionId && !partDefinition) {
-      return reply.code(400).send({
-        message: "Please select a real part from the Parts tab.",
-      });
-    }
-
-    const item = createPurchaseItem({
-      ...parsed.data,
-      status: "requested",
-      approvedByMentor: false,
-      finalCost: undefined,
-      approvedById: null,
-      approvedAt: null,
-      purchasedAt: null,
-      deliveredAt: null,
-      partDefinitionId: parsed.data.partDefinitionId ?? null,
-      title: partDefinition?.name ?? parsed.data.title,
-    }, buildTaskAuditContext(request));
+    const item = createPurchaseItem(parsed.data, buildTaskAuditContext(request));
     return reply.code(201).send({
       item,
     });
@@ -3661,16 +3157,19 @@ export async function registerRoutes(
         current: currentItem as unknown as Record<string, unknown>,
         patch: parsed.data as Record<string, unknown>,
         protectedFields: [
-          "status",
-          "approvedByMentor",
+          "taskId",
+          "kind",
+          "approvalStatus",
           "finalCost",
           "approvedById",
           "approvedAt",
-          "purchasedAt",
+          "orderStatus",
+          "purchaseOrderNumber",
+          "orderedAt",
           "deliveredAt",
         ],
         isApprover: hasWorkflowApprovalPermission(request),
-        isPending: currentItem.status === "requested",
+        isPending: currentItem.approvalStatus === "pending" && currentItem.orderStatus === "not-ordered",
         entityLabel: "Purchase item",
       });
       if (policyFailure) {
@@ -3683,13 +3182,7 @@ export async function registerRoutes(
         return { item: currentItem };
       }
 
-      const nextItemShape = {
-        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
-        partDefinitionId:
-          parsed.data.partDefinitionId === undefined
-            ? currentItem.partDefinitionId
-            : parsed.data.partDefinitionId,
-      };
+      const nextItemShape = { ...currentItem, ...parsed.data };
 
       const validationError = validatePurchaseItemLinks(nextItemShape);
       if (validationError) {
@@ -3698,19 +3191,8 @@ export async function registerRoutes(
         });
       }
 
-      const partDefinition = nextItemShape.partDefinitionId
-        ? findPartDefinition(nextItemShape.partDefinitionId)
-        : null;
-      if (nextItemShape.partDefinitionId && !partDefinition) {
-        return reply.code(400).send({
-          message: "Please select a real part from the Parts tab.",
-        });
-      }
-
       const item = updatePurchaseItem(request.params.itemId, {
         ...parsed.data,
-        partDefinitionId: nextItemShape.partDefinitionId ?? null,
-        title: partDefinition?.name ?? parsed.data.title ?? currentItem.title,
       }, buildTaskAuditContext(request));
 
       return {
@@ -3746,15 +3228,11 @@ export async function registerRoutes(
         return reply.code(404).send({ message: "Purchase item not found." });
       }
 
-      if (
-        currentItem.approvedByMentor === parsed.data.approved &&
-        ((parsed.data.approved && currentItem.status === "approved") ||
-          (!parsed.data.approved && currentItem.status === "requested"))
-      ) {
+      if (currentItem.approvalStatus === parsed.data.approvalStatus) {
         return { item: currentItem };
       }
 
-      const policyFailure = validatePurchaseApproval(currentItem, parsed.data.approved);
+      const policyFailure = validatePurchaseApproval(currentItem, parsed.data.approvalStatus);
       if (policyFailure) {
         return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
       }
@@ -3764,10 +3242,9 @@ export async function registerRoutes(
         return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
       }
       const item = updatePurchaseItem(request.params.itemId, {
-        approvedByMentor: parsed.data.approved,
-        status: parsed.data.approved ? "approved" : "requested",
-        approvedById: parsed.data.approved ? actor.id : null,
-        approvedAt: parsed.data.approved ? new Date().toISOString() : null,
+        approvalStatus: parsed.data.approvalStatus,
+        approvedById: actor.id,
+        approvedAt: new Date().toISOString(),
       }, buildTaskAuditContext(request, actor.id));
 
       return { item };
@@ -3801,7 +3278,10 @@ export async function registerRoutes(
         return reply.code(404).send({ message: "Purchase item not found." });
       }
 
-      const policyFailure = validatePurchaseTransition(currentItem.status, parsed.data.status);
+      if (parsed.data.orderStatus === "ordered" && currentItem.approvalStatus !== "approved") {
+        return reply.code(409).send({ message: "A purchase must be approved before ordering." });
+      }
+      const policyFailure = validatePurchaseTransition(currentItem.orderStatus, parsed.data.orderStatus);
       if (policyFailure) {
         return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
       }
@@ -3812,10 +3292,10 @@ export async function registerRoutes(
       }
       const now = new Date().toISOString();
       const item = updatePurchaseItem(request.params.itemId, {
-        status: parsed.data.status,
-        finalCost: parsed.data.finalCost ?? currentItem.finalCost,
-        purchasedAt: parsed.data.status === "purchased" ? now : currentItem.purchasedAt,
-        deliveredAt: parsed.data.status === "delivered" ? now : currentItem.deliveredAt,
+        orderStatus: parsed.data.orderStatus,
+        finalCost: parsed.data.finalCost === undefined ? currentItem.finalCost : parsed.data.finalCost,
+        orderedAt: parsed.data.orderStatus === "ordered" ? now : currentItem.orderedAt,
+        deliveredAt: parsed.data.orderStatus === "delivered" ? now : currentItem.deliveredAt,
       }, buildTaskAuditContext(request, actor.id));
 
       return { item };

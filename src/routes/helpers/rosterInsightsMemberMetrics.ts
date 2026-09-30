@@ -78,7 +78,6 @@ function sortTaskPreviews(left: RosterInsightsTaskPreview, right: RosterInsights
 export function buildMemberInsights(args: {
   source: RosterInsightsSource;
   openTasks: RosterInsightsSource["tasks"];
-  openTaskBlockerIds: Set<string>;
   projectsById: Map<string, { id: string; name: string }>;
   day7Start: Date;
   day14Start: Date;
@@ -135,7 +134,7 @@ export function buildMemberInsights(args: {
     }).length;
 
     const blockedTaskCount = assignedTasks.filter(
-      (task) => task.isBlocked || args.openTaskBlockerIds.has(task.id),
+      (task) => task.isBlocked,
     ).length;
     const waitingForQaTaskCount = assignedTasks.filter(
       (task) => task.status === "waiting-for-qa",
@@ -187,7 +186,6 @@ export function buildMemberInsights(args: {
       memberId: member.id,
       memberName: member.name,
       role: member.role,
-      disciplineId: member.disciplineId ?? null,
       activeTaskCount: assignedTasks.length,
       blockedTaskCount,
       waitingForQaTaskCount,

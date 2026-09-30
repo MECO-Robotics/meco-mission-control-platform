@@ -5,7 +5,6 @@ export const taskTargetsSchema = z.object({
   subsystemIds: z.array(z.string().trim().min(1)),
   mechanismIds: z.array(z.string().trim().min(1)),
   partInstanceIds: z.array(z.string().trim().min(1)),
-  artifactIds: z.array(z.string().trim().min(1)),
 });
 
 export type TaskTargets = z.infer<typeof taskTargetsSchema>;

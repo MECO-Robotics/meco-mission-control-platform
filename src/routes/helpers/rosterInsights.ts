@@ -25,17 +25,12 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
   const dueSoonEnd = new Date(today.getTime() + 7 * MS_PER_DAY);
   const attendanceRecords = source.attendanceRecords ?? [];
   const openTasks = source.tasks.filter((task) => isTaskOpen(task.status));
-  const openTaskBlockerIds = new Set(
-    (source.taskBlockers ?? [])
-      .filter((blocker) => blocker.status === "open")
-      .map((blocker) => blocker.blockedTaskId),
-  );
   const overdueTaskCount = openTasks.filter((task) => {
     const dueDate = parseDateValue(task.dueDate);
     return dueDate !== null && dueDate.getTime() < today.getTime();
   }).length;
   const blockedTaskCount = openTasks.filter(
-    (task) => task.isBlocked || openTaskBlockerIds.has(task.id),
+    (task) => task.isBlocked,
   ).length;
   const waitingForQaTaskCount = openTasks.filter(
     (task) => task.status === "waiting-for-qa",
@@ -45,7 +40,6 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
   const members = buildMemberInsights({
     source,
     openTasks,
-    openTaskBlockerIds,
     projectsById,
     day7Start,
     day14Start,
@@ -152,4 +146,3 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
     generatedAt: now.toISOString(),
   };
 }
-

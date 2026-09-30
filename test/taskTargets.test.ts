@@ -4,7 +4,7 @@ import { taskRecordTargetsSchema } from "../src/domain/taskTargets";
 import { getSnapshot, resetStore, createPartInstance, createSubsystem, updateTask, updateMechanism, removeMechanism, removeSubsystem } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
-const targetFields = ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds", "artifactIds"] as const;
+const targetFields = ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds"] as const;
 
 test("task commands infer ordered ancestors, preserve omitted targets, and keep workstreams independent", async () => {
   await withIntegrationApp(async ({ app }) => {
@@ -15,9 +15,9 @@ test("task commands infer ordered ancestors, preserve omitted targets, and keep 
     });
     assert.equal(controlsWorkstream.statusCode, 201, controlsWorkstream.body);
     const payload = {
-      title: "Array target task", summary: "Exercise ordered nested targets", disciplineId: "design",
+      title: "Array target task", summary: "Exercise ordered nested targets", workTypeId: "robot:design",
       partInstanceIds: ["pi-swerve-encoder-bracket-front-left", "pi-swerve-encoder-bracket-front-left"],
-      targetMilestoneId: null, ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01",
+      scheduleRefs: [], ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01",
       priority: "medium", status: "not-started", estimatedHours: 2,
     };
     const created = await app.inject({ method: "POST", url: "/api/tasks", payload });
@@ -28,7 +28,6 @@ test("task commands infer ordered ancestors, preserve omitted targets, and keep 
     assert.deepEqual(task.mechanismIds, ["swerve-module"]);
     assert.deepEqual(task.subsystemIds, ["drive"]);
     assert.deepEqual(task.workstreamIds, []);
-    assert.deepEqual(task.artifactIds, []);
     for (const field of targetFields) assert.equal(field.slice(0, -1) in task, false);
     const url = `/api/tasks/${task.id}`;
     const patch = (body: object) => app.inject({ method: "PATCH", url, payload: body });
@@ -68,7 +67,7 @@ test("snapshot targets reject obsolete mirrors and missing arrays without replac
     const duplicate = { ...before.tasks[0], [field]: ["duplicate", "duplicate"] };
     for (const invalid of [missing, legacy, duplicate]) {
       assert.equal(taskRecordTargetsSchema.safeParse(invalid).success, false);
-      assert.throws(() => resetStore({ ...before, tasks: [invalid] }), /Unsupported task targets.*PLATFORM_SNAPSHOT_PATH/);
+      assert.throws(() => resetStore({ ...before, tasks: [invalid] }), /Unsupported task targets.*snapshot:reset/);
       assert.equal(getSnapshot(), before);
     }
   }
@@ -98,8 +97,8 @@ test("first target owns serial and audit context while reparenting and deletion 
   removeMechanism("swerve-module");
   assert.deepEqual(getSnapshot().tasks.find((item) => item.id === task.id)?.mechanismIds, []);
   const loosePart = createPartInstance({
-    subsystemId: controls.id, mechanismId: null, partDefinitionId: getSnapshot().partDefinitions[0].id,
-    name: "Unassigned control part", quantity: 1, trackIndividually: false, status: "not ready",
+    intendedSubsystemId: controls.id, intendedMechanismId: null,
+    partDefinitionId: getSnapshot().partDefinitions[0].id, location: { kind: "stock", location: "Controls" },
   });
   removeSubsystem(controls.id);
   assert.equal(getSnapshot().partInstances.some((item) => item.id === loosePart.id), false);

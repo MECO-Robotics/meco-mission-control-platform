@@ -3,6 +3,7 @@ import type {
   SnapshotView,
   Task,
   Milestone,
+  DomainReference,
   QaFinding,
   Report,
   ReportFinding,
@@ -11,6 +12,7 @@ import type {
 
 export interface FindingListItem {
   id: string;
+  targetRefs: readonly DomainReference[];
   sourceType: "qa" | "test";
   sourceId: string | null;
   title: string;
@@ -37,6 +39,7 @@ function findingListItemFromFinding(
 ): FindingListItem {
   return {
     id: finding.id,
+    targetRefs: finding.targetRefs,
     sourceType,
     sourceId,
     title: finding.title,
@@ -69,6 +72,7 @@ export function reportFromQaReport(
     id: report.id,
     reportType: "QA",
     projectId: task.projectId,
+    targetRefs: report.targetRefs.map((ref) => ({ ...ref })),
     taskId: report.taskId,
     milestoneId: null,
     workstreamId: (task.workstreamIds[0] ?? null),
@@ -106,6 +110,7 @@ export function reportFromTestResult(
     id: result.id,
     reportType: "MilestoneTest",
     projectId,
+    targetRefs: result.targetRefs.map((ref) => ({ ...ref })),
     taskId: null,
     milestoneId: result.milestoneId,
     workstreamId: null,

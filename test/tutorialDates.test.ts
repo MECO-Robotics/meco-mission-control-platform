@@ -50,12 +50,10 @@ test("new tutorial data rolls forward without mutating an earlier session", () =
 test("tutorial roster categories and all member references resolve within the seed", () => {
   const data = createTutorialSnapshot();
   const members = new Set(data.members.map((member) => member.id));
-  const disciplines = new Set(data.disciplines.map((discipline) => discipline.id));
   const seasons = new Set(data.seasons.map((season) => season.id));
   assert.equal(members.size, data.members.length);
   for (const member of data.members) {
     assert.ok(["student", "lead", "mentor", "admin", "external"].includes(member.role));
-    if (member.disciplineId) assert.ok(disciplines.has(member.disciplineId), `${member.id}: ${member.disciplineId}`);
     if (member.seasonId) assert.ok(seasons.has(member.seasonId));
     for (const seasonId of member.activeSeasonIds ?? []) assert.ok(seasons.has(seasonId));
   }
@@ -78,13 +76,14 @@ test("tutorial roster categories and all member references resolve within the se
 });
 
 
-test("tutorial tasks have canonical disciplines and independently mutable collections", () => {
+test("tutorial tasks use the canonical project work-type catalog", () => {
   const data = createTutorialSnapshot(new Date("2026-09-26T12:00:00Z"));
   const projects = new Map(data.projects.map((project) => [project.id, project]));
+  const workTypes = new Map(data.workTypes.map((workType) => [workType.id, workType]));
   for (const task of data.tasks) {
-    assert.ok(isTaskDisciplineAllowedForProject(projects.get(task.projectId), task.disciplineId), task.id);
-  }
-  for (const field of ["checklistItems", "blockers", "linkedManufacturingIds", "linkedPurchaseIds"] as const) {
-    assert.equal(new Set(data.tasks.map((task) => task[field])).size, data.tasks.length, field);
+    const project = projects.get(task.projectId);
+    assert.ok(project, task.id);
+    assert.equal(workTypes.get(task.workTypeId)?.projectType, project.projectType, task.id);
+    assert.ok(Array.isArray(task.workstreamIds) && Array.isArray(task.assigneeIds), task.id);
   }
 });

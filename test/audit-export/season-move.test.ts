@@ -81,7 +81,7 @@ test("audit export retains old season scope after member and part moves", async 
         partNumber: "AUD-EXP-SEASON-MOVE",
         revision: "A",
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Part definition moved between audit export seasons.",
         seasonId: "default-season",
