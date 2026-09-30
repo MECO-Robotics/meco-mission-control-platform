@@ -1,7 +1,7 @@
-import { PlatformSnapshot, QaReview, Task, TaskStatus } from "./types";
+import type { ReadonlyData, SnapshotView, QaReview, Task, TaskStatus } from "./types";
 import { isTaskWaitingOnDependencies } from "./taskDependencyState";
 
-export function evaluateTaskCompletion(task: Task, snapshot: PlatformSnapshot) {
+export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: SnapshotView) {
   const workLogs = snapshot.workLogs.filter((workLog) => workLog.taskId === task.id);
   const qaReviews = snapshot.qaReviews.filter(
     (review) => review.subjectType === "task" && review.subjectId === task.id,
@@ -30,7 +30,7 @@ export function evaluateTaskCompletion(task: Task, snapshot: PlatformSnapshot) {
   };
 }
 
-export function buildDashboard(snapshot: PlatformSnapshot) {
+export function buildDashboard(snapshot: SnapshotView) {
   const totalHours = snapshot.workLogs.reduce((sum, workLog) => {
     return sum + workLog.hours;
   }, 0);
@@ -65,8 +65,7 @@ export function buildDashboard(snapshot: PlatformSnapshot) {
     subsystemCards: snapshot.subsystems.map((subsystem) => {
       const tasks = snapshot.tasks.filter(
         (task) =>
-          task.subsystemId === subsystem.id ||
-          (task.subsystemIds ?? [task.subsystemId]).includes(subsystem.id),
+          task.subsystemIds.includes(subsystem.id),
       );
       const done = tasks.filter((task) => task.status === "complete").length;
 
@@ -84,7 +83,7 @@ export function buildDashboard(snapshot: PlatformSnapshot) {
   };
 }
 
-export function buildMetrics(snapshot: PlatformSnapshot) {
+export function buildMetrics(snapshot: SnapshotView) {
   const completedTasks = snapshot.tasks.filter((task) => task.status === "complete");
   const workHoursByTaskId = new Map<string, number>();
 
@@ -146,15 +145,15 @@ export function formatTaskStatus(status: TaskStatus) {
   return "Complete";
 }
 
-function hasMentorPass(qaReviews: QaReview[]) {
+function hasMentorPass(qaReviews: ReadonlyData<QaReview[]>) {
   return qaReviews.some((review) => {
     return review.result === "pass" && review.mentorApproved;
   });
 }
 
 function buildTaskMetrics(
-  snapshot: PlatformSnapshot,
-  tasks: Task[],
+  snapshot: SnapshotView,
+  tasks: ReadonlyData<Task[]>,
   workHoursByTaskId: Map<string, number>,
 ) {
   const taskIds = new Set(tasks.map((task) => task.id));
@@ -178,13 +177,13 @@ function buildTaskMetrics(
 }
 
 function buildSubsystemMetrics(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   workHoursByTaskId: Map<string, number>,
 ) {
   return snapshot.subsystems
     .map((subsystem) => {
       const tasks = snapshot.tasks.filter((task) =>
-        [task.subsystemId, ...(task.subsystemIds ?? [])].includes(subsystem.id),
+        task.subsystemIds.includes(subsystem.id),
       );
       const taskMetrics = buildTaskMetrics(snapshot, tasks, workHoursByTaskId);
       const mechanismCount = snapshot.mechanisms.filter((mechanism) => {
@@ -230,13 +229,13 @@ function buildSubsystemMetrics(
 }
 
 function buildMechanismMetrics(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   workHoursByTaskId: Map<string, number>,
 ) {
   return snapshot.mechanisms
     .map((mechanism) => {
       const tasks = snapshot.tasks.filter((task) =>
-        [task.mechanismId, ...(task.mechanismIds ?? [])].includes(mechanism.id),
+        task.mechanismIds.includes(mechanism.id),
       );
       const subsystemName = snapshot.subsystems.find(
         (subsystem) => subsystem.id === mechanism.subsystemId,

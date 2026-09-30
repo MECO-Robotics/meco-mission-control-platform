@@ -14,6 +14,24 @@ type ProvenanceRecord = {
 
 test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and edited imports", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const onshapePartDefinitionResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-definitions",
+      payload: {
+        name: "Onshape Imported Bracket",
+        partNumber: "ONSHAPE-096",
+        revision: "A",
+        type: "custom",
+        source: "Onshape",
+        materialId: null,
+        description: "Part definition created from Onshape API provenance.",
+        cadImportSource: "ONSHAPE_API",
+      },
+    });
+    assert.equal(onshapePartDefinitionResponse.statusCode, 201);
+    const onshapePartDefinition = onshapePartDefinitionResponse.json().item as ProvenanceRecord;
+    resetLimits();
+
     const initialBootstrap = await app.inject({
       method: "GET",
       url: "/api/bootstrap?projectId=project-robot-2026",
@@ -37,10 +55,10 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
     assert.deepEqual(
       {
         cadSource: initialBody.partDefinitions.find(
-          (item) => item.id === "pd-swerve-encoder-bracket",
+          (item) => item.id === onshapePartDefinition.id,
         )?.cadSource,
         cadImportSource: initialBody.partDefinitions.find(
-          (item) => item.id === "pd-swerve-encoder-bracket",
+          (item) => item.id === onshapePartDefinition.id,
         )?.cadImportSource,
       },
       {

@@ -1,5 +1,6 @@
 import type {
-  PlatformSnapshot,
+  ReadonlyData,
+  SnapshotView,
   Task,
   Milestone,
   QaFinding,
@@ -14,8 +15,8 @@ export interface FindingListItem {
   sourceId: string | null;
   title: string;
   detail: string;
-  severity: QaFinding["severity"] | TestFinding["severity"];
-  status: QaFinding["status"] | TestFinding["status"];
+  severity: ReadonlyData<QaFinding>["severity"] | ReadonlyData<TestFinding>["severity"];
+  status: ReadonlyData<QaFinding>["status"] | ReadonlyData<TestFinding>["status"];
   projectId: string;
   workstreamId: string | null;
   subsystemId: string | null;
@@ -29,7 +30,7 @@ export interface FindingListItem {
 }
 
 function findingListItemFromFinding(
-  finding: QaFinding | TestFinding,
+  finding: ReadonlyData<QaFinding> | ReadonlyData<TestFinding>,
   sourceType: FindingListItem["sourceType"],
   sourceId: string | null,
   milestoneId: string | null,
@@ -56,10 +57,10 @@ function findingListItemFromFinding(
 }
 
 export function reportFromQaReport(
-  task: Task | undefined,
-  report: PlatformSnapshot["qaReports"][number],
+  task: ReadonlyData<Task> | undefined,
+  report: SnapshotView["qaReports"][number],
   options: { includePhoto?: boolean } = {},
-): Report | null {
+): ReadonlyData<Report> | null {
   if (!task) {
     return null;
   }
@@ -70,7 +71,7 @@ export function reportFromQaReport(
     projectId: task.projectId,
     taskId: report.taskId,
     milestoneId: null,
-    workstreamId: task.workstreamId,
+    workstreamId: (task.workstreamIds[0] ?? null),
     createdByMemberId: null,
     result: report.result,
     summary: report.notes,
@@ -92,11 +93,11 @@ export function reportFromQaReport(
 }
 
 export function reportFromTestResult(
-  milestone: Milestone | undefined,
-  result: PlatformSnapshot["testResults"][number],
+  milestone: ReadonlyData<Milestone> | undefined,
+  result: SnapshotView["testResults"][number],
   projectId: string | null,
   options: { includePhoto?: boolean } = {},
-): Report | null {
+): ReadonlyData<Report> | null {
   if (!projectId) {
     return null;
   }
@@ -120,14 +121,15 @@ export function reportFromTestResult(
   };
 }
 
-export function reportFindingFromQaFinding(finding: QaFinding): ReportFinding | null {
-  if (!finding.qaReportId) {
+export function reportFindingFromFinding(finding: ReadonlyData<QaFinding | TestFinding>): ReadonlyData<ReportFinding> | null {
+  const reportId = "qaReportId" in finding ? finding.qaReportId : finding.testResultId;
+  if (!reportId) {
     return null;
   }
 
   return {
     id: finding.id,
-    reportId: finding.qaReportId,
+    reportId,
     mechanismId: finding.mechanismId,
     partInstanceId: finding.partInstanceId,
     artifactInstanceId: finding.artifactId,
@@ -144,42 +146,13 @@ export function reportFindingFromQaFinding(finding: QaFinding): ReportFinding | 
     workstreamId: finding.workstreamId,
     subsystemId: finding.subsystemId,
     taskId: finding.taskId,
+    ...("testResultId" in finding ? { milestoneId: finding.milestoneId } : {}),
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
   };
 }
 
-export function reportFindingFromTestFinding(finding: TestFinding): ReportFinding | null {
-  if (!finding.testResultId) {
-    return null;
-  }
-
-  return {
-    id: finding.id,
-    reportId: finding.testResultId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactInstanceId: finding.artifactId,
-    issueType: finding.title,
-    severity: finding.severity,
-    notes: finding.detail,
-    spawnedTaskId: finding.taskId,
-    spawnedIterationId: null,
-    spawnedRiskId: null,
-    title: finding.title,
-    detail: finding.detail,
-    status: finding.status === "resolved" ? "resolved" : "open",
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    taskId: finding.taskId,
-    milestoneId: finding.milestoneId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  };
-}
-
-export function buildReports(snapshot: PlatformSnapshot): Report[] {
+export function buildReports(snapshot: SnapshotView): ReadonlyData<Report[]> {
   return [
     ...snapshot.qaReports.map((report) =>
       reportFromQaReport(snapshot.tasks.find((task) => task.id === report.taskId), report)),
@@ -187,10 +160,10 @@ export function buildReports(snapshot: PlatformSnapshot): Report[] {
       const milestone = snapshot.milestones.find((item) => item.id === result.milestoneId);
       return reportFromTestResult(milestone, result, milestone?.projectIds[0] ?? snapshot.projects[0]?.id ?? null);
     }),
-  ].filter((report): report is Report => report !== null);
+  ].filter((report): report is ReadonlyData<Report> => report !== null);
 }
 
-export function buildFindings(snapshot: PlatformSnapshot): FindingListItem[] {
+export function buildFindings(snapshot: SnapshotView): FindingListItem[] {
   const qaItems = snapshot.qaFindings.map((finding) =>
     findingListItemFromFinding(finding, "qa", finding.qaReportId, null),
   );

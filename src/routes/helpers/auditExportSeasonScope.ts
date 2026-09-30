@@ -1,7 +1,7 @@
-import type { AuditAction, PlatformSnapshot } from "../../domain/types";
+import type { ReadonlyData, AuditAction, SnapshotView } from "../../domain/types";
 import { getRelatedProjectIds } from "./auditExportProjectScope";
 
-function readActionSeasonIds(action: AuditAction) {
+function readActionSeasonIds(action: ReadonlyData<AuditAction>) {
   const seasonIds = new Set<string>();
   const detailSeasonId = action.detailsJson?.seasonId;
   if (typeof detailSeasonId === "string") {
@@ -20,7 +20,7 @@ function readActionSeasonIds(action: AuditAction) {
   return seasonIds;
 }
 
-function getEntitySeasonMaps(snapshot: PlatformSnapshot) {
+function getEntitySeasonMaps(snapshot: SnapshotView) {
   return new Map<string, Map<string, Set<string>>>([
     [
       "meeting",
@@ -62,9 +62,9 @@ function getEntitySeasonMaps(snapshot: PlatformSnapshot) {
 }
 
 export function actionMatchesSeason(
-  action: AuditAction,
+  action: ReadonlyData<AuditAction>,
   seasonId: string,
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
 ) {
   if (action.entityType === "season" && action.entityId === seasonId) {
     return true;

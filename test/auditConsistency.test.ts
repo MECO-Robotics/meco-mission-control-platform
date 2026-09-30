@@ -101,7 +101,7 @@ test("layout and QA proposals persist on actual records and approved risk change
     assert.equal((await app.inject({ method: "PATCH", url: `/api/subsystems/${subsystem.id}`, payload: { layoutX: 1.1 } })).statusCode, 400);
     assert.equal((await app.inject({ method: "PATCH", url: `/api/subsystems/${subsystem.id}`, payload: { layoutZ: 0.3 } })).statusCode, 400);
     const task = snapshot.tasks[0]; const risk = snapshot.risks[0];
-    const report = { reportType: "QA", projectId: task.projectId, taskId: task.id, milestoneId: null, workstreamId: task.workstreamId, createdByMemberId: null, result: "pass", summary: "Reassessed risk", notes: "Verified mitigation", participantIds: [snapshot.members[0].id], mentorApproved: false, createdAt: "2026-09-08", reviewedAt: "2026-09-08", targetRiskId: risk.id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" };
+    const report = { reportType: "QA", projectId: task.projectId, taskId: task.id, milestoneId: null, workstreamId: (task.workstreamIds[0] ?? null), createdByMemberId: null, result: "pass", summary: "Reassessed risk", notes: "Verified mitigation", participantIds: [snapshot.members[0].id], mentorApproved: false, createdAt: "2026-09-08", reviewedAt: "2026-09-08", targetRiskId: risk.id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" };
     const pending = await app.inject({ method: "POST", url: "/api/reports", payload: report });
     assert.equal(pending.statusCode, 201, pending.body);
     assert.equal(pending.json().item.targetRiskId, risk.id);

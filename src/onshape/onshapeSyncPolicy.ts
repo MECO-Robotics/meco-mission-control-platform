@@ -103,7 +103,7 @@ export function canRunDeepReleaseSync(args: {
   authEnabled: boolean;
   userEmail: string | null;
   userRole?: string | null;
-  members: MemberLike[];
+  members: readonly MemberLike[];
 }) {
   if (!args.authEnabled) {
     return true;

@@ -1,8 +1,5 @@
 import type { Meeting } from "../../domain/types";
-
-function uniqueIds(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
-}
+import { uniqueIds } from "../../domain/ids";
 
 export function dateOnlyFromDateTime(value: string) {
   return value.slice(0, 10);

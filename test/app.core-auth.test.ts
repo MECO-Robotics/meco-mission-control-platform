@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { PrismaClient } from "@prisma/client";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("closing an app does not disconnect an injected Prisma client", async () => {
+  let disconnectCalls = 0;
+  const prisma = {
+    $disconnect: async () => {
+      disconnectCalls += 1;
+    },
+  } as unknown as PrismaClient;
+
+  await withIntegrationApp(async () => {}, { prisma });
+
+  assert.equal(disconnectCalls, 0);
+});
 
 test("buildApp serves health and public auth config without auth enabled", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
@@ -137,4 +151,44 @@ test("buildApp serves health and public auth config without auth enabled", async
       themeMode: "light",
     });
   });
+});
+
+test("route validation preserves field/form errors and validates before entity lookup", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    for (const scenario of [
+      { url: "/api/projects", payload: { seasonId: "missing", name: "x" }, message: "Project payload is invalid.", field: "name" },
+      { url: "/api/meetings", payload: [], message: "Meeting payload is invalid.", field: null },
+      { url: "/api/cad/snapshots/missing/hierarchy-review/apply", payload: {}, message: "CAD hierarchy review payload is invalid.", field: null },
+      { url: "/api/onshape/document-refs", payload: {}, message: "Onshape document reference payload is invalid.", field: "url" },
+    ]) {
+      resetLimits();
+      const response = await app.inject({ method: "POST", url: scenario.url, payload: scenario.payload });
+      assert.equal(response.statusCode, 400, response.body);
+      const body = response.json();
+      assert.equal(body.message, scenario.message);
+      const errors = scenario.field ? body.issues.fieldErrors[scenario.field] : body.issues.formErrors;
+      assert.ok(errors.length > 0, response.body);
+    }
+
+    resetLimits();
+    const invalidRange = await app.inject({
+      method: "GET",
+      url: "/api/audit/export?from=2026-09-27T00:00:00Z&to=2026-09-26T00:00:00Z",
+    });
+    assert.equal(invalidRange.statusCode, 400, invalidRange.body);
+    assert.deepEqual(invalidRange.json().issues.fieldErrors.from, ["from must be on or before to."]);
+
+    resetLimits();
+    const missingSnapshot = await app.inject({ method: "POST", url: "/api/cad/snapshots/missing/finalize" });
+    assert.equal(missingSnapshot.statusCode, 404, missingSnapshot.body);
+    assert.equal(missingSnapshot.json().message, "CAD snapshot was not found.");
+  });
+});
+
+test("authentication rejects invalid payloads before validation details are exposed", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    const response = await app.inject({ method: "POST", url: "/api/projects", payload: {} });
+    assert.equal(response.statusCode, 401, response.body);
+    assert.equal(response.json().issues, undefined);
+  }, { env: { GOOGLE_CLIENT_ID: "test-google-client-id" } });
 });

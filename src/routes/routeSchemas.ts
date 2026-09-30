@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { taskTargetsSchema } from "../domain/taskTargets";
 
 
 const plannedAttendanceDaySchema = z.enum([
@@ -15,33 +16,32 @@ export const devBypassSchema = z.object({
   role: z.enum(["student", "mentor"]).default("student"),
 }).strict();
 
-export const memberSchema = z.object({
+const memberFieldsSchema = z.object({
   name: z.string().trim().min(2),
-  email: z.union([z.literal(""), z.string().trim().email()]).default(""),
-  photoUrl: z.string().trim().default(""),
+  email: z.union([z.literal(""), z.string().trim().email()]),
+  photoUrl: z.string().trim(),
   role: z.enum(["student", "lead", "mentor", "admin", "external"]),
-  elevated: z.boolean().default(false),
+  elevated: z.boolean(),
   disciplineId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
-  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80).default(0),
-  plannedAttendanceDays: z.array(plannedAttendanceDaySchema).default([]),
-  plannedAttendanceNotes: z.string().trim().default(""),
+  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80),
+  plannedAttendanceDays: z.array(plannedAttendanceDaySchema),
+  plannedAttendanceNotes: z.string().trim(),
 });
 
-export const memberPatchSchema = z.object({
-  name: z.string().trim().min(2).optional(),
-  email: z.union([z.literal(""), z.string().trim().email()]).optional(),
-  photoUrl: z.string().trim().optional(),
-  role: z.enum(["student", "lead", "mentor", "admin", "external"]).optional(),
-  elevated: z.boolean().optional(),
-  disciplineId: z.string().trim().min(1).nullable().optional(),
-  seasonId: z.string().trim().min(1).optional(),
-  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
-  plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80).optional(),
-  plannedAttendanceDays: z.array(plannedAttendanceDaySchema).optional(),
-  plannedAttendanceNotes: z.string().trim().optional(),
+export const memberSchema = memberFieldsSchema.extend({
+  email: memberFieldsSchema.shape.email.default(""),
+  photoUrl: memberFieldsSchema.shape.photoUrl.default(""),
+  elevated: memberFieldsSchema.shape.elevated.default(false),
+  plannedWeeklyAttendanceHours: memberFieldsSchema.shape.plannedWeeklyAttendanceHours.default(0),
+  plannedAttendanceDays: memberFieldsSchema.shape.plannedAttendanceDays.default([]),
+  plannedAttendanceNotes: memberFieldsSchema.shape.plannedAttendanceNotes.default(""),
 });
+
+export const memberPatchSchema = memberFieldsSchema.partial();
+
+export const profilePatchSchema = memberPatchSchema.pick({ name: true, email: true, photoUrl: true }).strict();
 
 export const seasonSchema = z.object({
   name: z.string().trim().min(2),
@@ -50,53 +50,56 @@ export const seasonSchema = z.object({
   endDate: z.string().date().optional(),
 });
 
-export const projectSchema = z.object({
+const projectFieldsSchema = z.object({
   seasonId: z.string().trim().min(1),
   name: z.string().trim().min(2),
-  projectType: z.enum(["robot", "operations", "outreach", "other"]).default("robot"),
-  description: z.string().trim().default(""),
-  status: z.enum(["planned", "active", "paused", "complete"]).default("active"),
+  projectType: z.enum(["robot", "operations", "outreach", "other"]),
+  description: z.string().trim(),
+  status: z.enum(["planned", "active", "paused", "complete"]),
 });
 
-export const projectPatchSchema = z.object({
-  name: z.string().trim().min(2).optional(),
-  description: z.string().trim().optional(),
-  status: z.enum(["planned", "active", "paused", "complete"]).optional(),
+export const projectSchema = projectFieldsSchema.extend({
+  projectType: projectFieldsSchema.shape.projectType.default("robot"),
+  description: projectFieldsSchema.shape.description.default(""),
+  status: projectFieldsSchema.shape.status.default("active"),
 });
 
-export const taskSchema = z.object({
+export const projectPatchSchema = projectFieldsSchema.pick({ name: true, description: true, status: true }).partial();
+
+const taskFieldsSchema = z.object({
+  ...taskTargetsSchema.partial().shape,
   projectId: z.string().trim().min(1).optional(),
-  workstreamId: z.string().trim().min(1).nullable().optional(),
-  workstreamIds: z.array(z.string().trim().min(1)).optional(),
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
-  subsystemId: z.string().trim().min(1).optional(),
-  subsystemIds: z.array(z.string().trim().min(1)).optional(),
   disciplineId: z.string().min(1),
-  mechanismId: z.string().trim().min(1).nullable().optional(),
-  mechanismIds: z.array(z.string().trim().min(1)).optional(),
-  partInstanceId: z.string().trim().min(1).nullable().optional(),
-  partInstanceIds: z.array(z.string().trim().min(1)).optional(),
-  artifactId: z.string().trim().min(1).nullable().optional(),
-  artifactIds: z.array(z.string().trim().min(1)).optional(),
   targetMilestoneId: z.string().trim().min(1).nullable(),
-  photoUrl: z.string().trim().default(""),
+  photoUrl: z.string().trim(),
   ownerId: z.string().trim().min(1).nullable(),
-  assigneeIds: z.array(z.string().trim().min(1)).default([]),
+  assigneeIds: z.array(z.string().trim().min(1)),
   mentorId: z.string().trim().min(1).nullable(),
   startDate: z.string().date().optional(),
   dueDate: z.string().date(),
   priority: z.enum(["critical", "high", "medium", "low"]),
   status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]),
   estimatedHours: z.coerce.number().min(0),
-  checklistItems: z.array(z.string().trim().min(1)).default([]),
-  linkedManufacturingIds: z.array(z.string().trim().min(1)).default([]),
-  linkedPurchaseIds: z.array(z.string().trim().min(1)).default([]),
-  requiresDocumentation: z.boolean().default(false),
-  documentationLinked: z.boolean().default(false),
+  checklistItems: z.array(z.string().trim().min(1)),
+  linkedManufacturingIds: z.array(z.string().trim().min(1)),
+  linkedPurchaseIds: z.array(z.string().trim().min(1)),
+  requiresDocumentation: z.boolean(),
+  documentationLinked: z.boolean(),
 }).strict();
 
-export const taskPatchSchema = taskSchema.partial();
+export const taskSchema = taskFieldsSchema.extend({
+  photoUrl: taskFieldsSchema.shape.photoUrl.default(""),
+  assigneeIds: taskFieldsSchema.shape.assigneeIds.default([]),
+  checklistItems: taskFieldsSchema.shape.checklistItems.default([]),
+  linkedManufacturingIds: taskFieldsSchema.shape.linkedManufacturingIds.default([]),
+  linkedPurchaseIds: taskFieldsSchema.shape.linkedPurchaseIds.default([]),
+  requiresDocumentation: taskFieldsSchema.shape.requiresDocumentation.default(false),
+  documentationLinked: taskFieldsSchema.shape.documentationLinked.default(false),
+});
+
+export const taskPatchSchema = taskFieldsSchema.partial();
 export const taskClaimSchema = z.object({
   start: z.boolean().optional().default(false),
 });
@@ -104,7 +107,7 @@ export const taskReassignSchema = z.object({
   ownerId: z.string().trim().min(1).nullable(),
 });
 
-export const milestoneSchema = z.object({
+const milestoneFieldsSchema = z.object({
   title: z.string().trim().min(2),
   type: z.enum([
     "practice",
@@ -113,43 +116,46 @@ export const milestoneSchema = z.object({
     "internal-review",
     "demo",
   ]),
-  status: z.enum(["not ready", "blocked", "qa", "ready"]).default("not ready"),
+  status: z.enum(["not ready", "blocked", "qa", "ready"]),
   startDateTime: z.string().trim().min(1),
   endDateTime: z.string().trim().min(1).nullable(),
-  isExternal: z.boolean().default(false),
-  description: z.string().trim().default(""),
-  projectIds: z.array(z.string().trim().min(1)).default([]),
-  photoUrl: z.string().trim().default(""),
+  isExternal: z.boolean(),
+  description: z.string().trim(),
+  projectIds: z.array(z.string().trim().min(1)),
+  photoUrl: z.string().trim(),
 });
 
-export const milestonePatchSchema = z.object({
-  title: z.string().trim().min(2).optional(),
-  type: z
-    .enum(["practice", "competition", "deadline", "internal-review", "demo"])
-    .optional(),
-  status: z.enum(["not ready", "blocked", "qa", "ready"]).optional(),
-  startDateTime: z.string().trim().min(1).optional(),
-  endDateTime: z.string().trim().min(1).nullable().optional(),
-  isExternal: z.boolean().optional(),
-  description: z.string().trim().optional(),
-  projectIds: z.array(z.string().trim().min(1)).optional(),
-  photoUrl: z.string().trim().optional(),
+export const milestoneSchema = milestoneFieldsSchema.extend({
+  status: milestoneFieldsSchema.shape.status.default("not ready"),
+  isExternal: milestoneFieldsSchema.shape.isExternal.default(false),
+  description: milestoneFieldsSchema.shape.description.default(""),
+  projectIds: milestoneFieldsSchema.shape.projectIds.default([]),
+  photoUrl: milestoneFieldsSchema.shape.photoUrl.default(""),
 });
+
+export const milestonePatchSchema = milestoneFieldsSchema.partial();
 
 const meetingTypeSchema = z.enum(["general", "build", "review", "outreach", "competition", "other"]);
 
-export const meetingSchema = z.object({
+const meetingFieldsSchema = z.object({
   title: z.string().trim().min(2),
-  meetingType: meetingTypeSchema.default("general"),
+  meetingType: meetingTypeSchema,
   seasonId: z.string().trim().min(1).optional(),
-  projectIds: z.array(z.string().trim().min(1)).default([]),
+  projectIds: z.array(z.string().trim().min(1)),
   startDateTime: z.string().trim().min(1),
   endDateTime: z.string().trim().min(1).nullable().optional(),
-  location: z.string().trim().default(""),
-  description: z.string().trim().default(""),
+  location: z.string().trim(),
+  description: z.string().trim(),
 });
 
-export const meetingPatchSchema = meetingSchema.partial();
+export const meetingSchema = meetingFieldsSchema.extend({
+  meetingType: meetingFieldsSchema.shape.meetingType.default("general"),
+  projectIds: meetingFieldsSchema.shape.projectIds.default([]),
+  location: meetingFieldsSchema.shape.location.default(""),
+  description: meetingFieldsSchema.shape.description.default(""),
+});
+
+export const meetingPatchSchema = meetingFieldsSchema.partial();
 
 export const qaReassessmentSchema = z.object({
   targetRiskId: z.string().trim().min(1).nullable().optional(),
@@ -301,7 +307,7 @@ export const riskSchema = z.object({
 
 export const riskPatchSchema = riskSchema.partial();
 
-export const iterationSchema = z.coerce.number().int().min(1).default(1);
+const iterationSchema = z.coerce.number().int().min(1);
 const pmCadSourceSchema = z.enum(["manual", "step", "onshape"]);
 const pmCadImportSourceSchema = z.enum([
   "MANUAL",
@@ -318,15 +324,19 @@ const pmCadProvenanceSchema = {
   cadUpdatedAt: z.string().datetime({ offset: true }).nullable().optional(),
 };
 
-export const workstreamSchema = z.object({
+const workstreamFieldsSchema = z.object({
   projectId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   description: z.string().trim().min(3),
-  isArchived: z.boolean().default(false),
+  isArchived: z.boolean(),
 });
 
-export const workstreamPatchSchema = workstreamSchema.partial();
+export const workstreamSchema = workstreamFieldsSchema.extend({
+  isArchived: workstreamFieldsSchema.shape.isArchived.default(false),
+});
+
+export const workstreamPatchSchema = workstreamFieldsSchema.partial();
 
 export const subsystemLayoutSchema = z.object({
   layoutX: z.number().min(0).max(1).nullable().optional(),
@@ -336,7 +346,7 @@ export const subsystemLayoutSchema = z.object({
   sortOrder: z.number().int().nullable().optional(),
 });
 
-export const subsystemSchema = z.object({
+const subsystemFieldsSchema = z.object({
   ...subsystemLayoutSchema.shape,
   ...pmCadProvenanceSchema,
   projectId: z.string().trim().min(1).optional(),
@@ -349,80 +359,111 @@ export const subsystemSchema = z.object({
     .optional(),
   color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   description: z.string().trim().min(3),
-  photoUrl: z.string().trim().default(""),
+  photoUrl: z.string().trim(),
   iteration: iterationSchema,
-  isArchived: z.boolean().default(false),
+  isArchived: z.boolean(),
   parentSubsystemId: z.string().trim().min(1).nullable().optional(),
   responsibleEngineerId: z.string().trim().min(1).nullable(),
-  mentorIds: z.array(z.string().trim().min(1)).default([]),
-  risks: z.array(z.string().trim().min(1)).default([]),
+  mentorIds: z.array(z.string().trim().min(1)),
+  risks: z.array(z.string().trim().min(1)),
 }).strict();
 
-export const subsystemPatchSchema = subsystemSchema.partial();
+export const subsystemSchema = subsystemFieldsSchema.extend({
+  photoUrl: subsystemFieldsSchema.shape.photoUrl.default(""),
+  isArchived: subsystemFieldsSchema.shape.isArchived.default(false),
+  mentorIds: subsystemFieldsSchema.shape.mentorIds.default([]),
+  risks: subsystemFieldsSchema.shape.risks.default([]),
+  iteration: subsystemFieldsSchema.shape.iteration.default(1),
+});
 
-export const mechanismSchema = z.object({
+export const subsystemPatchSchema = subsystemFieldsSchema.partial();
+
+const mechanismFieldsSchema = z.object({
   ...pmCadProvenanceSchema,
   subsystemId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
-  googleSheetsUrl: z.string().trim().default(""),
-  photoUrl: z.string().trim().default(""),
+  googleSheetsUrl: z.string().trim(),
+  photoUrl: z.string().trim(),
   iteration: iterationSchema,
-  isArchived: z.boolean().default(false),
+  isArchived: z.boolean(),
 });
 
-export const mechanismPatchSchema = mechanismSchema.partial();
+export const mechanismSchema = mechanismFieldsSchema.extend({
+  googleSheetsUrl: mechanismFieldsSchema.shape.googleSheetsUrl.default(""),
+  photoUrl: mechanismFieldsSchema.shape.photoUrl.default(""),
+  isArchived: mechanismFieldsSchema.shape.isArchived.default(false),
+  iteration: mechanismFieldsSchema.shape.iteration.default(1),
+});
 
-export const partDefinitionSchema = z.object({
+export const mechanismPatchSchema = mechanismFieldsSchema.partial();
+
+const acquisitionContext = {
+  subsystemId: z.string().trim().min(1),
+  disciplineId: z.string().trim().min(1),
+  ownerId: z.string().trim().min(1),
+  mentorId: z.string().trim().min(1),
+  dueDate: z.string().date(),
+};
+
+const partAcquisitionSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal("stock") }).strict(),
+  z.object({ method: z.literal("manufacture"), ...acquisitionContext }).strict(),
+  z.object({ method: z.literal("purchase"), ...acquisitionContext }).strict(),
+]);
+
+const partDefinitionFieldsSchema = z.object({
   ...pmCadProvenanceSchema,
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2),
   // When omitted/blank, the platform assigns the next available part number.
-  partNumber: z.string().trim().optional().default(""),
-  isHardware: z.boolean().default(false),
+  partNumber: z.string().trim(),
+  isHardware: z.boolean(),
   revision: z.string().trim().min(1),
   iteration: iterationSchema,
-  isArchived: z.boolean().default(false),
+  isArchived: z.boolean(),
   type: z.string().trim().min(1),
   source: z.string().trim().min(1),
   materialId: z.string().trim().min(1).nullable().optional(),
-  description: z.string().trim().default(""),
-  photoUrl: z.string().trim().default(""),
+  description: z.string().trim(),
+  photoUrl: z.string().trim(),
 });
 
-export const partDefinitionPatchSchema = z.object({
-  ...pmCadProvenanceSchema,
-  seasonId: z.string().trim().min(1).optional(),
-  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
-  name: z.string().trim().min(2).optional(),
-  partNumber: z.string().trim().min(1).optional(),
-  isHardware: z.boolean().optional(),
-  revision: z.string().trim().min(1).optional(),
-  iteration: iterationSchema.optional(),
-  isArchived: z.boolean().optional(),
-  type: z.string().trim().min(1).optional(),
-  source: z.string().trim().min(1).optional(),
-  materialId: z.string().trim().min(1).nullable().optional(),
-  description: z.string().trim().optional(),
-  photoUrl: z.string().trim().optional(),
+export const partDefinitionSchema = partDefinitionFieldsSchema.extend({
+  partNumber: partDefinitionFieldsSchema.shape.partNumber.default(""),
+  isHardware: partDefinitionFieldsSchema.shape.isHardware.default(false),
+  isArchived: partDefinitionFieldsSchema.shape.isArchived.default(false),
+  description: partDefinitionFieldsSchema.shape.description.default(""),
+  photoUrl: partDefinitionFieldsSchema.shape.photoUrl.default(""),
+  iteration: partDefinitionFieldsSchema.shape.iteration.default(1),
+  acquisition: partAcquisitionSchema.optional(),
 });
 
-export const partInstanceSchema = z.object({
+export const partDefinitionPatchSchema = partDefinitionFieldsSchema.partial().extend({
+  partNumber: partDefinitionFieldsSchema.shape.partNumber.min(1).optional(),
+});
+
+const partInstanceFieldsSchema = z.object({
   ...pmCadProvenanceSchema,
   subsystemId: z.string().trim().min(1),
   mechanismId: z.string().trim().min(1).nullable().optional(),
   partDefinitionId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   quantity: z.coerce.number().min(1),
-  trackIndividually: z.boolean().default(false),
+  trackIndividually: z.boolean(),
   status: z.enum(["not ready", "blocked", "qa", "ready"]),
-  photoUrl: z.string().trim().default(""),
+  photoUrl: z.string().trim(),
 });
 
-export const partInstancePatchSchema = partInstanceSchema.partial();
+export const partInstanceSchema = partInstanceFieldsSchema.extend({
+  trackIndividually: partInstanceFieldsSchema.shape.trackIndividually.default(false),
+  photoUrl: partInstanceFieldsSchema.shape.photoUrl.default(""),
+});
 
-export const purchaseItemSchema = z.object({
+export const partInstancePatchSchema = partInstanceFieldsSchema.partial();
+
+const purchaseItemFieldsSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
   requestedById: z.string().trim().min(1).nullable(),
@@ -432,13 +473,15 @@ export const purchaseItemSchema = z.object({
   linkLabel: z.string().trim().min(2),
   estimatedCost: z.coerce.number().min(0),
   finalCost: z.coerce.number().min(0).optional(),
-  approvedByMentor: z.boolean().default(false),
+  approvedByMentor: z.boolean(),
   status: z.enum(["requested", "approved", "purchased", "shipped", "delivered"]),
 });
 
-export const purchaseItemPatchSchema = purchaseItemSchema.partial().extend({
-  approvedByMentor: z.boolean().optional(),
+export const purchaseItemSchema = purchaseItemFieldsSchema.extend({
+  approvedByMentor: purchaseItemFieldsSchema.shape.approvedByMentor.default(false),
 });
+
+export const purchaseItemPatchSchema = purchaseItemFieldsSchema.partial();
 
 export const purchaseApprovalSchema = z.object({
   approved: z.boolean(),
@@ -449,7 +492,7 @@ export const purchaseTransitionSchema = z.object({
   finalCost: z.coerce.number().min(0).optional(),
 }).strict();
 
-export const materialSchema = z.object({
+const materialFieldsSchema = z.object({
   name: z.string().trim().min(2),
   category: z.enum([
     "metal",
@@ -465,24 +508,35 @@ export const materialSchema = z.object({
   reorderPoint: z.coerce.number().min(0),
   location: z.string().trim().min(1),
   vendor: z.string().trim().min(1),
-  notes: z.string().trim().default(""),
+  notes: z.string().trim(),
 });
 
-export const materialPatchSchema = materialSchema.partial();
+export const materialSchema = materialFieldsSchema.extend({
+  notes: materialFieldsSchema.shape.notes.default(""),
+});
 
-export const artifactSchema = z.object({
+export const materialPatchSchema = materialFieldsSchema.partial();
+
+const artifactFieldsSchema = z.object({
   projectId: z.string().trim().min(1),
   workstreamId: z.string().trim().min(1).nullable().optional(),
   kind: z.enum(["document", "nontechnical"]),
   title: z.string().trim().min(2),
-  summary: z.string().trim().default(""),
-  status: z.enum(["draft", "in-review", "published"]).default("draft"),
-  link: z.string().trim().default(""),
-  isArchived: z.boolean().default(false),
+  summary: z.string().trim(),
+  status: z.enum(["draft", "in-review", "published"]),
+  link: z.string().trim(),
+  isArchived: z.boolean(),
   updatedAt: z.string().trim().min(1).optional(),
 });
 
-export const artifactPatchSchema = artifactSchema.partial();
+export const artifactSchema = artifactFieldsSchema.extend({
+  summary: artifactFieldsSchema.shape.summary.default(""),
+  status: artifactFieldsSchema.shape.status.default("draft"),
+  link: artifactFieldsSchema.shape.link.default(""),
+  isArchived: artifactFieldsSchema.shape.isArchived.default(false),
+});
+
+export const artifactPatchSchema = artifactFieldsSchema.partial();
 
 export const mediaUploadRequestSchema = z.object({
   projectId: z.string().trim().min(1),
@@ -491,7 +545,7 @@ export const mediaUploadRequestSchema = z.object({
   sizeBytes: z.coerce.number().int().positive().max(500 * 1024 * 1024),
 });
 
-export const manufacturingItemSchema = z.object({
+const manufacturingItemFieldsSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
   requestedById: z.string().trim().min(1).nullable(),
@@ -504,14 +558,17 @@ export const manufacturingItemSchema = z.object({
   partInstanceIds: z.array(z.string().trim().min(1)).optional(),
   quantity: z.coerce.number().min(1),
   status: z.enum(["requested", "approved", "in-progress", "qa", "complete"]),
-  mentorReviewed: z.boolean().default(false),
-  inHouse: z.boolean().default(true),
+  mentorReviewed: z.boolean(),
+  inHouse: z.boolean(),
   batchLabel: z.string().trim().min(1).optional(),
 });
 
-export const manufacturingItemPatchSchema = manufacturingItemSchema.partial().extend({
-  mentorReviewed: z.boolean().optional(),
+export const manufacturingItemSchema = manufacturingItemFieldsSchema.extend({
+  mentorReviewed: manufacturingItemFieldsSchema.shape.mentorReviewed.default(false),
+  inHouse: manufacturingItemFieldsSchema.shape.inHouse.default(true),
 });
+
+export const manufacturingItemPatchSchema = manufacturingItemFieldsSchema.partial();
 
 export const manufacturingReviewSchema = z.object({
   reviewed: z.boolean(),
@@ -521,16 +578,21 @@ export const manufacturingTransitionSchema = z.object({
   status: z.enum(["in-progress", "qa", "complete"]),
 }).strict();
 
-export const workLogSchema = z.object({
+const workLogFieldsSchema = z.object({
   taskId: z.string().trim().min(1),
   date: z.string().date(),
   hours: z.coerce.number().min(0.5),
   participantIds: z.array(z.string().trim().min(1)).min(1),
-  notes: z.string().trim().default(""),
-  photoUrl: z.string().trim().default(""),
+  notes: z.string().trim(),
+  photoUrl: z.string().trim(),
 });
 
-export const workLogPatchSchema = workLogSchema.partial();
+export const workLogSchema = workLogFieldsSchema.extend({
+  notes: workLogFieldsSchema.shape.notes.default(""),
+  photoUrl: workLogFieldsSchema.shape.photoUrl.default(""),
+});
+
+export const workLogPatchSchema = workLogFieldsSchema.partial();
 
 export const tutorialSessionResetSchema = z.object({
   mode: z.enum(["session", "baseline"]).default("session"),

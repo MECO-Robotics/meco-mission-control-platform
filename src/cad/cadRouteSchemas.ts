@@ -116,6 +116,8 @@ export const cadHierarchyApplySchema = z.object({
   { message: "At least one hierarchy decision is required." },
 );
 
+export type CadHierarchyApplyInput = z.infer<typeof cadHierarchyApplySchema>;
+
 export const cadMappingRuleCreateSchema = z.object({
   projectId: z.string().trim().min(1),
   seasonId: z.string().trim().min(1).nullable().optional(),

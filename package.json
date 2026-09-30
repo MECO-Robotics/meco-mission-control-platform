@@ -4,6 +4,7 @@
   "description": "DigitalOcean-hosted API for MECO Mission Control.",
   "main": "dist/server.js",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "dev": "tsx watch src/server.ts",
     "smtp:dev": "tsx watch scripts/dev-smtp.ts",
     "build": "tsc -p tsconfig.json",

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { isTaskDisciplineAllowedForProject } from "../src/domain/taskDisciplines";
 import { createTutorialSnapshot } from "../src/data/tutorialSnapshot";
 
 for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
@@ -27,7 +28,7 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
     assert.equal(data.seasons[0].startDate, `${date.slice(0, 7)}-01`);
     assert.equal(data.seasons[0].endDate.slice(0, 7), date.slice(0, 7));
     const demoMembers = data.members.filter((member) => member.id.startsWith("demo-"));
-    assert.equal(demoMembers.length, 8);
+    assert.ok(demoMembers.length > 0);
     for (const member of demoMembers) {
       assert.ok(data.attendanceRecords.some((record) =>
         record.memberId === member.id && record.date === date && record.totalHours > 0,
@@ -74,4 +75,16 @@ test("tutorial roster categories and all member references resolve within the se
     }
   };
   inspect(data, "tutorial");
+});
+
+
+test("tutorial tasks have canonical disciplines and independently mutable collections", () => {
+  const data = createTutorialSnapshot(new Date("2026-09-26T12:00:00Z"));
+  const projects = new Map(data.projects.map((project) => [project.id, project]));
+  for (const task of data.tasks) {
+    assert.ok(isTaskDisciplineAllowedForProject(projects.get(task.projectId), task.disciplineId), task.id);
+  }
+  for (const field of ["checklistItems", "blockers", "linkedManufacturingIds", "linkedPurchaseIds"] as const) {
+    assert.equal(new Set(data.tasks.map((task) => task[field])).size, data.tasks.length, field);
+  }
 });

@@ -50,6 +50,10 @@ test("Onshape import audit actor is derived from the authenticated session", asy
         role: "mentor",
         taskSubteamIds: [],
       });
+      const actor = getSnapshot().members.find(
+        (member) => member.email === "jordan.lee@mecorobotics.org",
+      );
+      assert.ok(actor);
       const authHeaders = { authorization: `Bearer ${token}` };
 
       const createResponse = await app.inject({
@@ -65,7 +69,7 @@ test("Onshape import audit actor is derived from the authenticated session", asy
         },
       });
       assert.equal(createResponse.statusCode, 201);
-      assert.equal(createResponse.json().item.createdBy, "jordan");
+      assert.equal(createResponse.json().item.createdBy, actor.id);
       const refId = createResponse.json().item.id as string;
 
       resetLimits();
@@ -81,14 +85,19 @@ test("Onshape import audit actor is derived from the authenticated session", asy
 
       const auditAction = (getSnapshot().actions ?? []).find((action) => action.entityId === result.syncJobId);
       assert.ok(auditAction);
-      assert.equal(auditAction.actorMemberId, "jordan");
-      assert.deepEqual(auditAction.memberIds, ["jordan"]);
-      assert.equal(auditAction.detailsJson?.actor, "jordan");
+      assert.equal(auditAction.actorMemberId, actor.id);
+      assert.deepEqual(auditAction.memberIds, [actor.id]);
+      assert.equal(auditAction.detailsJson?.actor, actor.id);
     }, {
       env: {
         AUTH_EMAIL_SMTP_HOST: "smtp.example.test",
         AUTH_EMAIL_FROM: "noreply@mecorobotics.org",
       },
+      members: [{
+        name: "Onshape Audit Mentor",
+        email: "jordan.lee@mecorobotics.org",
+        role: "mentor",
+      }],
     });
   } finally {
     setOnshapeCadClientFactoryForTests(null);

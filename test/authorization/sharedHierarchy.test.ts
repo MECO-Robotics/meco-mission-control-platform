@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
 test("students cannot mutate shared planning or CAD hierarchy", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const studentHeaders = await createWorkflowAuthHeaders("student");
     const attempts = [
       ["POST", "/api/subsystems"],
@@ -24,11 +23,11 @@ test("students cannot mutate shared planning or CAD hierarchy", async () => {
       assert.equal(response.statusCode, 403, `${method} ${url}`);
       resetLimits();
     }
-  }, { env: workflowAuthEnv });
+  });
 });
 
 test("mentors retain legitimate shared hierarchy mutation access", async () => {
-  await withIntegrationApp(async ({ app }) => {
+  await withWorkflowAuthApp(async ({ app }) => {
     const response = await app.inject({
       method: "POST",
       url: "/api/subsystems",
@@ -41,5 +40,5 @@ test("mentors retain legitimate shared hierarchy mutation access", async () => {
       },
     });
     assert.equal(response.statusCode, 201);
-  }, { env: workflowAuthEnv });
+  });
 });

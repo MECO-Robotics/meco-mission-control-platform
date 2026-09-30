@@ -7,7 +7,7 @@ test("work log endpoints filter by participant and support create update delete 
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const filteredBootstrapResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?personId=priya",
+      url: "/api/bootstrap?personId=ava",
     });
 
     assert.equal(filteredBootstrapResponse.statusCode, 200);
@@ -19,7 +19,7 @@ test("work log endpoints filter by participant and support create update delete 
     };
     assert.deepEqual(
       filteredBootstrapBody.workLogs.map((workLog) => workLog.id),
-      ["log-3", "log-4"],
+      ["log-1"],
     );
 
     resetLimits();
@@ -31,7 +31,7 @@ test("work log endpoints filter by participant and support create update delete 
         taskId: "swerve-sensor-bundle",
         date: "2026-04-23",
         hours: 1.5,
-        participantIds: ["priya", "lucas"],
+        participantIds: ["ava", "demo-alex-morgan"],
         notes: "Route test work log",
         photoUrl: "https://cdn.example.test/worklogs/route-test-log.png",
       },
@@ -52,7 +52,7 @@ test("work log endpoints filter by participant and support create update delete 
     assert.equal(workLogCreatedBody.item.taskId, "swerve-sensor-bundle");
     assert.equal(workLogCreatedBody.item.date, "2026-04-23");
     assert.equal(workLogCreatedBody.item.hours, 1.5);
-    assert.deepEqual(workLogCreatedBody.item.participantIds, ["priya", "lucas"]);
+    assert.deepEqual(workLogCreatedBody.item.participantIds, ["ava", "demo-alex-morgan"]);
     assert.equal(workLogCreatedBody.item.notes, "Route test work log");
     assert.equal(
       workLogCreatedBody.item.photoUrl,
@@ -63,7 +63,7 @@ test("work log endpoints filter by participant and support create update delete 
 
     const filteredBootstrapAfterWorkLogResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?personId=priya",
+      url: "/api/bootstrap?personId=ava",
     });
 
     assert.equal(filteredBootstrapAfterWorkLogResponse.statusCode, 200);
@@ -78,7 +78,7 @@ test("work log endpoints filter by participant and support create update delete 
       (workLog) => workLog.notes === "Route test work log",
     );
     assert.ok(createdWorkLog);
-    assert.deepEqual(createdWorkLog?.participantIds, ["priya", "lucas"]);
+    assert.deepEqual(createdWorkLog?.participantIds, ["ava", "demo-alex-morgan"]);
 
     resetLimits();
 
@@ -87,7 +87,7 @@ test("work log endpoints filter by participant and support create update delete 
       url: `/api/work-logs/${workLogCreatedBody.item.id}`,
       payload: {
         hours: 2,
-        participantIds: ["lucas"],
+        participantIds: ["demo-alex-morgan"],
         notes: "Route test work log updated from mobile",
         photoUrl: "https://cdn.example.test/worklogs/route-test-log-v2.png",
       },
@@ -104,7 +104,7 @@ test("work log endpoints filter by participant and support create update delete 
     };
     assert.equal(workLogUpdatedBody.item.hours, 2);
     assert.equal(workLogUpdatedBody.item.notes, "Route test work log updated from mobile");
-    assert.deepEqual(workLogUpdatedBody.item.participantIds, ["lucas"]);
+    assert.deepEqual(workLogUpdatedBody.item.participantIds, ["demo-alex-morgan"]);
     assert.equal(
       workLogUpdatedBody.item.photoUrl,
       "https://cdn.example.test/worklogs/route-test-log-v2.png",

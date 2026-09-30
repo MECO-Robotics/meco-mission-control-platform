@@ -1,3 +1,4 @@
+import { parseRouteInput } from "../../routes/helpers/parseRouteInput";
 import type { FastifyInstance } from "fastify";
 
 import { cadMappingRuleCreateSchema, cadMappingRulePatchSchema } from "../cadRouteSchemas";
@@ -8,9 +9,12 @@ export function registerCadMappingRuleRoutes(app: FastifyInstance, requireApiSes
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const parsed = cadMappingRuleCreateSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "CAD mapping rule payload is invalid.", issues: parsed.error.flatten() });
+    const parsed = parseRouteInput(
+      cadMappingRuleCreateSchema, request.body, reply,
+      "CAD mapping rule payload is invalid.",
+    );
+    if (!parsed) {
+      return reply;
     }
     return reply.code(201).send({
       item: await app.cadStore.createMappingRule({
@@ -27,9 +31,12 @@ export function registerCadMappingRuleRoutes(app: FastifyInstance, requireApiSes
     if (!requireApiSession(request, reply)) {
       return;
     }
-    const parsed = cadMappingRulePatchSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "CAD mapping rule patch is invalid.", issues: parsed.error.flatten() });
+    const parsed = parseRouteInput(
+      cadMappingRulePatchSchema, request.body, reply,
+      "CAD mapping rule patch is invalid.",
+    );
+    if (!parsed) {
+      return reply;
     }
     const item = await app.cadStore.updateMappingRule(request.params.id, parsed.data);
     return item ? { item } : reply.code(404).send({ message: "CAD mapping rule was not found." });

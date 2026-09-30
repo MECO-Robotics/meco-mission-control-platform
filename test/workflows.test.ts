@@ -23,19 +23,14 @@ import type {
 function makeTask(overrides: Partial<Task> = {}) {
   const baseTask: Task = {
     id: "task-a",
-    projectId: "default-season-robot",
-    workstreamId: null,
+    projectId: "project-robot-2026",
     workstreamIds: [],
     title: "Drive calibration",
     summary: "Validate encoder calibration before practice.",
-    subsystemId: "drive",
     subsystemIds: ["drive"],
     disciplineId: "design",
-    mechanismId: null,
     mechanismIds: [],
-    partInstanceId: null,
     partInstanceIds: [],
-    artifactId: null,
     artifactIds: [],
     targetMilestoneId: null,
     ownerId: "ava",
@@ -56,33 +51,28 @@ function makeTask(overrides: Partial<Task> = {}) {
     documentationLinked: false,
   };
 
-  const mergedTask = {
-    ...baseTask,
-    ...overrides,
-  } as Task;
-
-  return {
-    ...mergedTask,
-    workstreamIds:
-      overrides.workstreamIds ??
-      (mergedTask.workstreamId ? [mergedTask.workstreamId] : []),
-    subsystemIds: overrides.subsystemIds ?? [mergedTask.subsystemId],
-    mechanismIds:
-      overrides.mechanismIds ??
-      (mergedTask.mechanismId ? [mergedTask.mechanismId] : []),
-    partInstanceIds:
-      overrides.partInstanceIds ??
-      (mergedTask.partInstanceId ? [mergedTask.partInstanceId] : []),
-  };
+  return { ...baseTask, ...overrides };
 }
 
 function makeWorkflowSnapshot() {
   const snapshot = structuredClone(initialSnapshot) as PlatformSnapshot;
   const partDefinitionId = snapshot.partDefinitions[0]?.id ?? "part-def-a";
+  snapshot.subsystems.push({
+    id: "controls",
+    projectId: "project-robot-2026",
+    name: "Controls",
+    description: "Controls test subsystem.",
+    isCore: true,
+    parentSubsystemId: null,
+    responsibleEngineerId: "ava",
+    mentorIds: ["marco"],
+    risks: [],
+    iteration: 1,
+    isArchived: false,
+  });
 
   snapshot.tasks = [
     makeTask({
-      mechanismId: "drive-shaft",
       mechanismIds: ["drive-shaft"],
       status: "waiting-for-qa",
       priority: "critical",
@@ -94,10 +84,10 @@ function makeWorkflowSnapshot() {
     makeTask({
       id: "task-b",
       title: "Controls firmware",
-      subsystemId: "controls",
+      subsystemIds: ["controls"],
       disciplineId: "programming",
-      ownerId: "ethan",
-      mentorId: "riley",
+      ownerId: "ava",
+      mentorId: "marco",
       status: "complete",
       priority: "medium",
       requiresDocumentation: false,
@@ -108,10 +98,10 @@ function makeWorkflowSnapshot() {
     makeTask({
       id: "task-c",
       title: "Controls integration",
-      subsystemId: "controls",
+      subsystemIds: ["controls"],
       disciplineId: "testing",
-      ownerId: "ethan",
-      mentorId: "riley",
+      ownerId: "ava",
+      mentorId: "marco",
       status: "in-progress",
       priority: "high",
 
@@ -162,7 +152,7 @@ function makeWorkflowSnapshot() {
       taskId: "task-a",
       date: "2026-04-02",
       hours: 5,
-      participantIds: ["ava", "jordan"],
+      participantIds: ["ava", "marco"],
       notes: "Calibration and notebook evidence.",
     } satisfies WorkLog,
     {
@@ -181,7 +171,7 @@ function makeWorkflowSnapshot() {
       subjectId: "task-a",
       subjectType: "task",
       subjectTitle: "Drive calibration",
-      participantIds: ["ava", "jordan"],
+      participantIds: ["ava", "marco"],
       result: "pass",
       mentorApproved: true,
       notes: "Calibration approved for the next practice block.",
@@ -263,7 +253,7 @@ function makeWorkflowSnapshot() {
     } satisfies AttendanceRecord,
     {
       id: "att-2",
-      memberId: "jordan",
+      memberId: "marco",
       date: "2026-04-02",
       totalHours: 3,
     } satisfies AttendanceRecord,

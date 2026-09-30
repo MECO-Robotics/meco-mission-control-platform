@@ -1,3 +1,5 @@
+import { preparePartAcquisition } from "./helpers/partAcquisition";
+import { parseRouteInput } from "./helpers/parseRouteInput";
 import { FastifyInstance, type FastifyRequest } from "fastify";
 import { requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
@@ -18,7 +20,7 @@ import {
   createQaReport,
   submitQaReport,
   createQaRequest,
-  createPartDefinition,
+  createPartDefinitionWithAcquisition,
   createPartInstance,
   createProject,
   createSeason,
@@ -125,14 +127,13 @@ import {
   getDefaultProjectId,
   normalizeTaskTargets,
   resolveProjectId,
-  resolveWorkstreamId,
-  uniqueIds,
 } from "./helpers/taskTargets";
+import { uniqueIds } from "../domain/ids";
 
 import {
   validateArtifactLinks,
   validateMilestoneProjectLinks,
-  validateManufacturingItemLinks,
+  resolveManufacturingItem,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
@@ -171,6 +172,7 @@ import {
   mediaUploadRequestSchema,
   memberPatchSchema,
   memberSchema,
+  profilePatchSchema,
   mechanismPatchSchema,
   mechanismSchema,
   partDefinitionPatchSchema,
@@ -263,7 +265,7 @@ function rewriteDemoMemberId(
 }
 
 function rewriteDemoMemberIds(
-  memberIds: string[] | undefined,
+  memberIds: readonly string[] | undefined,
   memberIdsByOriginalId: Map<string, string>,
 ) {
   return (memberIds ?? []).flatMap((memberId) => {
@@ -695,7 +697,8 @@ export async function registerRoutes(
 
     const snapshot = getSnapshot();
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
-    const isPublicDemoBootstrap = isAuthEnabled() && (session?.isPublicDemo || !session);
+    const isPublicDemoBootstrap = session?.isPublicDemo === true ||
+      (!session && (isAuthEnabled() || selection.seasonId === PUBLIC_DEMO_SEASON_ID));
     const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
       sanitizeEscalations: isPublicDemoBootstrap,
     });
@@ -723,12 +726,12 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = auditExportQuerySchema.safeParse(request.query ?? {});
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Audit export query is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(
+      auditExportQuerySchema, request.query ?? {}, reply,
+      "Audit export query is invalid.",
+    );
+    if (!parsed) {
+      return reply;
     }
 
     const { format, ...filters } = parsed.data;
@@ -748,7 +751,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post("/api/tutorial/session/start", async (request, reply) => {
+  app.post("/api/tutorial/session/start", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -768,7 +771,7 @@ export async function registerRoutes(
     };
   });
 
-  app.post<{ Body: unknown }>("/api/tutorial/session/reset", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/tutorial/session/reset", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
@@ -777,12 +780,12 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = tutorialSessionResetSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Tutorial reset payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(
+      tutorialSessionResetSchema, request.body ?? {}, reply,
+      "Tutorial reset payload is invalid.",
+    );
+    if (!parsed) {
+      return reply;
     }
 
     if (parsed.data.mode === "baseline") {
@@ -847,12 +850,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = seasonSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Season payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(seasonSchema, request.body, reply, "Season payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const currentYear = new Date().toISOString().slice(0, 4);
@@ -898,12 +898,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = projectSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Project payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(projectSchema, request.body, reply, "Project payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (!getSeasons().some((season) => season.id === parsed.data.seasonId)) {
@@ -929,12 +926,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = projectPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Project update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(projectPatchSchema, request.body, reply, "Project update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       if (!findProject(request.params.projectId)) {
@@ -972,12 +966,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = workstreamSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Workstream payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(workstreamSchema, request.body, reply, "Workstream payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (!findProject(parsed.data.projectId)) {
@@ -1003,12 +994,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = workstreamPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Workstream update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        workstreamPatchSchema, request.body, reply,
+        "Workstream update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentWorkstream = findWorkstream(request.params.workstreamId);
@@ -1058,12 +1049,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = reportSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Report payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(reportSchema, request.body, reply, "Report payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (
@@ -1130,12 +1118,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = reportFindingSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Report finding payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(reportFindingSchema, request.body, reply, "Report finding payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (!getReports().some((report) => report.id === parsed.data.reportId)) {
@@ -1169,12 +1154,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = qaReportSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "QA report payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(qaReportSchema, request.body, reply, "QA report payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (
@@ -1209,8 +1191,10 @@ export async function registerRoutes(
   app.post<{ Body: unknown }>("/api/qa-reports/submit", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) return;
     if (!requireMentorPermission(request, reply, "Only leads, mentors or admins can submit task QA.")) return;
-    const parsed = qaSubmitSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ message: "QA submission is invalid.", issues: parsed.error.flatten() });
+    const parsed = parseRouteInput(qaSubmitSchema, request.body, reply, "QA submission is invalid.");
+    if (!parsed) {
+      return reply;
+    }
     if (parsed.data.mentorApproved && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
     const validationError = validateQaReportLinks(parsed.data);
     if (validationError) return reply.code(400).send({ message: validationError });
@@ -1237,12 +1221,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = qaRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "QA request payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(qaRequestSchema, request.body, reply, "QA request payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validateQaRequestLinks(parsed.data);
@@ -1281,12 +1262,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = testResultSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Test result payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(testResultSchema, request.body, reply, "Test result payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validateTestResultLinks(parsed.data);
@@ -1326,12 +1304,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = riskSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Risk payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(riskSchema, request.body, reply, "Risk payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validateRiskLinks(parsed.data);
@@ -1362,12 +1337,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = riskPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Risk update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(riskPatchSchema, request.body, reply, "Risk update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentRisk = findRisk(request.params.riskId);
@@ -1395,20 +1367,7 @@ export async function registerRoutes(
         });
       }
 
-      const risk = updateRisk(request.params.riskId, {
-        ...parsed.data,
-        title: parsed.data.title === undefined ? undefined : parsed.data.title.trim(),
-        detail: parsed.data.detail === undefined ? undefined : parsed.data.detail.trim(),
-        sourceId: parsed.data.sourceId === undefined ? undefined : parsed.data.sourceId.trim(),
-        attachmentId:
-          parsed.data.attachmentId === undefined
-            ? undefined
-            : parsed.data.attachmentId.trim(),
-        mitigationTaskId:
-          parsed.data.mitigationTaskId === undefined
-            ? undefined
-            : parsed.data.mitigationTaskId,
-      });
+      const risk = updateRisk(request.params.riskId, parsed.data);
 
       return {
         item: risk,
@@ -1440,12 +1399,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = workLogSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Work log payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(workLogSchema, request.body, reply, "Work log payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validateWorkLogLinks(parsed.data);
@@ -1482,12 +1438,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = workLogPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Work log update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(workLogPatchSchema, request.body, reply, "Work log update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentWorkLog = getSnapshot().workLogs.find(
@@ -1512,14 +1465,9 @@ export async function registerRoutes(
 
       const workLog = updateWorkLog(request.params.workLogId, {
         ...parsed.data,
-        notes:
-          parsed.data.notes === undefined
-            ? undefined
-            : parsed.data.notes.trim(),
-        participantIds:
-          parsed.data.participantIds === undefined
-            ? undefined
-            : Array.from(new Set(parsed.data.participantIds)),
+        ...(parsed.data.participantIds === undefined
+          ? {}
+          : { participantIds: Array.from(new Set(parsed.data.participantIds)) }),
       }, buildTaskAuditContext(request));
 
       return {
@@ -1568,18 +1516,13 @@ export async function registerRoutes(
     const items = filterTasksForPerson(personId).map((task) => ({
       id: task.id,
       projectId: task.projectId,
-      workstreamId: task.workstreamId,
       workstreamIds: task.workstreamIds,
       title: task.title,
       summary: task.summary,
-      subsystemId: task.subsystemId,
       subsystemIds: task.subsystemIds,
       disciplineId: task.disciplineId,
-      mechanismId: task.mechanismId,
       mechanismIds: task.mechanismIds,
-      partInstanceId: task.partInstanceId,
       partInstanceIds: task.partInstanceIds,
-      artifactId: task.artifactId,
       artifactIds: task.artifactIds,
       targetMilestoneId: task.targetMilestoneId,
       ownerId: task.ownerId,
@@ -1701,12 +1644,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = milestoneSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Milestone payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(milestoneSchema, request.body, reply, "Milestone payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const projectIds = Array.from(new Set(parsed.data.projectIds));
@@ -1737,12 +1677,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = milestonePatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Milestone update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(milestonePatchSchema, request.body, reply, "Milestone update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentMilestone = findMilestone(request.params.milestoneId);
@@ -1773,7 +1710,7 @@ export async function registerRoutes(
           parsed.data.description === undefined
             ? currentMilestone.description
             : parsed.data.description,
-        projectIds: nextProjectIds,
+        projectIds: [...nextProjectIds],
         photoUrl:
           parsed.data.photoUrl === undefined
             ? currentMilestone.photoUrl
@@ -1823,12 +1760,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = materialSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Material payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(materialSchema, request.body, reply, "Material payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const material = createMaterial({
@@ -1848,12 +1782,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = materialPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Material update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(materialPatchSchema, request.body, reply, "Material update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentMaterial = findMaterial(request.params.materialId);
@@ -1910,12 +1841,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = mediaUploadRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Media upload payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(mediaUploadRequestSchema, request.body, reply, "Media upload payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const project = findProject(parsed.data.projectId);
@@ -1953,12 +1881,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = mediaUploadRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Media upload payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(mediaUploadRequestSchema, request.body, reply, "Media upload payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const project = findProject(parsed.data.projectId);
@@ -1993,12 +1918,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = artifactSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Artifact payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(artifactSchema, request.body, reply, "Artifact payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validateArtifactLinks({
@@ -2033,12 +1955,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = artifactPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Artifact update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(artifactPatchSchema, request.body, reply, "Artifact update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentArtifact = findArtifact(request.params.artifactId);
@@ -2104,18 +2023,15 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = taskSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Task payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(taskSchema, request.body, reply, "Task payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const targetIds = normalizeTaskTargets(parsed.data);
     const projectId = resolveProjectId({
       projectId: parsed.data.projectId,
-      subsystemId: targetIds.subsystemId,
+      subsystemId: targetIds.subsystemIds[0],
     });
     if (!projectId) {
       return reply.code(400).send({
@@ -2123,21 +2039,10 @@ export async function registerRoutes(
       });
     }
 
-    const defaultWorkstreamId = resolveWorkstreamId({
-      projectId,
-      requestedWorkstreamId: parsed.data.workstreamId,
-      subsystemId: targetIds.subsystemId,
-    });
-    const workstreamIds =
-      targetIds.workstreamIds.length > 0
-        ? targetIds.workstreamIds
-        : uniqueIds([defaultWorkstreamId]);
     const taskInput = {
       ...parsed.data,
       projectId,
       ...targetIds,
-      workstreamId: workstreamIds[0] ?? null,
-      workstreamIds,
       assigneeIds: uniqueIds(parsed.data.assigneeIds ?? []),
       startDate: parsed.data.startDate ?? parsed.data.dueDate,
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
@@ -2168,12 +2073,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = taskClaimSchema.safeParse(request.body ?? {});
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Task claim payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(taskClaimSchema, request.body ?? {}, reply, "Task claim payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentTask = getTasks().find((task) => task.id === request.params.taskId);
@@ -2265,12 +2167,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = taskReassignSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Task reassign payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(taskReassignSchema, request.body, reply, "Task reassign payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentTask = getTasks().find((task) => task.id === request.params.taskId);
@@ -2320,12 +2219,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = taskPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Task update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(taskPatchSchema, request.body, reply, "Task update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentTask = getTasks().find((task) => task.id === request.params.taskId);
@@ -2338,28 +2234,11 @@ export async function registerRoutes(
       const targetIds = normalizeTaskTargets(parsed.data, currentTask);
       const nextProjectId = resolveProjectId({
         projectId: parsed.data.projectId,
-        subsystemId: targetIds.subsystemId,
+        subsystemId: targetIds.subsystemIds[0],
       }) ?? currentTask.projectId;
-      const workstreamWasProvided =
-        parsed.data.workstreamId !== undefined || parsed.data.workstreamIds !== undefined;
-      const subsystemWasProvided =
-        parsed.data.subsystemId !== undefined || parsed.data.subsystemIds !== undefined;
-      const defaultWorkstreamId =
-        !workstreamWasProvided && subsystemWasProvided
-          ? resolveWorkstreamId({
-              projectId: nextProjectId,
-              subsystemId: targetIds.subsystemId,
-            })
-          : targetIds.workstreamId;
-      const workstreamIds =
-        workstreamWasProvided || !subsystemWasProvided
-          ? targetIds.workstreamIds
-          : uniqueIds([defaultWorkstreamId]);
       const nextTaskShape = {
         projectId: nextProjectId,
         ...targetIds,
-        workstreamId: workstreamIds[0] ?? null,
-        workstreamIds,
         assigneeIds:
           parsed.data.assigneeIds === undefined
             ? currentTask.assigneeIds ?? []
@@ -2381,15 +2260,10 @@ export async function registerRoutes(
       const updatedTask = updateTask(request.params.taskId, {
         ...parsed.data,
         projectId: nextTaskShape.projectId,
-        workstreamId: nextTaskShape.workstreamId,
         workstreamIds: nextTaskShape.workstreamIds,
-        subsystemId: nextTaskShape.subsystemId,
         subsystemIds: nextTaskShape.subsystemIds,
-        mechanismId: nextTaskShape.mechanismId,
         mechanismIds: nextTaskShape.mechanismIds,
-        partInstanceId: nextTaskShape.partInstanceId,
         partInstanceIds: nextTaskShape.partInstanceIds,
-        artifactId: nextTaskShape.artifactId,
         artifactIds: nextTaskShape.artifactIds,
       }, buildTaskAuditContext(request));
       return {
@@ -2453,12 +2327,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = taskDependencySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Task dependency payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(taskDependencySchema, request.body, reply, "Task dependency payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (!getTasks().some((task) => task.id === parsed.data.taskId)) {
@@ -2492,12 +2363,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = taskDependencyPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Task dependency update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        taskDependencyPatchSchema, request.body, reply,
+        "Task dependency update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentDependency = getTaskDependencies().find(
@@ -2591,12 +2462,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = taskBlockerSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Task blocker payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(taskBlockerSchema, request.body, reply, "Task blocker payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validateTaskBlockerLinks(parsed.data);
@@ -2619,12 +2487,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = taskBlockerPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Task blocker update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        taskBlockerPatchSchema, request.body, reply,
+        "Task blocker update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentBlocker = getTaskBlockers().find(
@@ -2690,6 +2558,32 @@ export async function registerRoutes(
     };
   });
 
+  app.patch<{ Body: unknown }>(
+    "/api/users/me/profile",
+    { config: { snapshotMutation: true } },
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) return;
+      const session = requireSession(request, reply);
+      if (!session) return;
+
+      const parsed = parseRouteInput(profilePatchSchema, request.body, reply, "Profile payload is invalid.");
+      if (!parsed) {
+        return reply;
+      }
+
+      const member = getMembers().find(
+        (candidate) => candidate.email.trim().toLowerCase() === session.email.trim().toLowerCase(),
+      );
+      if (!member) {
+        return reply.code(404).send({ message: "No roster profile is linked to this account." });
+      }
+
+      const updated = updateMember(member.id, parsed.data, buildTaskAuditContext(request));
+      if (!updated) return reply.code(404).send({ message: "Profile not found." });
+      return { item: updated };
+    },
+  );
+
   app.post<{ Body: unknown }>("/api/members", { config: { snapshotMutation: true } }, async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -2699,12 +2593,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = memberSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Roster payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(memberSchema, request.body, reply, "Roster payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
     if (
       (parsed.data.role === "mentor" || parsed.data.role === "admin" || parsed.data.elevated) &&
@@ -2762,12 +2653,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = memberPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Roster update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(memberPatchSchema, request.body, reply, "Roster update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const changesProtectedIdentity =
@@ -2888,12 +2776,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = subsystemSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Subsystem payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(subsystemSchema, request.body, reply, "Subsystem payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const projectId = parsed.data.projectId ?? getDefaultProjectId();
@@ -2948,12 +2833,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = subsystemPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Subsystem update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(subsystemPatchSchema, request.body, reply, "Subsystem update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentSubsystem = findSubsystem(request.params.subsystemId);
@@ -2987,7 +2869,7 @@ export async function registerRoutes(
       const validationError = validateSubsystemPeople({
         projectId: nextProjectId,
         responsibleEngineerId: nextResponsibleEngineerId,
-        mentorIds: nextMentorIds,
+        mentorIds: [...nextMentorIds],
       });
       if (validationError) {
         return reply.code(400).send({
@@ -3025,8 +2907,8 @@ export async function registerRoutes(
       const subsystem = updateSubsystem(request.params.subsystemId, {
         ...parsed.data,
         projectId: nextProjectId,
-        mentorIds: nextMentorIds,
-        risks: parsed.data.risks ?? currentSubsystem.risks,
+        mentorIds: [...nextMentorIds],
+        risks: [...(parsed.data.risks ?? currentSubsystem.risks)],
         parentSubsystemId: nextParentSubsystemId,
         responsibleEngineerId: nextResponsibleEngineerId,
       });
@@ -3072,12 +2954,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = mechanismSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Mechanism payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(mechanismSchema, request.body, reply, "Mechanism payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     if (!findSubsystem(parsed.data.subsystemId)) {
@@ -3099,12 +2978,9 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = mechanismPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Mechanism update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(mechanismPatchSchema, request.body, reply, "Mechanism update payload is invalid.");
+      if (!parsed) {
+        return reply;
       }
 
       const currentMechanism = findMechanism(request.params.mechanismId);
@@ -3165,30 +3041,21 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = partDefinitionSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Part definition payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(partDefinitionSchema, request.body, reply, "Part definition payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
-    const materialError = validatePartDefinitionMaterialId(parsed.data.materialId ?? null);
-    if (materialError) {
-      return reply.code(400).send({
-        message: materialError,
-      });
+    const actorMemberId = isAuthEnabled() ? getTaskActionMember(request)?.id ?? null : null;
+    const prepared = preparePartAcquisition(parsed.data, actorMemberId);
+    if ("error" in prepared) {
+      return reply.code(400).send({ message: prepared.error });
     }
-
-    const partDefinition = createPartDefinition({
-      ...parsed.data,
-      materialId: parsed.data.materialId ?? null,
-      description: parsed.data.description ?? "",
+    const result = createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, {
+      actorMemberId,
+      requestId: readAuditRequestId(request),
     });
-
-    return reply.code(201).send({
-      item: partDefinition,
-    });
+    return reply.code(201).send(result);
   });
 
   app.patch<{ Body: unknown; Params: { partDefinitionId: string } }>(
@@ -3198,12 +3065,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = partDefinitionPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Part definition update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        partDefinitionPatchSchema, request.body, reply,
+        "Part definition update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentPartDefinition = findPartDefinition(request.params.partDefinitionId);
@@ -3273,12 +3140,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = partInstanceSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Part instance payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(partInstanceSchema, request.body, reply, "Part instance payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const validationError = validatePartInstanceLinks(parsed.data);
@@ -3305,12 +3169,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = partInstancePatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Part instance update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        partInstancePatchSchema, request.body, reply,
+        "Part instance update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentPartInstance = findPartInstance(request.params.partInstanceId);
@@ -3441,12 +3305,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = manufacturingItemSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Manufacturing payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(manufacturingItemSchema, request.body, reply, "Manufacturing payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const initialPolicyFailure = assessGenericPatch({
@@ -3466,37 +3327,9 @@ export async function registerRoutes(
       });
     }
 
-    const validationError = validateManufacturingItemLinks(parsed.data);
-    if (validationError) {
-      return reply.code(400).send({
-        message: validationError,
-      });
-    }
-    const partDefinition = parsed.data.partDefinitionId
-      ? findPartDefinition(parsed.data.partDefinitionId)
-      : null;
-    if (parsed.data.partDefinitionId && !partDefinition) {
-      return reply.code(400).send({
-        message: "Please select a real part from the Parts tab.",
-      });
-    }
-    if (
-      partDefinition &&
-      parsed.data.materialId !== undefined &&
-      parsed.data.materialId !== (partDefinition.materialId ?? null)
-    ) {
-      return reply.code(400).send({
-        message: "The selected material does not match the selected part.",
-      });
-    }
-    const resolvedMaterialId = partDefinition
-      ? partDefinition.materialId ?? null
-      : parsed.data.materialId ?? null;
-    const materialError = validatePartDefinitionMaterialId(resolvedMaterialId);
-    if (materialError) {
-      return reply.code(400).send({
-        message: materialError,
-      });
+    const resolved = resolveManufacturingItem(parsed.data);
+    if ("error" in resolved) {
+      return reply.code(400).send({ message: resolved.error });
     }
 
     const partInstanceIds = uniqueIds([
@@ -3509,14 +3342,11 @@ export async function registerRoutes(
       mentorReviewed: false,
       reviewedById: null,
       reviewedAt: null,
-      materialId: resolvedMaterialId,
+      materialId: resolved.materialId,
       partDefinitionId: parsed.data.partDefinitionId ?? null,
       partInstanceId: partInstanceIds[0] ?? null,
       partInstanceIds,
-      title:
-        parsed.data.process === "fabrication" || !partDefinition
-          ? parsed.data.title
-          : partDefinition.name,
+      title: resolved.title,
     }, buildTaskAuditContext(request));
     return reply.code(201).send({
       item: withManufacturingQaReviewCounts([item])[0],
@@ -3530,12 +3360,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = manufacturingItemPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Manufacturing update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        manufacturingItemPatchSchema, request.body, reply,
+        "Manufacturing update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
@@ -3585,51 +3415,22 @@ export async function registerRoutes(
               ]),
       };
 
-      const validationError = validateManufacturingItemLinks(nextItemShape);
-      if (validationError) {
-        return reply.code(400).send({
-          message: validationError,
-        });
-      }
-      const partDefinition = nextItemShape.partDefinitionId
-        ? findPartDefinition(nextItemShape.partDefinitionId)
-        : null;
-      if (nextItemShape.partDefinitionId && !partDefinition) {
-        return reply.code(400).send({
-          message: "Please select a real part from the Parts tab.",
-        });
-      }
-      const requestedMaterialId =
-        parsed.data.materialId === undefined ? currentItem.materialId : parsed.data.materialId;
-      if (
-        partDefinition &&
-        parsed.data.materialId !== undefined &&
-        parsed.data.materialId !== (partDefinition.materialId ?? null)
-      ) {
-        return reply.code(400).send({
-          message: "The selected material does not match the selected part.",
-        });
-      }
-      const nextMaterialId = partDefinition
-        ? partDefinition.materialId ?? null
-        : requestedMaterialId ?? null;
-      const materialError = validatePartDefinitionMaterialId(nextMaterialId);
-      if (materialError) {
-        return reply.code(400).send({
-          message: materialError,
-        });
+      const resolved = resolveManufacturingItem({
+        ...nextItemShape,
+        title: parsed.data.title ?? currentItem.title,
+        materialId: parsed.data.materialId,
+      }, currentItem.materialId);
+      if ("error" in resolved) {
+        return reply.code(400).send({ message: resolved.error });
       }
 
       const item = updateManufacturingItem(request.params.itemId, {
         ...parsed.data,
-        materialId: nextMaterialId ?? null,
+        materialId: resolved.materialId,
         partDefinitionId: nextItemShape.partDefinitionId ?? null,
         partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
-        partInstanceIds: nextItemShape.partInstanceIds,
-        title:
-          nextItemShape.process === "fabrication" || !partDefinition
-            ? parsed.data.title ?? currentItem.title
-            : partDefinition.name,
+        partInstanceIds: [...nextItemShape.partInstanceIds],
+        title: resolved.title,
       }, buildTaskAuditContext(request));
 
       return {
@@ -3652,12 +3453,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = manufacturingReviewSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Manufacturing review payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        manufacturingReviewSchema, request.body, reply,
+        "Manufacturing review payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
@@ -3701,12 +3502,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = manufacturingTransitionSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Manufacturing transition payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        manufacturingTransitionSchema, request.body, reply,
+        "Manufacturing transition payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
@@ -3777,12 +3578,9 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = purchaseItemSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Purchase payload is invalid.",
-        issues: parsed.error.flatten(),
-      });
+    const parsed = parseRouteInput(purchaseItemSchema, request.body, reply, "Purchase payload is invalid.");
+    if (!parsed) {
+      return reply;
     }
 
     const initialPolicyFailure = assessGenericPatch({
@@ -3843,12 +3641,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = purchaseItemPatchSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Purchase update payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        purchaseItemPatchSchema, request.body, reply,
+        "Purchase update payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
@@ -3935,12 +3733,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = purchaseApprovalSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Purchase approval payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        purchaseApprovalSchema, request.body, reply,
+        "Purchase approval payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
@@ -3990,12 +3788,12 @@ export async function registerRoutes(
         return;
       }
 
-      const parsed = purchaseTransitionSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Purchase transition payload is invalid.",
-          issues: parsed.error.flatten(),
-        });
+      const parsed = parseRouteInput(
+        purchaseTransitionSchema, request.body, reply,
+        "Purchase transition payload is invalid.",
+      );
+      if (!parsed) {
+        return reply;
       }
 
       const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);

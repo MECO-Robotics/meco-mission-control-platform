@@ -1,15 +1,14 @@
 import {
   reportFromQaReport,
   reportFromTestResult,
-  reportFindingFromQaFinding,
-  reportFindingFromTestFinding,
+  reportFindingFromFinding,
 } from "../../data/store/reportDerivations";
 import type {
+  ReadonlyData,
   AuditAction,
   Milestone,
   MilestoneRequirement,
-  Member,
-  PlatformSnapshot,
+  SnapshotView,
   Report,
   ReportFinding,
   QaFinding,
@@ -21,7 +20,7 @@ import type {
 } from "../../domain/types";
 import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
-import { uniqueIds } from "./taskTargets";
+import { isActiveInSeason } from "../../domain/seasonMembership";
 
 export interface BootstrapSelection {
   personId: string | null;
@@ -37,25 +36,12 @@ function readScopedId(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function isMemberActiveInSeason(member: Pick<Member, "seasonId" | "activeSeasonIds">, seasonId: string) {
-  return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
-}
-
-function isPartDefinitionActiveInSeason(
-  partDefinition: Pick<PlatformSnapshot["partDefinitions"][number], "seasonId" | "activeSeasonIds">,
-  seasonId: string,
-) {
-  return uniqueIds([...(partDefinition.activeSeasonIds ?? []), partDefinition.seasonId]).includes(
-    seasonId,
-  );
-}
-
 // Bootstrap chooses an in-scope milestone project and intentionally omits photos.
 function buildReports(args: {
-  qaReports: QaReport[];
-  tasksById: Map<string, Task>;
-  testResults: TestResult[];
-  milestonesById: Map<string, Milestone>;
+  qaReports: ReadonlyData<QaReport[]>;
+  tasksById: Map<string, ReadonlyData<Task>>;
+  testResults: ReadonlyData<TestResult[]>;
+  milestonesById: Map<string, ReadonlyData<Milestone>>;
   activeProjectIds: Set<string>;
 }) {
   return [
@@ -70,18 +56,18 @@ function buildReports(args: {
       const projectId = milestone?.projectIds.find((id) => args.activeProjectIds.has(id)) ?? null;
       return projectId ? reportFromTestResult(milestone, result, projectId, { includePhoto: false }) : null;
     }),
-  ].filter((report): report is Report => report !== null);
+  ].filter((report): report is ReadonlyData<Report> => report !== null);
 }
 
 function buildReportFindings(args: {
-  qaFindings: QaFinding[];
-  testFindings: TestFinding[];
+  qaFindings: ReadonlyData<QaFinding[]>;
+  testFindings: ReadonlyData<TestFinding[]>;
   reportIds: Set<string>;
 }) {
   return [
-    ...args.qaFindings.map(reportFindingFromQaFinding),
-    ...args.testFindings.map(reportFindingFromTestFinding),
-  ].filter((finding): finding is ReportFinding => finding !== null && args.reportIds.has(finding.reportId));
+    ...args.qaFindings.map(reportFindingFromFinding),
+    ...args.testFindings.map(reportFindingFromFinding),
+  ].filter((finding): finding is ReadonlyData<ReportFinding> => finding !== null && args.reportIds.has(finding.reportId));
 }
 
 function parseDateMs(value: string) {
@@ -92,7 +78,7 @@ function parseDateMs(value: string) {
 function isSeasonScopedByProjectLinks(args: {
   selectedSeasonId: string | null;
   recordSeasonId?: string;
-  projectIds: string[];
+  projectIds: readonly string[];
   activeProjectIds: Set<string>;
 }) {
   if (!args.selectedSeasonId) {
@@ -110,7 +96,7 @@ function isSeasonScopedByProjectLinks(args: {
 }
 
 export function buildBootstrapResponse(
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
   selection: BootstrapSelection,
   options: BootstrapResponseOptions = {},
 ) {
@@ -143,7 +129,7 @@ export function buildBootstrapResponse(
   const scopedSubsystemIds = new Set(scopedSubsystems.map((subsystem) => subsystem.id));
   const scopedPartDefinitions = (selectedSeasonId
     ? snapshot.partDefinitions.filter((partDefinition) =>
-        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
+        isActiveInSeason(partDefinition, selectedSeasonId),
       )
     : snapshot.partDefinitions).map(normalizePmCadProvenance);
   const scopedMechanisms = snapshot.mechanisms
@@ -223,8 +209,7 @@ export function buildBootstrapResponse(
   const scopedTasks = snapshot.tasks.filter(
     (task) =>
       activeProjectIds.has(task.projectId) &&
-      (scopedSubsystemIds.has(task.subsystemId) ||
-        task.subsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId))),
+      task.subsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId)),
   );
   const scopedTaskIds = new Set(scopedTasks.map((task) => task.id));
   const scopedTasksById = new Map(scopedTasks.map((task) => [task.id, task] as const));
@@ -251,7 +236,7 @@ export function buildBootstrapResponse(
     return Boolean(task);
   });
   const isProjectScoped = selection.projectId !== null;
-  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: ReadonlyData<QaRequest>) => {
     if (selectedSeasonId && !request.taskId) {
       return false;
     }
@@ -314,7 +299,7 @@ export function buildBootstrapResponse(
     return true;
   });
   const scopedMembers = selectedSeasonId
-    ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
+    ? snapshot.members.filter((member) => isActiveInSeason(member, selectedSeasonId))
     : snapshot.members;
   const scopedMemberIds = new Set(scopedMembers.map((member) => member.id));
   const scopedAttendanceRecords = snapshot.attendanceRecords.filter((record) => {
@@ -350,7 +335,7 @@ export function buildBootstrapResponse(
     tasks: scopedTasks,
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
-  } as PlatformSnapshot;
+  } as SnapshotView;
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
     if (review.subjectType === "task") {
       return scopedTaskIds.has(review.subjectId);
@@ -467,7 +452,7 @@ export function buildBootstrapResponse(
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
     escalations: options.sanitizeEscalations ? [] : snapshot.escalations,
-    actions: scopedActions as AuditAction[],
+    actions: scopedActions as ReadonlyData<AuditAction[]>,
   };
 }
 

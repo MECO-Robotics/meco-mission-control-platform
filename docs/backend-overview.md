@@ -12,7 +12,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Source Layout
 
-- `src/routes/` contains the main Mission Control route registration, route schemas, route helpers, and small helper modules for bootstrap selection, pagination, task targets, link validation, and roster insights.
+- `src/routes/` contains explicit route registration, schemas, and helpers for bootstrap selection, pagination, task targets, link validation, and roster insights. `helpers/parseRouteInput.ts` owns the shared 400 validation envelope; each route retains its schema, error message, input defaults, and authentication/link-validation order.
 - `src/data/` contains the current seeded snapshot store and TypeScript input types for core platform entities.
 - `src/domain/` contains shared workflow, task dependency, discipline, and platform type logic.
 - `src/auth/` contains Google and email verification, revocable web and mobile sessions, development-bypass auth behavior.
@@ -24,18 +24,26 @@ This document orients contributors to the Mission Control backend codebase. Use 
 
 ## Data Model
 
+- `src/data/mockData.ts` contains a compact typed tutorial scenario with explicit task fields and canonical target arrays. Snapshot normalization in `src/data/store.ts` assigns task serials and derives actual hours from work logs; it does not generate seed task records or infer task targets.
 - Core state loads the production snapshot when present; fresh/tutorial initialization uses the clock-relative fixture factory in `src/data/tutorialSnapshot.ts`.
-- Core platform reads and writes go through `src/data/store.ts`.
+- Snapshot publication clones inputs and recursively freezes plain data. Getters and finders expose stable readonly values; only store commands can publish replacements. Caller inputs and command results cannot mutate published state. Non-JSON mutable objects and cyclic metadata are rejected before publication. Optional undefined domain fields are retained in memory. Tests seed disposable fixtures through the existing non-production `resetStore(snapshot)` boundary.
+- Core platform reads and writes go through `src/data/store.ts`. Store input types derive from the domain entities, excluding generated fields and making only store-defaulted fields optional. Request schemas still own transport validation and coercion.
+- Manufacturing create and update share `resolveManufacturingItem` for ordered part/instance validation, material consistency and title selection. Routes retain workflow checks and patch omission/null semantics.
+- Report findings share construction and projection in the store and `store/reportDerivations.ts`. QA and test findings retain separate storage and ID namespaces; only test responses carry `milestoneId`.
+- Task target links are projected once in `flattenTaskTargets` in `src/data/store.ts`; the task-target API and both directions of milestone matching share that projection and its stable target ordering.
 - Core platform state is loaded from and atomically persisted to `data/platform-snapshot.json`
   in production. Mutations are serialized and acknowledged only after the asynchronous durable
   write succeeds. The production Compose stack mounts `/app/data` as a durable named volume.
+- Global and per-user tutorial mutations share one request transaction owner. Mutations and tutorial start/reset/end queue by user; global destinations then take the global lock. Reads see the last published snapshot. Failures before publication discard drafts and lifecycle changes; successful tutorial commits remain memory-only. Client disconnects do not cancel accepted mutations; they may still complete and publish. Acquisition retains its private command draft for atomic direct calls outside HTTP.
 - Per-user preferences are stored outside git in `data/user-preferences.json` on the same volume.
 - Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - `prisma/schema.prisma` owns web/mobile sessions and CAD tables. Core planning/manufacturing entities live only in the snapshot domain model; they have no duplicate Prisma tables.
 - Work logs record an optional creator, manufacturing review records include reviewer/time metadata, and purchase approval records include the derived approver and workflow timestamps. Existing rows remain valid with null metadata until their next protected workflow action.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
-- The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store.
+- The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store. Its normalizer and graph store share the provider-local `NormalizedCad*` inputs. Keep these distinct from STEP records: immutable-reference reuse, provider identity, and upsert behavior differ. Prisma-to-CAD projections intentionally exclude provider columns and normalize dates/JSON.
+
+`createPartDefinitionWithAcquisition` composes existing store commands in a synchronous private snapshot draft and publishes once after success. Its enclosing request transaction owns durable persistence; the private draft also protects tutorial state from partial command failures. `routes/helpers/partAcquisition.ts` validates and resolves acquisition context before invoking that operation. Mobile sends one command; web catalog definition-only creation uses the same endpoint without acquisition work.
 
 ## Authentication And Security
 

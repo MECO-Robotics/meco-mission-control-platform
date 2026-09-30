@@ -1,3 +1,4 @@
+import { parseRouteInput } from "../routes/helpers/parseRouteInput";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { getSessionFromRequest, isAuthEnabled } from "../auth/authService";
@@ -145,12 +146,12 @@ export async function registerOnshapeRoutes(
       return;
     }
 
-    const parsedBody = onshapeDocumentRefSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return reply.code(400).send({
-        message: "Onshape document reference payload is invalid.",
-        issues: parsedBody.error.flatten(),
-      });
+    const parsedBody = parseRouteInput(
+      onshapeDocumentRefSchema, request.body, reply,
+      "Onshape document reference payload is invalid.",
+    );
+    if (!parsedBody) {
+      return reply;
     }
 
     const parsedUrl = parseOnshapeUrl(parsedBody.data.url);
@@ -182,12 +183,12 @@ export async function registerOnshapeRoutes(
       return;
     }
 
-    const parsedBody = onshapeImportRunSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return reply.code(400).send({
-        message: "Onshape import run payload is invalid.",
-        issues: parsedBody.error.flatten(),
-      });
+    const parsedBody = parseRouteInput(
+      onshapeImportRunSchema, request.body, reply,
+      "Onshape import run payload is invalid.",
+    );
+    if (!parsedBody) {
+      return reply;
     }
 
     const store = getOnshapeRuntimeStore();

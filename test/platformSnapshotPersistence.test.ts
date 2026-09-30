@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
+import { loadPlatformSnapshotFile } from "../src/data/platformSnapshotFile";
+
 function runProductionStoreScript(snapshotPath: string, source: string) {
   const result = spawnSync(
     process.execPath,
@@ -27,6 +29,21 @@ function runProductionStoreScript(snapshotPath: string, source: string) {
   return result.stdout.trim();
 }
 
+test("snapshot loading rejects parseable JSON missing a required collection", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-incomplete-snapshot-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+
+  try {
+    writeFileSync(snapshotPath, JSON.stringify({ seasons: [], projects: [], members: [], tasks: [] }), "utf8");
+    assert.throws(
+      () => loadPlatformSnapshotFile(snapshotPath),
+      /is not a valid platform snapshot/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("production platform state survives a fresh process", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-snapshot-"));
   const snapshotPath = join(directory, "platform-snapshot.json");
@@ -35,7 +52,9 @@ test("production platform state survives a fresh process", () => {
     runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
-      const transaction = await store.acquireGlobalSnapshotMutation();
+      const initial = store.getSnapshot();
+      if (initial.projects.length !== 6 || initial.tasks.length !== 2) throw new Error("Fresh process did not bootstrap the compact tutorial scenario");
+      const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       store.createProject({
           name: "Durable restart project",
@@ -98,7 +117,7 @@ test("failed production persistence does not publish staged state", () => {
   const result = runProductionStoreScript(impossiblePath, `
     const imported = await import("./src/data/store.ts");
     const store = imported.default ?? imported;
-    const transaction = await store.acquireGlobalSnapshotMutation();
+    const transaction = await store.acquireSnapshotMutation();
     transaction.enter();
     store.createProject({
         name: "Rejected durable project",
@@ -142,7 +161,7 @@ test("QA workflow effects survive restart and roll back together when persistenc
   const submit = `
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
     const before = JSON.stringify(store.getSnapshot());
-    const transaction = await store.acquireGlobalSnapshotMutation(); transaction.enter();
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const source = store.getSnapshot(); const task = source.tasks[0];
     store.createQaRequest({ taskId: task.id, subject: task.title, mentorId: source.members[0].id });
     const result = store.submitQaReport({ taskId: task.id, participantIds: [source.members[0].id], result: "iteration-worthy", mentorApproved: false, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: "2026-09-09" });
@@ -166,4 +185,247 @@ test("QA workflow effects survive restart and roll back together when persistenc
     assert.deepEqual(restored.requests, []);
     assert.equal(runProductionStoreScript("/dev/null/qa-snapshot.json", submit), "rolled-back");
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("production snapshots reject external mutation and retain only committed command values", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-snapshot-ownership-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  try {
+    const createdId = runProductionStoreScript(snapshotPath, `
+      const { default: assert } = await import("node:assert/strict");
+      const { readFileSync } = await import("node:fs");
+      const imported = await import("./src/data/store.ts");
+      const store = imported.default ?? imported;
+      const before = store.getSnapshot();
+      assert.equal(Reflect.set(before, "members", []), false);
+      assert.equal(Reflect.set(store.getTasks()[0], "title", "outside command"), false);
+      assert.equal(Reflect.set(store.findSubsystem(before.subsystems[0].id), "name", "outside command"), false);
+      assert.equal(Reflect.set(before.tasks[0].assigneeIds, "0", "outside command"), false);
+
+      const transaction = await store.acquireSnapshotMutation();
+      transaction.enter();
+      assert.equal(Reflect.set(store.getMembers()[0], "name", "nested transaction write"), false);
+      assert.equal(transaction.hasChanges(), false);
+      const participantIds = [before.members[0].id];
+      const workLog = store.createWorkLog({
+        taskId: before.tasks[0].id, date: "2026-09-26", hours: 1.25,
+        participantIds, notes: "Owned command values",
+      });
+      assert.equal(before.workLogs.some(item => item.id === workLog.id), false);
+      assert.equal(transaction.hasChanges(), true);
+      const heldDraft = store.getSnapshot();
+      await transaction.commit();
+      transaction.release();
+      const persisted = readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8");
+
+      participantIds.push("unvalidated-member");
+      workLog.hours = 99;
+      assert.equal(Reflect.set(heldDraft.workLogs.find(item => item.id === workLog.id), "hours", 88), false);
+      const saved = store.getSnapshot().workLogs.find(item => item.id === workLog.id);
+      assert.equal(saved.hours, 1.25);
+      assert.deepEqual(saved.participantIds, [before.members[0].id]);
+
+      const rejected = await store.acquireSnapshotMutation();
+      rejected.enter();
+      const cyclic = {}; cyclic.self = cyclic;
+      for (const value of [new Date(), new Map(), new Set(), NaN, Infinity, 1n, cyclic]) {
+        assert.throws(() => store.recordAuditAction({
+          operation: "update", entityType: "probe", entityId: "probe", detailsJson: { value },
+        }), /plain JSON|cyclic/);
+      }
+      assert.equal(rejected.hasChanges(), false);
+      await rejected.commit();
+      rejected.release();
+      assert.equal(readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8"), persisted);
+      process.stdout.write(workLog.id);
+    `);
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts");
+      const store = imported.default ?? imported;
+      process.stdout.write(JSON.stringify(store.getSnapshot().workLogs.find(item => item.id === ${JSON.stringify(createdId)})));
+    `));
+    assert.equal(restored.hours, 1.25);
+    assert.equal(restored.participantIds.length, 1);
+    assert.equal(restored.notes, "Owned command values");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("atomic acquisition persists all linked records or rolls back the entire durable commit", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-acquisition-persistence-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  const submit = `
+    const { default: assert } = await import("node:assert/strict");
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const helper = await import("./src/routes/helpers/partAcquisition.ts");
+    const schemas = await import("./src/routes/routeSchemas.ts");
+    const before = store.getSnapshot();
+    const subsystem = before.subsystems.find(item => before.projects.some(project => project.id === item.projectId && project.projectType === "robot"));
+    const prepared = (helper.default ?? helper).preparePartAcquisition((schemas.default ?? schemas).partDefinitionSchema.parse({
+      name: "Durable acquisition", revision: "A", type: "custom", source: "Onshape",
+      acquisition: { method: "purchase", subsystemId: subsystem.id, disciplineId: "design", ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01" },
+    }), "priya");
+    assert.ok(!prepared.error);
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
+    const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: "marco", requestId: "atomic-proof" });
+    assert.equal(transaction.hasChanges(), true);
+    try {
+      await transaction.commit(); transaction.release();
+      process.stdout.write(JSON.stringify({ definitionId: result.item.id, acquisitionId: result.acquisitionItem.id, taskId: result.task.id }));
+    } catch {
+      transaction.release();
+      assert.equal(store.getSnapshot(), before);
+      process.stdout.write("rolled-back");
+    }
+  `;
+  try {
+    const ids = JSON.parse(runProductionStoreScript(snapshotPath, submit));
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      process.stdout.write(JSON.stringify({
+        definition: snapshot.partDefinitions.find(item => item.id === ${JSON.stringify(ids.definitionId)}),
+        acquisition: snapshot.purchaseItems.find(item => item.id === ${JSON.stringify(ids.acquisitionId)}),
+        task: snapshot.tasks.find(item => item.id === ${JSON.stringify(ids.taskId)}),
+        audits: snapshot.actions.filter(item => item.requestId === "atomic-proof"),
+      }));
+    `));
+    assert.equal(restored.acquisition.partDefinitionId, restored.definition.id);
+    assert.deepEqual(restored.task.linkedPurchaseIds, [restored.acquisition.id]);
+    assert.equal(restored.audits.length, 3);
+    assert.equal(runProductionStoreScript("/dev/null/acquisition.json", submit), "rolled-back");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("QA and test findings preserve separate IDs, audits and durable transaction rollback", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-findings-persistence-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  const submit = `
+    const { default: assert } = await import("node:assert/strict");
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const before = store.getSnapshot();
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
+    const outputs = [];
+    for (const reportType of ["QA", "MilestoneTest"]) {
+      const report = store.getReports().find(item => item.reportType === reportType);
+      assert.ok(report);
+      for (const spawnedTaskId of [null, before.tasks[0].id]) {
+        const result = store.createReportFinding({
+          reportId: report.id, mechanismId: null, partInstanceId: null,
+          artifactInstanceId: null, issueType: "Durable finding", severity: "medium",
+          notes: "Preserved finding", spawnedTaskId, spawnedIterationId: null, spawnedRiskId: null,
+        });
+        assert.equal(result.taskId, spawnedTaskId ?? report.taskId);
+        assert.equal(Object.hasOwn(result, "milestoneId"), reportType !== "QA");
+        if (reportType !== "QA") assert.equal(result.milestoneId, report.milestoneId);
+        outputs.push(result);
+      }
+    }
+    assert.equal(outputs[0].id, outputs[2].id);
+    assert.equal(outputs[1].id, outputs[3].id);
+    assert.notEqual(outputs[0].id, outputs[1].id);
+    const draft = store.getSnapshot();
+    assert.equal(store.createReportFinding({ reportId: "missing" }), null);
+    assert.equal(store.getSnapshot(), draft);
+    assert.equal(draft.actions.length - before.actions.length, 4);
+    assert.ok(draft.actions.slice(before.actions.length).every(item => item.entityType === "report-finding" && item.operation === "create"));
+    try {
+      await transaction.commit(); transaction.release();
+      process.stdout.write(JSON.stringify({ qa: draft.qaFindings.slice(before.qaFindings.length), test: draft.testFindings.slice(before.testFindings.length) }));
+    } catch {
+      transaction.release();
+      assert.equal(store.getSnapshot(), before);
+      process.stdout.write("rolled-back");
+    }
+  `;
+  try {
+    const created = JSON.parse(runProductionStoreScript(snapshotPath, submit));
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      process.stdout.write(JSON.stringify({
+        qa: snapshot.qaFindings.filter(item => item.title === "Durable finding"),
+        test: snapshot.testFindings.filter(item => item.title === "Durable finding"),
+      }));
+    `));
+    assert.deepEqual(restored, created);
+    assert.equal(runProductionStoreScript("/dev/null/findings.json", submit), "rolled-back");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("production tutorial commits and lifecycle changes stay off disk while global writes survive restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-tutorial-publication-"));
+  const snapshotPath = join(directory, "snapshot.json");
+  try {
+    runProductionStoreScript(snapshotPath, `
+      const { default: assert } = await import("node:assert/strict");
+      const { existsSync, readFileSync } = await import("node:fs");
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const mutate = async (userKey, command) => {
+        const transaction = await store.acquireSnapshotMutation(userKey);
+        try { transaction.enter(); command(); await transaction.commit(); }
+        finally { transaction.release(); }
+      };
+      const write = notes => {
+        const snapshot = store.getSnapshot();
+        store.createWorkLog({ taskId: snapshot.tasks[0].id, participantIds: [snapshot.members[0].id], date: "2026-09-26", hours: 1, notes });
+      };
+      await mutate("tutorial-user", () => store.startInteractiveTutorialSession("tutorial-user"));
+      await mutate("tutorial-user", () => write("Memory-only tutorial work"));
+      const tutorial = store.runWithInteractiveTutorialSession("tutorial-user", () => store.getSnapshot());
+      assert.equal(tutorial.workLogs.filter(item => item.notes === "Memory-only tutorial work").length, 1);
+      assert.equal(existsSync(process.env.PLATFORM_SNAPSHOT_PATH), false);
+      await mutate(undefined, () => write("Durable global work"));
+      const persisted = readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8");
+      assert.equal(persisted.includes("Memory-only tutorial work"), false);
+      await mutate("tutorial-user", () => store.resetTutorialBaseline("tutorial-user"));
+      await mutate("tutorial-user", () => store.resetInteractiveTutorialSession("tutorial-user"));
+      assert.equal(readFileSync(process.env.PLATFORM_SNAPSHOT_PATH, "utf8"), persisted);
+    `);
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      process.stdout.write(JSON.stringify(store.getSnapshot().workLogs.map(item => item.notes)));
+    `));
+    assert.ok(restored.includes("Durable global work"));
+    assert.ok(!restored.includes("Memory-only tutorial work"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("obsolete task snapshots fail startup and deleting them restores canonical bootstrap", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-array-target-reset-"));
+  const path = join(directory, "snapshot.json");
+  const readSnapshot = `
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    process.stdout.write(JSON.stringify(store.getSnapshot()));
+  `;
+  try {
+    const snapshot = JSON.parse(runProductionStoreScript(path, readSnapshot));
+    for (const obsolete of [
+      { ...snapshot.tasks[0], subsystemId: snapshot.tasks[0].subsystemIds[0] },
+      { ...snapshot.tasks[0], artifactIds: undefined },
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...snapshot, tasks: [obsolete] }));
+      assert.throws(() => runProductionStoreScript(path, readSnapshot), /Unsupported task targets.*PLATFORM_SNAPSHOT_PATH/);
+    }
+    rmSync(path);
+    const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
+    assert.deepEqual(restored.tasks.map((task: { id: string }) => task.id), snapshot.tasks.map((task: { id: string }) => task.id));
+    assert.ok(restored.tasks.every((task: Record<string, unknown>) =>
+      ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds", "artifactIds"].every((field) =>
+        Array.isArray(task[field]) && !(field.slice(0, -1) in task),
+      ),
+    ));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

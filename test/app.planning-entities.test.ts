@@ -2,12 +2,28 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { createMember, createWorkLog, getSnapshot } from "../src/data/store";
 
 test("planning entity endpoints round-trip hierarchy and archive defaults", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const snapshot = getSnapshot();
+    const participant = createMember({
+      name: "Planning Filter Member",
+      email: "planning-filter@mecorobotics.org",
+      role: "student",
+      seasonId: "default-season",
+    });
+    const participantId = participant.id;
+    const workLog = createWorkLog({
+      taskId: snapshot.tasks[0].id,
+      date: "2026-09-27",
+      hours: 1,
+      participantIds: [participantId],
+      notes: "Planning endpoint filter scenario",
+    });
     const filteredBootstrapResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?personId=priya",
+      url: `/api/bootstrap?personId=${participantId}`,
     });
 
     assert.equal(filteredBootstrapResponse.statusCode, 200);
@@ -19,7 +35,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     };
     assert.deepEqual(
       filteredBootstrapBody.workLogs.map((workLog) => workLog.id),
-      ["log-3", "log-4"],
+      [workLog.id],
     );
 
     resetLimits();
@@ -81,7 +97,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         id: "pd-swerve-encoder-bracket",
         partNumber: "DRV-101",
         revision: "B",
-        source: "Onshape",
+        source: "Manual",
         type: "custom",
       },
     );
@@ -225,7 +241,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        subsystemId: "manipulator",
+        subsystemId: "outreach",
         mechanismId: "swerve-module",
         partDefinitionId: partDefinitionBody.item.id,
         name: "Invalid relationship",
@@ -253,9 +269,9 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         color: "#4F86C6",
         description: "Temporary child subsystem for route edge-case coverage.",
         iteration: 2,
-        parentSubsystemId: "manipulator",
-        responsibleEngineerId: "lucas",
-        mentorIds: ["riley"],
+        parentSubsystemId: "drive",
+        responsibleEngineerId: "ava",
+        mentorIds: ["marco"],
         risks: [],
         photoUrl: "https://cdn.example.test/subsystems/route-test-intake.png",
       },
@@ -300,6 +316,22 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       childSubsystemIterationUpdateResponse.json().item.photoUrl,
       "https://cdn.example.test/subsystems/route-test-intake-v2.png",
     );
+
+    resetLimits();
+
+    const grandchildSubsystemResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        projectId: "project-robot-2026",
+        name: "Route Test Nested Intake",
+        description: "Nested subsystem for cycle validation.",
+        parentSubsystemId: childSubsystemBody.item.id,
+        responsibleEngineerId: "ava",
+      },
+    });
+    assert.equal(grandchildSubsystemResponse.statusCode, 201, grandchildSubsystemResponse.body);
+    const grandchildSubsystemId = grandchildSubsystemResponse.json().item.id as string;
 
     resetLimits();
 
@@ -430,9 +462,9 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
 
     const cyclicSubsystemResponse = await app.inject({
       method: "PATCH",
-      url: "/api/subsystems/manipulator",
+      url: `/api/subsystems/${childSubsystemBody.item.id}`,
       payload: {
-        parentSubsystemId: childSubsystemBody.item.id,
+        parentSubsystemId: grandchildSubsystemId,
       },
     });
 
