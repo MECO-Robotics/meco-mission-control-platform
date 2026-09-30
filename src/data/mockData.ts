@@ -576,7 +576,7 @@ export const snapshot: PlatformSnapshot = {
       mentorReviewed: true,
       reviewedById: "marco",
       reviewedAt: "2026-04-22",
-      inHouse: true,
+      inHouse: false,
     },
     {
       id: "guard-cnc",
@@ -611,7 +611,7 @@ export const snapshot: PlatformSnapshot = {
       quantity: 1,
       status: "requested",
       mentorReviewed: false,
-      inHouse: true,
+      inHouse: false,
       batchLabel: "FAB-03",
     },
   ],
