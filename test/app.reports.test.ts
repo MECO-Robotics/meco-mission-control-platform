@@ -490,8 +490,10 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "swerve-sensor-bundle",
-        kind: "task",
+        workItemId: "swerve-sensor-bundle",
+        sourceType: "task",
+        kind: "work_item",
+        refType: "task",
         refId: "wire-swerve-module",
         requiredState: "complete",
         dependencyType: "hard",
@@ -526,9 +528,11 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "swerve-sensor-bundle",
-        kind: "task",
-        refId: "wire-swerve-module",
+        workItemId: "wire-swerve-module",
+        sourceType: "task",
+        kind: "work_item",
+        refType: "task",
+        refId: "swerve-sensor-bundle",
         requiredState: "complete",
         dependencyType: "soft",
       },
@@ -641,7 +645,8 @@ test("web report and task planning contract endpoints persist records", async ()
       reports: Array<{ id: string }>;
       taskBlockers: Array<{ id: string; severity: string }>;
       taskDependencies: Array<{
-        taskId: string;
+        workItemId: string;
+        sourceType: string;
         kind: string;
         refId: string;
         dependencyType: string;

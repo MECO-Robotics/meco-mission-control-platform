@@ -564,6 +564,18 @@ function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
     })),
     milestones: normalizedMilestones,
     milestoneRequirements: clonedSnapshot.milestoneRequirements,
+    taskDependencies: (clonedSnapshot.taskDependencies as unknown as Array<Record<string, unknown>>).map((dependency) => {
+      const legacyTaskId = typeof dependency.taskId === "string" ? dependency.taskId : "";
+      const sourceType = dependency.sourceType === "manufacturing" ? "manufacturing" : "task";
+      const kind = dependency.kind === "task" || dependency.kind === "work_item" ? "work_item" : dependency.kind === "milestone" ? "milestone" : "part_instance";
+      return {
+        ...dependency,
+        workItemId: typeof dependency.workItemId === "string" ? dependency.workItemId : legacyTaskId,
+        sourceType,
+        kind,
+        ...(kind === "work_item" ? { refType: dependency.refType === "manufacturing" ? "manufacturing" : "task" } : {}),
+      };
+    }) as unknown as PlatformSnapshot["taskDependencies"],
     qaRequests: clonedSnapshot.qaRequests ?? [],
     workLogs: clonedSnapshot.workLogs.map((workLog) => ({
       ...workLog,
@@ -1263,6 +1275,8 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     projectId: ownership.projectId,
     workstreamIds: [],
     title: `Wire ${mechanism.name}`,
+    workType: "Electrical/Wiring",
+    responsibleGroup: "Electrical",
     summary: `Complete wiring and harness verification for ${mechanism.name}.`,
     subsystemIds: [subsystem.id],
     disciplineId: "electrical",
@@ -1322,6 +1336,7 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     projectId: ownership.projectId,
     workstreamIds: [],
     title: `Integrate ${subsystem.name}`,
+    workType: "Testing",
     summary: `Complete integration and interface verification for ${subsystem.name}.`,
     subsystemIds: [parentSubsystem.id],
     disciplineId: "testing",
@@ -2646,6 +2661,11 @@ export function removeSubsystem(subsystemId: string) {
           (itemId) => !purchaseItemIdsToRemove.has(itemId),
         ),
       })),
+    taskDependencies: currentSnapshot.taskDependencies.filter((dependency) =>
+      !(dependency.sourceType === "task" && taskIdsToRemove.has(dependency.workItemId)) &&
+      !(dependency.sourceType === "manufacturing" && manufacturingItemIdsToRemove.has(dependency.workItemId)) &&
+      !(dependency.kind === "work_item" && dependency.refType === "task" && taskIdsToRemove.has(dependency.refId)) &&
+      !(dependency.kind === "work_item" && dependency.refType === "manufacturing" && manufacturingItemIdsToRemove.has(dependency.refId))),
     workLogs: currentSnapshot.workLogs.filter(
       (workLog) => !taskIdsToRemove.has(workLog.taskId),
     ),
@@ -3287,6 +3307,8 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     projectId: input.projectId,
     workstreamIds: input.workstreamIds,
     title: input.title,
+    workType: input.workType ?? "Design",
+    responsibleGroup: input.responsibleGroup ?? null,
     summary: input.summary,
     subsystemIds: input.subsystemIds,
     disciplineId: normalizeDisciplineIdForProject(input.projectId, input.disciplineId),
@@ -3663,9 +3685,11 @@ export function createReportFinding(input: ReportFindingInput) {
 export function createTaskDependency(input: TaskDependencyInput) {
   const dependencyIds = new Set(currentSnapshot.taskDependencies.map((dependency) => dependency.id));
   const dependency: TaskDependency = {
-    id: uniqueId(`${input.taskId}-dependency`, dependencyIds),
-    taskId: input.taskId,
+    id: uniqueId(`${input.workItemId}-dependency`, dependencyIds),
+    workItemId: input.workItemId,
+    sourceType: input.sourceType,
     kind: input.kind,
+    ...(input.refType ? { refType: input.refType } : {}),
     refId: input.refId,
     requiredState: input.requiredState,
     dependencyType: input.dependencyType,
@@ -3677,14 +3701,14 @@ export function createTaskDependency(input: TaskDependencyInput) {
     taskDependencies: [...currentSnapshot.taskDependencies, dependency],
   });
 
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
+  const task = input.sourceType === "task" ? currentSnapshot.tasks.find((candidate) => candidate.id === input.workItemId) : null;
   recordAuditAction({
     operation: "create",
     entityType: "task-dependency",
     entityId: dependency.id,
     entityLabel: `${dependency.kind}:${dependency.refId}`,
     projectId: task?.projectId ?? null,
-    taskId: dependency.taskId,
+    taskId: task?.id ?? null,
     subsystemId: task?.subsystemIds[0] ?? null,
   });
 
@@ -3713,14 +3737,14 @@ export function updateTaskDependency(
     ),
   });
 
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.taskId);
+  const task = savedDependency.sourceType === "task" ? currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.workItemId) : null;
   recordAuditAction({
     operation: "update",
     entityType: "task-dependency",
     entityId: savedDependency.id,
     entityLabel: `${savedDependency.kind}:${savedDependency.refId}`,
     projectId: task?.projectId ?? null,
-    taskId: savedDependency.taskId,
+    taskId: task?.id ?? null,
     subsystemId: task?.subsystemIds[0] ?? null,
     changedFields: collectChangedFields(
       originalDependency,
@@ -3746,14 +3770,14 @@ export function removeTaskDependency(dependencyId: string) {
     ),
   });
 
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
+  const task = dependency.sourceType === "task" ? currentSnapshot.tasks.find((candidate) => candidate.id === dependency.workItemId) : null;
   recordAuditAction({
     operation: "delete",
     entityType: "task-dependency",
     entityId: dependency.id,
     entityLabel: `${dependency.kind}:${dependency.refId}`,
     projectId: task?.projectId ?? null,
-    taskId: dependency.taskId,
+    taskId: task?.id ?? null,
     subsystemId: task?.subsystemIds[0] ?? null,
   });
 
@@ -4301,7 +4325,7 @@ export function removeTask(taskId: string) {
       (request) => !request.taskId || request.taskId !== taskId,
     ),
     taskDependencies: currentSnapshot.taskDependencies.filter(
-      (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
+      (dependency) => !(dependency.sourceType === "task" && dependency.workItemId === taskId) && !(dependency.kind === "work_item" && dependency.refType === "task" && dependency.refId === taskId),
     ),
     taskBlockers: currentSnapshot.taskBlockers.filter(
       (blocker) => blocker.blockedTaskId !== taskId,
@@ -4459,6 +4483,7 @@ export function createManufacturingItem(
   const item: ManufacturingItem = {
     id: uniqueId(toSlug(input.title) || "manufacturing-item", itemIds),
     title: input.title,
+    responsibleGroup: input.responsibleGroup ?? null,
     subsystemId: input.subsystemId,
     requestedById: input.requestedById,
     process: input.process,
@@ -4548,6 +4573,9 @@ export function removeManufacturingItem(
     manufacturingItems: currentSnapshot.manufacturingItems.filter(
       (candidate) => candidate.id !== itemId,
     ),
+    taskDependencies: currentSnapshot.taskDependencies.filter((dependency) =>
+      !(dependency.sourceType === "manufacturing" && dependency.workItemId === itemId) &&
+      !(dependency.kind === "work_item" && dependency.refType === "manufacturing" && dependency.refId === itemId)),
     tasks: currentSnapshot.tasks.map((task) => ({
       ...task,
       linkedManufacturingIds: task.linkedManufacturingIds.filter(

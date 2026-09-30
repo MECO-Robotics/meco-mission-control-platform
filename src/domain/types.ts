@@ -55,6 +55,8 @@ export type MilestoneBlockedByType =
   | "external";
 export type TaskPriority = "critical" | "high" | "medium" | "low";
 export type ManufacturingProcess = "3d-print" | "cnc" | "fabrication";
+export type RobotWorkType = "Design" | "Manufacturing" | "Assembly" | "Electrical/Wiring" | "Programming" | "Testing" | "Driving";
+export type ResponsibleGroup = "Mechanical" | "Electrical" | "Programming";
 export type ManufacturingStatus =
   | "requested"
   | "approved"
@@ -103,7 +105,8 @@ export type FindingStatus = "open" | "in-progress" | "resolved";
 export type FindingSourceType = "qa" | "test";
 export type IterationStatus = "planned" | "in-progress" | "complete";
 export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
-export type TaskDependencyKind = "task" | "milestone" | "part_instance";
+export type TaskDependencyKind = "work_item" | "milestone" | "part_instance";
+export type WorkItemSourceType = "task" | "manufacturing";
 export type TaskDependencyType = "hard" | "soft";
 export const DEFAULT_PROJECT_TEAM_ID = "default-team";
 export type PlannedAttendanceDay =
@@ -266,6 +269,8 @@ export interface Task extends TaskTargets {
   serial?: string;
   projectId: string;
   title: string;
+  workType?: RobotWorkType;
+  responsibleGroup?: ResponsibleGroup | null;
   summary: string;
   disciplineId: string;
   targetMilestoneId: string | null;
@@ -371,6 +376,7 @@ export interface AttendanceRecord {
 export interface ManufacturingItem {
   id: string;
   title: string;
+  responsibleGroup?: ResponsibleGroup | null;
   subsystemId: string;
   requestedById: string | null;
   process: ManufacturingProcess;
@@ -387,6 +393,29 @@ export interface ManufacturingItem {
   reviewedAt?: string | null;
   inHouse: boolean;
   batchLabel?: string;
+}
+
+/** Read model shared by task and manufacturing views; source records stay domain-specific. */
+export interface WorkItem {
+  id: string;
+  sourceType: "task" | "manufacturing";
+  sourceId: string;
+  taskId: string | null;
+  title: string;
+  workType: RobotWorkType;
+  responsibleGroup: ResponsibleGroup | null;
+  manufacturingProcess: ManufacturingProcess | null;
+  subsystemId: string;
+  dueDate: string;
+  status: string;
+  isWaitingOnDependency: boolean;
+  quantity: number | null;
+  material: string | null;
+  materialId: string | null;
+  partDefinitionId: string | null;
+  partInstanceIds: string[];
+  batchLabel: string | null;
+  mentorReviewed: boolean | null;
 }
 
 export interface Report {
@@ -443,8 +472,10 @@ export interface ReportFinding {
 
 export interface TaskDependency {
   id: string;
-  taskId: string;
+  workItemId: string;
+  sourceType: WorkItemSourceType;
   kind: TaskDependencyKind;
+  refType?: WorkItemSourceType;
   refId: string;
   requiredState: string;
   dependencyType: TaskDependencyType;

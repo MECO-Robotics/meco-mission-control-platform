@@ -576,11 +576,14 @@ export async function registerRoutes(
   };
 
   const isValidTaskDependencyTarget = (
-    kind: "task" | "milestone" | "part_instance",
+    kind: "work_item" | "milestone" | "part_instance",
     refId: string,
+    refType?: "task" | "manufacturing",
   ) => {
-    if (kind === "task") {
-      return getTasks().some((task) => task.id === refId);
+    if (kind === "work_item") {
+      return refType === "manufacturing"
+        ? getManufacturingItems().some((item) => item.id === refId)
+        : getTasks().some((task) => task.id === refId);
     }
 
     if (kind === "milestone") {
@@ -2332,19 +2335,23 @@ export async function registerRoutes(
       return reply;
     }
 
-    if (!getTasks().some((task) => task.id === parsed.data.taskId)) {
+    const sourceExists = parsed.data.sourceType === "task"
+      ? getTasks().some((task) => task.id === parsed.data.workItemId)
+      : getManufacturingItems().some((item) => item.id === parsed.data.workItemId);
+    if (!sourceExists) {
       return reply.code(400).send({
-        message: "The selected dependency task does not exist.",
+        message: "The selected dependency work item does not exist.",
       });
     }
 
-    if (parsed.data.kind === "task" && parsed.data.taskId === parsed.data.refId) {
+    const targetType = parsed.data.kind === "work_item" ? parsed.data.refType : undefined;
+    if (parsed.data.kind === "work_item" && parsed.data.sourceType === targetType && parsed.data.workItemId === parsed.data.refId) {
       return reply.code(400).send({
-        message: "A task cannot depend on itself.",
+        message: "A work item cannot depend on itself.",
       });
     }
 
-    if (!isValidTaskDependencyTarget(parsed.data.kind, parsed.data.refId)) {
+    if (!isValidTaskDependencyTarget(parsed.data.kind, parsed.data.refId, targetType)) {
       return reply.code(400).send({
         message: "The selected dependency target does not exist.",
       });
@@ -2380,30 +2387,37 @@ export async function registerRoutes(
         });
       }
 
-      const nextTaskId = parsed.data.taskId ?? currentDependency.taskId;
+      const nextWorkItemId = parsed.data.workItemId ?? currentDependency.workItemId;
+      const nextSourceType = parsed.data.sourceType ?? currentDependency.sourceType;
       const nextKind = parsed.data.kind ?? currentDependency.kind;
+      const nextRefType = parsed.data.refType ?? currentDependency.refType;
       const nextRefId = parsed.data.refId ?? currentDependency.refId;
-      if (!getTasks().some((task) => task.id === nextTaskId)) {
+      const sourceExists = nextSourceType === "task"
+        ? getTasks().some((task) => task.id === nextWorkItemId)
+        : getManufacturingItems().some((item) => item.id === nextWorkItemId);
+      if (!sourceExists) {
         return reply.code(400).send({
-          message: "The selected dependency task does not exist.",
+          message: "The selected dependency work item does not exist.",
         });
       }
 
-      if (nextKind === "task" && nextTaskId === nextRefId) {
+      if (nextKind === "work_item" && nextSourceType === nextRefType && nextWorkItemId === nextRefId) {
         return reply.code(400).send({
-          message: "A task cannot depend on itself.",
+          message: "A work item cannot depend on itself.",
         });
       }
 
-      if (!isValidTaskDependencyTarget(nextKind, nextRefId)) {
+      if (!isValidTaskDependencyTarget(nextKind, nextRefId, nextRefType)) {
         return reply.code(400).send({
           message: "The selected dependency target does not exist.",
         });
       }
 
       const merged = taskDependencySchema.safeParse({
-        taskId: nextTaskId,
+        workItemId: nextWorkItemId,
+        sourceType: nextSourceType,
         kind: nextKind,
+        ...(nextKind === "work_item" ? { refType: nextRefType } : {}),
         refId: nextRefId,
         requiredState: parsed.data.requiredState ?? currentDependency.requiredState,
         dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,

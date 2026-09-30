@@ -8,7 +8,7 @@ import { createOnshapeRuntimeStore } from "../src/onshape/cadStore";
 import { createPrismaCadStore } from "../src/cad/cadPrismaStore";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 import { getSnapshot } from "../src/data/store";
-import { isTaskWaitingOnDependencies } from "../src/domain/taskDependencyState";
+import { isTaskWaitingOnDependencies, isWorkItemWaitingOnDependencies } from "../src/domain/taskDependencyState";
 import { taskSchema, taskDependencySchema } from "../src/routes/routeSchemas";
 import type { PrismaClient } from "@prisma/client";
 import type { OnshapeOAuthTokenSet } from "../src/onshape/onshapeTypes";
@@ -20,7 +20,7 @@ test("canonical dependency required state round-trips without a contradictory co
     const upstream = snapshot.tasks[1];
     const requiredState = upstream.status;
     const response = await app.inject({ method: "POST", url: "/api/task-dependencies", payload: {
-      taskId: task.id, kind: "task", refId: upstream.id, requiredState, dependencyType: "hard",
+      workItemId: task.id, sourceType: "task", kind: "work_item", refType: "task", refId: upstream.id, requiredState, dependencyType: "hard",
     }});
     assert.equal(response.statusCode, 201, response.body);
     const id = response.json().item.id;
@@ -44,7 +44,7 @@ test("dependency commands reject impossible states and validate the full merged 
     const snapshot = getSnapshot();
     const [task, upstream] = snapshot.tasks;
     const milestone = snapshot.milestones[0];
-    const payload = { taskId: task.id, kind: "task", refId: upstream.id, requiredState: "complete", dependencyType: "hard" };
+    const payload = { workItemId: task.id, sourceType: "task", kind: "work_item", refType: "task", refId: upstream.id, requiredState: "complete", dependencyType: "hard" };
     for (const invalid of [
       { ...payload, requiredState: "ready" },
       { ...payload, kind: "milestone", refId: milestone.id, requiredState: "typo-ready" },
@@ -59,11 +59,35 @@ test("dependency commands reject impossible states and validate the full merged 
     const url = `/api/task-dependencies/${id}`;
     const invalid = await app.inject({ method: "PATCH", url, payload: { kind: "milestone", refId: milestone.id } });
     assert.equal(invalid.statusCode, 400, invalid.body);
-    assert.equal(getSnapshot().taskDependencies.find((edge) => edge.id === id)?.kind, "task");
+    assert.equal(getSnapshot().taskDependencies.find((edge) => edge.id === id)?.kind, "work_item");
     const valid = await app.inject({ method: "PATCH", url, payload: { kind: "milestone", refId: milestone.id, requiredState: "ready" } });
     assert.equal(valid.statusCode, 200, valid.body);
     assert.equal(valid.json().item.requiredState, "ready");
     assert.equal(valid.json().item.id, id);
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
+});
+
+test("work dependencies connect Task and ManufacturingItem in either direction", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    const snapshot = getSnapshot();
+    const task = snapshot.tasks.find((item) => item.status !== "complete")!;
+    const manufacturingItem = snapshot.manufacturingItems[0];
+    const manufacturingToTask = await app.inject({ method: "POST", url: "/api/task-dependencies", payload: {
+      workItemId: manufacturingItem.id, sourceType: "manufacturing", kind: "work_item", refType: "task",
+      refId: task.id, requiredState: task.status, dependencyType: "hard",
+    } });
+    assert.equal(manufacturingToTask.statusCode, 201, manufacturingToTask.body);
+    const snapshotWithEdge = { ...snapshot, taskDependencies: [...snapshot.taskDependencies, manufacturingToTask.json().item] };
+    assert.equal(isWorkItemWaitingOnDependencies(manufacturingItem.id, "manufacturing", snapshotWithEdge), false);
+    const taskToManufacturing = await app.inject({ method: "POST", url: "/api/task-dependencies", payload: {
+      workItemId: task.id, sourceType: "task", kind: "work_item", refType: "manufacturing",
+      refId: manufacturingItem.id, requiredState: "complete", dependencyType: "hard",
+    } });
+    assert.equal(taskToManufacturing.statusCode, 201, taskToManufacturing.body);
+    assert.equal(taskToManufacturing.json().item.refType, "manufacturing");
+    assert.equal(isWorkItemWaitingOnDependencies(task.id, "task", {
+      ...snapshot, taskDependencies: [taskToManufacturing.json().item],
+    }), manufacturingItem.status !== "complete");
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 

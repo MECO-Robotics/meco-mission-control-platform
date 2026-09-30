@@ -70,6 +70,8 @@ const taskFieldsSchema = z.object({
   ...taskTargetsSchema.partial().shape,
   projectId: z.string().trim().min(1).optional(),
   title: z.string().trim().min(3),
+  workType: z.enum(["Design", "Manufacturing", "Assembly", "Electrical/Wiring", "Programming", "Testing", "Driving"]).optional(),
+  responsibleGroup: z.enum(["Mechanical", "Electrical", "Programming"]).nullable().optional(),
   summary: z.string().trim().min(3),
   disciplineId: z.string().min(1),
   targetMilestoneId: z.string().trim().min(1).nullable(),
@@ -252,20 +254,22 @@ export const reportFindingSchema = z.object({
 });
 
 const taskDependencyFields = {
-  taskId: z.string().trim().min(1),
+  workItemId: z.string().trim().min(1),
+  sourceType: z.enum(["task", "manufacturing"]),
   refId: z.string().trim().min(1),
   dependencyType: z.enum(["hard", "soft"]),
 };
 const dependencyTaskStateSchema = z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]);
 const dependencyReadinessStateSchema = z.enum(["not ready", "blocked", "qa", "ready"]);
 export const taskDependencySchema = z.discriminatedUnion("kind", [
-  z.object({ ...taskDependencyFields, kind: z.literal("task"), requiredState: dependencyTaskStateSchema }).strict(),
+  z.object({ ...taskDependencyFields, kind: z.literal("work_item"), refType: z.enum(["task", "manufacturing"]), requiredState: dependencyTaskStateSchema }).strict(),
   z.object({ ...taskDependencyFields, kind: z.literal("milestone"), requiredState: dependencyReadinessStateSchema }).strict(),
   z.object({ ...taskDependencyFields, kind: z.literal("part_instance"), requiredState: dependencyReadinessStateSchema }).strict(),
 ]);
 export const taskDependencyPatchSchema = z.object({
   ...taskDependencyFields,
-  kind: z.enum(["task", "milestone", "part_instance"]),
+  kind: z.enum(["work_item", "milestone", "part_instance"]),
+  refType: z.enum(["task", "manufacturing"]).optional(),
   requiredState: z.union([dependencyTaskStateSchema, dependencyReadinessStateSchema]),
 }).strict().partial();
 
@@ -547,6 +551,7 @@ export const mediaUploadRequestSchema = z.object({
 
 const manufacturingItemFieldsSchema = z.object({
   title: z.string().trim().min(3),
+  responsibleGroup: z.enum(["Mechanical", "Electrical", "Programming"]).nullable().optional(),
   subsystemId: z.string().min(1),
   requestedById: z.string().trim().min(1).nullable(),
   process: z.enum(["3d-print", "cnc", "fabrication"]),

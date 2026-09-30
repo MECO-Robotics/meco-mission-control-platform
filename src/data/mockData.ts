@@ -410,8 +410,10 @@ export const snapshot: PlatformSnapshot = {
   taskDependencies: [
     {
       id: "dep-wire-swerve-sensor",
-      taskId: "wire-swerve-module",
-      kind: "task",
+      workItemId: "wire-swerve-module",
+      sourceType: "task",
+      kind: "work_item",
+      refType: "task",
       refId: "swerve-sensor-bundle",
       requiredState: "complete",
       dependencyType: "hard",
