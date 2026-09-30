@@ -5,6 +5,9 @@ import type {
   CadPartDefinition,
   CadPartInstance,
   CadSnapshot,
+  NormalizedCadAssemblyNode,
+  NormalizedCadPartDefinition,
+  NormalizedCadPartInstance,
   OnshapeApiBudget,
   OnshapeApiCacheEntry,
   OnshapeApiRequestLog,
@@ -80,48 +83,14 @@ export interface OnshapeRuntimeStore {
   }): CadSnapshot;
   findSnapshot(id: string): CadSnapshot | null;
   listSnapshots(documentRefId?: string): CadSnapshot[];
-  upsertAssemblyNodes(snapshotId: string, nodes: Array<{
-    sourceId: string;
-    parentSourceId?: string;
-    documentId: string;
-    elementId?: string;
-    instanceId?: string;
-    instancePath: string;
-    name: string;
-    inferredType: CadAssemblyNode["inferredType"];
-    metadata?: Record<string, unknown>;
-  }>): Map<string, CadAssemblyNode>;
-  upsertPartDefinitions(snapshotId: string, parts: Array<{
-    sourceId: string;
-    documentId: string;
-    elementId?: string;
-    partId?: string;
-    versionId?: string;
-    microversionId?: string;
-    name: string;
-    partNumber?: string;
-    material?: string;
-    mass?: number;
-    configuration?: string;
-    customProperties?: Record<string, unknown>;
-    metadataHash?: string;
-    missionControlExternalKey?: string;
-  }>): Map<string, CadPartDefinition>;
-  upsertPartInstances(snapshotId: string, parts: Array<{
-    sourceId: string;
-    partDefinitionSourceId?: string;
-    parentAssemblySourceId?: string;
-    documentId: string;
-    elementId?: string;
-    instanceId?: string;
-    partId?: string;
-    instancePath: string;
-    quantity?: number;
-    suppressed?: boolean;
-    configuration?: string;
-    transform?: unknown;
-    metadata?: Record<string, unknown>;
-  }>, partDefinitionsBySourceId: Map<string, CadPartDefinition>, assemblyNodesBySourceId: Map<string, CadAssemblyNode>): CadPartInstance[];
+  upsertAssemblyNodes(snapshotId: string, nodes: NormalizedCadAssemblyNode[]): Map<string, CadAssemblyNode>;
+  upsertPartDefinitions(snapshotId: string, parts: NormalizedCadPartDefinition[]): Map<string, CadPartDefinition>;
+  upsertPartInstances(
+    snapshotId: string,
+    parts: NormalizedCadPartInstance[],
+    partDefinitionsBySourceId: Map<string, CadPartDefinition>,
+    assemblyNodesBySourceId: Map<string, CadAssemblyNode>,
+  ): CadPartInstance[];
   listAssemblyNodes(snapshotId?: string): CadAssemblyNode[];
   listPartDefinitions(snapshotId?: string): CadPartDefinition[];
   listPartInstances(snapshotId?: string): CadPartInstance[];

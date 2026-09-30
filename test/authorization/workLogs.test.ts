@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { createWorkflowAuthHeaders, workflowAuthEnv } from "../helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
 test("work-log mutation requires mentor or admin and records the authenticated actor", async () => {
-  await withIntegrationApp(async ({ app, resetLimits }) => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const studentHeaders = await createWorkflowAuthHeaders("student");
     const leadHeaders = await createWorkflowAuthHeaders("lead");
     const mentorHeaders = await createWorkflowAuthHeaders("mentor");
@@ -85,5 +84,5 @@ test("work-log mutation requires mentor or admin and records the authenticated a
       headers: adminHeaders,
     });
     assert.equal(allowedAdminDelete.statusCode, 200);
-  }, { env: workflowAuthEnv });
+  });
 });

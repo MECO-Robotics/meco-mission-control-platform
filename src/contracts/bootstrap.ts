@@ -1,3 +1,4 @@
+import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import { z } from "zod";
 import { subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, taskBlockerSchema } from "../routes/routeSchemas";
 
@@ -53,7 +54,7 @@ export const bootstrapPayloadSchema = z
     qaRequests: bootstrapCollectionSchema,
     testResults: bootstrapCollectionSchema,
     risks: bootstrapCollectionSchema,
-    tasks: z.array(z.object({ id: z.string(), status: taskSchema.shape.status, checklistItems: z.array(z.string()), blockers: z.array(z.string()), isBlocked: z.boolean(), isWaitingOnDependency: z.boolean() }).passthrough()),
+    tasks: z.array(taskRecordTargetsSchema.safeExtend({ id: z.string(), status: taskSchema.shape.status, checklistItems: z.array(z.string()), blockers: z.array(z.string()), isBlocked: z.boolean(), isWaitingOnDependency: z.boolean() })),
     taskDependencies: z.array(taskDependencyRecordSchema),
     taskBlockers: bootstrapCollectionSchema,
     workLogs: bootstrapCollectionSchema,

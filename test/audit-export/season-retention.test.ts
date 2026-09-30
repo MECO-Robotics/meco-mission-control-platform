@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./helpers";
+import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 
 test("audit export retains deleted entities for active season filters", async () => {
   await withIntegrationApp(
@@ -33,19 +33,21 @@ test("audit export retains deleted entities for active season filters", async ()
         startDate: "2030-01-01",
         endDate: "2030-12-31",
       });
-      const updatedMaya = updateMember("maya", {
+      const admin = getSnapshot().members.find((member) => member.email === auditAdminMember.email);
+      assert.ok(admin);
+      const updatedAdmin = updateMember(admin.id, {
         activeSeasonIds: ["default-season", futureSeason.id],
       });
-      assert.ok(updatedMaya);
+      assert.ok(updatedAdmin);
       recordAuditAction({
         operation: "update",
         entityType: "member",
-        entityId: "maya",
-        entityLabel: "Maya Ortiz",
+        entityId: admin.id,
+        entityLabel: admin.name,
         changedFields: ["activeSeasonIds"],
         afterJson: { activeSeasonIds: ["default-season", futureSeason.id] },
-        actorMemberId: "maya",
-        memberIds: ["maya"],
+        actorMemberId: admin.id,
+        memberIds: [admin.id],
         requestId: "req-audit-export-future-member",
       });
 
@@ -70,7 +72,7 @@ test("audit export retains deleted entities for active season filters", async ()
         entityLabel: sharedPartDefinition.name,
         changedFields: ["activeSeasonIds"],
         afterJson: { activeSeasonIds: ["default-season", futureSeason.id] },
-        actorMemberId: "maya",
+        actorMemberId: admin.id,
         requestId: "req-audit-export-future-part-definition",
       });
 
@@ -138,7 +140,7 @@ test("audit export retains deleted entities for active season filters", async ()
         changedFields: ["status"],
         afterJson: { status: "synced" },
         projectId: futureProject.id,
-        actorMemberId: "maya",
+        actorMemberId: admin.id,
         requestId: "req-audit-export-future-cad",
       });
 
@@ -285,6 +287,6 @@ test("audit export retains deleted entities for active season filters", async ()
           ),
       );
     },
-    { env: authEnv },
+    { env: authEnv, members: [auditAdminMember] },
   );
 });

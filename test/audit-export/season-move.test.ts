@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "../helpers/appIntegrationHarness";
-import { authEnv, signTestToken } from "./helpers";
+import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 
 test("audit export retains old season scope after member and part moves", async () => {
   await withIntegrationApp(
@@ -173,6 +173,6 @@ test("audit export retains old season scope after member and part moves", async 
           ),
       );
     },
-    { env: authEnv },
+    { env: authEnv, members: [auditAdminMember] },
   );
 });

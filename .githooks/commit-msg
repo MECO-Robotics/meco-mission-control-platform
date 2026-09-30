@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+commit_message_file=$1
+if ! grep -q '^Moyu-Skill: ' "$commit_message_file"; then
+  echo "Commit rejected: add a 'Moyu-Skill: <scope or not-applicable reason>' trailer." >&2
+  exit 1
+fi
+

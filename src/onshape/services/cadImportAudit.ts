@@ -1,4 +1,4 @@
-import { acquireGlobalSnapshotMutation, recordAuditAction } from "../../data/store";
+import { acquireSnapshotMutation, recordAuditAction } from "../../data/store";
 import type { OnshapeRuntimeStore } from "../cadStore";
 import type { CadGraphImportResult, OnshapeDocumentRef } from "../onshapeTypes";
 
@@ -47,7 +47,7 @@ export async function recordCadImportAuditAction(args: {
     originalUrl: args.documentRef.originalUrl,
   };
 
-  const transaction = await acquireGlobalSnapshotMutation();
+  const transaction = await acquireSnapshotMutation();
   try {
     transaction.enter();
     recordAuditAction({

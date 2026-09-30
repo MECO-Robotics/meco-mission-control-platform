@@ -8,6 +8,16 @@ import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const versionUrl =
   "https://cad.onshape.com/documents/0123456789abcdef01234567/v/222222222222222222222222/e/111111111111111111111111";
+const oauthAdminMember = {
+  name: "OAuth Test Admin",
+  email: "maya.ortiz@mecorobotics.org",
+  role: "admin",
+} as const;
+const oauthMentorMember = {
+  name: "OAuth Test Mentor",
+  email: "jordan.lee@mecorobotics.org",
+  role: "mentor",
+} as const;
 
 function createRouteFakeClient(): CadImportOnshapeClient {
   let callsUsed = 0;
@@ -103,6 +113,7 @@ test("Onshape OAuth credential routes keep external roster members from inheriti
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
         AUTH_MENTOR_EMAILS: "mentor.override@mecorobotics.org",
       },
+      members: [oauthAdminMember],
     },
   );
 });
@@ -165,6 +176,7 @@ test("Onshape OAuth credential routes require lead mentor or admin permissions w
       env: {
         GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
       },
+      members: [oauthMentorMember],
     },
   );
 });
@@ -208,6 +220,7 @@ test("Onshape deep release sync honors mentor sessions", async () => {
         env: {
           GOOGLE_CLIENT_ID: "client-id.apps.googleusercontent.com",
         },
+        members: [oauthMentorMember],
       },
     );
   } finally {

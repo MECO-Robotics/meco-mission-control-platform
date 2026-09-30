@@ -17,33 +17,26 @@ import {
   getTestResults,
 } from "../../data/store";
 import { isTaskDisciplineAllowedForProject } from "../../domain/taskDisciplines";
-import { uniqueIds } from "./taskTargets";
+import { uniqueIds } from "../../domain/ids";
+import { isActiveInSeason } from "../../domain/seasonMembership";
 
-function memberIsActiveInSeason(
-  member: { seasonId: string; activeSeasonIds?: string[] },
-  seasonId: string,
-) {
-  return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
-}
-
-export function validateWorkLogLinks(input: {
-  taskId: string;
-  participantIds: string[];
-}) {
-  const taskExists = getTasks().some((task) => task.id === input.taskId);
-  if (!taskExists) {
+function taskParticipantLinksError(taskId: string, participantIds: readonly string[]) {
+  if (!getTasks().some((task) => task.id === taskId)) {
     return "The selected task does not exist.";
   }
 
   const memberIds = new Set(getMembers().map((member) => member.id));
-  const missingParticipant = input.participantIds.find(
+  const missingParticipant = participantIds.find(
     (participantId) => !memberIds.has(participantId),
   );
-  if (missingParticipant) {
-    return "One or more selected participants do not exist.";
-  }
+  return missingParticipant ? "One or more selected participants do not exist." : null;
+}
 
-  return null;
+export function validateWorkLogLinks(input: {
+  taskId: string;
+  participantIds: readonly string[];
+}) {
+  return taskParticipantLinksError(input.taskId, input.participantIds);
 }
 
 export function validateQaReportLinks(input: {
@@ -51,19 +44,11 @@ export function validateQaReportLinks(input: {
   proposedRiskSeverity?: string | null;
   proposedRiskStatus?: string | null;
   taskId: string;
-  participantIds: string[];
+  participantIds: readonly string[];
 }) {
-  const taskExists = getTasks().some((task) => task.id === input.taskId);
-  if (!taskExists) {
-    return "The selected task does not exist.";
-  }
-
-  const memberIds = new Set(getMembers().map((member) => member.id));
-  const missingParticipant = input.participantIds.find(
-    (participantId) => !memberIds.has(participantId),
-  );
-  if (missingParticipant) {
-    return "One or more selected participants do not exist.";
+  const linkError = taskParticipantLinksError(input.taskId, input.participantIds);
+  if (linkError) {
+    return linkError;
   }
 
   if ((input.proposedRiskSeverity || input.proposedRiskStatus) && !input.targetRiskId) {
@@ -159,29 +144,21 @@ export function validateRiskLinks(input: {
 
 export function validateTaskLinks(input: {
   projectId: string;
-  workstreamId?: string | null;
-  workstreamIds?: string[];
-  subsystemId?: string | null;
-  subsystemIds: string[];
+  workstreamIds?: readonly string[];
+  subsystemIds: readonly string[];
   disciplineId?: string;
-  mechanismId?: string | null;
-  mechanismIds?: string[];
-  partInstanceId?: string | null;
-  partInstanceIds?: string[];
-  artifactId?: string | null;
-  artifactIds?: string[];
+  mechanismIds?: readonly string[];
+  partInstanceIds?: readonly string[];
+  artifactIds?: readonly string[];
   targetMilestoneId?: string | null;
-  assigneeIds?: string[];
+  assigneeIds?: readonly string[];
 }) {
   const project = findProject(input.projectId);
   if (!project) {
     return "The selected project does not exist.";
   }
 
-  const workstreamIds = uniqueIds([
-    ...(input.workstreamIds ?? []),
-    input.workstreamId,
-  ]);
+  const workstreamIds = input.workstreamIds ?? [];
   for (const workstreamId of workstreamIds) {
     const workstream = findWorkstream(workstreamId);
     if (!workstream) {
@@ -193,10 +170,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const subsystemIds = uniqueIds([
-    ...input.subsystemIds,
-    input.subsystemId,
-  ]);
+  const subsystemIds = input.subsystemIds ?? [];
   if (subsystemIds.length === 0) {
     return "Select at least one subsystem, mechanism, or part instance target.";
   }
@@ -221,10 +195,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const mechanismIds = uniqueIds([
-    ...(input.mechanismIds ?? []),
-    input.mechanismId,
-  ]);
+  const mechanismIds = input.mechanismIds ?? [];
   for (const mechanismId of mechanismIds) {
     const mechanism = findMechanism(mechanismId);
     if (!mechanism) {
@@ -236,10 +207,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const partInstanceIds = uniqueIds([
-    ...(input.partInstanceIds ?? []),
-    input.partInstanceId,
-  ]);
+  const partInstanceIds = input.partInstanceIds ?? [];
   for (const partInstanceId of partInstanceIds) {
     const partInstance = findPartInstance(partInstanceId);
     if (!partInstance) {
@@ -259,10 +227,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  const artifactIds = uniqueIds([
-    ...(input.artifactIds ?? []),
-    input.artifactId,
-  ]);
+  const artifactIds = input.artifactIds ?? [];
   for (const artifactId of artifactIds) {
     const artifact = findArtifact(artifactId);
     if (!artifact) {
@@ -437,22 +402,25 @@ export function validatePurchaseItemLinks(input: {
   return validatePartDefinitionLink(input.partDefinitionId);
 }
 
-export function validateManufacturingItemLinks(input: {
+export function resolveManufacturingItem(input: {
   subsystemId: string;
   process: string;
+  title: string;
+  materialId?: string | null;
   partDefinitionId?: string | null | undefined;
   partInstanceId?: string | null | undefined;
-  partInstanceIds?: string[];
-}) {
+  partInstanceIds?: readonly string[];
+}, fallbackMaterialId: string | null = null):
+  { error: string } | { materialId: string | null; title: string } {
   if (!findSubsystem(input.subsystemId)) {
-    return "The selected subsystem does not exist.";
+    return { error: "The selected subsystem does not exist." };
   }
 
-  if (input.partDefinitionId) {
-    const partDefinitionError = validatePartDefinitionLink(input.partDefinitionId);
-    if (partDefinitionError) {
-      return partDefinitionError;
-    }
+  const partDefinition = input.partDefinitionId
+    ? findPartDefinition(input.partDefinitionId)
+    : null;
+  if (input.partDefinitionId && !partDefinition) {
+    return { error: "Please select a real part from the Parts tab." };
   }
 
   const partInstanceIds = uniqueIds([
@@ -462,24 +430,41 @@ export function validateManufacturingItemLinks(input: {
   for (const partInstanceId of partInstanceIds) {
     const partInstance = findPartInstance(partInstanceId);
     if (!partInstance) {
-      return "The selected part instance does not exist.";
+      return { error: "The selected part instance does not exist." };
     }
 
     if (
       input.partDefinitionId &&
       partInstance.partDefinitionId !== input.partDefinitionId
     ) {
-      return "The selected part instance does not match the selected part definition.";
+      return { error: "The selected part instance does not match the selected part definition." };
     }
   }
 
-  return null;
+  if (
+    partDefinition &&
+    input.materialId !== undefined &&
+    input.materialId !== (partDefinition.materialId ?? null)
+  ) {
+    return { error: "The selected material does not match the selected part." };
+  }
+  const requestedMaterialId = input.materialId === undefined ? fallbackMaterialId : input.materialId;
+  const materialId = partDefinition ? partDefinition.materialId ?? null : requestedMaterialId;
+  const materialError = validatePartDefinitionMaterialId(materialId);
+  if (materialError) {
+    return { error: materialError };
+  }
+
+  return {
+    materialId,
+    title: input.process === "fabrication" || !partDefinition ? input.title : partDefinition.name,
+  };
 }
 
 export function validateSubsystemPeople(input: {
   projectId: string;
   responsibleEngineerId?: string | null;
-  mentorIds?: string[];
+  mentorIds?: readonly string[];
 }) {
   const members = getMembers();
   const project = findProject(input.projectId);
@@ -497,7 +482,7 @@ export function validateSubsystemPeople(input: {
     !members.some(
       (member) =>
         member.id === input.responsibleEngineerId &&
-        memberIsActiveInSeason(member, seasonId),
+        isActiveInSeason(member, seasonId),
     )
   ) {
     return "The responsible engineer must belong to the project's season.";
@@ -517,7 +502,7 @@ export function validateSubsystemPeople(input: {
         (mentorId) =>
           !members.some(
             (member) =>
-              member.id === mentorId && memberIsActiveInSeason(member, seasonId),
+              member.id === mentorId && isActiveInSeason(member, seasonId),
           ),
       )
     ) {
@@ -552,7 +537,7 @@ export function wouldCreateSubsystemCycle(
   return false;
 }
 
-export function validateMilestoneProjectLinks(projectIds: string[]) {
+export function validateMilestoneProjectLinks(projectIds: readonly string[]) {
   const unknownProjectId = projectIds.find((projectId) => !findProject(projectId));
 
   if (unknownProjectId) {

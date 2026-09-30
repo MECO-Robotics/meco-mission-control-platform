@@ -1,6 +1,6 @@
-import type { AuditAction, PlatformSnapshot } from "../../domain/types";
+import type { ReadonlyData, AuditAction, SnapshotView } from "../../domain/types";
 
-function getActionProjectIds(action: AuditAction) {
+function getActionProjectIds(action: ReadonlyData<AuditAction>) {
   return new Set(
     [...(action.projectIds ?? []), action.projectId].filter(
       (value): value is string => Boolean(value),
@@ -15,8 +15,8 @@ function addIfPresent(values: Set<string>, value: string | null | undefined) {
 }
 
 export function getRelatedProjectIds(
-  action: AuditAction,
-  snapshot: PlatformSnapshot,
+  action: ReadonlyData<AuditAction>,
+  snapshot: SnapshotView,
 ) {
   const projectIds = getActionProjectIds(action);
   const subsystemsById = new Map(
@@ -75,9 +75,9 @@ export function getRelatedProjectIds(
 }
 
 export function actionMatchesProject(
-  action: AuditAction,
+  action: ReadonlyData<AuditAction>,
   projectId: string,
-  snapshot: PlatformSnapshot,
+  snapshot: SnapshotView,
 ) {
   return getRelatedProjectIds(action, snapshot).has(projectId);
 }

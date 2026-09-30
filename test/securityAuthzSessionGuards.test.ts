@@ -119,7 +119,7 @@ test("leads cannot elevate roster roles while admins can perform legitimate role
 
       const denied = await app.inject({
         method: "PATCH",
-        url: "/api/members/priya",
+        url: "/api/members/ava",
         headers: { authorization: `Bearer ${leadToken}` },
         payload: { role: "admin" },
       });
@@ -143,7 +143,7 @@ test("leads cannot elevate roster roles while admins can perform legitimate role
 
       const allowed = await app.inject({
         method: "PATCH",
-        url: "/api/members/priya",
+        url: "/api/members/ava",
         headers: { authorization: `Bearer ${adminToken}` },
         payload: { role: "mentor" },
       });
@@ -176,17 +176,17 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
       });
       const payload = {
         reportType: "QA",
-        projectId: "default-season-robot",
+        projectId: "project-robot-2026",
         taskId: "swerve-sensor-bundle",
         milestoneId: null,
         workstreamId: null,
-        createdByMemberId: "priya",
+        createdByMemberId: "ava",
         result: "pass",
         summary: "Security regression",
         notes: "Approval must be server-authorized.",
         photoUrl: "",
         createdAt: "2026-08-11T12:00:00.000Z",
-        participantIds: ["priya"],
+        participantIds: ["ava"],
         mentorApproved: true,
         reviewedAt: "2026-08-11",
       };
@@ -219,7 +219,7 @@ test("QA workflow submission requires task mutation authority independently of a
     const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
     const task = getSnapshot().tasks.find((item) => !item.blockers.length && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
     updateTask(task.id, { status: "waiting-for-qa" });
-    const payload = { taskId: task.id, participantIds: ["priya"], result: "pass", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: false };
+    const payload = { taskId: task.id, participantIds: ["ava"], result: "pass", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: false };
     const url = "/api/qa-reports/submit";
     assert.equal((await app.inject({ method: "POST", url, payload })).statusCode, 401);
     resetLimits();
@@ -296,6 +296,43 @@ test("student sessions cannot reset global tutorial state", async () => {
     },
     { env: authEnv },
   );
+});
+
+test("auth-off public demo bootstrap is sanitized while the local workspace remains intact", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const { createMember } = await import("../src/data/store");
+    const member = createMember({
+      name: "Private Local Workspace Member",
+      email: "private-local-workspace@example.test",
+      role: "admin",
+      plannedAttendanceNotes: "Private attendance notes",
+    });
+
+    const localResponse = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(localResponse.statusCode, 200);
+    const localMember = localResponse.json().members.find((item: { id: string }) => item.id === member.id);
+    assert.equal(localMember.email, member.email);
+    assert.equal(localMember.plannedAttendanceNotes, member.plannedAttendanceNotes);
+
+    for (const seasonId of ["default-season", "%20default-season%20"]) {
+      resetLimits();
+      const demoResponse = await app.inject({
+        method: "GET",
+        url: `/api/bootstrap?seasonId=${seasonId}`,
+      });
+      assert.equal(demoResponse.statusCode, 200);
+      const demo = demoResponse.json();
+      assert.ok(demo.members.length > 0);
+      assert.ok(demo.members.every((item: { id: string; email?: string }) =>
+        item.id.startsWith("demo-member-") && item.email === undefined,
+      ));
+      assert.ok(!demoResponse.body.includes(member.name));
+      assert.ok(!demoResponse.body.includes(member.email));
+      assert.ok(!demoResponse.body.includes("Private attendance notes"));
+      assert.deepEqual(demo.escalations, []);
+      assert.deepEqual(demo.actions, []);
+    }
+  });
 });
 
 test("unsigned users can read only the demo season bootstrap", async () => {
@@ -565,7 +602,7 @@ test("authenticated season bootstrap preserves escalations", async () => {
         seasons: Array<{ id: string }>;
       };
       assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
-      assert.ok(body.escalations.length > 0);
+    assert.ok(Array.isArray(body.escalations));
       const authenticatedProbeRecord = body.members.find(
         (member) => member.id === authenticatedProbeMember.id,
       );

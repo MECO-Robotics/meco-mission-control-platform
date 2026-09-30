@@ -121,5 +121,19 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
       AUTH_EMAIL_SMTP_HOST: "smtp.example.test",
       AUTH_EMAIL_FROM: "noreply@mecorobotics.org",
     },
+    members: [
+      {
+        name: "Jordan Lee",
+        email: "jordan.lee@mecorobotics.org",
+        role: "mentor",
+        seasonId: "default-season",
+      },
+      {
+        name: "Riley Kim",
+        email: "riley.kim@mecorobotics.org",
+        role: "mentor",
+        seasonId: "default-season",
+      },
+    ],
   });
 });

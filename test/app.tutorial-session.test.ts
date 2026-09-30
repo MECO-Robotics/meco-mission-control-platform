@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "./helpers/workflowAuth";
+import type { SnapshotView } from "../src/domain/types";
 
 interface TutorialResetResponse {
   ok: boolean;
@@ -266,4 +268,165 @@ test("tutorial reset rejects invalid payload modes", async () => {
     };
     assert.equal(body.message, "Tutorial reset payload is invalid.");
   });
+});
+
+
+test("HTTP tutorial mutations stage publication, serialize lifecycle changes and isolate users", { timeout: 30_000 }, async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const alice = await createWorkflowAuthHeaders("mentor");
+    const bob = await createWorkflowAuthHeaders("admin");
+    const global = await createWorkflowAuthHeaders("lead");
+    let held: {
+      notes: string;
+      fail: boolean;
+      entered: () => void;
+      wait: Promise<void>;
+      release: () => void;
+    } | undefined;
+    let queued: (() => void) | undefined;
+    let disconnected: (() => void) | undefined;
+    app.addHook("onRequest", async (request, reply) => {
+      if (request.headers["x-observe-queue"]) queued?.();
+      if (request.headers["x-observe-disconnect"]) reply.raw.once("close", () => disconnected?.());
+    });
+    app.addHook("preSerialization", async (request, reply, payload) => {
+      if (held && (request.body as { notes?: string } | undefined)?.notes === held.notes && reply.statusCode < 400) {
+        const pending = held;
+        pending.entered();
+        await pending.wait;
+        if (pending.fail) throw new Error("Injected failure before response publication");
+      }
+      if (request.headers["x-fail-response"] && reply.statusCode < 400) {
+        throw new Error("Injected lifecycle response failure");
+      }
+      return payload;
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const send = async (headers: typeof alice, path: string, payload?: object, observeQueue = false, signal?: AbortSignal) => {
+      const response = await fetch(address + path, {
+        method: payload ? "POST" : "GET",
+        headers: { ...headers, ...(payload ? { "Content-Type": "application/json" } : {}), ...(observeQueue ? { "x-observe-queue": "true" } : {}) },
+        body: payload ? JSON.stringify(payload) : undefined,
+        signal: signal ?? AbortSignal.timeout(10_000),
+      });
+      return { status: response.status, body: await response.json() as SnapshotView & { ok?: boolean } };
+    };
+    const read = async (headers: typeof alice) => {
+      const response = await send(headers, "/api/bootstrap");
+      assert.equal(response.status, 200);
+      return response.body;
+    };
+    const initial = await read(global);
+    const payload = (notes: string) => ({
+      taskId: initial.tasks[0].id, date: "2026-09-26", hours: 1,
+      participantIds: [initial.members[0].id], notes,
+    });
+    const count = (snapshot: SnapshotView, notes: string) => snapshot.workLogs.filter(item => item.notes === notes).length;
+    const signal = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => { resolve = done; });
+      return { promise, resolve };
+    };
+    const hold = (notes: string, fail = false) => {
+      const entered = signal();
+      const release = signal();
+      held = { notes, fail, entered: entered.resolve, wait: release.promise, release: release.resolve };
+      return { entered: entered.promise, release: release.resolve };
+    };
+    try {
+      for (const headers of [alice, bob]) {
+        assert.equal((await send(headers, "/api/tutorial/session/start", {})).status, 200);
+      }
+
+      for (const headers of [global, alice]) {
+        const before = await read(headers);
+        const gate = hold("failed work log", true);
+        const pending = send(headers, "/api/work-logs", payload("failed work log"));
+        await gate.entered;
+        assert.equal(count(await read(headers), "failed work log"), 0);
+        gate.release();
+        assert.equal((await pending).status, 500);
+        const after = await read(headers);
+        assert.equal(count(after, "failed work log"), 0);
+        assert.equal(after.actions?.length, before.actions?.length);
+      }
+
+      const disconnectedResponse = signal();
+      disconnected = disconnectedResponse.resolve;
+      const disconnectGate = hold("accepted before disconnect");
+      const controller = new AbortController();
+      const disconnectedHeaders = { ...alice, "x-observe-disconnect": "true" };
+      const disconnectedRequest = send(disconnectedHeaders, "/api/work-logs", payload("accepted before disconnect"), false, controller.signal);
+      const rejectedResponse = assert.rejects(disconnectedRequest, { name: "AbortError" });
+      await disconnectGate.entered;
+      controller.abort();
+      await rejectedResponse;
+      await disconnectedResponse.promise;
+      disconnectGate.release();
+      assert.equal((await send(alice, "/api/work-logs", payload("after disconnect"))).status, 201);
+      assert.equal(count(await read(alice), "accepted before disconnect"), 1);
+      assert.equal(count(await read(alice), "after disconnect"), 1);
+
+      const failedLifecycleHeaders = { ...alice, "x-fail-response": "true" };
+      let gate = hold("first tutorial write");
+      let pending = send(alice, "/api/work-logs", payload("first tutorial write"));
+      await gate.entered;
+      let observed = signal();
+      queued = observed.resolve;
+      const second = send(alice, "/api/work-logs", payload("second tutorial write"), true);
+      await observed.promise;
+      assert.equal((await send(bob, "/api/work-logs", payload("other user's write"))).status, 201);
+      assert.equal(count(await read(alice), "second tutorial write"), 0);
+      gate.release();
+      assert.equal((await pending).status, 201);
+      assert.equal((await second).status, 201);
+      let published = await read(alice);
+      assert.equal(count(published, "first tutorial write"), 1);
+      assert.equal(count(published, "second tutorial write"), 1);
+      assert.equal(count(published, "other user's write"), 0);
+      assert.equal(count(await read(global), "first tutorial write"), 0);
+
+      for (const [path, body] of [
+        ["/api/tutorial/session/start", {}],
+        ["/api/tutorial/session/reset", { mode: "baseline" }],
+        ["/api/tutorial/session/reset", { mode: "session" }],
+      ] as const) {
+        assert.equal((await send(failedLifecycleHeaders, path, body)).status, 500);
+        assert.equal(count(await read(alice), "first tutorial write"), 1);
+      }
+
+      gate = hold("before reset");
+      pending = send(alice, "/api/work-logs", payload("before reset"));
+      await gate.entered;
+      observed = signal(); queued = observed.resolve;
+      const reset = send(alice, "/api/tutorial/session/reset", { mode: "baseline" }, true);
+      await observed.promise;
+      assert.equal(count(await read(alice), "first tutorial write"), 1);
+      gate.release();
+      assert.equal((await pending).status, 201);
+      assert.equal((await reset).status, 200);
+      published = await read(alice);
+      assert.equal(count(published, "first tutorial write"), 0);
+      assert.equal(count(published, "before reset"), 0);
+
+      gate = hold("before end");
+      pending = send(alice, "/api/work-logs", payload("before end"));
+      await gate.entered;
+      observed = signal(); queued = observed.resolve;
+      const end = send(alice, "/api/tutorial/session/reset", { mode: "session" }, true);
+      await observed.promise;
+      const afterEnd = send(alice, "/api/work-logs", payload("after end"));
+      gate.release();
+      assert.equal((await pending).status, 201);
+      assert.equal((await end).body.ok, true);
+      assert.equal((await afterEnd).status, 201);
+      assert.equal(count(await read(global), "after end"), 1);
+      assert.equal(count(await read(global), "before end"), 0);
+      assert.equal(count(await read(bob), "other user's write"), 1);
+      assert.equal((await send(failedLifecycleHeaders, "/api/tutorial/session/start", {})).status, 500);
+      assert.equal(count(await read(alice), "after end"), 1);
+    } finally {
+      held?.release();
+    }
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "1000" } });
 });

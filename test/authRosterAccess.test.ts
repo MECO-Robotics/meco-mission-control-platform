@@ -83,6 +83,14 @@ test("external roster role whitelists non-team email for email sign-in", async (
     };
     assert.equal(refreshSessionUser(mentorUser).role, "mentor");
 
+    const adminUser: import("../src/auth/authService").SessionUser = {
+      ...mentorUser,
+      email: "maya.ortiz@mecorobotics.org",
+      accountId: "maya.ortiz@mecorobotics.org",
+      role: "student",
+    };
+    assert.equal(refreshSessionUser(adminUser).role, "admin");
+
     assert.throws(
       () => verifyEmailSignInCode("VIEWER@sponsor.example", "123456"),
       (error) => {

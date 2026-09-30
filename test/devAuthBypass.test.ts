@@ -5,7 +5,7 @@ import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMember } from "../src/data/store";
+import { createMember, resetStore } from "../src/data/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,6 +51,9 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json"), mobileSessionStore: testMobileSessionStore, webSessionStore: new MemoryWebSessionStore() });
 
     try {
+      resetStore();
+      createMember({ name: "Lucas", email: "lucas.brooks@mecorobotics.org", role: "student" });
+      createMember({ name: "Jordan", email: "jordan.lee@mecorobotics.org", role: "mentor" });
       resetRequestLimits();
 
       const authConfigResponse = await app.inject({
@@ -350,13 +353,13 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         payload: {
           title: "Student-created task",
           summary: "Students should not be allowed to create tasks.",
-          subsystemId: "drive",
+          subsystemIds: ["drive"],
           disciplineId: "design",
-          mechanismId: null,
-          partInstanceId: null,
+          mechanismIds: [],
+          partInstanceIds: [],
           targetMilestoneId: null,
           ownerId: "ava",
-          mentorId: "riley",
+          mentorId: "marco",
           dueDate: "2026-05-06",
           priority: "medium",
           status: "not-started",
@@ -415,13 +418,13 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
       const claimableTaskPayload = {
         title: "Claimable student task",
         summary: "Students can claim this task from mobile.",
-        subsystemId: "drive",
+        subsystemIds: ["drive"],
         disciplineId: "design",
-        mechanismId: null,
-        partInstanceId: null,
+        mechanismIds: [],
+        partInstanceIds: [],
         targetMilestoneId: null,
         ownerId: null,
-        mentorId: "riley",
+        mentorId: "marco",
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
@@ -573,7 +576,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         },
       });
 
-      assert.equal(reassignResponse.statusCode, 200);
+      assert.equal(reassignResponse.statusCode, 200, reassignResponse.body);
       assert.equal((reassignResponse.json() as { item: { ownerId: string } }).item.ownerId, "lucas");
 
       resetRequestLimits();

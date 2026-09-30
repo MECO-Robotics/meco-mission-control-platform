@@ -6,6 +6,12 @@ export const authEnv = {
   AUTH_MENTOR_EMAILS: "mentor@mecorobotics.org",
 } as const;
 
+export const auditAdminMember = {
+  name: "Audit Test Admin",
+  email: "maya.ortiz@mecorobotics.org",
+  role: "admin",
+} as const;
+
 export async function signTestToken(args: {
   email: string;
   role: MemberRole;
