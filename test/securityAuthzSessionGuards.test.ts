@@ -376,7 +376,6 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       assert.equal(demoResponse.statusCode, 200);
       const demoBody = demoResponse.json() as {
-        disciplines: Array<{ id: string }>;
         actions: unknown[];
         attendanceRecords: Array<{ date: string; memberId: string }>;
         escalations: unknown[];

@@ -26,7 +26,6 @@ const memberFieldsSchema = z.object({
   photoUrl: z.string().trim(),
   role: z.enum(["student", "lead", "mentor", "admin", "external"]),
   elevated: z.boolean(),
-  disciplineId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   plannedWeeklyAttendanceHours: z.coerce.number().min(0).max(80),

@@ -1,11 +1,11 @@
 import type { PlatformSnapshot } from "../domain/types";
-import { INITIAL_WORK_TYPES, TASK_DISCIPLINE_DEFINITIONS } from "../domain/taskDisciplines";
+import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
 
 const seasonId = "default-season";
 const robotProjectId = "project-robot-2026";
 
 export const snapshot: PlatformSnapshot = {
-  snapshotSchemaVersion: 1,
+  snapshotSchemaVersion: 2,
   seasons: [
     {
       id: seasonId,
@@ -162,7 +162,6 @@ export const snapshot: PlatformSnapshot = {
       isArchived: false,
     },
   ],
-  disciplines: TASK_DISCIPLINE_DEFINITIONS,
   mechanisms: [
     {
       id: "swerve-module",

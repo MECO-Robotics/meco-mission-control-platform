@@ -74,7 +74,7 @@ test("current schema snapshots load without rewriting and reset archives the con
   writeFileSync(snapshotPath, contents, "utf8");
 
   try {
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 1);
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 2);
     assert.equal(readFileSync(snapshotPath, "utf8"), contents);
     const { archivePlatformSnapshotFile } = await import("../src/data/platformSnapshotFile");
     const archive = archivePlatformSnapshotFile(snapshotPath);

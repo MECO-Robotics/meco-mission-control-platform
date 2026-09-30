@@ -31,7 +31,6 @@ import {
   createTestResult,
   createWorkLog,
   createWorkstream,
-  findDiscipline,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -277,7 +276,6 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     plannedAttendanceDays: ["tuesday", "thursday"],
     seasonId: member.seasonId,
     activeSeasonIds: member.activeSeasonIds,
-    ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
   }));
 
   return {
@@ -2466,16 +2464,6 @@ export async function registerRoutes(
       });
     }
 
-    if (
-      parsed.data.disciplineId !== undefined &&
-      parsed.data.disciplineId !== null &&
-      !findDiscipline(parsed.data.disciplineId)
-    ) {
-      return reply.code(400).send({
-        message: "Roster payload references an unknown discipline.",
-      });
-    }
-
     const member = createMember(parsed.data);
     return reply.code(201).send({
       item: member,
@@ -2546,16 +2534,6 @@ export async function registerRoutes(
       ) {
         return reply.code(400).send({
           message: "Roster update payload references an unknown active season.",
-        });
-      }
-
-      if (
-        parsed.data.disciplineId !== undefined &&
-        parsed.data.disciplineId !== null &&
-        !findDiscipline(parsed.data.disciplineId)
-      ) {
-        return reply.code(400).send({
-          message: "Roster update payload references an unknown discipline.",
         });
       }
 

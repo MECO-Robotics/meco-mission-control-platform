@@ -163,7 +163,6 @@ export interface Member {
   photoUrl?: string;
   role: MemberRole;
   elevated: boolean;
-  disciplineId?: string | null;
   seasonId: string;
   activeSeasonIds?: string[];
   plannedWeeklyAttendanceHours?: number;
@@ -193,6 +192,7 @@ export interface Subsystem extends PmCadProvenance {
   risks: string[];
 }
 
+// Static task work-type catalog entries; distinct from Member responsibility.
 export interface Discipline {
   id: string;
   code: DisciplineCode;
@@ -774,7 +774,7 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
-  snapshotSchemaVersion: 1;
+  snapshotSchemaVersion: 2;
   seasons: Season[];
   projects: Project[];
   workTypes: WorkType[];
@@ -783,7 +783,6 @@ export interface PlatformSnapshot {
   vendors: Vendor[];
   members: Member[];
   subsystems: Subsystem[];
-  disciplines: Discipline[];
   mechanisms: Mechanism[];
   materials: Material[];
   artifacts: Artifact[];

@@ -1734,10 +1734,6 @@ export function getSubsystems(): SnapshotView["subsystems"] {
   return currentSnapshot.subsystems;
 }
 
-export function getDisciplines(): SnapshotView["disciplines"] {
-  return currentSnapshot.disciplines;
-}
-
 export function getMechanisms(): SnapshotView["mechanisms"] {
   return currentSnapshot.mechanisms;
 }
@@ -4023,7 +4019,6 @@ export function createMember(input: MemberInput) {
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
-  const disciplineId = input.disciplineId === undefined ? undefined : input.disciplineId;
   const member: Member = {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
@@ -4031,7 +4026,6 @@ export function createMember(input: MemberInput) {
     photoUrl: (input.photoUrl ?? "").trim(),
     role: input.role,
     elevated: isElevatedMemberRole(input.role),
-    ...(disciplineId !== undefined ? { disciplineId } : null),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     plannedWeeklyAttendanceHours: normalizePlannedWeeklyAttendanceHours(
@@ -4203,10 +4197,6 @@ export function findSubsystem(subsystemId: string): SnapshotView["subsystems"][n
 
 export function findMilestone(milestoneId: string): SnapshotView["milestones"][number] | undefined {
   return currentSnapshot.milestones.find((milestone) => milestone.id === milestoneId);
-}
-
-export function findDiscipline(disciplineId: string): SnapshotView["disciplines"][number] | undefined {
-  return currentSnapshot.disciplines.find((discipline) => discipline.id === disciplineId);
 }
 
 export function findMechanism(mechanismId: string): SnapshotView["mechanisms"][number] | undefined {

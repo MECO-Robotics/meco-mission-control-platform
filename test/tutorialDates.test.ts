@@ -50,12 +50,10 @@ test("new tutorial data rolls forward without mutating an earlier session", () =
 test("tutorial roster categories and all member references resolve within the seed", () => {
   const data = createTutorialSnapshot();
   const members = new Set(data.members.map((member) => member.id));
-  const disciplines = new Set(data.disciplines.map((discipline) => discipline.id));
   const seasons = new Set(data.seasons.map((season) => season.id));
   assert.equal(members.size, data.members.length);
   for (const member of data.members) {
     assert.ok(["student", "lead", "mentor", "admin", "external"].includes(member.role));
-    if (member.disciplineId) assert.ok(disciplines.has(member.disciplineId), `${member.id}: ${member.disciplineId}`);
     if (member.seasonId) assert.ok(seasons.has(member.seasonId));
     for (const seasonId of member.activeSeasonIds ?? []) assert.ok(seasons.has(seasonId));
   }

@@ -1,6 +1,5 @@
 import {
   findArtifact,
-  findDiscipline,
   findMilestone,
   findMaterial,
   findMechanism,
