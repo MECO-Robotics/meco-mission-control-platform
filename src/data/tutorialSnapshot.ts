@@ -51,6 +51,9 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
     season.startDate = new Date(monthStart).toISOString().slice(0, 10);
     season.endDate = new Date(monthEnd - DAY).toISOString().slice(0, 10);
   }
+  for (const task of copy.tasks) {
+    task.actualHours = copy.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0);
+  }
   // The availability view requires attendance today, not just roster membership.
   for (const member of copy.members.filter((member) => member.id.startsWith("demo-"))) {
     copy.attendanceRecords.push({

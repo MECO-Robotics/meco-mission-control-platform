@@ -124,7 +124,7 @@ test("production platform state survives a fresh process", () => {
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
       const initial = store.getSnapshot();
-      if (initial.projects.length !== 6 || initial.tasks.length !== 3) throw new Error("Fresh process did not bootstrap the compact tutorial scenario");
+      if (initial.projects.length !== 6 || initial.tasks.length < 35) throw new Error("Fresh process did not bootstrap the restored demo scenario");
       const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       const operationsProject = initial.projects.find(project => project.projectType === "operations");
