@@ -15,6 +15,7 @@ import {
   createMilestone,
   createMaterial,
   createMember,
+  createResponsibleGroup,
   createMechanism,
   createReport,
   createReportFinding,
@@ -47,6 +48,7 @@ import {
   findSubsystem,
   findWorkstream,
   getMembers,
+  getResponsibleGroups,
   getArtifacts,
   getMaterials,
   getPartDefinitions,
@@ -86,6 +88,7 @@ import {
   updateArtifact,
   updateMaterial,
   updateMember,
+  updateResponsibleGroup,
   updateMechanism,
   updateMilestone,
   updatePartDefinition,
@@ -157,6 +160,8 @@ import {
   mediaUploadRequestSchema,
   memberPatchSchema,
   memberSchema,
+  responsibleGroupPatchSchema,
+  responsibleGroupSchema,
   profilePatchSchema,
   mechanismPatchSchema,
   mechanismSchema,
@@ -275,6 +280,7 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     role: member.role === "mentor" || member.role === "admin"
       ? "mentor"
       : member.role === "external" ? "external" : "student",
+    classYear: member.role === "student" || member.role === "lead" ? member.classYear ?? null : null,
     // Synthetic availability supports local demo planning without revealing schedules.
     plannedWeeklyAttendanceHours: 6,
     plannedAttendanceDays: ["tuesday", "thursday"],
@@ -695,7 +701,6 @@ export async function registerRoutes(
     if (!parsed) {
       return reply;
     }
-
     const { format, ...filters } = parsed.data;
     const actions = filterAuditActions(getSnapshot(), filters);
 
@@ -2193,6 +2198,7 @@ export async function registerRoutes(
           parsed.data.assigneeIds === undefined
             ? currentTask.assigneeIds ?? []
             : uniqueIds(parsed.data.assigneeIds),
+        allowArchivedResponsibleGroup: parsed.data.responsibleGroupId === undefined && currentTask.responsibleGroupId !== null,
       };
 
       const taskValidationError = validateTaskLinks(nextTaskShape);
@@ -2387,6 +2393,43 @@ export async function registerRoutes(
     },
   );
 
+  app.get("/api/responsible-groups", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    const paginated = paginateItems(getResponsibleGroups(), request.query);
+    return { items: paginated.items, pagination: paginated.pagination };
+  });
+
+  app.post<{ Body: unknown }>("/api/responsible-groups", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
+    const parsed = parseRouteInput(responsibleGroupSchema, request.body, reply, "Team payload is invalid.");
+    if (!parsed) return reply;
+    const { seasonId, projectIds, memberIds } = parsed.data;
+    const snapshot = getSnapshot();
+    if (!snapshot.seasons.some((season) => season.id === seasonId) || projectIds.some((id) => !snapshot.projects.some((project) => project.id === id && project.seasonId === seasonId)) || memberIds.some((id) => !snapshot.members.some((member) => member.id === id && (member.activeSeasonIds ?? [member.seasonId]).includes(seasonId)))) {
+      return reply.code(400).send({ message: "Teams must reference projects and members in the selected season." });
+    }
+    return reply.code(201).send({ item: createResponsibleGroup({ ...parsed.data, isArchived: false }) });
+  });
+
+  app.patch<{ Body: unknown; Params: { groupId: string } }>("/api/responsible-groups/:groupId", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
+    const parsed = parseRouteInput(responsibleGroupPatchSchema, request.body, reply, "Team update payload is invalid.");
+    if (!parsed) return reply;
+    const current = getResponsibleGroups().find((group) => group.id === request.params.groupId);
+    if (!current) return reply.code(404).send({ message: "Team not found." });
+    const next = { ...current, ...parsed.data };
+    const snapshot = getSnapshot();
+    if (!snapshot.seasons.some((season) => season.id === next.seasonId) || next.projectIds.some((id) => !snapshot.projects.some((project) => project.id === id && project.seasonId === next.seasonId)) || next.memberIds.some((id) => !snapshot.members.some((member) => member.id === id && (member.activeSeasonIds ?? [member.seasonId]).includes(next.seasonId)))) {
+      return reply.code(400).send({ message: "Teams must reference projects and members in the selected season." });
+    }
+    if (snapshot.tasks.some((task) => task.responsibleGroupId === current.id && (snapshot.projects.find((project) => project.id === task.projectId)?.seasonId !== next.seasonId || (next.projectIds.length > 0 && !next.projectIds.includes(task.projectId))))) {
+      return reply.code(409).send({ message: "Team changes cannot invalidate existing task ownership." });
+    }
+    return { item: updateResponsibleGroup(current.id, parsed.data, buildTaskAuditContext(request)) };
+  });
+
   app.get("/api/members", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -2468,6 +2511,9 @@ export async function registerRoutes(
       });
     }
 
+    if (parsed.data.role !== "student" && parsed.data.role !== "lead" && parsed.data.classYear != null) {
+      return reply.code(400).send({ message: "Class year only applies to students and student leads." });
+    }
     const member = createMember(parsed.data);
     return reply.code(201).send({
       item: member,
@@ -2511,6 +2557,10 @@ export async function registerRoutes(
       if (!currentMember) {
         return reply.code(404).send({ message: "Member not found." });
       }
+      const nextRole = parsed.data.role ?? currentMember.role;
+      if (nextRole !== "student" && nextRole !== "lead" && parsed.data.classYear != null) {
+        return reply.code(400).send({ message: "Class year only applies to students and student leads." });
+      }
 
       if (
         currentMember.role === "admin" &&
@@ -2539,6 +2589,11 @@ export async function registerRoutes(
         return reply.code(400).send({
           message: "Roster update payload references an unknown active season.",
         });
+      }
+      const nextActiveSeasons = parsed.data.activeSeasonIds ?? currentMember.activeSeasonIds ?? [parsed.data.seasonId ?? currentMember.seasonId];
+      const nextSeasonId = parsed.data.seasonId ?? currentMember.seasonId;
+      if (getResponsibleGroups().some((group) => group.memberIds.includes(currentMember.id) && group.seasonId !== nextSeasonId && !nextActiveSeasons.includes(group.seasonId))) {
+        return reply.code(409).send({ message: "Remove the member from teams in other seasons before changing their season membership." });
       }
 
       const member = updateMember(

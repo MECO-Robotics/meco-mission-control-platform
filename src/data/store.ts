@@ -7,6 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 
 import { createTutorialSnapshot } from "./tutorialSnapshot";
+import type { ResponsibleGroupInput } from "./storeTypes";
 import type { ReadonlyData, SnapshotView } from "../domain/types";
 import type {
   AuditAction,
@@ -24,6 +25,7 @@ import type {
   PartInstance,
   PlatformSnapshot,
   Project,
+  ResponsibleGroup,
   PurchaseItem,
   Report,
   Risk,
@@ -1688,6 +1690,27 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
   });
 
   return updatedWorkstream;
+}
+
+export function getResponsibleGroups(): SnapshotView["responsibleGroups"] {
+  return currentSnapshot.responsibleGroups;
+}
+
+export function createResponsibleGroup(input: ResponsibleGroupInput) {
+  const ids = new Set(currentSnapshot.responsibleGroups.map((group) => group.id));
+  const group: ResponsibleGroup = { ...input, projectIds: uniqueIds(input.projectIds), memberIds: uniqueIds(input.memberIds), id: uniqueId(toSlug(input.name) || "team", ids), isArchived: input.isArchived ?? false };
+  replaceCurrentSnapshot({ ...currentSnapshot, responsibleGroups: [...currentSnapshot.responsibleGroups, group] });
+  recordAuditAction({ operation: "create", entityType: "responsible-group", entityId: group.id, entityLabel: group.name, memberIds: group.memberIds });
+  return group;
+}
+
+export function updateResponsibleGroup(groupId: string, input: Partial<ResponsibleGroupInput>, auditContext: AuditMutationContext = {}) {
+  const previous = currentSnapshot.responsibleGroups.find((group) => group.id === groupId);
+  if (!previous) return null;
+  const updated = { ...previous, ...input, projectIds: input.projectIds === undefined ? previous.projectIds : uniqueIds(input.projectIds), memberIds: input.memberIds === undefined ? previous.memberIds : uniqueIds(input.memberIds) };
+  replaceCurrentSnapshot({ ...currentSnapshot, responsibleGroups: currentSnapshot.responsibleGroups.map((group) => group.id === groupId ? updated : group) });
+  recordAuditAction({ operation: "update", entityType: "responsible-group", entityId: updated.id, entityLabel: updated.name, actorMemberId: auditContext.actorMemberId ?? null, requestId: auditContext.requestId ?? null, memberIds: updated.memberIds, changedFields: collectChangedFields(previous, updated) });
+  return updated;
 }
 
 export function getMembers(): SnapshotView["members"] {
@@ -3925,6 +3948,7 @@ export function createMember(input: MemberInput) {
     email: (input.email ?? "").trim(),
     photoUrl: (input.photoUrl ?? "").trim(),
     role: input.role,
+    classYear: input.role === "student" || input.role === "lead" ? input.classYear ?? null : null,
     elevated: isElevatedMemberRole(input.role),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
@@ -3988,6 +4012,7 @@ export function updateMember(
     ...previousMember,
     ...input,
     role: nextRole,
+    classYear: nextRole === "student" || nextRole === "lead" ? input.classYear === undefined ? previousMember.classYear ?? null : input.classYear : null,
     email: nextEmail,
     photoUrl: nextPhotoUrl,
     seasonId: nextSeasonId,
@@ -4033,6 +4058,10 @@ export function removeMember(memberId: string) {
   replaceCurrentSnapshot({
     ...currentSnapshot,
     members: currentSnapshot.members.filter((candidate) => candidate.id !== memberId),
+    responsibleGroups: currentSnapshot.responsibleGroups.map((group) => ({
+      ...group,
+      memberIds: group.memberIds.filter((id) => id !== memberId),
+    })),
     subsystems: currentSnapshot.subsystems.map((subsystem) => ({
       ...subsystem,
       responsibleEngineerId:

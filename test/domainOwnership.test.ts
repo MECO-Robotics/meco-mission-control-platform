@@ -63,6 +63,68 @@ test("manufacturing process catalog supports create and archive", async () => {
   });
 });
 
+test("teams enforce season, project and member integrity and can be archived", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const snapshot = getSnapshot();
+    const seasonId = snapshot.seasons[0]!.id;
+    const project = snapshot.projects.find((item) => item.seasonId === seasonId)!;
+    const member = snapshot.members.find((item) => (item.activeSeasonIds ?? [item.seasonId]).includes(seasonId));
+    const created = await app.inject({ method: "POST", url: "/api/responsible-groups", payload: {
+      seasonId, name: "Drive Team", projectIds: [project.id], memberIds: member ? [member.id] : [],
+    } });
+    assert.equal(created.statusCode, 201, created.body);
+    const id = created.json().item.id as string;
+    resetLimits();
+    const invalid = await app.inject({ method: "POST", url: "/api/responsible-groups", payload: {
+      seasonId, name: "Invalid Team", projectIds: ["missing"], memberIds: [],
+    } });
+    assert.equal(invalid.statusCode, 400);
+    resetLimits();
+    const invalidMember = await app.inject({ method: "POST", url: "/api/responsible-groups", payload: {
+      seasonId, name: "Invalid Membership", projectIds: [], memberIds: ["missing-member"],
+    } });
+    assert.equal(invalidMember.statusCode, 400);
+    resetLimits();
+    const archived = await app.inject({ method: "PATCH", url: `/api/responsible-groups/${id}`, payload: { isArchived: true } });
+    assert.equal(archived.statusCode, 200, archived.body);
+    assert.equal(archived.json().item.isArchived, true);
+    const task = snapshot.tasks.find((item) => item.projectId === project.id);
+    assert.ok(task);
+    const assignment = {
+      projectId: task.projectId, workTypeId: task.workTypeId, responsibleGroupId: id,
+      workstreamIds: task.workstreamIds, subsystemIds: task.subsystemIds,
+      mechanismIds: task.mechanismIds, partInstanceIds: task.partInstanceIds,
+    };
+    assert.match(validateTaskLinks(assignment) ?? "", /responsible group/);
+    assert.equal(validateTaskLinks({ ...assignment, allowArchivedResponsibleGroup: true }), null);
+  });
+});
+
+test("class year is available to students and student leads and is returned by bootstrap", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const create = await app.inject({ method: "POST", url: "/api/members", payload: {
+      name: "Year Member", role: "student", classYear: "junior", seasonId: getSnapshot().seasons[0]!.id,
+    } });
+    assert.equal(create.statusCode, 201, create.body);
+    assert.equal(create.json().item.classYear, "junior");
+    resetLimits();
+    const lead = await app.inject({ method: "POST", url: "/api/members", payload: {
+      name: "Student Lead", role: "lead", classYear: "senior", seasonId: getSnapshot().seasons[0]!.id,
+    } });
+    assert.equal(lead.statusCode, 201, lead.body);
+    assert.equal(lead.json().item.classYear, "senior");
+    resetLimits();
+    const invalid = await app.inject({ method: "POST", url: "/api/members", payload: {
+      name: "Non Student", role: "mentor", classYear: "junior", seasonId: getSnapshot().seasons[0]!.id,
+    } });
+    assert.equal(invalid.statusCode, 400);
+    resetLimits();
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrap.statusCode, 200, bootstrap.body);
+    assert.equal(bootstrap.json().members.find((member: { id: string }) => member.id === create.json().item.id).classYear, "junior");
+  });
+});
+
 test("readiness is projected and not persisted on domain records", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();

@@ -1,6 +1,7 @@
 import type { TaskTargets } from "./taskTargets";
 
 export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
+export type ClassYear = "freshman" | "sophomore" | "junior" | "senior";
 export type MilestoneType =
   | "practice"
   | "competition"
@@ -149,6 +150,7 @@ export interface Member {
   email: string;
   photoUrl?: string;
   role: MemberRole;
+  classYear?: ClassYear | null;
   elevated: boolean;
   seasonId: string;
   activeSeasonIds?: string[];

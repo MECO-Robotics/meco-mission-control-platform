@@ -8,6 +8,7 @@ import type {
   PartDefinition,
   PartInstance,
   Project,
+  ResponsibleGroup,
   PurchaseItem,
   QaReport,
   QaRequest,
@@ -46,6 +47,8 @@ export type MemberInput = OptionalFields<
   Omit<Member, "id">,
   "email" | "elevated" | "seasonId"
 >;
+
+export type ResponsibleGroupInput = Omit<ResponsibleGroup, "id" | "isArchived"> & Partial<Pick<ResponsibleGroup, "isArchived">>;
 
 export type MeetingInput = Omit<
   Meeting,

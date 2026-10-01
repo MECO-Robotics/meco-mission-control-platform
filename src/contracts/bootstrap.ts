@@ -35,6 +35,7 @@ const projectTypeSchema = z.enum(["robot", "media", "outreach", "operations", "s
 const projectNameSchema = z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]);
 const workTypeSchema = z.object({ id: z.string(), projectType: projectTypeSchema, code: z.string(), name: z.string(), isActive: z.boolean() }).strict();
 const responsibleGroupSchema = z.object({ id: z.string(), seasonId: z.string(), name: z.string(), projectIds: z.array(z.string()), memberIds: z.array(z.string()), isArchived: z.boolean() }).strict();
+const memberBootstrapSchema = z.object({ id: z.string(), classYear: z.enum(["freshman", "sophomore", "junior", "senior"]).nullable().optional() }).passthrough();
 const vendorSchema = z.object({ id: z.string(), name: z.string(), website: z.string().nullable(), isArchived: z.boolean() }).strict();
 const manufacturingProcessRecordSchema = z.object({ id: z.string(), code: z.string(), name: z.string(), isActive: z.boolean() }).strict();
 const partInstanceLocationSchema = z.discriminatedUnion("kind", [
@@ -118,7 +119,7 @@ export const bootstrapPayloadSchema = z
     responsibleGroups: z.array(responsibleGroupSchema),
     workstreams: bootstrapCollectionSchema,
     vendors: z.array(vendorSchema),
-    members: bootstrapCollectionSchema,
+    members: z.array(memberBootstrapSchema),
     subsystems: z.array(pmCadProvenanceRecordSchema.extend({ id: z.string(), ...subsystemLayoutSchema.shape })),
     mechanisms: pmCadProvenanceCollectionSchema,
     materials: z.array(materialBootstrapSchema),
