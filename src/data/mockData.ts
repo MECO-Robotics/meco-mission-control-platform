@@ -421,7 +421,13 @@ export const snapshot: PlatformSnapshot = {
       "seasonId": "default-season",
       "activeSeasonIds": [
         "default-season"
-      ]
+      ],
+      "plannedWeeklyAttendanceHours": 6,
+      "plannedAttendanceDays": [
+        "tuesday",
+        "thursday"
+      ],
+      "plannedAttendanceNotes": "Available for drivetrain build work."
     },
     {
       "id": "lucas",
