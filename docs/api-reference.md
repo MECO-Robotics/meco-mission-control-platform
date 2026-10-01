@@ -167,9 +167,12 @@ Workflow endpoints return `403` for insufficient role, `404` for a missing item,
 
 ## Team And Robot Structure
 
+- `GET /api/responsible-groups`: list canonical team groups.
+- `POST /api/responsible-groups`: create a group with a season, applicable project IDs and member IDs. Requires mentor/admin.
+- `PATCH /api/responsible-groups/:groupId`: edit name, season, project applicability, membership, or archive state. Projects and members must belong to the selected season. Tasks continue to reference groups through `responsibleGroupId`.
 - `GET /api/members`: list members.
-- `POST /api/members`: create or invite a member. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
-- `PATCH /api/members/:memberId`: update a member. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
+- `POST /api/members`: create or invite a member. Students, including members whose role is `lead`, may have an optional `classYear` of `freshman`, `sophomore`, `junior`, or `senior`; other roles must omit it or send `null`. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
+- `PATCH /api/members/:memberId`: update a member, including nullable student or student-lead class year. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
 - `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted.
 - `POST /api/subsystems`: create a subsystem.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.

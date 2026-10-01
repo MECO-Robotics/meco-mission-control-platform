@@ -316,7 +316,14 @@ export const snapshot: PlatformSnapshot = {
       "isActive": true
     }
   ],
-  "responsibleGroups": [],
+  "responsibleGroups": [{
+    "id": "team-drivetrain",
+    "seasonId": "default-season",
+    "name": "Drivetrain",
+    "projectIds": ["project-robot-2026"],
+    "memberIds": ["ava"],
+    "isArchived": false
+  }],
   "workstreams": [
     {
       "id": "workstream-drive",
@@ -409,6 +416,7 @@ export const snapshot: PlatformSnapshot = {
       "name": "Ava Chen",
       "email": "ava.chen@mecorobotics.org",
       "role": "student",
+      "classYear": "junior",
       "elevated": false,
       "seasonId": "default-season",
       "activeSeasonIds": [
@@ -1879,7 +1887,7 @@ export const snapshot: PlatformSnapshot = {
         "ava"
       ],
       "workTypeId": "robot:electrical-wiring",
-      "responsibleGroupId": null,
+      "responsibleGroupId": "team-drivetrain",
       "requestedById": "ava",
       "scheduleRefs": [
         {

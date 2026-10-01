@@ -171,6 +171,7 @@ export function validateTaskLinks(input: {
   mechanismIds?: readonly string[];
   partInstanceIds?: readonly string[];
   assigneeIds?: readonly string[];
+  allowArchivedResponsibleGroup?: boolean;
 }) {
   const project = findProject(input.projectId);
   if (!project) {
@@ -210,7 +211,7 @@ export function validateTaskLinks(input: {
   if (input.responsibleGroupId) {
     const group = getSnapshot().responsibleGroups.find((candidate) => candidate.id === input.responsibleGroupId);
     const groupProjects = group?.projectIds.map((projectId) => getSnapshot().projects.find((candidate) => candidate.id === projectId));
-    if (!group || group.seasonId !== project.seasonId || (group.projectIds.length > 0 && !group.projectIds.includes(project.id)) || groupProjects?.some((groupProject) => !groupProject || groupProject.seasonId !== group.seasonId)) return "The selected responsible group does not belong to the selected season and project.";
+    if (!group || (group.isArchived && !input.allowArchivedResponsibleGroup) || group.seasonId !== project.seasonId || (group.projectIds.length > 0 && !group.projectIds.includes(project.id)) || groupProjects?.some((groupProject) => !groupProject || groupProject.seasonId !== group.seasonId)) return "The selected responsible group does not belong to the selected season and project.";
   }
   for (const ref of input.scheduleRefs ?? []) {
     const collection = ref.kind === "meeting" ? getSnapshot().meetings : ref.kind === "event" ? getSnapshot().events : getMilestones();
