@@ -137,7 +137,6 @@ Retention policy:
 - `POST /api/qa-requests`: create a QA request.
 - `GET /api/test-results`: list test results.
 - `POST /api/test-results`: create a test result.
-- `GET /api/qa`: combined QA workflow summary.
 - `GET /api/risks`: list risks.
 - `POST /api/risks`: create a risk.
 - `PATCH /api/risks/:riskId`: update a risk.

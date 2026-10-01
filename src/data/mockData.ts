@@ -5,7 +5,7 @@ const seasonId = "default-season";
 const robotProjectId = "project-robot-2026";
 
 export const snapshot: PlatformSnapshot = {
-  snapshotSchemaVersion: 5,
+  snapshotSchemaVersion: 1,
   seasons: [
     {
       id: seasonId,
@@ -627,7 +627,6 @@ export const snapshot: PlatformSnapshot = {
       deliveredAt: null,
     },
   ],
-  qaReviews: [],
   escalations: [],
   actions: [],
 };

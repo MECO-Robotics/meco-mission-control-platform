@@ -49,7 +49,7 @@ test("incompatible snapshots are archived unchanged and startup can reseed", () 
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-incompatible-snapshot-"));
   const snapshotPath = join(directory, "platform-snapshot.json");
   const original = JSON.stringify({
-    snapshotSchemaVersion: 4,
+    snapshotSchemaVersion: 0,
     tasks: [{ id: "legacy-task", targetMilestoneId: "legacy-milestone" }],
   });
   writeFileSync(snapshotPath, original, "utf8");
@@ -60,10 +60,10 @@ test("incompatible snapshots are archived unchanged and startup can reseed", () 
   try {
     assert.equal(loadOrArchiveIncompatibleSnapshot(snapshotPath), null);
     assert.equal(existsSync(snapshotPath), false);
-    const archive = readdirSync(directory).find((name) => name.includes("incompatible-v4"));
+    const archive = readdirSync(directory).find((name) => name.includes("incompatible-v0"));
     assert.ok(archive);
     assert.equal(readFileSync(join(directory, archive), "utf8"), original);
-    assert.match(messages[0] ?? "", /schema 4.*Archived unchanged.*clean canonical seed/);
+    assert.match(messages[0] ?? "", /schema 0.*Archived unchanged.*clean canonical seed/);
   } finally {
     console.error = originalError;
     rmSync(directory, { recursive: true, force: true });
@@ -77,7 +77,7 @@ test("current schema snapshots load without rewriting and reset archives the con
   writeFileSync(snapshotPath, contents, "utf8");
 
   try {
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 5);
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 1);
     assert.equal(readFileSync(snapshotPath, "utf8"), contents);
     const { archivePlatformSnapshotFile } = await import("../src/data/platformSnapshotFile");
     const archive = archivePlatformSnapshotFile(snapshotPath);

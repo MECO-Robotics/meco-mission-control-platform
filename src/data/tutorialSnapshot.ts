@@ -26,7 +26,7 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
   // Seasons frame the activity rather than contributing to its date range.
   for (const [key, value] of Object.entries(copy)) if (key !== "seasons") collect(value);
   const historicalDates: number[] = [];
-  const recordedCollections = [copy.workLogs, copy.qaReports, copy.qaReviews, copy.attendanceRecords, copy.testResults, copy.actions];
+  const recordedCollections = [copy.workLogs, copy.qaReports, copy.attendanceRecords, copy.testResults, copy.actions];
   function recordDates(value: unknown): void {
     if (typeof value === "string" && ISO_DATE.test(value)) historicalDates.push(Date.parse(value));
     else if (value && typeof value === "object") Object.values(value).forEach(recordDates);

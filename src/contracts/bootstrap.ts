@@ -99,6 +99,16 @@ const scheduleIdentitySchema = z.object({ id: z.string(), title: z.string(), sta
 const meetingBootstrapSchema = scheduleIdentitySchema.extend({ meetingType: z.string().optional(), seasonId: z.string().optional(), projectIds: z.array(z.string()).optional(), location: z.string().optional(), description: z.string().optional(), rsvpsYes: z.number(), rsvpsMaybe: z.number(), openSignIns: z.number() }).passthrough();
 const eventBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string(), projectIds: z.array(z.string()), eventType: z.string(), location: z.string().optional(), description: z.string().optional() }).passthrough();
 const milestoneBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string().optional(), type: z.string(), status: z.enum(["planned", "active", "complete"]), readinessStatus: z.enum(["not-ready", "blocked", "qa", "ready"]), isExternal: z.boolean(), description: z.string(), projectIds: z.array(z.string()), photoUrl: z.string().optional() }).passthrough();
+const milestoneRequirementBootstrapSchema = z.object({
+  id: z.string(),
+  milestoneId: z.string(),
+  targetRefs: z.array(domainReferenceSchema),
+  conditionType: z.enum(["iteration", "workflow-state", "custom"]),
+  conditionValue: z.string(),
+  required: z.boolean(),
+  sortOrder: z.number(),
+  notes: z.string(),
+}).strict();
 
 export const bootstrapPayloadSchema = z
   .object({
@@ -116,7 +126,7 @@ export const bootstrapPayloadSchema = z
     partDefinitions: z.array(partDefinitionBootstrapSchema),
     partInstances: z.array(partInstanceBootstrapSchema),
     milestones: z.array(milestoneBootstrapSchema),
-    milestoneRequirements: bootstrapCollectionSchema,
+    milestoneRequirements: z.array(milestoneRequirementBootstrapSchema),
     reports: z.array(z.union([reportSchema.options[0].extend({ id: z.string() }), reportSchema.options[1].extend({ id: z.string() })])),
     qaRequests: z.array(qaRequestBootstrapSchema),
     qaFindings: z.array(findingBootstrapSchema),

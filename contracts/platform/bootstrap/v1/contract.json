@@ -952,10 +952,91 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "milestoneId": {
+            "type": "string"
+          },
+          "targetRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "workstream",
+                    "responsible-group",
+                    "task",
+                    "subsystem",
+                    "mechanism",
+                    "part-definition",
+                    "part-instance",
+                    "material",
+                    "vendor",
+                    "manufacturing-details",
+                    "purchase-item",
+                    "meeting",
+                    "event",
+                    "milestone",
+                    "qa-request",
+                    "test-result",
+                    "report",
+                    "artifact",
+                    "qa-finding",
+                    "test-finding",
+                    "task-dependency",
+                    "risk",
+                    "design-iteration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "conditionType": {
+            "type": "string",
+            "enum": [
+              "iteration",
+              "workflow-state",
+              "custom"
+            ]
+          },
+          "conditionValue": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "string"
+          }
         },
-        "additionalProperties": {}
+        "required": [
+          "id",
+          "milestoneId",
+          "targetRefs",
+          "conditionType",
+          "conditionValue",
+          "required",
+          "sortOrder",
+          "notes"
+        ],
+        "additionalProperties": false
       }
     },
     "reports": {

@@ -690,7 +690,7 @@ test("removeMember clears linked references across the snapshot", () => {
     snapshot.attendanceRecords.some((record) => record.memberId === "marco"),
     false,
   );
-  assert.ok(snapshot.qaReviews.every((review) => !review.participantIds.includes("marco")));
+  assert.ok(snapshot.qaReports.every((report) => !report.participantIds.includes("marco")));
 });
 
 test("task milestone requirements infer milestone matches from explicit target requirements", () => {
@@ -716,8 +716,7 @@ test("task milestone requirements infer milestone matches from explicit target r
     {
       id: "drive-check-iteration",
       milestoneId: milestone.id,
-      targetType: "subsystem",
-      targetId: "drive",
+      targetRefs: [{ kind: "subsystem", id: "drive" }],
       conditionType: "iteration",
       conditionValue: "iteration>=2",
       required: true,
@@ -727,9 +726,8 @@ test("task milestone requirements infer milestone matches from explicit target r
     {
       id: "drive-check-part-state",
       milestoneId: milestone.id,
-      targetType: "part-instance",
-      targetId: "pi-swerve-encoder-bracket-front-left",
-      conditionType: "workflow_state",
+      targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }],
+      conditionType: "workflow-state",
       conditionValue: "state=READY",
       required: true,
       sortOrder: 2,
@@ -765,8 +763,7 @@ test("project-scoped requirements match through project task target inference", 
     {
       id: "robot-scope-match",
       milestoneId: milestone.id,
-      targetType: "project",
-      targetId: "project-robot-2026",
+      targetRefs: [{ kind: "project", id: "project-robot-2026" }],
       conditionType: "custom",
       conditionValue: "in_scope",
       required: true,
@@ -831,8 +828,7 @@ test("getTasksForMilestone aggregates inferred and explicit schedule references"
     {
       id: "drive-readiness-iteration",
       milestoneId: milestone.id,
-      targetType: "subsystem",
-      targetId: "drive",
+      targetRefs: [{ kind: "subsystem", id: "drive" }],
       conditionType: "iteration",
       conditionValue: "iteration>=2",
       required: true,
