@@ -38,13 +38,20 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   assert.ok(seed.tasks.every((task) => !task.manufacturingDetails || task.workTypeId === "robot:manufacturing"));
   assert.ok(seed.purchaseItems.every((item) => taskIds.has(item.taskId) && (!item.partDefinitionId || partDefinitionIds.has(item.partDefinitionId))));
 
+  assert.ok(seed.tasks.length >= 30);
+  assert.ok(seed.workstreams.length >= 10);
+  assert.ok(seed.members.length >= 20);
+  assert.ok(seed.milestones.length >= 10);
+  assert.ok(seed.purchaseItems.length >= 10);
+  assert.ok(seed.partInstances.length >= 9);
+
   assert.deepEqual(
     new Set(seed.partDefinitions.map((part) => part.cadImportSource)),
     new Set(["MANUAL", "STEP_UPLOAD", "ONSHAPE_API", "ONSHAPE_BOM_CSV", "MANUAL_BOM_CSV"]),
   );
 }
 
-test("compact tutorial seed keeps chapter and demo examples referentially complete", () => {
+test("restored tutorial seed keeps historical demo records and chapter examples referentially complete", () => {
   assertSeedReferences(snapshot);
   assert.deepEqual(snapshot.projects.map((project) => project.name), [
     "Robot", "Media", "Outreach", "Operations", "Strategy", "Training",
@@ -67,7 +74,7 @@ test("compact tutorial seed keeps chapter and demo examples referentially comple
   assert.ok(snapshot.workLogs.length > 0 && snapshot.taskDependencies.length > 0 && snapshot.risks.some((risk) => risk.blocksWork));
 });
 
-test("compact bootstrap supports tutorial chapters, resets, and sanitized demo access", async () => {
+test("restored bootstrap supports tutorial chapters, resets, and sanitized demo access", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
     assert.equal(bootstrap.statusCode, 200, bootstrap.body);

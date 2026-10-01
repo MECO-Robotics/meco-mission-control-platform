@@ -161,7 +161,7 @@ test("tutorial seed keeps a planning milestone linked to the robot project", () 
   assert.deepEqual(milestone.projectIds, ["project-robot-2026"]);
 });
 
-test("compact tutorial seed includes its planning milestone", () => {
+test("restored tutorial seed includes its planning milestones", () => {
   const snapshot = getSnapshot();
   const tutorialMilestones = snapshot.milestones.filter(
     (milestone) => milestone.seasonId === "default-season",
