@@ -852,6 +852,20 @@ export const snapshot: PlatformSnapshot = {
       ],
       "iteration": 1,
       "isArchived": false
+    },
+    {
+      "id": "shared-fabrication",
+      "projectId": "project-robot-2026",
+      "name": "Shared Fabrication",
+      "description": "Robot-project fabrication support for shared team hardware and demo equipment.",
+      "isCore": false,
+      "parentSubsystemId": null,
+      "responsibleEngineerId": null,
+      "mentorIds": [
+        "marco"
+      ],
+      "iteration": 1,
+      "isArchived": false
     }
   ],
   "mechanisms": [
@@ -980,6 +994,14 @@ export const snapshot: PlatformSnapshot = {
       "subsystemId": "strategy",
       "name": "Alliance Modeling",
       "description": "Opponent trend scoring and matchup decision support workflow.",
+      "iteration": 1,
+      "isArchived": false
+    },
+    {
+      "id": "team-prototype-shop",
+      "subsystemId": "shared-fabrication",
+      "name": "Team Prototype Shop",
+      "description": "Shared fabrication workbench for team prototype jobs.",
       "iteration": 1,
       "isArchived": false
     }
@@ -2421,7 +2443,7 @@ export const snapshot: PlatformSnapshot = {
       "requiresDocumentation": true,
       "actualHours": 1.5,
       "assigneeIds": [
-        "maya"
+        "olivia"
       ],
       "workTypeId": "operations:planning",
       "responsibleGroupId": null,
@@ -3089,8 +3111,12 @@ export const snapshot: PlatformSnapshot = {
       "workstreamIds": [],
       "title": "Pit Board Frame",
       "summary": "Historical manufacturing demo for pit board frame.",
-      "subsystemIds": [],
-      "mechanismIds": [],
+      "subsystemIds": [
+        "shared-fabrication"
+      ],
+      "mechanismIds": [
+        "team-prototype-shop"
+      ],
       "partInstanceIds": [],
       "ownerId": "sofia",
       "assigneeIds": [
@@ -3138,8 +3164,12 @@ export const snapshot: PlatformSnapshot = {
       "workstreamIds": [],
       "title": "Demo Kiosk Signage Kit",
       "summary": "Historical manufacturing demo for demo kiosk signage kit.",
-      "subsystemIds": [],
-      "mechanismIds": [],
+      "subsystemIds": [
+        "shared-fabrication"
+      ],
+      "mechanismIds": [
+        "team-prototype-shop"
+      ],
       "partInstanceIds": [],
       "ownerId": "zoe",
       "assigneeIds": [
@@ -3186,8 +3216,12 @@ export const snapshot: PlatformSnapshot = {
       "workstreamIds": [],
       "title": "Tablet Mount Bracket Set",
       "summary": "Historical manufacturing demo for tablet mount bracket set.",
-      "subsystemIds": [],
-      "mechanismIds": [],
+      "subsystemIds": [
+        "shared-fabrication"
+      ],
+      "mechanismIds": [
+        "team-prototype-shop"
+      ],
       "partInstanceIds": [],
       "ownerId": "noah",
       "assigneeIds": [
@@ -3234,8 +3268,12 @@ export const snapshot: PlatformSnapshot = {
       "workstreamIds": [],
       "title": "Camera Rig Plate",
       "summary": "Historical manufacturing demo for camera rig plate.",
-      "subsystemIds": [],
-      "mechanismIds": [],
+      "subsystemIds": [
+        "shared-fabrication"
+      ],
+      "mechanismIds": [
+        "team-prototype-shop"
+      ],
       "partInstanceIds": [],
       "ownerId": "zoe",
       "assigneeIds": [
@@ -4389,7 +4427,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       "id": "risk-scouting-network-load",
-      "projectId": "project-robot-2026",
+      "projectId": "project-training-2026",
       "title": "Scouting ingest degrades on crowded venue networks",
       "detail": "Observed retry behavior increases sync latency during high traffic windows.",
       "severity": "high",
@@ -4414,7 +4452,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       "id": "risk-outreach-signage-clarity",
-      "projectId": "project-robot-2026",
+      "projectId": "project-outreach-2026",
       "title": "Outreach kiosk signage needs iteration",
       "detail": "Queueing and presenter guidance signs are still too dense for first-time visitors.",
       "severity": "low",

@@ -38,9 +38,11 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   assert.ok(seed.tasks.every((task) => !task.manufacturingDetails || task.workTypeId === "robot:manufacturing"));
   assert.ok(seed.purchaseItems.every((item) => taskIds.has(item.taskId) && (!item.partDefinitionId || partDefinitionIds.has(item.partDefinitionId))));
 
-  assert.ok(seed.tasks.length >= 30);
+  assert.ok(seed.tasks.length >= 35);
   assert.ok(seed.workstreams.length >= 10);
   assert.ok(seed.members.length >= 20);
+  assert.ok(seed.subsystems.length >= 12);
+  assert.ok(seed.mechanisms.length >= 17);
   assert.ok(seed.milestones.length >= 10);
   assert.ok(seed.purchaseItems.length >= 10);
   assert.ok(seed.partInstances.length >= 9);
@@ -118,4 +120,37 @@ test("restored bootstrap supports tutorial chapters, resets, and sanitized demo 
     assert.ok(demo.members.every((member: { id: string; email?: string }) => /^demo-member-\d+$/.test(member.id) && member.email === undefined));
     assert.ok(demo.reports.length > 0 && demo.artifacts.length > 0);
   }, { snapshot });
+});
+
+
+test("restored manufacturing tasks, admin-owned tasks, and cross-project risks remain editable", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    for (const id of [
+      "manufacture-pit-board-frame-fab",
+      "manufacture-demo-kiosk-signage-print",
+      "manufacture-tablet-bracket-cut",
+      "manufacture-camera-rig-plate-cnc",
+      "travel-pack-finalize",
+    ]) {
+      const task = snapshot.tasks.find((candidate) => candidate.id === id);
+      assert.ok(task);
+      const response = await app.inject({
+        method: "PATCH",
+        url: `/api/tasks/${id}`,
+        payload: { summary: task.summary },
+      });
+      assert.equal(response.statusCode, 200, `${id}: ${response.body}`);
+    }
+
+    for (const id of ["risk-scouting-network-load", "risk-outreach-signage-clarity"]) {
+      const risk = snapshot.risks.find((candidate) => candidate.id === id);
+      assert.ok(risk);
+      const response = await app.inject({
+        method: "PATCH",
+        url: `/api/risks/${id}`,
+        payload: { detail: risk.detail },
+      });
+      assert.equal(response.statusCode, 200, `${id}: ${response.body}`);
+    }
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
