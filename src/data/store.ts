@@ -1,6 +1,7 @@
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import { uniqueIds } from "../domain/ids";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
+import { derivePartInstanceReadiness } from "../domain/readiness";
 import { partInstanceSubsystemId, partInstanceMechanismId } from "../domain/partInstanceLocation";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
@@ -15,9 +16,9 @@ import type {
   Discipline,
   MilestoneRequirement,
   Milestone,
-  MilestoneStatus,
   Material,
   Mechanism,
+  ManufacturingProcessRecord,
   Member,
   PartDefinition,
   PartInstance,
@@ -32,6 +33,7 @@ import type {
   Season,
   Subsystem,
   Task,
+  TeamReport,
   TaskDependency,
   TestResult,
   TestFinding,
@@ -44,8 +46,6 @@ import {
   normalizePmCadProvenance,
 } from "../domain/pmCadProvenance";
 import {
-  dateOnlyFromDateTime,
-  formatTimeFromDateTime,
   normalizeMeetingSchedule,
 } from "./store/meetingSchedule";
 import {
@@ -53,7 +53,6 @@ import {
   buildReports,
   reportFindingFromFinding,
   reportFromQaReport,
-  reportFromTestResult,
   type FindingListItem,
 } from "./store/reportDerivations";
 import { assertSnapshotTaskTargets, loadOrArchiveIncompatibleSnapshot, savePlatformSnapshotFile } from "./platformSnapshotFile";
@@ -169,7 +168,7 @@ function extractComparableState(targetType: MilestoneRequirement["targetType"], 
       return null;
     }
 
-    return normalizeStateValue(partInstance.readinessStatus ?? "not-ready");
+    return normalizeStateValue(derivePartInstanceReadiness(partInstance, currentSnapshot));
   }
 
   return null;
@@ -512,11 +511,7 @@ function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
     return {
       ...milestone,
       seasonId: normalizeMilestoneSeasonId(milestone),
-      status: normalizeMilestoneStatus(milestone.status),
-      isBlocked: milestone.isBlocked ?? false,
-      blockedReason: milestone.blockedReason ?? null,
-      blockedByType: milestone.blockedByType ?? null,
-      blockedById: milestone.blockedById ?? null,
+      status: milestone.status ?? "planned",
       photoUrl: typeof milestone.photoUrl === "string" ? milestone.photoUrl : "",
     };
   });
@@ -816,32 +811,6 @@ function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
   };
 }
 
-function normalizeMilestoneStatus(
-  status: MilestoneStatus | "not-started" | "in-progress" | "waiting-for-qa" | "complete" | undefined,
-): MilestoneStatus {
-  if (status === "not ready" || status === "blocked" || status === "qa" || status === "ready") {
-    return status;
-  }
-
-  if (status === "not-started") {
-    return "not ready";
-  }
-
-  if (status === "in-progress") {
-    return "blocked";
-  }
-
-  if (status === "waiting-for-qa") {
-    return "qa";
-  }
-
-  if (status === "complete") {
-    return "ready";
-  }
-
-  return "not ready";
-}
-
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -954,7 +923,7 @@ function flattenTaskTargets(task: Task): TaskTargetLink[] {
 
 const DEFAULT_SEASON_PROJECTS: Array<{
   key: string;
-  name: string;
+  name: Project["name"];
   projectType: Project["projectType"];
 }> = [
   { key: "robot", name: "Robot", projectType: "robot" },
@@ -1029,7 +998,6 @@ function buildRobotProjectDefaults(
     parentSubsystemId: null,
     responsibleEngineerId: null,
     mentorIds: [],
-    risks: [],
   };
 
   const mechanisms: Mechanism[] = ROBOT_DEFAULT_MECHANISM_TEMPLATES.map(
@@ -2042,6 +2010,21 @@ export function getPurchaseItems(): SnapshotView["purchaseItems"] {
   return currentSnapshot.purchaseItems;
 }
 
+export function createManufacturingProcess(input: Pick<ManufacturingProcessRecord, "code" | "name">) {
+  const id = uniqueId(toSlug(input.code) || "manufacturing-process", new Set(currentSnapshot.manufacturingProcesses.map((item) => item.id)));
+  const process = { id, code: input.code, name: input.name, isActive: true } satisfies ManufacturingProcessRecord;
+  replaceCurrentSnapshot({ ...currentSnapshot, manufacturingProcesses: [...currentSnapshot.manufacturingProcesses, process] });
+  return process;
+}
+
+export function archiveManufacturingProcess(processId: string) {
+  const process = currentSnapshot.manufacturingProcesses.find((item) => item.id === processId);
+  if (!process) return null;
+  const archived = { ...process, isActive: false };
+  replaceCurrentSnapshot({ ...currentSnapshot, manufacturingProcesses: currentSnapshot.manufacturingProcesses.map((item) => item.id === processId ? archived : item) });
+  return archived;
+}
+
 export function createMaterial(input: MaterialInput) {
   const materialIds = new Set(currentSnapshot.materials.map((material) => material.id));
   const material: Material = {
@@ -2138,8 +2121,7 @@ export function createArtifact(input: ArtifactInput) {
     title: input.title,
     summary: input.summary,
     status: input.status,
-    link: input.link,
-    isArchived: input.isArchived ?? false,
+    uri: input.uri,
     updatedAt: input.updatedAt,
   };
 
@@ -2205,14 +2187,7 @@ export function removeArtifact(artifactId: string) {
     artifacts: currentSnapshot.artifacts.filter(
       (candidate) => candidate.id !== artifactId,
     ),
-    designIterations: currentSnapshot.designIterations.map((iteration) =>
-      iteration.artifactId === artifactId
-        ? {
-            ...iteration,
-            artifactId: null,
-          }
-        : iteration,
-    ),
+    designIterations: currentSnapshot.designIterations,
   });
 
   recordAuditAction({
@@ -2248,7 +2223,6 @@ export function createSubsystem(input: SubsystemInput) {
     parentSubsystemId: input.parentSubsystemId,
     responsibleEngineerId: input.responsibleEngineerId,
     mentorIds: input.mentorIds,
-    risks: input.risks,
   };
 
   const integrationTask = createSubsystemIntegrationTask(subsystem);
@@ -2422,10 +2396,10 @@ export function removeSubsystem(subsystemId: string) {
     ),
     milestones: currentSnapshot.milestones.map((milestone) => milestone),
     qaReports: currentSnapshot.qaReports.filter(
-      (report) => !taskIdsToRemove.has(report.taskId),
+      (report) => !report.targetRefs.some((ref) => ref.kind === "task" && taskIdsToRemove.has(ref.id)),
     ),
     qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter(
-      (request) => !request.taskId || !taskIdsToRemove.has(request.taskId),
+      (request) => !request.targetRefs.some((ref) => ref.kind === "task" && taskIdsToRemove.has(ref.id)),
     ),
     risks: currentSnapshot.risks.filter((risk) => {
       if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
@@ -3056,20 +3030,16 @@ export function createMilestone(input: MilestoneInput) {
       .find((candidate): candidate is string => Boolean(candidate)) ??
     fallbackSeasonId;
   const milestone: Milestone = {
-    id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "milestone", milestoneIds),
+    id: uniqueId(toSlug(`${input.title} ${input.startAt.slice(0, 10)}`) || "milestone", milestoneIds),
     seasonId,
     title: input.title,
     type: input.type,
-    startDateTime: input.startDateTime,
-    endDateTime: input.endDateTime,
+    startAt: input.startAt,
+    endAt: input.endAt,
     isExternal: input.isExternal,
     description: input.description,
     projectIds: input.projectIds,
-    status: normalizeMilestoneStatus(input.status),
-    isBlocked: false,
-    blockedReason: null,
-    blockedByType: null,
-    blockedById: null,
+    status: input.status ?? "planned",
     photoUrl: input.photoUrl ?? "",
   };
 
@@ -3098,45 +3068,44 @@ export function createMilestone(input: MilestoneInput) {
 }
 
 export function createQaReport(input: QaReportInput) {
-  const task = currentSnapshot.tasks.find((candidate) => candidate.id === input.taskId);
+  const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
   const reportIds = new Set(currentSnapshot.qaReports.map((report) => report.id));
+  const now = new Date().toISOString();
   const report: QaReport = {
-    id: uniqueId(toSlug(`${input.taskId} qa`) || "qa-report", reportIds),
-    taskId: input.taskId,
-    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? [{ kind: "task", id: input.taskId }],
+    id: uniqueId(toSlug(`${input.targetRefs[0]?.kind ?? "project"}-${input.targetRefs[0]?.id ?? input.projectId} qa`) || "qa-report", reportIds),
+    reportType: "qa",
+    projectId: input.projectId,
+    createdByMemberId: input.createdByMemberId ?? input.requestedById ?? null,
+    summary: input.notes,
+    status: input.status ?? "submitted",
+    reviewedById: input.reviewedById ?? null,
+    createdAt: input.createdAt ?? now,
+    targetRefs: input.targetRefs.map((ref) => ({ ...ref })),
     participantIds: input.participantIds,
     result: input.result,
-    mentorApproved: input.mentorApproved,
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
-    reviewedAt: input.reviewedAt,
+    reviewedAt: input.reviewedAt ?? null,
     evidenceNotes: input.evidenceNotes ?? "",
-    qaRequestId: input.qaRequestId ?? null,
     mentorId: input.mentorId ?? null,
     requestedById: input.requestedById ?? null,
-    targetRiskId: input.targetRiskId ?? null,
-    proposedRiskSeverity: input.proposedRiskSeverity ?? null,
-    proposedRiskStatus: input.proposedRiskStatus ?? null,
   };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
     qaReports: [...currentSnapshot.qaReports, report],
-    risks: currentSnapshot.risks.map((risk) => report.mentorApproved && risk.id === report.targetRiskId
-      ? { ...risk, severity: report.proposedRiskStatus === "full-mitigation" ? "low" : report.proposedRiskSeverity ?? risk.severity,
-          mitigationTaskId: risk.mitigationTaskId ?? report.taskId }
-      : risk),
   });
 
-  const reportTask = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
+  const reportTask = task;
   recordAuditAction({
     operation: "create",
     entityType: "report",
     entityId: report.id,
     entityLabel: reportTask ? `QA: ${reportTask.title}` : `QA report ${report.id}`,
-    projectId: reportTask?.projectId ?? null,
+    projectId: report.projectId,
     subsystemId: reportTask?.subsystemIds[0] ?? null,
-    taskId: report.taskId,
+    taskId: task?.id ?? null,
     memberIds: report.participantIds,
   });
 
@@ -3146,29 +3115,31 @@ export function createQaReport(input: QaReportInput) {
 // Called inside the route's snapshot transaction: the report and its workflow
 // effects must become durable together, or none of them may be published.
 export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }) {
-  const task = currentSnapshot.tasks.find((item) => item.id === input.taskId);
-  if (!task) return { error: "The selected task does not exist." };
-  const request = input.qaRequestId
-    ? getQaRequests().find((item) => item.id === input.qaRequestId)
-    : getQaRequests().find((item) => item.taskId === task.id);
-  if (input.qaRequestId && (!request || request.taskId !== task.id)) {
-    return { error: "The selected QA request is no longer pending for this task." };
+  const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
+  const task = currentSnapshot.tasks.find((item) => item.id === taskId);
+  const requestedQaId = input.targetRefs.find((ref) => ref.kind === "qa-request")?.id;
+  const request = requestedQaId
+    ? getQaRequests().find((item) => item.id === requestedQaId)
+    : getQaRequests().find((item) => item.targetRefs.some((ref) => input.targetRefs.some((target) => target.kind === ref.kind && target.id === ref.id)));
+  if (requestedQaId && !request) {
+    return { error: "The selected QA request is no longer available for these targets." };
   }
-    if (input.result === "pass" && (task.status !== "waiting-for-qa" ||
+    if (task && input.result === "pass" && (task.status !== "waiting-for-qa" ||
       task.isBlocked || isTaskWaitingOnDependencies(task, currentSnapshot))) {
     return { error: "A pass requires a task waiting for QA with no blocking risks or unfinished dependencies." };
   }
-  const report = createQaReport({ ...input, qaRequestId: request?.id ?? null,
-    mentorId: request?.mentorId ?? task.mentorId,
+  const report = createQaReport({ ...input,
+    mentorId: request?.mentorId ?? task?.mentorId ?? input.mentorId,
     requestedById: request?.requestedById ?? null });
-  if (input.result === "pass") {
+  if (task && input.result === "pass") {
     updateTask(task.id, { status: "complete" });
-  } else {
+  } else if (task) {
+    const reviewedDate = input.reviewedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
     createTask({ ...task,
       title: input.followUpTaskTitle?.trim() || `${input.result === "iteration-worthy" ? "Iterate after QA" : "Fix QA finding"}: ${task.title}`,
       summary: [`Created from QA on "${task.title}".`, `Result: ${input.result}.`, input.notes,
         input.evidenceNotes ? `Evidence: ${input.evidenceNotes}` : ""].filter(Boolean).join("\n"),
-      startDate: input.reviewedAt, dueDate: input.reviewedAt,
+      startDate: reviewedDate, dueDate: reviewedDate,
       status: "not-started", priority: input.result === "iteration-worthy" ? "high" : "medium",
       checklistItems: [], estimatedHours: 0,
     });
@@ -3181,23 +3152,23 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
     });
   }
   replaceCurrentSnapshot({ ...currentSnapshot,
-    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.taskId !== task.id) });
+    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.id !== request?.id) });
   return { item: report };
 }
 
 export function createQaRequest(input: QaRequestInput) {
-  const task = input.taskId
-    ? currentSnapshot.tasks.find((candidate) => candidate.id === input.taskId)
+  const taskId = input.targetRefs?.find((ref) => ref.kind === "task")?.id;
+  const task = taskId
+    ? currentSnapshot.tasks.find((candidate) => candidate.id === taskId)
     : null;
   const requestIds = new Set(getQaRequests().map((request) => request.id));
   const subject = input.subject.trim();
   const request: QaRequest = {
     id: uniqueId(toSlug(`${subject} qa request`) || "qa-request", requestIds),
     projectId: input.projectId ?? task?.projectId ?? "",
-    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? (input.taskId ? [{ kind: "task", id: input.taskId }] : []),
-    taskId: input.taskId ?? null,
+    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? (taskId ? [{ kind: "task", id: taskId }] : []),
     subject,
-    mentorId: input.mentorId,
+    mentorId: input.mentorId ?? null,
     requestedById: input.requestedById ?? null,
     createdAt: new Date().toISOString(),
     status: "requested",
@@ -3215,7 +3186,7 @@ export function createQaRequest(input: QaRequestInput) {
     entityLabel: request.subject,
     projectId: task?.projectId ?? null,
     subsystemId: task?.subsystemIds[0] ?? null,
-    taskId: request.taskId,
+    taskId,
     actorMemberId: request.requestedById,
     memberIds: [request.requestedById, request.mentorId],
   });
@@ -3226,14 +3197,11 @@ export function createQaRequest(input: QaRequestInput) {
 export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
   const testResult: TestResult = {
-    id: uniqueId(toSlug(`${input.title} ${input.milestoneId}`) || "test-result", resultIds),
-    projectId: input.projectId ?? currentSnapshot.milestones.find((item) => item.id === input.milestoneId)?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? "",
-    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? [{ kind: "milestone", id: input.milestoneId }],
-    milestoneId: input.milestoneId,
+    id: uniqueId(toSlug(input.title) || "test-result", resultIds),
+    projectId: input.projectId ?? "",
+    targetRefs: input.targetRefs.map((ref) => ({ ...ref })),
     title: input.title,
     status: input.status,
-    findings: input.findings,
-    photoUrl: input.photoUrl ?? "",
   };
 
   replaceCurrentSnapshot({
@@ -3241,57 +3209,42 @@ export function createTestResult(input: TestResultInput) {
     testResults: [...currentSnapshot.testResults, testResult],
   });
 
-  const milestone = currentSnapshot.milestones.find((candidate) => candidate.id === testResult.milestoneId);
   recordAuditAction({
     operation: "create",
     entityType: "report",
     entityId: testResult.id,
     entityLabel: testResult.title,
-    projectId: milestone?.projectIds[0] ?? null,
+    projectId: testResult.projectId || null,
   });
 
   return testResult;
 }
 
 export function createReport(input: ReportInput) {
-  if (input.reportType === "QA") {
-    if (!input.taskId) {
-      return null;
-    }
-
+  if (input.reportType === "qa") {
     const report = createQaReport({
-      taskId: input.taskId,
+      projectId: input.projectId,
+      createdByMemberId: input.createdByMemberId,
+      targetRefs: input.targetRefs,
       participantIds: uniqueIds(input.participantIds ?? []),
       result:
         input.result === "minor-fix" || input.result === "iteration-worthy"
           ? input.result
           : "pass",
-      mentorApproved: input.mentorApproved ?? false,
+      status: input.status,
       notes: input.notes || input.summary,
       photoUrl: input.photoUrl,
-      reviewedAt: input.reviewedAt ?? input.createdAt.slice(0, 10),
-      targetRiskId: input.targetRiskId,
-      proposedRiskSeverity: input.proposedRiskSeverity,
-      proposedRiskStatus: input.proposedRiskStatus,
+      reviewedAt: input.reviewedAt,
+      mentorId: input.mentorId,
+      requestedById: input.requestedById,
+      reviewedById: input.reviewedById,
     });
 
-    return reportFromQaReport(currentSnapshot.tasks.find((task) => task.id === report.taskId), report);
+    return reportFromQaReport(undefined, report);
   }
-
-  if (!input.milestoneId) {
-    return null;
-  }
-
-  const testResult = createTestResult({
-    milestoneId: input.milestoneId,
-    title: input.title ?? input.summary,
-    status: input.status ?? (input.result === "fail" || input.result === "blocked" ? input.result : "pass"),
-    findings: uniqueIds(input.findings ?? input.notes.split("\n")),
-    photoUrl: input.photoUrl,
-  });
-
-  const milestone = currentSnapshot.milestones.find((item) => item.id === testResult.milestoneId);
-  return reportFromTestResult(milestone, testResult, milestone?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? null);
+  const report: TeamReport = { ...input, id: uniqueId(toSlug(input.summary) || "team-report", new Set(currentSnapshot.teamReports.map((item) => item.id))) };
+  replaceCurrentSnapshot({ ...currentSnapshot, teamReports: [...currentSnapshot.teamReports, report] });
+  return report;
 }
 
 export function createReportFinding(input: ReportFindingInput) {
@@ -3301,50 +3254,26 @@ export function createReportFinding(input: ReportFindingInput) {
   }
 
   const now = new Date().toISOString();
-  const existingFindings = report.reportType === "QA"
-    ? currentSnapshot.qaFindings
-    : currentSnapshot.testFindings;
+  if (report.reportType !== "qa") return null;
+  const existingFindings = currentSnapshot.qaFindings;
   const findingIds = new Set(existingFindings.map((finding) => finding.id));
-  const fields: Omit<QaFinding, "qaReportId"> = {
+  const fields = {
     id: uniqueId(
-      toSlug(input.issueType) || (report.reportType === "QA" ? "qa-finding" : "test-finding"),
+      toSlug(input.issueType) || "qa-finding",
       findingIds,
     ),
-    taskId: input.spawnedTaskId ?? report.taskId,
-    targetRefs: [
-      { kind: "report", id: input.reportId },
-      ...(input.spawnedTaskId ?? report.taskId ? [{ kind: "task" as const, id: input.spawnedTaskId ?? report.taskId! }] : []),
-      ...(input.mechanismId ? [{ kind: "mechanism" as const, id: input.mechanismId }] : []),
-      ...(input.partInstanceId ? [{ kind: "part-instance" as const, id: input.partInstanceId }] : []),
-      ...(input.artifactInstanceId ? [{ kind: "artifact" as const, id: input.artifactInstanceId }] : []),
-    ],
+    targetRefs: input.targetRefs,
     projectId: report.projectId,
-    workstreamId: report.workstreamId,
-    subsystemId: null,
-    mechanismId: input.mechanismId,
-    partInstanceId: input.partInstanceId,
-    artifactId: input.artifactInstanceId,
     title: input.issueType,
     detail: input.notes,
     severity: input.severity,
-    status: "open",
+    status: "open" as const,
     createdAt: now,
     updatedAt: now,
+    reportId: input.reportId,
   };
-  let finding: QaFinding | TestFinding;
-  if (report.reportType === "QA") {
-    finding = { ...fields, qaReportId: input.reportId };
-    replaceCurrentSnapshot({
-      ...currentSnapshot,
-      qaFindings: [...currentSnapshot.qaFindings, finding],
-    });
-  } else {
-    finding = { ...fields, testResultId: input.reportId, milestoneId: report.milestoneId };
-    replaceCurrentSnapshot({
-      ...currentSnapshot,
-      testFindings: [...currentSnapshot.testFindings, finding],
-    });
-  }
+  const finding: QaFinding = fields;
+  replaceCurrentSnapshot({ ...currentSnapshot, qaFindings: [...currentSnapshot.qaFindings, finding] });
 
   recordAuditAction({
     operation: "create",
@@ -3352,8 +3281,6 @@ export function createReportFinding(input: ReportFindingInput) {
     entityId: finding.id,
     entityLabel: finding.title,
     projectId: finding.projectId,
-    taskId: finding.taskId,
-    subsystemId: finding.subsystemId,
   });
 
   return reportFindingFromFinding(finding);
@@ -3477,10 +3404,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
     ...input,
     seasonId: nextSeasonId,
     projectIds: nextProjectIds,
-    status:
-      input.status === undefined
-        ? currentMilestone.status
-        : normalizeMilestoneStatus(input.status),
+    status: input.status ?? currentMilestone.status,
     photoUrl: input.photoUrl === undefined ? currentMilestone.photoUrl : input.photoUrl,
   };
 
@@ -3553,7 +3477,7 @@ export function removeMilestone(milestoneId: string) {
     milestoneRequirements: (currentSnapshot.milestoneRequirements ?? []).filter(
       (requirement) => requirement.milestoneId !== milestoneId,
     ),
-    testResults: currentSnapshot.testResults.filter((result) => result.milestoneId !== milestoneId),
+    testResults: currentSnapshot.testResults.filter((result) => !result.targetRefs.some((ref) => ref.kind === "milestone" && ref.id === milestoneId)),
     tasks: currentSnapshot.tasks.map((task) => ({
       ...task,
       scheduleRefs: task.scheduleRefs.filter((ref) => ref.kind !== "milestone" || ref.id !== milestoneId),
@@ -3584,17 +3508,15 @@ export function createMeeting(input: MeetingInput) {
     fallbackSeasonId;
   const meeting = normalizeMeetingSchedule(
     {
-      id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "meeting", meetingIds),
+      id: uniqueId(toSlug(`${input.title} ${input.startAt.slice(0, 10)}`) || "meeting", meetingIds),
       title: input.title,
       meetingType: input.meetingType ?? "general",
       seasonId,
       projectIds,
-      startDateTime: input.startDateTime,
-      endDateTime: input.endDateTime ?? null,
+      startAt: input.startAt,
+      endAt: input.endAt ?? null,
       location: input.location ?? "",
       description: input.description ?? "",
-      date: dateOnlyFromDateTime(input.startDateTime),
-      time: formatTimeFromDateTime(input.startDateTime),
       rsvpsYes: 0,
       rsvpsMaybe: 0,
       openSignIns: 0,
@@ -3634,23 +3556,21 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
       .find((candidate): candidate is string => Boolean(candidate)) ??
     currentMeeting.seasonId ??
     fallbackSeasonId;
-  const startDateTime = input.startDateTime ?? currentMeeting.startDateTime ?? `${currentMeeting.date}T18:00:00`;
+  const startAt = input.startAt ?? currentMeeting.startAt;
   const updatedMeeting = normalizeMeetingSchedule(
     {
       ...currentMeeting,
       ...input,
       seasonId,
       projectIds,
-      startDateTime,
-      endDateTime:
-        input.endDateTime === undefined
-          ? currentMeeting.endDateTime ?? null
-          : input.endDateTime,
+      startAt,
+      endAt:
+        input.endAt === undefined
+          ? currentMeeting.endAt ?? null
+          : input.endAt,
       location: input.location === undefined ? currentMeeting.location ?? "" : input.location,
       description:
         input.description === undefined ? currentMeeting.description ?? "" : input.description,
-      date: dateOnlyFromDateTime(startDateTime),
-      time: formatTimeFromDateTime(startDateTime) || currentMeeting.time,
     },
     fallbackSeasonId,
   );
@@ -3876,9 +3796,9 @@ export function removeTask(taskId: string) {
     ...currentSnapshot,
     tasks: currentSnapshot.tasks.filter((candidate) => candidate.id !== taskId),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
-    qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
+    qaReports: currentSnapshot.qaReports.filter((report) => !report.targetRefs.some((ref) => ref.kind === "task" && ref.id === taskId)),
     qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter(
-      (request) => !request.taskId || request.taskId !== taskId,
+      (request) => !request.targetRefs.some((ref) => ref.kind === "task" && ref.id === taskId),
     ),
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,

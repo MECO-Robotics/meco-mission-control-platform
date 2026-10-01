@@ -29,10 +29,10 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   assert.ok(seed.tasks.every((task) => projectIds.has(task.projectId) && task.workstreamIds.every((id) => workstreamIds.has(id)) && task.subsystemIds.every((id) => subsystemIds.has(id)) && task.mechanismIds.every((id) => mechanismIds.has(id)) && task.partInstanceIds.every((id) => partInstanceIds.has(id))));
   assert.ok(seed.artifacts.every((artifact) => artifact.targetRefs.every((ref) => ref.kind !== "task" || taskIds.has(ref.id))));
   assert.ok(seed.taskDependencies.every((dependency) => taskIds.has(dependency.taskId) && (dependency.kind !== "task" || taskIds.has(dependency.refId))));
-  assert.ok(seed.qaReports.every((report) => taskIds.has(report.taskId) && report.participantIds.every((id) => memberIds.has(id))));
-  assert.ok(seed.qaFindings.every((finding) => taskIds.has(finding.taskId ?? "") && (!finding.qaReportId || reportIds.has(finding.qaReportId))));
-  assert.ok(seed.testResults.every((result) => milestoneIds.has(result.milestoneId)));
-  assert.ok(seed.testFindings.every((finding) => !finding.testResultId || testResultIds.has(finding.testResultId)));
+  assert.ok(seed.qaReports.every((report) => projectIds.has(report.projectId) && report.participantIds.every((id) => memberIds.has(id))));
+  assert.ok(seed.qaFindings.every((finding) => finding.targetRefs.some((ref) => ref.kind === "task" && taskIds.has(ref.id)) && (!finding.reportId || reportIds.has(finding.reportId))));
+  assert.ok(seed.testResults.every((result) => projectIds.has(result.projectId) && result.targetRefs.length > 0));
+  assert.ok(seed.testFindings.every((finding) => testResultIds.has(finding.testResultId)));
   assert.ok(seed.workLogs.every((log) => taskIds.has(log.taskId) && log.participantIds.every((id) => memberIds.has(id))));
   assert.ok(seed.attendanceRecords.every((record) => memberIds.has(record.memberId)));
   assert.ok(seed.tasks.every((task) => !task.manufacturingDetails || task.workTypeId === "robot:manufacturing"));
@@ -63,7 +63,7 @@ test("compact tutorial seed keeps chapter and demo examples referentially comple
   assert.ok(snapshot.purchaseItems.some((item) => item.taskId === manufacturingTask.id && item.kind === "manufacturing-service"));
   assert.ok(snapshot.qaReports.length > 0 && snapshot.qaFindings.length > 0 && snapshot.testResults.length > 0 && snapshot.testFindings.length > 0);
   assert.ok(snapshot.meetings.length > 0 && snapshot.attendanceRecords.length > 0);
-  assert.ok(snapshot.artifacts.some((artifact) => artifact.projectId === "project-operations-2026" && artifact.kind === "nontechnical"));
+  assert.ok(snapshot.artifacts.some((artifact) => artifact.projectId === "project-operations-2026" && artifact.kind === "document"));
   assert.ok(snapshot.workLogs.length > 0 && snapshot.taskDependencies.length > 0 && snapshot.risks.some((risk) => risk.blocksWork));
 });
 
@@ -90,7 +90,7 @@ test("compact bootstrap supports tutorial chapters, resets, and sanitized demo a
     assert.equal("manufacturingItems" in body, false);
     assert.equal("taskBlockers" in body, false);
     assert.ok(body.tasks.some((task: { manufacturingDetails: unknown }) => task.manufacturingDetails));
-    assert.ok(body.reports.some((report: { reportType: string }) => report.reportType === "QA"));
+    assert.ok(body.reports.some((report: { reportType: string }) => report.reportType === "qa"));
     assert.ok(body.reports.length > 0 && body.qaFindings.length + body.testFindings.length > 0);
     assert.ok(body.meetings.length > 0 && body.attendanceRecords.length > 0 && body.artifacts.length > 0);
 

@@ -2,8 +2,7 @@ import { resetStore } from "../src/data/store";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { Project } from "../src/domain/types";
-import { createProject, getSnapshot } from "../src/data/store";
+import { getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("bootstrap exposes canonical task, manufacturing and evidence ownership", async () => {
@@ -35,7 +34,7 @@ test("bootstrap exposes canonical task, manufacturing and evidence ownership", a
         title: "Robot build evidence",
         summary: "Build verification evidence.",
         status: "draft",
-        link: "https://example.org/build-evidence",
+        uri: "https://example.org/build-evidence",
       },
     });
     assert.equal(artifactResponse.statusCode, 201);
@@ -130,14 +129,11 @@ test("media upload endpoint returns a presigned image upload contract", async ()
 
 test("media upload endpoint selects buckets from server-owned project team ids", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const otherTeamProject = createProject({
-      teamId: "Team 2468",
-      seasonId: "default-season",
-      name: "Team 2468 Media",
-      projectType: "media",
-      description: "Media workspace for another purchasing team.",
-      status: "active",
-    });
+    const snapshot = getSnapshot();
+    const mediaProject = snapshot.projects.find((project) => project.projectType === "media" && project.seasonId === "default-season");
+    assert.ok(mediaProject);
+    const otherTeamProject = { ...mediaProject, teamId: "team-2468" };
+    resetStore({ ...snapshot, projects: snapshot.projects.map((project) => project.id === mediaProject.id ? otherTeamProject : project) });
 
     const presignResponse = await app.inject({
       method: "POST",
@@ -171,37 +167,6 @@ test("media upload endpoint selects buckets from server-owned project team ids",
 
     resetLimits();
 
-    const snapshot = getSnapshot();
-    resetStore({ ...snapshot, projects: [...snapshot.projects, {
-      id: "legacy-media-project",
-      seasonId: "default-season",
-      name: "Legacy Media",
-      projectType: "media",
-      description: "Project record created before team-scoped buckets existed.",
-      status: "active",
-    } as Project] });
-
-    const legacyPresignResponse = await app.inject({
-      method: "POST",
-      url: "/api/media/presign-upload",
-      payload: {
-        projectId: "legacy-media-project",
-        fileName: "Legacy reveal.png",
-        contentType: "image/png",
-        sizeBytes: 2048,
-      },
-    });
-
-    assert.equal(legacyPresignResponse.statusCode, 200);
-    const legacyPresignBody = legacyPresignResponse.json() as {
-      publicUrl: string;
-    };
-    assert.ok(
-      legacyPresignBody.publicUrl.startsWith(
-        "https://cdn.example.test/meco-pm-default-team/projects/legacy-media-project/images/",
-      ),
-    );
-
     resetLimits();
 
     const apiProjectResponse = await app.inject({
@@ -210,42 +175,12 @@ test("media upload endpoint selects buckets from server-owned project team ids",
       payload: {
         teamId: "Team 1357",
         seasonId: "default-season",
-        name: "API Media",
+        name: "Media",
         projectType: "media",
       },
     });
 
-    assert.equal(apiProjectResponse.statusCode, 201);
-    const apiProjectBody = apiProjectResponse.json() as {
-      item: {
-        id: string;
-        teamId: string;
-      };
-    };
-    assert.equal(apiProjectBody.item.teamId, "meco-robotics");
-
-    resetLimits();
-
-    const apiProjectPresignResponse = await app.inject({
-      method: "POST",
-      url: "/api/media/presign-upload",
-      payload: {
-        projectId: apiProjectBody.item.id,
-        fileName: "API-created project.png",
-        contentType: "image/png",
-        sizeBytes: 2048,
-      },
-    });
-
-    assert.equal(apiProjectPresignResponse.statusCode, 200);
-    const apiProjectPresignBody = apiProjectPresignResponse.json() as {
-      publicUrl: string;
-    };
-    assert.ok(
-      apiProjectPresignBody.publicUrl.startsWith(
-        `https://cdn.example.test/meco-pm-meco-robotics/projects/${apiProjectBody.item.id}/images/`,
-      ),
-    );
+    assert.equal(apiProjectResponse.statusCode, 409);
   });
 });
 

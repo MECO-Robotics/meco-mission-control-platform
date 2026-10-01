@@ -20,10 +20,13 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
       assert.ok(task.startDate <= task.dueDate);
       assert.equal(task.actualHours, data.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0));
     }
-    for (const recorded of [...data.workLogs.map((log) => log.date), ...data.qaReports.map((report) => report.reviewedAt), ...data.attendanceRecords.map((record) => record.date)]) assert.ok(Date.parse(recorded) <= now.getTime(), recorded);
-    for (const report of data.qaReports.filter((report) => report.result === "pass" && report.mentorApproved)) assert.equal(data.tasks.find((task) => task.id === report.taskId)?.status, "complete");
+    for (const recorded of [...data.workLogs.map((log) => log.date), ...data.qaReports.map((report) => report.reviewedAt).filter((date): date is string => date !== null), ...data.attendanceRecords.map((record) => record.date)]) assert.ok(Date.parse(recorded) <= now.getTime(), recorded);
+    for (const report of data.qaReports.filter((report) => report.result === "pass" && report.status === "reviewed")) {
+      const taskId = report.targetRefs.find((ref) => ref.kind === "task")?.id;
+      assert.equal(data.tasks.find((task) => task.id === taskId)?.status, "complete");
+    }
     for (const milestone of data.milestones) {
-      if (milestone.endDateTime) assert.ok(Date.parse(milestone.startDateTime) <= Date.parse(milestone.endDateTime));
+      if (milestone.endAt) assert.ok(Date.parse(milestone.startAt) <= Date.parse(milestone.endAt));
     }
     assert.equal(data.seasons[0].startDate, `${date.slice(0, 7)}-01`);
     assert.equal(data.seasons[0].endDate.slice(0, 7), date.slice(0, 7));

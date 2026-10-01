@@ -64,7 +64,6 @@ function makeWorkflowSnapshot() {
     parentSubsystemId: null,
     responsibleEngineerId: "ava",
     mentorIds: ["marco"],
-    risks: [],
     iteration: 1,
     isArchived: false,
   });
@@ -133,7 +132,6 @@ function makeWorkflowSnapshot() {
       intendedSubsystemId: "drive",
       intendedMechanismId: "drive-shaft",
       location: { kind: "installed", subsystemId: "drive", mechanismId: "drive-shaft" },
-      readinessStatus: "ready",
     },
   ];
 
@@ -251,8 +249,8 @@ function makeWorkflowSnapshot() {
     {
       id: "meeting-1",
       title: "Planning",
-      date: "2026-04-04",
-      time: "7:00 PM",
+      startAt: "2026-04-04T19:00:00Z",
+      endAt: "2026-04-04T20:00:00Z",
       rsvpsYes: 6,
       rsvpsMaybe: 1,
       openSignIns: 2,
@@ -316,8 +314,7 @@ test("evaluateTaskCompletion reports missing gate conditions and a passing path"
     title: "Calibration notes",
     summary: "Recorded calibration evidence.",
     status: "published",
-    link: "https://example.invalid/calibration",
-    isArchived: false,
+    uri: "https://example.invalid/calibration",
     targetRefs: [{ kind: "task", id: passingTask.id }],
     updatedAt: "2026-04-02T00:00:00.000Z",
   });

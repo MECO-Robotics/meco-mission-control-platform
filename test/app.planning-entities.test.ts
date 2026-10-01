@@ -251,7 +251,6 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         parentSubsystemId: "drive",
         responsibleEngineerId: "ava",
         mentorIds: ["marco"],
-        risks: [],
         photoUrl: "https://cdn.example.test/subsystems/route-test-intake.png",
       },
     });
@@ -457,37 +456,28 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       url: "/api/projects",
       payload: {
         seasonId: "default-season",
-        name: "Practice Bot",
+        name: "Robot",
         projectType: "robot",
       },
     });
 
-    assert.equal(createRobotProjectResponse.statusCode, 201);
-    const createRobotProjectBody = createRobotProjectResponse.json() as {
-      item: {
-        id: string;
-        name: string;
-        projectType: string;
-        seasonId: string;
-        status: string;
-      };
-    };
-    assert.equal(createRobotProjectBody.item.name, "Practice Bot");
-    assert.equal(createRobotProjectBody.item.projectType, "robot");
-    assert.equal(createRobotProjectBody.item.seasonId, "default-season");
-    assert.equal(createRobotProjectBody.item.status, "active");
+    assert.equal(createRobotProjectResponse.statusCode, 409);
+    assert.equal(getSnapshot().projects.filter((project) => project.seasonId === "default-season" && project.projectType === "robot").length, 1);
 
     resetLimits();
+    const robotProject = getSnapshot().projects.find((project) => project.projectType === "robot" && project.seasonId === "default-season");
+    assert.ok(robotProject);
 
     const updateRobotProjectResponse = await app.inject({
       method: "PATCH",
-      url: `/api/projects/${createRobotProjectBody.item.id}`,
+      url: `/api/projects/${robotProject.id}`,
       payload: {
-        name: "Practice Bot V2",
+        description: "Updated Robot project details.",
       },
     });
 
     assert.equal(updateRobotProjectResponse.statusCode, 200);
-    assert.equal(updateRobotProjectResponse.json().item.name, "Practice Bot V2");
+    assert.equal(updateRobotProjectResponse.json().item.name, "Robot");
+    assert.equal(updateRobotProjectResponse.json().item.description, "Updated Robot project details.");
   });
 });

@@ -10,6 +10,8 @@ import {
 } from "../auth/authService";
 import {
   createArtifact,
+  createManufacturingProcess,
+  archiveManufacturingProcess,
   createMilestone,
   createMaterial,
   createMember,
@@ -173,6 +175,8 @@ import {
   riskSchema,
   purchaseItemPatchSchema,
   purchaseItemSchema,
+  manufacturingProcessCreateSchema,
+  manufacturingProcessArchiveSchema,
   purchaseApprovalSchema,
   purchaseTransitionSchema,
   seasonSchema,
@@ -867,6 +871,12 @@ export async function registerRoutes(
       });
     }
 
+    const duplicateProject = getProjects().some((project) => project.seasonId === parsed.data.seasonId && project.projectType === parsed.data.projectType);
+    const expectedNames = { robot: "Robot", media: "Media", outreach: "Outreach", operations: "Operations", strategy: "Strategy", training: "Training" } as const;
+    if (parsed.data.name !== expectedNames[parsed.data.projectType] || duplicateProject) {
+      return reply.code(409).send({ message: "Each season has exactly one canonical project for each project type." });
+    }
+
     const project = createProject(parsed.data);
 
     return reply.code(201).send({
@@ -889,10 +899,16 @@ export async function registerRoutes(
         return reply;
       }
 
-      if (!findProject(request.params.projectId)) {
+      const existingProject = findProject(request.params.projectId);
+      if (!existingProject) {
         return reply.code(404).send({
           message: "Project not found.",
         });
+      }
+
+      const canonicalName = { robot: "Robot", media: "Media", outreach: "Outreach", operations: "Operations", strategy: "Strategy", training: "Training" } as const;
+      if (parsed.data.name !== undefined && parsed.data.name !== canonicalName[existingProject.projectType]) {
+        return reply.code(400).send({ message: "Project names are canonical and determined by project type." });
       }
 
       const project = updateProject(request.params.projectId, parsed.data);
@@ -1013,8 +1029,8 @@ export async function registerRoutes(
     }
 
     if (
-      parsed.data.reportType === "QA" &&
-      parsed.data.mentorApproved === true &&
+      parsed.data.reportType === "qa" &&
+      parsed.data.status === "reviewed" &&
       !requireWorkflowApprovalPermission(
         request,
         reply,
@@ -1024,18 +1040,10 @@ export async function registerRoutes(
       return;
     }
 
-    const validationError =
-      parsed.data.reportType === "QA"
-        ? parsed.data.taskId
-          ? validateQaReportLinks({
-              ...parsed.data,
-              taskId: parsed.data.taskId,
-              participantIds: parsed.data.participantIds ?? [],
-            })
-          : "The selected task does not exist."
-        : parsed.data.milestoneId
-          ? validateTestResultLinks({ milestoneId: parsed.data.milestoneId })
-          : "The selected milestone does not exist.";
+    const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
+    const validationError = parsed.data.reportType === "qa"
+      ? taskId ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds }) : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs })
+      : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
@@ -1119,7 +1127,7 @@ export async function registerRoutes(
     }
 
     if (
-      parsed.data.mentorApproved &&
+      parsed.data.status === "reviewed" &&
       !requireWorkflowApprovalPermission(
         request,
         reply,
@@ -1129,7 +1137,10 @@ export async function registerRoutes(
       return;
     }
 
-    const validationError = validateQaReportLinks(parsed.data);
+    const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
+    const validationError = taskId
+      ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
+      : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
@@ -1139,7 +1150,6 @@ export async function registerRoutes(
     const report = createQaReport({
       ...parsed.data,
       participantIds: Array.from(new Set(parsed.data.participantIds)),
-      notes: parsed.data.notes.trim(),
     });
 
     return reply.code(201).send({
@@ -1154,8 +1164,11 @@ export async function registerRoutes(
     if (!parsed) {
       return reply;
     }
-    if (parsed.data.mentorApproved && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
-    const validationError = validateQaReportLinks(parsed.data);
+    if (parsed.data.status === "reviewed" && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
+    const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
+    const validationError = taskId
+      ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
+      : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) return reply.code(400).send({ message: validationError });
     const result = submitQaReport({ ...parsed.data, participantIds: Array.from(new Set(parsed.data.participantIds)) });
     if (result.error) return reply.code(409).send({ message: result.error });
@@ -1235,9 +1248,6 @@ export async function registerRoutes(
 
     const testResult = createTestResult({
       ...parsed.data,
-      findings: Array.from(new Set(parsed.data.findings.map((finding) => finding.trim()))).filter(
-        (finding) => finding.length > 0,
-      ),
     });
 
     return reply.code(201).send({
@@ -1601,7 +1611,7 @@ export async function registerRoutes(
 
     const milestone = createMilestone({
       ...parsed.data,
-      endDateTime: parsed.data.endDateTime ?? null,
+      endAt: parsed.data.endAt ?? null,
       description: parsed.data.description ?? "",
       projectIds,
       photoUrl: parsed.data.photoUrl ?? "",
@@ -1644,10 +1654,10 @@ export async function registerRoutes(
 
       const milestone = updateMilestone(request.params.milestoneId, {
         ...parsed.data,
-        endDateTime:
-          parsed.data.endDateTime === undefined
-            ? currentMilestone.endDateTime
-            : parsed.data.endDateTime,
+        endAt:
+          parsed.data.endAt === undefined
+            ? currentMilestone.endAt
+            : parsed.data.endAt,
         description:
           parsed.data.description === undefined
             ? currentMilestone.description
@@ -1879,8 +1889,7 @@ export async function registerRoutes(
       ...parsed.data,
       summary: parsed.data.summary ?? "",
       status: parsed.data.status ?? "draft",
-      link: parsed.data.link ?? "",
-      isArchived: parsed.data.isArchived ?? false,
+      uri: parsed.data.uri ?? "",
       updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
     });
 
@@ -2630,7 +2639,6 @@ export async function registerRoutes(
       projectId,
       parentSubsystemId: parsed.data.parentSubsystemId ?? null,
       mentorIds: parsed.data.mentorIds ?? [],
-      risks: parsed.data.risks ?? [],
       responsibleEngineerId: parsed.data.responsibleEngineerId ?? null,
     });
 
@@ -2721,7 +2729,6 @@ export async function registerRoutes(
         ...parsed.data,
         projectId: nextProjectId,
         mentorIds: [...nextMentorIds],
-        risks: [...(parsed.data.risks ?? currentSubsystem.risks)],
         parentSubsystemId: nextParentSubsystemId,
         responsibleEngineerId: nextResponsibleEngineerId,
       });
@@ -3082,6 +3089,33 @@ export async function registerRoutes(
       projects: snapshot.projects,
             tasks: snapshot.tasks,
     });
+  });
+
+  app.get("/api/manufacturing/processes", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    return { items: getSnapshot().manufacturingProcesses };
+  });
+
+  app.post<{ Body: unknown }>("/api/manufacturing/processes", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can configure manufacturing processes.")) return;
+    const parsed = parseRouteInput(manufacturingProcessCreateSchema, request.body, reply, "Manufacturing process payload is invalid.");
+    if (!parsed) return reply;
+    if (getSnapshot().manufacturingProcesses.some((process) => process.code === parsed.data.code)) return reply.code(409).send({ message: "A manufacturing process with this code already exists." });
+    return reply.code(201).send({ item: createManufacturingProcess(parsed.data) });
+  });
+
+  app.patch<{ Body: unknown; Params: { processId: string } }>("/api/manufacturing/processes/:processId", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can configure manufacturing processes.")) return;
+    const parsed = parseRouteInput(manufacturingProcessArchiveSchema, request.body, reply, "Manufacturing process update is invalid.");
+    if (!parsed) return reply;
+    if (getSnapshot().tasks.some((task) => task.manufacturingDetails?.processId === request.params.processId)) {
+      return reply.code(409).send({ message: "A process referenced by manufacturing Tasks cannot be archived." });
+    }
+    const item = archiveManufacturingProcess(request.params.processId);
+    if (!item) return reply.code(404).send({ message: "Manufacturing process not found." });
+    return { item };
   });
 
   app.get("/api/purchases", async (request, reply) => {

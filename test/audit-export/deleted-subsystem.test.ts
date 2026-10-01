@@ -35,7 +35,6 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         parentSubsystemId: null,
         responsibleEngineerId: admin.id,
         mentorIds: [],
-        risks: [],
       });
       const operationsSubsystem = createSubsystem({
         projectId: operationsProject.id,
@@ -45,7 +44,6 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         parentSubsystemId: null,
         responsibleEngineerId: admin.id,
         mentorIds: [],
-        risks: [],
       });
       const sourceSubsystem = createSubsystem({
         projectId: robotProject.id,
@@ -55,7 +53,6 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         parentSubsystemId: null,
         responsibleEngineerId: admin.id,
         mentorIds: [],
-        risks: [],
       });
       const mechanism = createMechanism({
         subsystemId: subsystem.id,

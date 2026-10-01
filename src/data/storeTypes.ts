@@ -50,13 +50,10 @@ export type MemberInput = OptionalFields<
 export type MeetingInput = Omit<
   Meeting,
   | "id"
-  | "date"
-  | "time"
   | "rsvpsYes"
   | "rsvpsMaybe"
   | "openSignIns"
-  | "startDateTime"
-> & { startDateTime: string };
+>;
 
 export type SeasonInput = Omit<Season, "id">;
 
@@ -70,7 +67,7 @@ export type PurchaseItemInput = Omit<PurchaseItem, "id">;
 
 export type MaterialInput = Omit<Material, "id">;
 
-export type ArtifactInput = OptionalFields<Omit<Artifact, "id" | "targetRefs">, "isArchived"> & { targetRefs?: Artifact["targetRefs"] };
+export type ArtifactInput = Omit<Artifact, "id" | "targetRefs"> & { targetRefs?: Artifact["targetRefs"] };
 
 export type WorkstreamInput = OptionalFields<Omit<Workstream, "id">, "isArchived">;
 
@@ -95,35 +92,33 @@ export type MilestoneInput = Pick<
   Milestone,
   | "title"
   | "type"
-  | "status"
-  | "startDateTime"
-  | "endDateTime"
+  | "startAt"
+  | "endAt"
   | "isExternal"
   | "description"
   | "projectIds"
   | "photoUrl"
->;
+> & Partial<Pick<Milestone, "status">>;
 
-export type QaReportInput = Omit<QaReport, "id" | "targetRefs"> & { targetRefs?: QaReport["targetRefs"] };
+export type QaReportInput = Omit<QaReport, "id" | "projectId" | "createdByMemberId" | "summary" | "status" | "reviewedById" | "createdAt" | "reportType"> & { projectId: string; createdByMemberId?: string | null; summary?: string; status?: QaReport["status"]; reviewedById?: string | null; createdAt?: string };
 
 export type QaRequestInput = OptionalFields<
   Omit<QaRequest, "id" | "createdAt" | "status">,
-  "taskId" | "requestedById" | "projectId" | "targetRefs"
+  "requestedById" | "projectId" | "targetRefs" | "mentorId"
 >;
 
-export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId"> & { targetRefs?: TestResult["targetRefs"]; projectId?: string };
+export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId"> & { targetRefs: TestResult["targetRefs"]; projectId?: string };
 
-export type ReportInput = Omit<
-  Report,
-  "id" | "targetRefs" | "evidenceNotes" | "qaRequestId" | "mentorId" | "requestedById"
-> & { targetRefs?: Report["targetRefs"] };
+export type ReportInput = Report extends infer Value
+  ? Value extends Report
+    ? Omit<Value, "id">
+    : never
+  : never;
 
 export type ReportFindingInput = Pick<
   ReportFinding,
   | "reportId"
-  | "mechanismId"
-  | "partInstanceId"
-  | "artifactInstanceId"
+  | "targetRefs"
   | "issueType"
   | "severity"
   | "notes"

@@ -16,8 +16,8 @@ test("PATCH schemas preserve omission and supplied values without create default
   assert.deepEqual(schemas.taskPatchSchema.parse({ checklistItems: [], mentorId: null, requiresDocumentation: false }), {
     checklistItems: [], mentorId: null, requiresDocumentation: false,
   });
-  assert.deepEqual(schemas.meetingPatchSchema.parse({ projectIds: [], endDateTime: null }), {
-    projectIds: [], endDateTime: null,
+  assert.deepEqual(schemas.meetingPatchSchema.parse({ projectIds: [], endAt: null }), {
+    projectIds: [], endAt: null,
   });
   assert.deepEqual(schemas.materialPatchSchema.parse({ onHandQuantity: "4" }), { onHandQuantity: 4 });
   assert.equal(schemas.taskPatchSchema.safeParse({ unexpected: true }).success, false);
@@ -39,7 +39,7 @@ test("create schemas still supply defaults and preserve create-only commands", (
   assert.equal(part.description, "");
   assert.equal(part.photoUrl, "");
   assert.deepEqual(part.acquisition, { method: "stock" });
-  const project = schemas.projectSchema.parse({ name: "New project", seasonId: "season" });
+  const project = schemas.projectSchema.parse({ name: "Robot", projectType: "robot", seasonId: "season" });
   assert.equal(project.projectType, "robot");
   assert.equal(project.status, "active");
   assert.equal(project.description, "");
@@ -52,21 +52,21 @@ test("unrelated HTTP patches retain saved fields; explicit clears apply and inva
     Object.assign(fixture.subsystems[0], { photoUrl: "subsystem-photo", iteration: 4 });
     Object.assign(fixture.mechanisms[0], { googleSheetsUrl: "sheet-link", photoUrl: "mechanism-photo", iteration: 3, isArchived: true });
     Object.assign(fixture.partDefinitions[0], { iteration: 5 });
-    Object.assign(fixture.partInstances[0], { photoUrl: "instance-photo", readinessStatus: "ready" });
+    Object.assign(fixture.partInstances[0], { photoUrl: "instance-photo" });
     Object.assign(fixture.workstreams[0], { isArchived: true });
     Object.assign(fixture.meetings[0], { meetingType: "review", projectIds: [fixture.projects[0].id], location: "Workshop", description: "Keep agenda" });
-    Object.assign(fixture.artifacts[0], { isArchived: true });
+    Object.assign(fixture.artifacts[0], { status: "archived" });
     Object.assign(fixture.workLogs[0], { photoUrl: "work-photo" });
     resetStore(fixture);
     const cases = [
       ["tasks", "tasks", { title: "Renamed task" }, ["assigneeIds", "checklistItems", "requiresDocumentation"]],
-      ["subsystems", "subsystems", { name: "Renamed subsystem" }, ["photoUrl", "iteration", "mentorIds", "risks"]],
+      ["subsystems", "subsystems", { name: "Renamed subsystem" }, ["photoUrl", "iteration", "mentorIds"]],
       ["mechanisms", "mechanisms", { name: "Renamed mechanism" }, ["googleSheetsUrl", "photoUrl", "iteration", "isArchived"]],
       ["partDefinitions", "part-definitions", { name: "Renamed part" }, ["iteration"]],
-      ["partInstances", "part-instances", { name: "Renamed instance" }, ["photoUrl", "readinessStatus"]],
+      ["partInstances", "part-instances", { location: { kind: "repair", location: "repair cart" } }, ["photoUrl"]],
       ["workstreams", "workstreams", { name: "Renamed workstream" }, ["isArchived"]],
       ["meetings", "meetings", { title: "Renamed meeting" }, ["meetingType", "projectIds", "location", "description"]],
-      ["artifacts", "artifacts", { title: "Renamed artifact" }, ["summary", "status", "link", "isArchived"]],
+      ["artifacts", "artifacts", { title: "Renamed artifact" }, ["summary", "status", "uri"]],
       ["materials", "materials", { onHandQuantity: 4 }, ["notes"]],
       ["workLogs", "work-logs", { hours: 4 }, ["notes", "photoUrl", "participantIds"]],
       ["risks", "risks", { severity: "low" }, ["title", "detail", "source", "relatedTargets", "mitigationTaskId"]],

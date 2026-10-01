@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { subsystemLayoutSchema, qaReassessmentSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, riskSchema, purchaseItemSchema, artifactSchema, qaRequestSchema, testResultSchema, domainReferenceSchema } from "../routes/routeSchemas";
+import { subsystemLayoutSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, riskSchema, purchaseItemSchema, artifactSchema, qaRequestSchema, testResultSchema, domainReferenceSchema, manufacturingProcessCreateSchema, manufacturingProcessArchiveSchema } from "../routes/routeSchemas";
 
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
 export const BOOTSTRAP_CONTRACT_VERSION = 1;
@@ -32,6 +32,7 @@ const pmCadProvenanceRecordSchema = z
   .passthrough();
 const pmCadProvenanceCollectionSchema = z.array(pmCadProvenanceRecordSchema);
 const projectTypeSchema = z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]);
+const projectNameSchema = z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]);
 const workTypeSchema = z.object({ id: z.string(), projectType: projectTypeSchema, code: z.string(), name: z.string(), isActive: z.boolean() }).strict();
 const responsibleGroupSchema = z.object({ id: z.string(), seasonId: z.string(), name: z.string(), projectIds: z.array(z.string()), memberIds: z.array(z.string()), isArchived: z.boolean() }).strict();
 const vendorSchema = z.object({ id: z.string(), name: z.string(), website: z.string().nullable(), isArchived: z.boolean() }).strict();
@@ -91,14 +92,18 @@ const taskBootstrapSchema = z.object({
   isBlocked: z.boolean(), isWaitingOnDependency: z.boolean(),
 }).strict();
 const artifactBootstrapSchema = artifactSchema.extend({ id: z.string(), targetRefs: z.array(domainReferenceSchema) }).strict();
-const qaRequestBootstrapSchema = qaRequestSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema), createdAt: z.string(), status: z.literal("requested") }).strict();
+const qaRequestBootstrapSchema = qaRequestSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema), createdAt: z.string().datetime({ offset: true }), status: z.enum(["requested", "in-review", "complete", "cancelled"]) }).strict();
 const testResultBootstrapSchema = testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema) }).strict();
-const findingBootstrapSchema = z.object({ id: z.string(), targetRefs: z.array(domainReferenceSchema), taskId: z.string().nullable(), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "accepted", "resolved"]), createdAt: z.string() }).passthrough();
+const findingBootstrapSchema = z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(domainReferenceSchema), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string() }).strict();
+const scheduleIdentitySchema = z.object({ id: z.string(), title: z.string(), startAt: z.string(), endAt: z.string().nullable() });
+const meetingBootstrapSchema = scheduleIdentitySchema.extend({ meetingType: z.string().optional(), seasonId: z.string().optional(), projectIds: z.array(z.string()).optional(), location: z.string().optional(), description: z.string().optional(), rsvpsYes: z.number(), rsvpsMaybe: z.number(), openSignIns: z.number() }).passthrough();
+const eventBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string(), projectIds: z.array(z.string()), eventType: z.string(), location: z.string().optional(), description: z.string().optional() }).passthrough();
+const milestoneBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string().optional(), type: z.string(), status: z.enum(["planned", "active", "complete"]), readinessStatus: z.enum(["not-ready", "blocked", "qa", "ready"]), isExternal: z.boolean(), description: z.string(), projectIds: z.array(z.string()), photoUrl: z.string().optional() }).passthrough();
 
 export const bootstrapPayloadSchema = z
   .object({
     seasons: bootstrapCollectionSchema,
-    projects: z.array(z.object({ id: z.string(), teamId: z.string(), seasonId: z.string(), name: z.string(), projectType: projectTypeSchema, description: z.string(), status: z.enum(["planned", "active", "paused", "complete"]) }).strict()),
+    projects: z.array(z.object({ id: z.string(), teamId: z.string(), seasonId: z.string(), name: projectNameSchema, projectType: projectTypeSchema, description: z.string(), status: z.enum(["planned", "active", "paused", "complete"]) }).strict()),
     workTypes: z.array(workTypeSchema),
     responsibleGroups: z.array(responsibleGroupSchema),
     workstreams: bootstrapCollectionSchema,
@@ -110,19 +115,19 @@ export const bootstrapPayloadSchema = z
     artifacts: z.array(artifactBootstrapSchema),
     partDefinitions: z.array(partDefinitionBootstrapSchema),
     partInstances: z.array(partInstanceBootstrapSchema),
-    milestones: bootstrapCollectionSchema,
+    milestones: z.array(milestoneBootstrapSchema),
     milestoneRequirements: bootstrapCollectionSchema,
-    reports: z.array(qaReassessmentSchema.extend({ id: z.string(), reportType: z.enum(["QA", "MilestoneTest"]), targetRefs: z.array(domainReferenceSchema) }).passthrough()),
+    reports: z.array(z.union([reportSchema.options[0].extend({ id: z.string() }), reportSchema.options[1].extend({ id: z.string() })])),
     qaRequests: z.array(qaRequestBootstrapSchema),
     qaFindings: z.array(findingBootstrapSchema),
     testResults: z.array(testResultBootstrapSchema),
-    testFindings: z.array(findingBootstrapSchema),
+    testFindings: z.array(findingBootstrapSchema.extend({ testResultId: z.string() }).strict()),
     risks: z.array(riskSchema.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string(), resolvedAt: z.string().nullable() }).strict()),
     tasks: z.array(taskBootstrapSchema),
     taskDependencies: z.array(taskDependencyRecordSchema),
     workLogs: bootstrapCollectionSchema,
-    meetings: bootstrapCollectionSchema,
-    events: bootstrapCollectionSchema,
+    meetings: z.array(meetingBootstrapSchema),
+    events: z.array(eventBootstrapSchema),
     manufacturingProcesses: z.array(manufacturingProcessRecordSchema),
     attendanceRecords: bootstrapCollectionSchema,
     purchaseItems: z.array(purchaseItemSchema.extend({ id: z.string() }).strict()),
@@ -142,7 +147,7 @@ export const bootstrapContractDocument = {
     resource: "/api/bootstrap",
     migrationPolicy: "Prototype contracts are replaced in coordination with both clients; no legacy payload support.",
   },
-  x_commands: Object.fromEntries(Object.entries({ task: taskSchema, taskPatch: taskPatchSchema, subsystem: subsystemSchema, subsystemPatch: subsystemPatchSchema, report: reportSchema, qaReport: qaReportSchema, qaSubmit: qaSubmitSchema, risk: riskSchema, purchaseItem: purchaseItemSchema, taskDependency: taskDependencySchema }).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: "input" })])),
+  x_commands: Object.fromEntries(Object.entries({ task: taskSchema, taskPatch: taskPatchSchema, subsystem: subsystemSchema, subsystemPatch: subsystemPatchSchema, report: reportSchema, qaReport: qaReportSchema, qaSubmit: qaSubmitSchema, risk: riskSchema, purchaseItem: purchaseItemSchema, taskDependency: taskDependencySchema, manufacturingProcessCreate: manufacturingProcessCreateSchema, manufacturingProcessArchive: manufacturingProcessArchiveSchema }).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: "input" })])),
 };
 
 export function toBootstrapContractDocument() {

@@ -1,4 +1,5 @@
 import type { ReadonlyData, ReadinessStatus, SnapshotView, Task, TaskDependency } from "./types";
+import { deriveMilestoneReadiness, derivePartInstanceReadiness } from "./readiness";
 
 const WORKFLOW_STATUS_ORDER: Record<ReadinessStatus, number> = {
   "not-ready": 0,
@@ -30,7 +31,7 @@ function isMilestoneDependencySatisfied(
   }
 
   const requiredOrder = WORKFLOW_STATUS_ORDER[requiredState ?? "not-ready"];
-  const targetOrder = WORKFLOW_STATUS_ORDER[milestone.readinessStatus ?? "not-ready"];
+  const targetOrder = WORKFLOW_STATUS_ORDER[deriveMilestoneReadiness(milestone, snapshot)];
 
   return targetOrder >= requiredOrder;
 }
@@ -42,7 +43,7 @@ function isPartInstanceDependencySatisfied(snapshot: SnapshotView, partInstanceI
   }
   if (condition.kind === "physical-location") return partInstance.location.kind === condition.value;
   const requiredOrder = WORKFLOW_STATUS_ORDER[condition.value];
-  const targetOrder = WORKFLOW_STATUS_ORDER[partInstance.readinessStatus ?? "not-ready"];
+  const targetOrder = WORKFLOW_STATUS_ORDER[derivePartInstanceReadiness(partInstance, snapshot)];
   return targetOrder >= requiredOrder;
 }
 

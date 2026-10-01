@@ -128,17 +128,19 @@ When adding auth-sensitive behavior:
 returns selected season/project workspace data and must remain internally
 consistent.
 
-The bootstrap payload can include seasons, projects, members, subsystems,
-disciplines, mechanisms, part definitions, part instances, materials,
-manufacturing items, purchases, tasks, dependencies, blockers, events,
-milestones, work logs, QA records, reports, risks, audit actions, and supporting
-metadata.
+The bootstrap payload includes the six canonical FRC projects per season,
+members, Robot structure, part definitions/instances, bulk materials, artifacts,
+Tasks, typed dependencies, Schedule records, Purchasing records, manufacturing
+process catalog, QA records, reports, Risks, audit actions, and supporting
+metadata. Task is the sole human execution identity; manufacturing technical
+state is a 1:1 Task extension. Milestone and PartInstance readiness are
+read-only projections and are not persisted fields.
 
 When changing bootstrap data:
 
 1. Update the platform source data, selectors, and response shape together.
-2. Preserve existing tutorial IDs and compatibility fields unless the consuming
-   clients are updated in the same release path.
+2. Keep persisted ownership in its domain and avoid duplicate scalar target
+   links when typed `targetRefs` express the relationship.
 3. Run `npm run contracts:verify`.
 4. Update web and mobile types or normalization where needed.
 5. Add tests for selected season/project scope and empty or newly-created
@@ -163,11 +165,17 @@ git diff -- docs
 
 ## Current task and reporting contract
 
-The affected command objects reject unknown fields. `taskDependencies` and `taskBlockers` are the authoritative relation collections; task commands do not accept `dependencyIds` or `blockers`. Dependency commands require explicit `taskId`, `kind`, `refId`, `requiredState`, and `dependencyType`; legacy upstream/downstream aliases are rejected. Task blocker descriptions and readiness booleans are derived for bootstrap. Task `checklistItems` round-trip as a string array, defaulting to empty.
+The affected command objects reject unknown fields. `taskDependencies` and
+`risks` are the authoritative dependency and unresolved-problem collections;
+there is no separate Task blocker store. Dependency commands require explicit
+`taskId`, `kind`, `refId`, required state/condition, and `dependencyType`.
+Task `checklistItems` round-trip as a string array, defaulting to empty.
 
-QA and test findings share the common finding-record fields, but remain distinct boundary records: QA findings identify `qaReportId`, while test findings identify `testResultId` and may carry `milestoneId`. Keep those source-specific fields explicit when extending either model.
+QA and test findings share typed `targetRefs` and use the canonical nullable
+`reportId` source relationship; test findings additionally require
+`testResultId`. Keep source identities separate from target links.
 
-Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports retain `targetRiskId`, `proposedRiskSeverity`, and `proposedRiskStatus`; authorized approved proposals update the risk severity and missing mitigation-task link in the same snapshot transaction. Full mitigation selects low severity. Pending proposals do not change risks.
+Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports store typed targets and evidence; Risk owns severity, status, and mitigation state.
 
 Route registrations that write snapshot state declare `config.snapshotMutation: true`. Their successful responses commit one staged snapshot; errors discard it. Production mutation outside that boundary fails before replacement. Snapshot loading/seed initialization canonicalizes once; ordinary transaction copies are pure clones. Persistence stores share the application's Prisma client and its close lifecycle. CAD backend selection is explicit and never changes after a database failure.
 
