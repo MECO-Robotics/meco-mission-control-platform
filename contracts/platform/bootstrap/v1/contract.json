@@ -27,7 +27,15 @@
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "Robot",
+              "Media",
+              "Outreach",
+              "Operations",
+              "Strategy",
+              "Training"
+            ]
           },
           "projectType": {
             "type": "string",
@@ -490,7 +498,9 @@
             "type": "string",
             "enum": [
               "document",
-              "nontechnical"
+              "evidence",
+              "media",
+              "other"
             ]
           },
           "title": {
@@ -507,16 +517,13 @@
             "enum": [
               "draft",
               "in-review",
-              "published"
+              "published",
+              "archived"
             ]
           },
-          "link": {
+          "uri": {
             "default": "",
             "type": "string"
-          },
-          "isArchived": {
-            "default": false,
-            "type": "boolean"
           },
           "updatedAt": {
             "type": "string",
@@ -533,8 +540,7 @@
           "title",
           "summary",
           "status",
-          "link",
-          "isArchived",
+          "uri",
           "id"
         ],
         "additionalProperties": false
@@ -868,9 +874,77 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seasonId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "active",
+              "complete"
+            ]
+          },
+          "readinessStatus": {
+            "type": "string",
+            "enum": [
+              "not-ready",
+              "blocked",
+              "qa",
+              "ready"
+            ]
+          },
+          "isExternal": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "photoUrl": {
+            "type": "string"
+          }
         },
+        "required": [
+          "id",
+          "title",
+          "startAt",
+          "endAt",
+          "type",
+          "status",
+          "readinessStatus",
+          "isExternal",
+          "description",
+          "projectIds"
+        ],
         "additionalProperties": {}
       }
     },
@@ -887,111 +961,341 @@
     "reports": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "targetRiskId": {
-            "anyOf": [
-              {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "projectId": {
                 "type": "string",
                 "minLength": 1
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "proposedRiskSeverity": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "high",
-                  "medium",
-                  "low"
+              "targetRefs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "project",
+                        "workstream",
+                        "responsible-group",
+                        "task",
+                        "subsystem",
+                        "mechanism",
+                        "part-definition",
+                        "part-instance",
+                        "material",
+                        "vendor",
+                        "manufacturing-details",
+                        "purchase-item",
+                        "meeting",
+                        "event",
+                        "milestone",
+                        "qa-request",
+                        "test-result",
+                        "report",
+                        "artifact",
+                        "qa-finding",
+                        "test-finding",
+                        "task-dependency",
+                        "risk",
+                        "design-iteration"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "createdByMemberId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "proposedRiskStatus": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "partial-mitigation",
-                  "full-mitigation"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "reportType": {
-            "type": "string",
-            "enum": [
-              "QA",
-              "MilestoneTest"
-            ]
-          },
-          "targetRefs": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "project",
-                    "workstream",
-                    "responsible-group",
-                    "task",
-                    "subsystem",
-                    "mechanism",
-                    "part-definition",
-                    "part-instance",
-                    "material",
-                    "vendor",
-                    "manufacturing-details",
-                    "purchase-item",
-                    "meeting",
-                    "event",
-                    "milestone",
-                    "qa-request",
-                    "test-result",
-                    "report",
-                    "artifact",
-                    "qa-finding",
-                    "test-finding",
-                    "task-dependency",
-                    "risk",
-                    "design-iteration"
-                  ]
-                },
-                "id": {
+              "participantIds": {
+                "type": "array",
+                "items": {
                   "type": "string",
                   "minLength": 1
                 }
               },
-              "required": [
-                "kind",
-                "id"
-              ],
-              "additionalProperties": false
-            }
+              "mentorId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedById": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "evidenceNotes": {
+                "type": "string"
+              },
+              "photoUrl": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "submitted",
+                  "reviewed"
+                ]
+              },
+              "reportType": {
+                "type": "string",
+                "const": "qa"
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor-fix",
+                  "iteration-worthy"
+                ]
+              },
+              "reviewedById": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reviewedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "projectId",
+              "targetRefs",
+              "createdByMemberId",
+              "participantIds",
+              "mentorId",
+              "requestedById",
+              "summary",
+              "notes",
+              "createdAt",
+              "status",
+              "reportType",
+              "result",
+              "reviewedById",
+              "reviewedAt",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetRefs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "project",
+                        "workstream",
+                        "responsible-group",
+                        "task",
+                        "subsystem",
+                        "mechanism",
+                        "part-definition",
+                        "part-instance",
+                        "material",
+                        "vendor",
+                        "manufacturing-details",
+                        "purchase-item",
+                        "meeting",
+                        "event",
+                        "milestone",
+                        "qa-request",
+                        "test-result",
+                        "report",
+                        "artifact",
+                        "qa-finding",
+                        "test-finding",
+                        "task-dependency",
+                        "risk",
+                        "design-iteration"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "createdByMemberId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "participantIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "mentorId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedById": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "evidenceNotes": {
+                "type": "string"
+              },
+              "photoUrl": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "submitted",
+                  "reviewed"
+                ]
+              },
+              "reportType": {
+                "type": "string",
+                "enum": [
+                  "practice",
+                  "competition",
+                  "review"
+                ]
+              },
+              "result": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "projectId",
+              "targetRefs",
+              "createdByMemberId",
+              "participantIds",
+              "mentorId",
+              "requestedById",
+              "summary",
+              "notes",
+              "createdAt",
+              "status",
+              "reportType",
+              "result",
+              "id"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "id",
-          "reportType",
-          "targetRefs"
-        ],
-        "additionalProperties": {}
+        ]
       }
     },
     "qaRequests": {
@@ -1048,7 +1352,11 @@
               "additionalProperties": false
             }
           },
-          "taskId": {
+          "subject": {
+            "type": "string",
+            "minLength": 2
+          },
+          "mentorId": {
             "anyOf": [
               {
                 "type": "string",
@@ -1058,14 +1366,6 @@
                 "type": "null"
               }
             ]
-          },
-          "subject": {
-            "type": "string",
-            "minLength": 2
-          },
-          "mentorId": {
-            "type": "string",
-            "minLength": 1
           },
           "requestedById": {
             "anyOf": [
@@ -1082,18 +1382,24 @@
             "type": "string"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "status": {
             "type": "string",
-            "const": "requested"
+            "enum": [
+              "requested",
+              "in-review",
+              "complete",
+              "cancelled"
+            ]
           }
         },
         "required": [
           "projectId",
           "targetRefs",
           "subject",
-          "mentorId",
           "id",
           "createdAt",
           "status"
@@ -1108,6 +1414,16 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "reportId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "targetRefs": {
             "type": "array",
@@ -1155,16 +1471,6 @@
               "additionalProperties": false
             }
           },
-          "taskId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "projectId": {
             "type": "string"
           },
@@ -1187,26 +1493,30 @@
             "type": "string",
             "enum": [
               "open",
-              "accepted",
+              "in-progress",
               "resolved"
             ]
           },
           "createdAt": {
             "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
           }
         },
         "required": [
           "id",
+          "reportId",
           "targetRefs",
-          "taskId",
           "projectId",
           "title",
           "detail",
           "severity",
           "status",
-          "createdAt"
+          "createdAt",
+          "updatedAt"
         ],
-        "additionalProperties": {}
+        "additionalProperties": false
       }
     },
     "testResults": {
@@ -1263,10 +1573,6 @@
               "additionalProperties": false
             }
           },
-          "milestoneId": {
-            "type": "string",
-            "minLength": 1
-          },
           "title": {
             "type": "string",
             "minLength": 2
@@ -1279,18 +1585,6 @@
               "blocked"
             ]
           },
-          "findings": {
-            "default": [],
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "photoUrl": {
-            "default": "",
-            "type": "string"
-          },
           "id": {
             "type": "string"
           }
@@ -1298,11 +1592,8 @@
         "required": [
           "projectId",
           "targetRefs",
-          "milestoneId",
           "title",
           "status",
-          "findings",
-          "photoUrl",
           "id"
         ],
         "additionalProperties": false
@@ -1315,6 +1606,16 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "reportId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "targetRefs": {
             "type": "array",
@@ -1362,16 +1663,6 @@
               "additionalProperties": false
             }
           },
-          "taskId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "projectId": {
             "type": "string"
           },
@@ -1394,26 +1685,34 @@
             "type": "string",
             "enum": [
               "open",
-              "accepted",
+              "in-progress",
               "resolved"
             ]
           },
           "createdAt": {
             "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "testResultId": {
+            "type": "string"
           }
         },
         "required": [
           "id",
+          "reportId",
           "targetRefs",
-          "taskId",
           "projectId",
           "title",
           "detail",
           "severity",
           "status",
-          "createdAt"
+          "createdAt",
+          "updatedAt",
+          "testResultId"
         ],
-        "additionalProperties": {}
+        "additionalProperties": false
       }
     },
     "risks": {
@@ -2209,9 +2508,63 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingType": {
+            "type": "string"
+          },
+          "seasonId": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "rsvpsYes": {
+            "type": "number"
+          },
+          "rsvpsMaybe": {
+            "type": "number"
+          },
+          "openSignIns": {
+            "type": "number"
+          }
         },
+        "required": [
+          "id",
+          "title",
+          "startAt",
+          "endAt",
+          "rsvpsYes",
+          "rsvpsMaybe",
+          "openSignIns"
+        ],
         "additionalProperties": {}
       }
     },
@@ -2219,9 +2572,54 @@
       "type": "array",
       "items": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seasonId": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
         },
+        "required": [
+          "id",
+          "title",
+          "startAt",
+          "endAt",
+          "seasonId",
+          "projectIds",
+          "eventType"
+        ],
         "additionalProperties": {}
       }
     },
@@ -3531,14 +3929,6 @@
             "type": "string",
             "minLength": 1
           }
-        },
-        "risks": {
-          "default": [],
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         }
       },
       "required": [
@@ -3714,60 +4104,351 @@
             "type": "string",
             "minLength": 1
           }
-        },
-        "risks": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         }
       },
       "additionalProperties": false
     },
     "report": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "targetRiskId": {
-          "anyOf": [
-            {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "projectId": {
               "type": "string",
               "minLength": 1
             },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "proposedRiskSeverity": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "high",
-                "medium",
-                "low"
+            "targetRefs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "workstream",
+                      "responsible-group",
+                      "task",
+                      "subsystem",
+                      "mechanism",
+                      "part-definition",
+                      "part-instance",
+                      "material",
+                      "vendor",
+                      "manufacturing-details",
+                      "purchase-item",
+                      "meeting",
+                      "event",
+                      "milestone",
+                      "qa-request",
+                      "test-result",
+                      "report",
+                      "artifact",
+                      "qa-finding",
+                      "test-finding",
+                      "task-dependency",
+                      "risk",
+                      "design-iteration"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "createdByMemberId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "proposedRiskStatus": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "partial-mitigation",
-                "full-mitigation"
+            "participantIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "mentorId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
-            {
-              "type": "null"
+            "requestedById": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "evidenceNotes": {
+              "type": "string"
+            },
+            "photoUrl": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "submitted",
+                "reviewed"
+              ]
+            },
+            "reportType": {
+              "type": "string",
+              "const": "qa"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "pass",
+                "minor-fix",
+                "iteration-worthy"
+              ]
+            },
+            "reviewedById": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reviewedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
-          ]
+          },
+          "required": [
+            "projectId",
+            "targetRefs",
+            "createdByMemberId",
+            "participantIds",
+            "mentorId",
+            "requestedById",
+            "summary",
+            "notes",
+            "createdAt",
+            "status",
+            "reportType",
+            "result",
+            "reviewedById",
+            "reviewedAt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "targetRefs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "workstream",
+                      "responsible-group",
+                      "task",
+                      "subsystem",
+                      "mechanism",
+                      "part-definition",
+                      "part-instance",
+                      "material",
+                      "vendor",
+                      "manufacturing-details",
+                      "purchase-item",
+                      "meeting",
+                      "event",
+                      "milestone",
+                      "qa-request",
+                      "test-result",
+                      "report",
+                      "artifact",
+                      "qa-finding",
+                      "test-finding",
+                      "task-dependency",
+                      "risk",
+                      "design-iteration"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "createdByMemberId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "participantIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "mentorId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "requestedById": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "evidenceNotes": {
+              "type": "string"
+            },
+            "photoUrl": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "submitted",
+                "reviewed"
+              ]
+            },
+            "reportType": {
+              "type": "string",
+              "enum": [
+                "practice",
+                "competition",
+                "review"
+              ]
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "projectId",
+            "targetRefs",
+            "createdByMemberId",
+            "participantIds",
+            "mentorId",
+            "requestedById",
+            "summary",
+            "notes",
+            "createdAt",
+            "status",
+            "reportType",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "qaReport": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "reportType": {
+          "type": "string",
+          "const": "qa"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
         },
         "targetRefs": {
           "type": "array",
@@ -3814,50 +4495,6 @@
             ],
             "additionalProperties": false
           }
-        },
-        "reportType": {
-          "type": "string",
-          "enum": [
-            "QA",
-            "MilestoneTest"
-          ]
-        },
-        "projectId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "taskId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "milestoneId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "workstreamId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "createdByMemberId": {
           "anyOf": [
@@ -3870,26 +4507,6 @@
             }
           ]
         },
-        "result": {
-          "type": "string",
-          "minLength": 1
-        },
-        "summary": {
-          "default": "",
-          "type": "string"
-        },
-        "notes": {
-          "default": "",
-          "type": "string"
-        },
-        "photoUrl": {
-          "default": "",
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "string",
-          "minLength": 1
-        },
         "participantIds": {
           "type": "array",
           "items": {
@@ -3897,51 +4514,7 @@
             "minLength": 1
           }
         },
-        "mentorApproved": {
-          "type": "boolean"
-        },
-        "reviewedAt": {
-          "type": "string",
-          "format": "date",
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-        },
-        "title": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "pass",
-            "fail",
-            "blocked"
-          ]
-        },
-        "findings": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "required": [
-        "reportType",
-        "projectId",
-        "taskId",
-        "milestoneId",
-        "workstreamId",
-        "createdByMemberId",
-        "result",
-        "createdAt"
-      ],
-      "additionalProperties": false
-    },
-    "qaReport": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "targetRiskId": {
+        "mentorId": {
           "anyOf": [
             {
               "type": "string",
@@ -3952,92 +4525,16 @@
             }
           ]
         },
-        "proposedRiskSeverity": {
+        "requestedById": {
           "anyOf": [
             {
               "type": "string",
-              "enum": [
-                "high",
-                "medium",
-                "low"
-              ]
+              "minLength": 1
             },
             {
               "type": "null"
             }
           ]
-        },
-        "proposedRiskStatus": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "partial-mitigation",
-                "full-mitigation"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "taskId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "targetRefs": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "project",
-                  "workstream",
-                  "responsible-group",
-                  "task",
-                  "subsystem",
-                  "mechanism",
-                  "part-definition",
-                  "part-instance",
-                  "material",
-                  "vendor",
-                  "manufacturing-details",
-                  "purchase-item",
-                  "meeting",
-                  "event",
-                  "milestone",
-                  "qa-request",
-                  "test-result",
-                  "report",
-                  "artifact",
-                  "qa-finding",
-                  "test-finding",
-                  "task-dependency",
-                  "risk",
-                  "design-iteration"
-                ]
-              },
-              "id": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "kind",
-              "id"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "participantIds": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         },
         "result": {
           "type": "string",
@@ -4047,28 +4544,69 @@
             "iteration-worthy"
           ]
         },
-        "mentorApproved": {
-          "default": false,
-          "type": "boolean"
+        "summary": {
+          "type": "string"
         },
         "notes": {
-          "default": "",
+          "type": "string"
+        },
+        "evidenceNotes": {
           "type": "string"
         },
         "photoUrl": {
-          "default": "",
           "type": "string"
         },
-        "reviewedAt": {
+        "createdAt": {
           "type": "string",
-          "format": "date",
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "submitted",
+            "reviewed"
+          ]
+        },
+        "reviewedById": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "taskId",
+        "reportType",
+        "projectId",
+        "targetRefs",
+        "createdByMemberId",
         "participantIds",
+        "mentorId",
+        "requestedById",
         "result",
+        "summary",
+        "notes",
+        "createdAt",
+        "status",
+        "reviewedById",
         "reviewedAt"
       ],
       "additionalProperties": false
@@ -4077,47 +4615,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "targetRiskId": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "reportType": {
+          "type": "string",
+          "const": "qa"
         },
-        "proposedRiskSeverity": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "high",
-                "medium",
-                "low"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "proposedRiskStatus": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "partial-mitigation",
-                "full-mitigation"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "taskId": {
+        "projectId": {
           "type": "string",
           "minLength": 1
         },
@@ -4167,47 +4669,7 @@
             "additionalProperties": false
           }
         },
-        "participantIds": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "result": {
-          "type": "string",
-          "enum": [
-            "pass",
-            "minor-fix",
-            "iteration-worthy"
-          ]
-        },
-        "mentorApproved": {
-          "default": false,
-          "type": "boolean"
-        },
-        "notes": {
-          "default": "",
-          "type": "string"
-        },
-        "photoUrl": {
-          "default": "",
-          "type": "string"
-        },
-        "reviewedAt": {
-          "type": "string",
-          "format": "date",
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-        },
-        "evidenceNotes": {
-          "default": "",
-          "type": "string"
-        },
-        "followUpTaskTitle": {
-          "type": "string"
-        },
-        "qaRequestId": {
+        "createdByMemberId": {
           "anyOf": [
             {
               "type": "string",
@@ -4217,12 +4679,110 @@
               "type": "null"
             }
           ]
+        },
+        "participantIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mentorId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedById": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "minor-fix",
+            "iteration-worthy"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "evidenceNotes": {
+          "type": "string"
+        },
+        "photoUrl": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "submitted",
+            "reviewed"
+          ]
+        },
+        "reviewedById": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "followUpTaskTitle": {
+          "type": "string"
         }
       },
       "required": [
-        "taskId",
+        "reportType",
+        "projectId",
+        "targetRefs",
+        "createdByMemberId",
         "participantIds",
+        "mentorId",
+        "requestedById",
         "result",
+        "summary",
+        "notes",
+        "createdAt",
+        "status",
+        "reviewedById",
         "reviewedAt"
       ],
       "additionalProperties": false
@@ -4873,6 +5433,40 @@
           "additionalProperties": false
         }
       ]
+    },
+    "manufacturingProcessCreate": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "code",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "manufacturingProcessArchive": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "isActive": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "isActive"
+      ],
+      "additionalProperties": false
     }
   }
 }

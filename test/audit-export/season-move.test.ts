@@ -48,8 +48,8 @@ test("audit export retains old season scope after member and part moves", async 
       const movedMilestone = createMilestone({
         title: "Audit Export Moved Milestone",
         type: "deadline",
-        startDateTime: "2031-02-01T09:00:00-05:00",
-        endDateTime: null,
+        startAt: "2031-02-01T09:00:00-05:00",
+        endAt: null,
         isExternal: false,
         description: "Milestone moved between audit export seasons.",
         projectIds: ["project-robot-2026"],
@@ -64,8 +64,8 @@ test("audit export retains old season scope after member and part moves", async 
         meetingType: "general",
         seasonId: "default-season",
         projectIds: [],
-        startDateTime: "2031-02-02T18:00:00-05:00",
-        endDateTime: null,
+        startAt: "2031-02-02T18:00:00-05:00",
+        endAt: null,
         location: "Shop",
         description: "Meeting moved between audit export seasons.",
       });

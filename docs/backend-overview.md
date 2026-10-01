@@ -28,8 +28,8 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Core state loads the production snapshot when present; fresh/tutorial initialization uses the clock-relative fixture factory in `src/data/tutorialSnapshot.ts`.
 - Snapshot publication clones inputs and recursively freezes plain data. Getters and finders expose stable readonly values; only store commands can publish replacements. Caller inputs and command results cannot mutate published state. Non-JSON mutable objects and cyclic metadata are rejected before publication. Optional undefined domain fields are retained in memory. Tests seed disposable fixtures through the existing non-production `resetStore(snapshot)` boundary.
 - Core platform reads and writes go through `src/data/store.ts`. Store input types derive from the domain entities, excluding generated fields and making only store-defaulted fields optional. Request schemas still own transport validation and coercion.
-- Manufacturing create and update share `resolveManufacturingItem` for ordered part/instance validation, material consistency and title selection. Routes retain workflow checks and patch omission/null semantics.
-- Report findings share construction and projection in the store and `store/reportDerivations.ts`. QA and test findings retain separate storage and ID namespaces; only test responses carry `milestoneId`.
+- Manufacturing technical state is a 1:1 `ManufacturingDetails` extension on a Robot Kanban Task; the Task remains the human execution identity. The process catalog is managed in the Robot domain, while linked PurchaseItems own commercial state.
+- Reports use one typed bootstrap collection; QA reports and team reports retain specialized internal storage. QA and test findings use typed domain targets and report source links.
 - Task target links are projected once in `flattenTaskTargets` in `src/data/store.ts`; the task-target API and both directions of milestone matching share that projection and its stable target ordering.
 - Core platform state is loaded from and atomically persisted to `data/platform-snapshot.json`
   in production. Mutations are serialized and acknowledged only after the asynchronous durable
@@ -38,7 +38,7 @@ This document orients contributors to the Mission Control backend codebase. Use 
 - Per-user preferences are stored outside git in `data/user-preferences.json` on the same volume.
 - Member roles and external access emails are managed through roster records, while subteam preferences are stored per user.
 - `prisma/schema.prisma` owns web/mobile sessions and CAD tables. Core planning/manufacturing entities live only in the snapshot domain model; they have no duplicate Prisma tables.
-- Work logs record an optional creator, manufacturing review records include reviewer/time metadata, and purchase approval records include the derived approver and workflow timestamps. Existing rows remain valid with null metadata until their next protected workflow action.
+- Work logs record an optional creator; manufacturing technical state is nested on Robot Tasks, while Purchasing records own commercial approvals, orders, cost and delivery state.
 - Generic CAD import persistence defaults to Prisma through `CAD_STORE_DRIVER=prisma`.
 - Runtime CAD storage remains available through `CAD_STORE_DRIVER=runtime` for tests and compatibility flows.
 - The Onshape MVP route path currently stores runtime Onshape data separately from the generic CAD Prisma store. Its normalizer and graph store share the provider-local `NormalizedCad*` inputs. Keep these distinct from STEP records: immutable-reference reuse, provider identity, and upsert behavior differ. Prisma-to-CAD projections intentionally exclude provider columns and normalize dates/JSON.

@@ -63,44 +63,34 @@ function validateTargetReferences(targetRefs: readonly { kind: string; id: strin
 }
 
 export function validateQaReportLinks(input: {
-  targetRiskId?: string | null;
-  proposedRiskSeverity?: string | null;
-  proposedRiskStatus?: string | null;
   targetRefs?: readonly { kind: string; id: string }[];
-  taskId: string;
+  taskId?: string;
   participantIds: readonly string[];
 }) {
-  const linkError = taskParticipantLinksError(input.taskId, input.participantIds);
+  const linkError = input.taskId
+    ? taskParticipantLinksError(input.taskId, input.participantIds)
+    : input.participantIds.some((id) => !getMembers().some((member) => member.id === id))
+      ? "One or more selected participants do not exist."
+      : null;
   if (linkError) {
     return linkError;
   }
   const targetError = validateTargetReferences(input.targetRefs);
   if (targetError) return targetError;
 
-  if ((input.proposedRiskSeverity || input.proposedRiskStatus) && !input.targetRiskId) {
-    return "A risk reassessment requires a target risk.";
-  }
-  if (input.targetRiskId && !getRisks().some((risk) => risk.id === input.targetRiskId)) {
-    return "The selected risk does not exist.";
-  }
   return null;
 }
 
 export function validateQaRequestLinks(input: {
   projectId?: string;
   targetRefs?: readonly { kind: string; id: string }[];
-  taskId?: string | null;
-  mentorId: string;
+  mentorId?: string | null;
   requestedById?: string | null;
 }) {
   const targetError = validateTargetReferences(input.targetRefs);
   if (targetError) return targetError;
-  if (input.taskId && !getTasks().some((task) => task.id === input.taskId)) {
-    return "The selected task does not exist.";
-  }
-
   const memberIds = new Set(getMembers().map((member) => member.id));
-  if (!memberIds.has(input.mentorId)) {
+  if (input.mentorId && !memberIds.has(input.mentorId)) {
     return "The selected mentor does not exist.";
   }
 
@@ -111,14 +101,10 @@ export function validateQaRequestLinks(input: {
   return null;
 }
 
-export function validateTestResultLinks(input: { milestoneId: string; targetRefs?: readonly { kind: string; id: string }[] }) {
+export function validateTestResultLinks(input: { projectId: string; targetRefs: readonly { kind: string; id: string }[] }) {
   const targetError = validateTargetReferences(input.targetRefs);
   if (targetError) return targetError;
-  if (!findMilestone(input.milestoneId)) {
-    return "The selected milestone does not exist.";
-  }
-
-  return null;
+  return getSnapshot().projects.some((project) => project.id === input.projectId) ? null : "The selected project does not exist.";
 }
 
 export function validateRiskLinks(input: {
@@ -223,7 +209,8 @@ export function validateTaskLinks(input: {
   }
   if (input.responsibleGroupId) {
     const group = getSnapshot().responsibleGroups.find((candidate) => candidate.id === input.responsibleGroupId);
-    if (!group || (group.projectIds.length > 0 && !group.projectIds.includes(project.id))) return "The selected responsible group does not belong to the selected project.";
+    const groupProjects = group?.projectIds.map((projectId) => getSnapshot().projects.find((candidate) => candidate.id === projectId));
+    if (!group || group.seasonId !== project.seasonId || (group.projectIds.length > 0 && !group.projectIds.includes(project.id)) || groupProjects?.some((groupProject) => !groupProject || groupProject.seasonId !== group.seasonId)) return "The selected responsible group does not belong to the selected season and project.";
   }
   for (const ref of input.scheduleRefs ?? []) {
     const collection = ref.kind === "meeting" ? getSnapshot().meetings : ref.kind === "event" ? getSnapshot().events : getMilestones();
@@ -373,7 +360,11 @@ export function validatePurchaseItemLinks(input: { taskId: string; kind: Purchas
   const task = snapshot.tasks.find((candidate) => candidate.id === input.taskId);
   if (!task) return "The associated procurement task does not exist.";
   if (input.kind === "cots-goods" && task.manufacturingDetails) return "COTS purchasing tasks cannot carry ManufacturingDetails.";
-  if (input.kind === "manufacturing-service" && (!task.manufacturingDetails || task.manufacturingDetails.fulfillmentSource !== "outsourced")) return "Manufacturing service purchases must link to an outsourced manufacturing task.";
+  if (input.kind === "manufacturing-service") {
+    const workType = snapshot.workTypes.find((candidate) => candidate.id === task.workTypeId);
+    const project = snapshot.projects.find((candidate) => candidate.id === task.projectId);
+    if (!task.manufacturingDetails || task.manufacturingDetails.fulfillmentSource !== "outsourced" || project?.projectType !== "robot" || workType?.projectType !== "robot" || workType.code !== "manufacturing") return "Manufacturing service purchases must link to an outsourced Robot manufacturing task.";
+  }
   if (input.partDefinitionId && !snapshot.partDefinitions.some((part) => part.id === input.partDefinitionId)) return "The selected part definition does not exist.";
   if (input.materialId && !snapshot.materials.some((material) => material.id === input.materialId)) return "The selected material does not exist.";
   if (input.quotes.some((quote) => !snapshot.vendors.some((vendor) => vendor.id === quote.vendorId))) return "Every quote must reference an existing vendor.";

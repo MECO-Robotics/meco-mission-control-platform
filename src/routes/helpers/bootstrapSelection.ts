@@ -1,7 +1,4 @@
-import {
-  reportFromQaReport,
-  reportFromTestResult,
-} from "../../data/store/reportDerivations";
+import { reportFromQaReport } from "../../data/store/reportDerivations";
 import type {
   ReadonlyData,
   AuditAction,
@@ -20,6 +17,7 @@ import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
 import { isActiveInSeason } from "../../domain/seasonMembership";
 import { partInstanceSubsystemId, partInstanceMechanismId } from "../../domain/partInstanceLocation";
+import { deriveMilestoneReadiness, derivePartInstanceReadiness } from "../../domain/readiness";
 
 export interface BootstrapSelection {
   personId: string | null;
@@ -34,22 +32,18 @@ function readScopedId(value: unknown) {
 // Bootstrap chooses an in-scope milestone project and intentionally omits photos.
 function buildReports(args: {
   qaReports: ReadonlyData<QaReport[]>;
-  tasksById: Map<string, ReadonlyData<Task>>;
-  testResults: ReadonlyData<TestResult[]>;
-  milestonesById: Map<string, ReadonlyData<Milestone>>;
+  teamReports: ReadonlyData<Report[]>;
   activeProjectIds: Set<string>;
 }) {
   return [
     ...args.qaReports.map((report) => {
-      const task = args.tasksById.get(report.taskId);
-      return task && args.activeProjectIds.has(task.projectId)
-        ? reportFromQaReport(task, report, { includePhoto: false })
+      return args.activeProjectIds.has(report.projectId)
+        ? reportFromQaReport(undefined, report, { includePhoto: false })
         : null;
     }),
-    ...args.testResults.map((result) => {
-      const milestone = args.milestonesById.get(result.milestoneId);
-      const projectId = milestone?.projectIds.find((id) => args.activeProjectIds.has(id)) ?? null;
-      return projectId ? reportFromTestResult(milestone, result, projectId, { includePhoto: false }) : null;
+    ...args.teamReports.filter((report) => args.activeProjectIds.has(report.projectId)).map((report) => {
+      const { photoUrl: _photoUrl, ...withoutPhoto } = report;
+      return withoutPhoto;
     }),
   ].filter((report): report is ReadonlyData<Report> => report !== null);
 }
@@ -134,7 +128,10 @@ export function buildBootstrapResponse(
         scopedSubsystemIds.has(partInstanceSubsystemId(partInstance) ?? "") &&
         (!partInstanceMechanismId(partInstance) || scopedMechanismIds.has(partInstanceMechanismId(partInstance)!)),
     )
-    .map(normalizePmCadProvenance);
+    .map((partInstance) => ({
+      ...normalizePmCadProvenance(partInstance),
+      readinessStatus: derivePartInstanceReadiness(partInstance, snapshot),
+    }));
   const scopedPartInstanceIds = new Set(
     scopedPartInstances.map((partInstance) => partInstance.id),
   );
@@ -154,7 +151,10 @@ export function buildBootstrapResponse(
     return milestoneProjectIds.length === 0
       ? true
       : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
-  });
+  }).map((milestone) => ({
+    ...milestone,
+    readinessStatus: deriveMilestoneReadiness(milestone, snapshot),
+  }));
   const scopedMeetings = snapshot.meetings.filter((meeting) => {
     const meetingProjectIds = meeting.projectIds ?? [];
     if (
@@ -217,33 +217,22 @@ export function buildBootstrapResponse(
       (selection.personId === null || [scopedTasksById.get(item.taskId)?.requestedById, scopedTasksById.get(item.taskId)?.ownerId, ...(scopedTasksById.get(item.taskId)?.assigneeIds ?? [])].includes(selection.personId)),
   );
   const scopedQaReports = snapshot.qaReports.filter((report) => {
-    const task = scopedTasksById.get(report.taskId);
-    return Boolean(task);
+    return activeProjectIds.has(report.projectId);
   });
   const isProjectScoped = selection.projectId !== null;
   const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: ReadonlyData<QaRequest>) => {
-    if (selectedSeasonId && !request.taskId) {
-      return false;
-    }
-
-    const isTaskInScope = request.taskId
-      ? scopedTaskIds.has(request.taskId)
-      : !isProjectScoped;
+    const isTaskInScope = request.targetRefs.some((ref) => ref.kind === "task" && scopedTaskIds.has(ref.id)) || !isProjectScoped;
     const isPersonInScope =
       selection.personId === null ||
       request.mentorId === selection.personId ||
       request.requestedById === selection.personId;
     return isTaskInScope && isPersonInScope;
   });
-  const scopedTestResults = snapshot.testResults.filter((result) => {
-    const milestone = scopedMilestonesById.get(result.milestoneId);
-    return Boolean(milestone);
-  });
+  const scopedTeamReports = snapshot.teamReports.filter((report) => activeProjectIds.has(report.projectId));
+  const scopedTestResults = snapshot.testResults.filter((result) => activeProjectIds.has(result.projectId));
   const scopedReports = buildReports({
     qaReports: scopedQaReports,
-    tasksById: scopedTasksById,
-    testResults: scopedTestResults,
-    milestonesById: scopedMilestonesById,
+    teamReports: scopedTeamReports,
     activeProjectIds,
   });
   const scopedRisks = snapshot.risks.filter((risk) => {

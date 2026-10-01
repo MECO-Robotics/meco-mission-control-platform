@@ -5,15 +5,15 @@ import { z } from "zod";
 
 import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
-import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemSchema, qaReportSchema, riskSchema, taskSchema, testResultSchema } from "../routes/routeSchemas";
+import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemSchema, reportSchema, riskSchema, taskSchema, testResultSchema, subsystemSchema, milestoneSchema, meetingSchema } from "../routes/routeSchemas";
 
-export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 3 as const;
+export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 5 as const;
 
 const snapshotCollectionKeys = [
   "seasons", "projects", "workTypes", "responsibleGroups", "workstreams", "vendors", "members", "subsystems", "mechanisms",
   "materials", "artifacts", "partDefinitions", "partInstances", "tasks", "milestones",
   "milestoneRequirements", "taskDependencies", "qaReports", "qaRequests",
-  "testResults", "qaFindings", "testFindings", "designIterations", "risks", "workLogs", "meetings",
+  "testResults", "qaFindings", "testFindings", "teamReports", "designIterations", "risks", "workLogs", "meetings",
   "attendanceRecords", "events", "manufacturingProcesses", "purchaseItems", "qaReviews", "escalations", "actions",
 ] as const satisfies readonly (keyof PlatformSnapshot)[];
 type UnvalidatedSnapshotKeys = Exclude<keyof PlatformSnapshot, (typeof snapshotCollectionKeys)[number] | "snapshotSchemaVersion">;
@@ -24,21 +24,23 @@ const optionalSnapshotCollectionKeys = new Set<keyof PlatformSnapshot>([
   "milestoneRequirements", "qaRequests", "actions",
 ]);
 const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
+  projects: z.object({ id: z.string(), teamId: z.string(), seasonId: z.string(), name: z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]), projectType: z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]), description: z.string(), status: z.enum(["planned", "active", "paused", "complete"]) }).strict(),
   tasks: taskSchema.passthrough().extend({ id: z.string() }),
+  subsystems: subsystemSchema.extend({ id: z.string(), isCore: z.boolean() }).strict(),
+  milestones: milestoneSchema.extend({ id: z.string(), seasonId: z.string().optional() }).strict(),
+  meetings: meetingSchema.extend({ id: z.string(), rsvpsYes: z.number(), rsvpsMaybe: z.number(), openSignIns: z.number() }).strict(),
   artifacts: artifactSchema.extend({ id: z.string() }).strict(),
   materials: materialSchema.extend({ id: z.string() }).strict(),
   partDefinitions: partDefinitionSchema.extend({ id: z.string() }).strict(),
   partInstances: partInstanceSchema.extend({ id: z.string() }).strict(),
   purchaseItems: purchaseItemSchema.extend({ id: z.string() }).strict(),
   risks: riskSchema.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string(), resolvedAt: z.string().nullable() }).strict(),
-  qaReports: qaReportSchema.extend({
-    id: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })),
-    evidenceNotes: z.string().optional(), qaRequestId: z.string().nullable().optional(),
-    mentorId: z.string().nullable().optional(), requestedById: z.string().nullable().optional(),
-    targetRiskId: z.string().nullable().optional(), proposedRiskSeverity: z.string().nullable().optional(),
-    proposedRiskStatus: z.string().nullable().optional(),
-  }).passthrough(),
+  qaReports: reportSchema.options[0].extend({ id: z.string() }).strict(),
+  teamReports: reportSchema.options[1].extend({ id: z.string() }).strict(),
   testResults: testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })) }).strict(),
+  qaFindings: z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
+  testFindings: z.object({ id: z.string(), reportId: z.string().nullable(), testResultId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
+  designIterations: z.object({ id: z.string(), sourceType: z.enum(["qa", "test"]), findingId: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), notes: z.string(), status: z.enum(["planned", "in-progress", "complete"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
 };
 
 export class IncompatibleSnapshotError extends Error {
@@ -51,13 +53,25 @@ export class IncompatibleSnapshotError extends Error {
 function looksLikePlatformSnapshot(value: unknown): value is PlatformSnapshot {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const snapshot = value as Partial<Record<keyof PlatformSnapshot, unknown>>;
-  return snapshot.snapshotSchemaVersion === PLATFORM_SNAPSHOT_SCHEMA_VERSION && snapshotCollectionKeys.every((key) => {
+  const collectionsValid = snapshot.snapshotSchemaVersion === PLATFORM_SNAPSHOT_SCHEMA_VERSION && snapshotCollectionKeys.every((key) => {
     const collection = snapshot[key];
     if (optionalSnapshotCollectionKeys.has(key) && collection === undefined) return true;
     if (!Array.isArray(collection)) return false;
     const schema = rowSchemas[key];
     return collection.every((record) => typeof record === "object" && record !== null && !Array.isArray(record) && typeof (record as { id?: unknown }).id === "string" && (!schema || schema.safeParse(record).success));
   });
+  if (!collectionsValid) return false;
+  const projectNames = { robot: "Robot", media: "Media", outreach: "Outreach", operations: "Operations", strategy: "Strategy", training: "Training" } as const;
+  const projects = snapshot.projects as PlatformSnapshot["projects"];
+  const projectKeys = new Set<string>();
+  for (const project of projects) {
+    if (project.name !== projectNames[project.projectType]) return false;
+    const key = `${project.seasonId}:${project.projectType}`;
+    if (projectKeys.has(key)) return false;
+    projectKeys.add(key);
+  }
+  const seasons = snapshot.seasons as PlatformSnapshot["seasons"];
+  return seasons.every((season) => (["robot", "media", "outreach", "operations", "strategy", "training"] as const).every((type) => projectKeys.has(`${season.id}:${type}`)));
 }
 
 export function loadPlatformSnapshotFile(path: string): PlatformSnapshot | null {

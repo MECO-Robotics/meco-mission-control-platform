@@ -75,7 +75,7 @@ export function buildDashboard(snapshot: SnapshotView) {
       return {
         id: subsystem.id,
         name: subsystem.name,
-        risks: subsystem.risks,
+        risks: snapshot.risks.filter((risk) => risk.relatedTargets.some((target) => target.kind === "subsystem" && target.id === subsystem.id)).map((risk) => risk.title),
         completionRate:
           tasks.length === 0 ? 0 : Number((done / tasks.length).toFixed(2)),
         activeTasks: tasks.filter((task) => task.status !== "complete").length,

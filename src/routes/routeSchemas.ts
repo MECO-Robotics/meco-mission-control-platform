@@ -55,7 +55,7 @@ export const seasonSchema = z.object({
 
 const projectFieldsSchema = z.object({
   seasonId: z.string().trim().min(1),
-  name: z.string().trim().min(2),
+  name: z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]),
   projectType: z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]),
   description: z.string().trim(),
   status: z.enum(["planned", "active", "paused", "complete"]),
@@ -140,9 +140,9 @@ const milestoneFieldsSchema = z.object({
     "internal-review",
     "demo",
   ]),
-  status: z.enum(["not ready", "blocked", "qa", "ready"]),
-  startDateTime: z.string().trim().min(1),
-  endDateTime: z.string().trim().min(1).nullable(),
+  status: z.enum(["planned", "active", "complete"]),
+  startAt: z.string().trim().min(1),
+  endAt: z.string().trim().min(1).nullable(),
   isExternal: z.boolean(),
   description: z.string().trim(),
   projectIds: z.array(z.string().trim().min(1)),
@@ -150,7 +150,7 @@ const milestoneFieldsSchema = z.object({
 });
 
 export const milestoneSchema = milestoneFieldsSchema.extend({
-  status: milestoneFieldsSchema.shape.status.default("not ready"),
+  status: milestoneFieldsSchema.shape.status.default("planned"),
   isExternal: milestoneFieldsSchema.shape.isExternal.default(false),
   description: milestoneFieldsSchema.shape.description.default(""),
   projectIds: milestoneFieldsSchema.shape.projectIds.default([]),
@@ -166,8 +166,8 @@ const meetingFieldsSchema = z.object({
   meetingType: meetingTypeSchema,
   seasonId: z.string().trim().min(1).optional(),
   projectIds: z.array(z.string().trim().min(1)),
-  startDateTime: z.string().trim().min(1),
-  endDateTime: z.string().trim().min(1).nullable().optional(),
+  startAt: z.string().trim().min(1),
+  endAt: z.string().trim().min(1).nullable().optional(),
   location: z.string().trim(),
   description: z.string().trim(),
 });
@@ -181,48 +181,43 @@ export const meetingSchema = meetingFieldsSchema.extend({
 
 export const meetingPatchSchema = meetingFieldsSchema.partial();
 
-export const qaReassessmentSchema = z.object({
-  targetRiskId: z.string().trim().min(1).nullable().optional(),
-  proposedRiskSeverity: z.enum(["high", "medium", "low"]).nullable().optional(),
-  proposedRiskStatus: z.enum(["partial-mitigation", "full-mitigation"]).nullable().optional(),
-});
-
 export const qaReportSchema = z.object({
-  ...qaReassessmentSchema.shape,
-  taskId: z.string().trim().min(1),
-  targetRefs: z.array(domainReferenceSchema).optional(),
-  participantIds: z.array(z.string().trim().min(1)).min(1),
+  reportType: z.literal("qa"),
+  projectId: z.string().trim().min(1),
+  targetRefs: z.array(domainReferenceSchema),
+  createdByMemberId: z.string().trim().min(1).nullable(),
+  participantIds: z.array(z.string().trim().min(1)),
+  mentorId: z.string().trim().min(1).nullable(),
+  requestedById: z.string().trim().min(1).nullable(),
   result: z.enum(["pass", "minor-fix", "iteration-worthy"]),
-  mentorApproved: z.boolean().default(false),
-  notes: z.string().trim().default(""),
-  photoUrl: z.string().trim().default(""),
-  reviewedAt: z.string().date(),
+  summary: z.string().trim(),
+  notes: z.string().trim(),
+  evidenceNotes: z.string().trim().optional(),
+  photoUrl: z.string().trim().optional(),
+  createdAt: z.string().datetime({ offset: true }),
+  status: z.enum(["draft", "submitted", "reviewed"]),
+  reviewedById: z.string().trim().min(1).nullable(),
+  reviewedAt: z.string().datetime({ offset: true }).nullable(),
 }).strict();
 
 export const qaSubmitSchema = qaReportSchema.extend({
-  evidenceNotes: z.string().trim().default(""),
   followUpTaskTitle: z.string().trim().optional(),
-  qaRequestId: z.string().trim().min(1).nullable().optional(),
 });
 
 export const qaRequestSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
-  targetRefs: z.array(domainReferenceSchema).optional(),
-  taskId: z.string().trim().min(1).nullable().optional(),
+  targetRefs: z.array(domainReferenceSchema),
   subject: z.string().trim().min(2),
-  mentorId: z.string().trim().min(1),
+  mentorId: z.string().trim().min(1).nullable().optional(),
   requestedById: z.string().trim().min(1).nullable().optional(),
 });
 
 export const testResultSchema = z.object({
-  projectId: z.string().trim().min(1).optional(),
-  targetRefs: z.array(domainReferenceSchema).optional(),
-  milestoneId: z.string().trim().min(1),
+  projectId: z.string().trim().min(1),
+  targetRefs: z.array(domainReferenceSchema),
   title: z.string().trim().min(2),
   status: z.enum(["pass", "fail", "blocked"]),
-  findings: z.array(z.string().trim().min(1)).default([]),
-  photoUrl: z.string().trim().default(""),
-});
+}).strict();
 
 export const userPreferencesPatchSchema = z.object({
   taskSubteamIds: z
@@ -246,33 +241,28 @@ export const auditExportQuerySchema = z.object({
   },
 );
 
-export const reportSchema = z.object({
-  ...qaReassessmentSchema.shape,
-  targetRefs: z.array(domainReferenceSchema).optional(),
-  reportType: z.enum(["QA", "MilestoneTest"]),
+const reportBaseSchema = z.object({
   projectId: z.string().trim().min(1),
-  taskId: z.string().trim().min(1).nullable(),
-  milestoneId: z.string().trim().min(1).nullable(),
-  workstreamId: z.string().trim().min(1).nullable(),
+  targetRefs: z.array(domainReferenceSchema),
   createdByMemberId: z.string().trim().min(1).nullable(),
-  result: z.string().trim().min(1),
-  summary: z.string().trim().default(""),
-  notes: z.string().trim().default(""),
-  photoUrl: z.string().trim().default(""),
-  createdAt: z.string().trim().min(1),
-  participantIds: z.array(z.string().trim().min(1)).optional(),
-  mentorApproved: z.boolean().optional(),
-  reviewedAt: z.string().date().optional(),
-  title: z.string().trim().min(1).optional(),
-  status: z.enum(["pass", "fail", "blocked"]).optional(),
-  findings: z.array(z.string().trim().min(1)).optional(),
-}).strict();
+  participantIds: z.array(z.string().trim().min(1)),
+  mentorId: z.string().trim().min(1).nullable(),
+  requestedById: z.string().trim().min(1).nullable(),
+  summary: z.string().trim(),
+  notes: z.string().trim(),
+  evidenceNotes: z.string().trim().optional(),
+  photoUrl: z.string().trim().optional(),
+  createdAt: z.string().datetime({ offset: true }),
+  status: z.enum(["draft", "submitted", "reviewed"]),
+});
+export const reportSchema = z.discriminatedUnion("reportType", [
+  reportBaseSchema.extend({ reportType: z.literal("qa"), result: z.enum(["pass", "minor-fix", "iteration-worthy"]), reviewedById: z.string().trim().min(1).nullable(), reviewedAt: z.string().datetime({ offset: true }).nullable() }).strict(),
+  reportBaseSchema.extend({ reportType: z.enum(["practice", "competition", "review"]), result: z.string().trim().nullable() }).strict(),
+]);
 
 export const reportFindingSchema = z.object({
   reportId: z.string().trim().min(1),
-  mechanismId: z.string().trim().min(1).nullable(),
-  partInstanceId: z.string().trim().min(1).nullable(),
-  artifactInstanceId: z.string().trim().min(1).nullable(),
+  targetRefs: z.array(domainReferenceSchema),
   issueType: z.string().trim().min(1),
   severity: z.enum(["high", "medium", "low"]),
   notes: z.string().trim().default(""),
@@ -386,14 +376,12 @@ const subsystemFieldsSchema = z.object({
   parentSubsystemId: z.string().trim().min(1).nullable().optional(),
   responsibleEngineerId: z.string().trim().min(1).nullable(),
   mentorIds: z.array(z.string().trim().min(1)),
-  risks: z.array(z.string().trim().min(1)),
 }).strict();
 
 export const subsystemSchema = subsystemFieldsSchema.extend({
   photoUrl: subsystemFieldsSchema.shape.photoUrl.default(""),
   isArchived: subsystemFieldsSchema.shape.isArchived.default(false),
   mentorIds: subsystemFieldsSchema.shape.mentorIds.default([]),
-  risks: subsystemFieldsSchema.shape.risks.default([]),
   iteration: subsystemFieldsSchema.shape.iteration.default(1),
 });
 
@@ -511,6 +499,12 @@ const purchaseItemFieldsSchema = z.object({
 
 export const purchaseItemSchema = purchaseItemFieldsSchema;
 
+export const manufacturingProcessCreateSchema = z.object({
+  code: z.string().trim().min(1).regex(/^[a-z0-9-]+$/),
+  name: z.string().trim().min(1),
+}).strict();
+export const manufacturingProcessArchiveSchema = z.object({ isActive: z.literal(false) }).strict();
+
 export const purchaseItemPatchSchema = purchaseItemFieldsSchema.partial();
 
 export const purchaseApprovalSchema = z.object({
@@ -550,20 +544,18 @@ export const materialPatchSchema = materialFieldsSchema.partial();
 const artifactFieldsSchema = z.object({
   projectId: z.string().trim().min(1),
   targetRefs: z.array(domainReferenceSchema).default([]),
-  kind: z.enum(["document", "nontechnical"]),
+  kind: z.enum(["document", "evidence", "media", "other"]),
   title: z.string().trim().min(2),
   summary: z.string().trim(),
-  status: z.enum(["draft", "in-review", "published"]),
-  link: z.string().trim(),
-  isArchived: z.boolean(),
+  status: z.enum(["draft", "in-review", "published", "archived"]),
+  uri: z.string().trim(),
   updatedAt: z.string().trim().min(1).optional(),
 });
 
 export const artifactSchema = artifactFieldsSchema.extend({
   summary: artifactFieldsSchema.shape.summary.default(""),
   status: artifactFieldsSchema.shape.status.default("draft"),
-  link: artifactFieldsSchema.shape.link.default(""),
-  isArchived: artifactFieldsSchema.shape.isArchived.default(false),
+  uri: artifactFieldsSchema.shape.uri.default(""),
 });
 
 export const artifactPatchSchema = artifactFieldsSchema.partial().extend({

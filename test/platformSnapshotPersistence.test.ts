@@ -49,7 +49,7 @@ test("incompatible snapshots are archived unchanged and startup can reseed", () 
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-incompatible-snapshot-"));
   const snapshotPath = join(directory, "platform-snapshot.json");
   const original = JSON.stringify({
-    snapshotSchemaVersion: 2,
+    snapshotSchemaVersion: 4,
     tasks: [{ id: "legacy-task", targetMilestoneId: "legacy-milestone" }],
   });
   writeFileSync(snapshotPath, original, "utf8");
@@ -60,10 +60,10 @@ test("incompatible snapshots are archived unchanged and startup can reseed", () 
   try {
     assert.equal(loadOrArchiveIncompatibleSnapshot(snapshotPath), null);
     assert.equal(existsSync(snapshotPath), false);
-    const archive = readdirSync(directory).find((name) => name.includes("incompatible-v2"));
+    const archive = readdirSync(directory).find((name) => name.includes("incompatible-v4"));
     assert.ok(archive);
     assert.equal(readFileSync(join(directory, archive), "utf8"), original);
-    assert.match(messages[0] ?? "", /schema 2.*Archived unchanged.*clean canonical seed/);
+    assert.match(messages[0] ?? "", /schema 4.*Archived unchanged.*clean canonical seed/);
   } finally {
     console.error = originalError;
     rmSync(directory, { recursive: true, force: true });
@@ -77,7 +77,7 @@ test("current schema snapshots load without rewriting and reset archives the con
   writeFileSync(snapshotPath, contents, "utf8");
 
   try {
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 3);
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 5);
     assert.equal(readFileSync(snapshotPath, "utf8"), contents);
     const { archivePlatformSnapshotFile } = await import("../src/data/platformSnapshotFile");
     const archive = archivePlatformSnapshotFile(snapshotPath);
@@ -127,18 +127,14 @@ test("production platform state survives a fresh process", () => {
       if (initial.projects.length !== 6 || initial.tasks.length !== 3) throw new Error("Fresh process did not bootstrap the compact tutorial scenario");
       const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
-      store.createProject({
-          name: "Durable restart project",
-          seasonId: "default-season",
-          projectType: "operations",
-          description: "Persists across process restarts",
-          status: "active",
-      });
+      const operationsProject = initial.projects.find(project => project.projectType === "operations");
+      if (!operationsProject) throw new Error("Canonical Operations project is missing");
+      store.updateProject(operationsProject.id, { description: "Persists across process restarts" });
       const subsystem = store.getSnapshot().subsystems[0];
       store.updateSubsystem(subsystem.id, { layoutX: 0.25, layoutY: 0.75, layoutZone: "front", layoutView: "top", sortOrder: 7 });
       const source = store.getSnapshot();
       store.createWorkLog({ taskId: source.tasks[0].id, date: "2026-09-09", hours: 1.25, participantIds: [source.members[0].id], notes: "Durable hours" });
-      store.createQaReport({ taskId: source.tasks[0].id, participantIds: [source.members[0].id], result: "pass", mentorApproved: true, notes: "Persistent proposal", reviewedAt: "2026-09-08", targetRiskId: source.risks[0].id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" });
+      store.createQaReport({ projectId: source.tasks[0].projectId, targetRefs: [{ kind: "task", id: source.tasks[0].id }], participantIds: [source.members[0].id], result: "pass", notes: "Persistent report", reviewedAt: "2026-09-08T00:00:00.000Z" });
       store.createRisk({
         projectId: store.getTasks()[0].projectId, title: "Durable issue category",
         detail: "A blocking risk survives restart.", category: "dependency", severity: "high",
@@ -151,14 +147,16 @@ test("production platform state survives a fresh process", () => {
       process.exit(0);
     `);
 
+    assert.doesNotThrow(() => loadPlatformSnapshotFile(snapshotPath));
+
     const loadedProjectName = runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
-      process.stdout.write(store.getProjects().find((item) => item.name === "Durable restart project")?.name ?? "");
+      process.stdout.write(store.getProjects().find((item) => item.projectType === "operations")?.description ?? "");
       process.exit(0);
     `);
 
-    assert.equal(loadedProjectName, "Durable restart project");
+    assert.equal(loadedProjectName, "Persists across process restarts");
     const loadedIssue = runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
@@ -171,15 +169,17 @@ test("production platform state survives a fresh process", () => {
     const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
       const snapshot = store.getSnapshot();
-      const report = snapshot.qaReports.find((item) => item.notes === "Persistent proposal");
-      process.stdout.write(JSON.stringify({ task: snapshot.tasks[0], hours: snapshot.workLogs.filter((log) => log.taskId === snapshot.tasks[0].id).reduce((sum, log) => sum + log.hours, 0), layout: snapshot.subsystems[0], report, risk: snapshot.risks.find((risk) => risk.id === report.targetRiskId) }));
+      const report = snapshot.qaReports.find((item) => item.notes === "Persistent report");
+      process.stdout.write(JSON.stringify({ task: snapshot.tasks[0], hours: snapshot.workLogs.filter((log) => log.taskId === snapshot.tasks[0].id).reduce((sum, log) => sum + log.hours, 0), layout: snapshot.subsystems[0], report, risks: snapshot.risks }));
     `));
     assert.equal(restored.task.actualHours, restored.hours);
     assert.ok(persisted.workLogs.some((log: { notes: string }) => log.notes === "Durable hours"));
     assert.equal(restored.layout.layoutX, 0.25); assert.equal(restored.layout.layoutY, 0.75);
     assert.equal(restored.layout.layoutZone, "front"); assert.equal(restored.layout.layoutView, "top"); assert.equal(restored.layout.sortOrder, 7);
-    assert.equal(restored.report.proposedRiskStatus, "full-mitigation"); assert.equal(restored.risk.severity, "low");
-    assert.equal(restored.report.id, persisted.qaReports.find((item: {notes: string}) => item.notes === "Persistent proposal").id);
+    assert.equal("targetRiskId" in restored.report, false);
+    assert.equal("proposedRiskStatus" in restored.report, false);
+    assert.equal(restored.risks.find((risk: { title: string }) => risk.title === "Durable issue category").severity, "high");
+    assert.equal(restored.report.id, persisted.qaReports.find((item: {notes: string}) => item.notes === "Persistent report").id);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -238,9 +238,10 @@ test("QA workflow effects survive restart and roll back together when persistenc
     const before = JSON.stringify(store.getSnapshot());
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const source = store.getSnapshot(); const task = source.tasks[0];
-    store.createQaRequest({ taskId: task.id, subject: task.title, mentorId: source.members[0].id });
-    const result = store.submitQaReport({ taskId: task.id, participantIds: [source.members[0].id], result: "iteration-worthy", mentorApproved: false, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: "2026-09-09" });
+    const qaRequest = store.createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: source.members[0].id });
+    const result = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: qaRequest.id }], createdByMemberId: source.members[0].id, participantIds: [source.members[0].id], mentorId: source.members[0].id, requestedById: null, result: "iteration-worthy", status: "submitted", reviewedById: null, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: new Date().toISOString() });
     if (result.error) throw new Error(result.error);
+    if (!store.getSnapshot().qaReports.some(item => item.notes === "Durable QA")) throw new Error("QA report was not staged");
     let failed = false;
     try { await transaction.commit(); } catch { failed = true; } finally { transaction.release(); }
     if (failed && JSON.stringify(store.getSnapshot()) !== before) throw new Error("Partial QA effects published");
@@ -248,12 +249,14 @@ test("QA workflow effects survive restart and roll back together when persistenc
   `;
   try {
     assert.equal(runProductionStoreScript(path, submit), "saved");
+    assert.doesNotThrow(() => loadPlatformSnapshotFile(path));
     const restored = JSON.parse(runProductionStoreScript(path, `
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
       const snapshot = store.getSnapshot();
       const report = snapshot.qaReports.find(item => item.notes === "Durable QA");
-      process.stdout.write(JSON.stringify({ report, followup: snapshot.tasks.find(item => item.title === "Durable repair"), risks: snapshot.risks.filter(item => item.source.kind === "report" && item.source.id === report.id), requests: snapshot.qaRequests.filter(item => item.taskId === report.taskId) }));
+      process.stdout.write(JSON.stringify({ report, allReports: snapshot.qaReports, followup: snapshot.tasks.find(item => item.title === "Durable repair"), risks: snapshot.risks.filter(item => item.source.kind === "report" && item.source.id === report?.id), requests: snapshot.qaRequests.filter(item => report && item.targetRefs.some(ref => report.targetRefs.some(target => target.kind === ref.kind && target.id === ref.id))) }));
     `));
+    assert.ok(restored.report, JSON.stringify(restored));
     assert.equal(restored.report.evidenceNotes, "Broken lead");
     assert.equal(restored.followup.status, "not-started");
     assert.ok(restored.risks.length > 0);
@@ -385,32 +388,26 @@ test("QA and test findings preserve separate IDs, audits and durable transaction
     const before = store.getSnapshot();
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const outputs = [];
-    for (const reportType of ["QA", "MilestoneTest"]) {
-      const report = store.getReports().find(item => item.reportType === reportType);
-      assert.ok(report);
-      for (const spawnedTaskId of [null, before.tasks[0].id]) {
-        const result = store.createReportFinding({
-          reportId: report.id, mechanismId: null, partInstanceId: null,
-          artifactInstanceId: null, issueType: "Durable finding", severity: "medium",
-          notes: "Preserved finding", spawnedTaskId, spawnedIterationId: null, spawnedRiskId: null,
-        });
-        assert.equal(result.taskId, spawnedTaskId ?? report.taskId);
-        assert.equal(Object.hasOwn(result, "milestoneId"), reportType !== "QA");
-        if (reportType !== "QA") assert.equal(result.milestoneId, report.milestoneId);
-        outputs.push(result);
-      }
+    const report = store.getReports().find(item => item.reportType === "qa");
+    assert.ok(report);
+    for (const spawnedTaskId of [null, before.tasks[0].id]) {
+      const result = store.createReportFinding({
+        reportId: report.id, targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }, ...(spawnedTaskId ? [{ kind: "task", id: spawnedTaskId }] : [])], issueType: "Durable finding", severity: "medium",
+        notes: "Preserved finding", spawnedTaskId, spawnedIterationId: null, spawnedRiskId: null,
+      });
+      assert.ok(result.targetRefs.some(ref => ref.kind === "part-instance"));
+      assert.equal(result.spawnedTaskId, spawnedTaskId);
+      outputs.push(result);
     }
-    assert.equal(outputs[0].id, outputs[2].id);
-    assert.equal(outputs[1].id, outputs[3].id);
     assert.notEqual(outputs[0].id, outputs[1].id);
     const draft = store.getSnapshot();
     assert.equal(store.createReportFinding({ reportId: "missing" }), null);
     assert.equal(store.getSnapshot(), draft);
-    assert.equal(draft.actions.length - before.actions.length, 4);
+    assert.equal(draft.actions.length - before.actions.length, 2);
     assert.ok(draft.actions.slice(before.actions.length).every(item => item.entityType === "report-finding" && item.operation === "create"));
     try {
       await transaction.commit(); transaction.release();
-      process.stdout.write(JSON.stringify({ qa: draft.qaFindings.slice(before.qaFindings.length), test: draft.testFindings.slice(before.testFindings.length) }));
+      process.stdout.write(JSON.stringify({ qa: draft.qaFindings.slice(before.qaFindings.length) }));
     } catch {
       transaction.release();
       assert.equal(store.getSnapshot(), before);
@@ -424,7 +421,6 @@ test("QA and test findings preserve separate IDs, audits and durable transaction
       const snapshot = store.getSnapshot();
       process.stdout.write(JSON.stringify({
         qa: snapshot.qaFindings.filter(item => item.title === "Durable finding"),
-        test: snapshot.testFindings.filter(item => item.title === "Durable finding"),
       }));
     `));
     assert.deepEqual(restored, created);

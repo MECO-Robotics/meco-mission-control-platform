@@ -106,8 +106,8 @@ test("audit export retains deleted entities for active season filters", async ()
       const deletedMilestone = createMilestone({
         title: "Audit Export Season-Only Milestone",
         type: "deadline",
-        startDateTime: "2030-02-01T09:00:00-05:00",
-        endDateTime: null,
+        startAt: "2030-02-01T09:00:00-05:00",
+        endAt: null,
         isExternal: false,
         description: "Projectless milestone retained by season scope.",
         projectIds: [],
@@ -120,8 +120,8 @@ test("audit export retains deleted entities for active season filters", async ()
         meetingType: "general",
         seasonId: "default-season",
         projectIds: [],
-        startDateTime: "2030-02-02T18:00:00-05:00",
-        endDateTime: null,
+        startAt: "2030-02-02T18:00:00-05:00",
+        endAt: null,
         location: "Shop",
         description: "Projectless meeting retained by season scope.",
       });

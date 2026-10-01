@@ -107,7 +107,7 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
       ...parsed.data,
       seasonId: seasonId ?? undefined,
       projectIds,
-      endDateTime: parsed.data.endDateTime ?? null,
+      endAt: parsed.data.endAt ?? null,
     });
 
     return reply.code(201).send({ item: meeting });
@@ -158,10 +158,10 @@ export function registerMeetingRoutes(app: FastifyInstance, options: MeetingRout
         ...parsed.data,
         seasonId: seasonId ?? undefined,
         projectIds: [...projectIds],
-        endDateTime:
-          parsed.data.endDateTime === undefined
-            ? currentMeeting.endDateTime ?? null
-            : parsed.data.endDateTime,
+        endAt:
+          parsed.data.endAt === undefined
+            ? currentMeeting.endAt ?? null
+            : parsed.data.endAt,
       });
 
       return { item: meeting };

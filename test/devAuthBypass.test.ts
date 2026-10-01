@@ -638,12 +638,20 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           origin: "http://localhost:5173",
         },
         payload: {
-          taskId: "swerve-sensor-bundle",
+          reportType: "qa",
+          projectId: "project-robot-2026",
+          targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
+          createdByMemberId: "ava",
           participantIds: ["ava"],
+          mentorId: null,
+          requestedById: "ava",
           result: "pass",
-          mentorApproved: true,
+          summary: "",
           notes: "Students should not be allowed to approve QA.",
-          reviewedAt: "2026-05-06",
+          createdAt: "2026-05-06T00:00:00.000Z",
+          status: "reviewed",
+          reviewedById: "student-ava",
+          reviewedAt: "2026-05-06T00:00:00.000Z",
         },
       });
 

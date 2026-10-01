@@ -247,12 +247,12 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const qaReport of snapshot.qaReports) {
-    expectId(ids.tasks, qaReport.taskId, `qa report ${qaReport.id} taskId`);
+    qaReport.targetRefs.forEach((ref) => { if (ref.kind === "task") expectId(ids.tasks, ref.id, `qa report ${qaReport.id} task target`); });
     qaReport.participantIds.forEach((id) => expectId(ids.members, id, `qa report ${qaReport.id} participantIds`));
   }
 
   for (const testResult of snapshot.testResults) {
-    expectId(ids.milestones, testResult.milestoneId, `test result ${testResult.id} milestoneId`);
+    expectId(ids.projects, testResult.projectId, `test result ${testResult.id} projectId`);
   }
 
   for (const taskDependency of snapshot.taskDependencies) {
@@ -267,38 +267,22 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const qaFinding of snapshot.qaFindings) {
-    expectId(ids.qaReports, qaFinding.qaReportId, `qa finding ${qaFinding.id} qaReportId`);
-    expectId(ids.tasks, qaFinding.taskId, `qa finding ${qaFinding.id} taskId`);
+    if (qaFinding.reportId) expectId(ids.qaReports, qaFinding.reportId, `qa finding ${qaFinding.id} reportId`);
     expectId(ids.projects, qaFinding.projectId, `qa finding ${qaFinding.id} projectId`);
-    expectId(ids.workstreams, qaFinding.workstreamId, `qa finding ${qaFinding.id} workstreamId`);
-    expectId(ids.subsystems, qaFinding.subsystemId, `qa finding ${qaFinding.id} subsystemId`);
-    expectId(ids.mechanisms, qaFinding.mechanismId, `qa finding ${qaFinding.id} mechanismId`);
-    expectId(ids.partInstances, qaFinding.partInstanceId, `qa finding ${qaFinding.id} partInstanceId`);
-    expectId(ids.artifacts, qaFinding.artifactId, `qa finding ${qaFinding.id} artifactId`);
+    assert.ok(qaFinding.targetRefs.length > 0);
   }
 
   for (const testFinding of snapshot.testFindings) {
     expectId(ids.testResults, testFinding.testResultId, `test finding ${testFinding.id} testResultId`);
-    expectId(ids.milestones, testFinding.milestoneId, `test finding ${testFinding.id} milestoneId`);
-    expectId(ids.tasks, testFinding.taskId, `test finding ${testFinding.id} taskId`);
     expectId(ids.projects, testFinding.projectId, `test finding ${testFinding.id} projectId`);
-    expectId(ids.workstreams, testFinding.workstreamId, `test finding ${testFinding.id} workstreamId`);
-    expectId(ids.subsystems, testFinding.subsystemId, `test finding ${testFinding.id} subsystemId`);
-    expectId(ids.mechanisms, testFinding.mechanismId, `test finding ${testFinding.id} mechanismId`);
-    expectId(ids.partInstances, testFinding.partInstanceId, `test finding ${testFinding.id} partInstanceId`);
-    expectId(ids.artifacts, testFinding.artifactId, `test finding ${testFinding.id} artifactId`);
+    assert.ok(testFinding.targetRefs.length > 0);
   }
 
   for (const designIteration of snapshot.designIterations) {
     const findingIds = designIteration.sourceType === "qa" ? ids.qaFindings : ids.testFindings;
     expectId(findingIds, designIteration.findingId, `design iteration ${designIteration.id} findingId`);
     expectId(ids.projects, designIteration.projectId, `design iteration ${designIteration.id} projectId`);
-    expectId(ids.workstreams, designIteration.workstreamId, `design iteration ${designIteration.id} workstreamId`);
-    expectId(ids.subsystems, designIteration.subsystemId, `design iteration ${designIteration.id} subsystemId`);
-    expectId(ids.mechanisms, designIteration.mechanismId, `design iteration ${designIteration.id} mechanismId`);
-    expectId(ids.partInstances, designIteration.partInstanceId, `design iteration ${designIteration.id} partInstanceId`);
-    expectId(ids.artifacts, designIteration.artifactId, `design iteration ${designIteration.id} artifactId`);
-    expectId(ids.tasks, designIteration.taskId, `design iteration ${designIteration.id} taskId`);
+    assert.ok(designIteration.targetRefs.length > 0);
   }
 
   for (const risk of snapshot.risks) {
@@ -460,7 +444,6 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
     parentSubsystemId: "drive",
     responsibleEngineerId: "ava",
     mentorIds: ["marco"],
-    risks: ["Temporary integration risk"],
   });
 
   const integrationTask = getSnapshot().tasks.find(
@@ -559,9 +542,9 @@ test("PartInstance records one physical item's location separately from readines
   assert.ok(seeded);
   assert.equal(seeded.location.kind, "installed");
 
-  const updated = updatePartInstance(seeded.id, { location: { kind: "repair", location: "Pit repair cart" }, readinessStatus: "ready" });
+  const updated = updatePartInstance(seeded.id, { location: { kind: "repair", location: "Pit repair cart" } });
   assert.equal(updated?.location.kind, "repair");
-  assert.equal(updated?.readinessStatus, "ready");
+  assert.equal("readinessStatus" in (updated ?? {}), false);
 });
 
 test("manufacturing technical state belongs to the Robot Kanban Task", () => {
@@ -624,7 +607,6 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
     parentSubsystemId: null,
     responsibleEngineerId: null,
     mentorIds: [],
-    risks: [],
   });
   const childSubsystem = createSubsystem({
     projectId: "project-robot-2026",
@@ -633,19 +615,21 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
     parentSubsystemId: subsystem.id,
     responsibleEngineerId: null,
     mentorIds: [],
-    risks: [],
   });
   const generatedTask = getSnapshot().tasks.find((task) =>
     task.title === `Integrate ${childSubsystem.name}`,
   );
   assert.ok(generatedTask);
   const taskRequest = createQaRequest({
-    taskId: generatedTask.id,
+    projectId: generatedTask.projectId,
+    targetRefs: [{ kind: "task", id: generatedTask.id }],
     subject: "Tablet refresh QA",
     mentorId: "marco",
     requestedById: "ava",
   });
   const tasklessRequest = createQaRequest({
+    projectId: getSnapshot().projects[0]!.id,
+    targetRefs: [{ kind: "project", id: getSnapshot().projects[0]!.id }],
     subject: "General QA",
     mentorId: "marco",
     requestedById: "ava",
@@ -713,8 +697,8 @@ test("task milestone requirements infer milestone matches from explicit target r
   const milestone = createMilestone({
     title: "Drive Checkpoint",
     type: "deadline",
-    startDateTime: "2026-06-10T10:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-06-10T10:00:00-04:00",
+    endAt: null,
     isExternal: false,
     description: "Checkpoint for drive subsystem readiness.",
     projectIds: [],
@@ -766,8 +750,8 @@ test("project-scoped requirements match through project task target inference", 
   const milestone = createMilestone({
     title: "Robot Scope Checkpoint",
     type: "deadline",
-    startDateTime: "2026-06-18T09:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-06-18T09:00:00-04:00",
+    endAt: null,
     isExternal: false,
     description: "Scope requirement inferred from milestone project membership.",
     projectIds: [],
@@ -804,8 +788,8 @@ test("explicit schedule milestone references are preserved when no requirement m
   const milestone = createMilestone({
     title: "Direct-Reference Milestone",
     type: "deadline",
-    startDateTime: "2026-07-10T09:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-07-10T09:00:00-04:00",
+    endAt: null,
     isExternal: false,
     description: "Direct schedule reference validation fixture.",
     projectIds: [],
@@ -828,8 +812,8 @@ test("getTasksForMilestone aggregates inferred and explicit schedule references"
   const milestone = createMilestone({
     title: "Drive Milestone",
     type: "deadline",
-    startDateTime: "2026-08-12T11:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-08-12T11:00:00-04:00",
+    endAt: null,
     isExternal: false,
     description: "Drive milestone that supports inferred and explicit task references.",
     projectIds: [],

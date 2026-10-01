@@ -175,20 +175,21 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
         role: "mentor",
       });
       const payload = {
-        reportType: "QA",
+        reportType: "qa",
         projectId: "project-robot-2026",
-        taskId: "swerve-sensor-bundle",
-        milestoneId: null,
-        workstreamId: null,
+        targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
         createdByMemberId: "ava",
+        mentorId: "marco",
+        requestedById: "ava",
         result: "pass",
         summary: "Security regression",
         notes: "Approval must be server-authorized.",
         photoUrl: "",
         createdAt: "2026-08-11T12:00:00.000Z",
         participantIds: ["ava"],
-        mentorApproved: true,
-        reviewedAt: "2026-08-11",
+        status: "reviewed",
+        reviewedById: "marco",
+        reviewedAt: "2026-08-11T12:00:00.000Z",
       };
 
       const denied = await app.inject({
@@ -208,7 +209,7 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
         payload,
       });
       assert.equal(allowed.statusCode, 201);
-      assert.equal(allowed.json().item.mentorApproved, true);
+      assert.equal(allowed.json().item.status, "reviewed");
     },
     { env: authEnv },
   );
@@ -219,7 +220,7 @@ test("QA workflow submission requires task mutation authority independently of a
     const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
     const task = getSnapshot().tasks.find((item) => !getSnapshot().risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
     updateTask(task.id, { status: "waiting-for-qa" });
-    const payload = { taskId: task.id, participantIds: ["ava"], result: "pass", notes: "Authorization check", reviewedAt: "2026-09-09", mentorApproved: false };
+    const payload = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: "ava", participantIds: ["ava"], mentorId: null, requestedById: null, result: "pass", summary: "Authorization check", notes: "Authorization check", createdAt: new Date().toISOString(), status: "submitted", reviewedById: null, reviewedAt: new Date().toISOString() };
     const url = "/api/qa-reports/submit";
     assert.equal((await app.inject({ method: "POST", url, payload })).statusCode, 401);
     resetLimits();
@@ -232,7 +233,7 @@ test("QA workflow submission requires task mutation authority independently of a
     }
     const leadToken = await signTestToken({ email: "lead@mecorobotics.org", role: "lead" });
     const before = JSON.stringify(getSnapshot());
-    assert.equal((await app.inject({ method: "POST", url, payload: { ...payload, mentorApproved: true }, headers: { authorization: `Bearer ${leadToken}` } })).statusCode, 403);
+    assert.equal((await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: "lead" }, headers: { authorization: `Bearer ${leadToken}` } })).statusCode, 403);
     assert.equal(JSON.stringify(getSnapshot()), before);
     resetLimits();
     const allowed = await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${leadToken}` } });
@@ -240,7 +241,7 @@ test("QA workflow submission requires task mutation authority independently of a
     assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
     resetLimits();
     const mentorToken = await signTestToken({ email: "mentor@mecorobotics.org", role: "mentor" });
-    const approved = await app.inject({ method: "POST", url, payload: { ...payload, result: "minor-fix", mentorApproved: true }, headers: { authorization: `Bearer ${mentorToken}` } });
+    const approved = await app.inject({ method: "POST", url, payload: { ...payload, result: "minor-fix", status: "reviewed", reviewedById: "marco" }, headers: { authorization: `Bearer ${mentorToken}` } });
     assert.equal(approved.statusCode, 201, approved.body);
   }, { env: authEnv, members: [{ name: "QA Lead", email: "lead@mecorobotics.org", role: "lead" }] });
 });
@@ -364,9 +365,9 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       });
 
       createQaReport({
-        taskId: "swerve-sensor-bundle", participantIds: ["ava"], result: "pass",
-        mentorApproved: false, notes: "Demo roster reference probe",
-        reviewedAt: new Date().toISOString(), mentorId: "jordan", requestedById: "ava",
+        projectId: "project-robot-2026", targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
+        participantIds: ["ava"], result: "pass", notes: "Demo roster reference probe",
+        reviewedAt: null, mentorId: "jordan", requestedById: "ava",
       });
 
       const demoResponse = await app.inject({
@@ -618,7 +619,6 @@ test("student sessions cannot delete task or subsystem workflow records", async 
         projectId: "reefscape",
         description: "Temporary non-core subsystem for authorization regression coverage.",
         mentorIds: [],
-        risks: [],
         parentSubsystemId: null,
         responsibleEngineerId: null,
       });

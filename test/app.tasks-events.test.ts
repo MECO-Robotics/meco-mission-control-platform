@@ -38,7 +38,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         parentSubsystemId: "drive",
         responsibleEngineerId: mobileMemberCreatedBody.item.id,
         mentorIds: ["marco"],
-        risks: [],
       },
     });
 
@@ -109,7 +108,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         parentSubsystemId: null,
         responsibleEngineerId: null,
         mentorIds: [],
-        risks: [],
       },
     });
     assert.equal(mediaSubsystemResponse.statusCode, 201);
@@ -155,7 +153,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         parentSubsystemId: null,
         responsibleEngineerId: null,
         mentorIds: [],
-        risks: [],
       },
     });
     assert.equal(controlsSubsystemResponse.statusCode, 201);
@@ -236,8 +233,8 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         title: "Cross Project Demo",
         type: "demo",
-        startDateTime: "2026-05-14T18:00:00-04:00",
-        endDateTime: null,
+        startAt: "2026-05-14T18:00:00-04:00",
+        endAt: null,
         isExternal: true,
         description: "Milestone shared across robot and operations work.",
         projectIds: ["project-robot-2026", "project-operations-2026"],
@@ -342,8 +339,8 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         title: "Unknown Project Demo",
         type: "demo",
-        startDateTime: "2026-05-15T18:00:00-04:00",
-        endDateTime: null,
+        startAt: "2026-05-15T18:00:00-04:00",
+        endAt: null,
         isExternal: true,
         description: "",
         projectIds: ["missing-project"],

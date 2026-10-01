@@ -78,7 +78,6 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         parentSubsystemId: null,
         responsibleEngineerId: null,
         mentorIds: [],
-        risks: [],
         cadImportSource: "STEP_UPLOAD",
       },
     });
@@ -156,7 +155,6 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         intendedMechanismId: mechanism.id,
         partDefinitionId: partDefinition.id,
         location: { kind: "unlocated" },
-        readinessStatus: "qa",
         cadImportSource: "STEP_UPLOAD",
       },
     });
@@ -172,7 +170,6 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
         intendedMechanismId: mechanism.id,
         partDefinitionId: partDefinition.id,
         location: { kind: "unlocated" },
-        readinessStatus: "qa",
         cadImportSource: "ONSHAPE_API",
       },
     });
@@ -189,7 +186,6 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       payload: {
         cadSource: partInstance.cadSource,
         cadImportSource: partInstance.cadImportSource,
-        readinessStatus: "ready",
       },
     });
     assert.equal(editedPartInstanceResponse.statusCode, 200);

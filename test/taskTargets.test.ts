@@ -80,11 +80,11 @@ test("first target owns serial and audit context while reparenting and deletion 
   resetStore();
   const controls = createSubsystem({
     projectId: "project-robot-2026", name: "Controls", description: "Test-local subsystem.",
-    parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [], risks: [],
+    parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
   });
   const manipulator = createSubsystem({
     projectId: "project-robot-2026", name: "Manipulator", description: "Test-local subsystem.",
-    parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [], risks: [],
+    parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
   });
   const task = getSnapshot().tasks[0];
   const updated = updateTask(task.id, { subsystemIds: [controls.id, "drive"], mechanismIds: ["swerve-module"], partInstanceIds: [] });
