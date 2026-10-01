@@ -183,21 +183,16 @@ export function buildBootstrapResponse(
       return false;
     }
 
-    switch (requirement.targetType) {
-      case "project":
-        return activeProjectIds.has(requirement.targetId);
-      case "subsystem":
-        return scopedSubsystemIds.has(requirement.targetId);
-      case "mechanism":
-        return scopedMechanismIds.has(requirement.targetId);
-      case "artifact":
-        return scopedArtifacts.some((artifact) => artifact.id === requirement.targetId);
-      case "part-instance":
-        return scopedPartInstanceIds.has(requirement.targetId);
-      case "workflow":
-        // Not currently modeled in the seed store; allow requirements through for forward compatibility.
-        return true;
-    }
+    return requirement.targetRefs.length > 0 && requirement.targetRefs.every((ref) => {
+      switch (ref.kind) {
+        case "project": return activeProjectIds.has(ref.id);
+        case "subsystem": return scopedSubsystemIds.has(ref.id);
+        case "mechanism": return scopedMechanismIds.has(ref.id);
+        case "artifact": return scopedArtifacts.some((artifact) => artifact.id === ref.id);
+        case "part-instance": return scopedPartInstanceIds.has(ref.id);
+        default: return true;
+      }
+    });
   });
   const scopedTasks = snapshot.tasks.filter(
     (task) =>

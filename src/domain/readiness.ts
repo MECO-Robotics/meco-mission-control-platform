@@ -36,15 +36,16 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
   return "not-ready";
 }
 
-function requirementSatisfied(requirement: MilestoneRequirement, snapshot: SnapshotView): boolean {
-  if (requirement.conditionType === "custom") return requirement.conditionValue.trim().toLowerCase() === "in_scope";
+function requirementSatisfied(requirement: ReadonlyData<MilestoneRequirement>, snapshot: SnapshotView): boolean {
+  if (requirement.conditionType === "custom") return requirement.targetRefs.length > 0 && requirement.conditionValue.trim().toLowerCase() === "in_scope";
+  return requirement.targetRefs.length > 0 && requirement.targetRefs.every((targetRef) => {
   if (requirement.conditionType === "iteration") {
     const match = requirement.conditionValue.trim().match(/^iteration\s*(?:([<>]=?|==|=)\s*)?(\d+)$/i);
     if (!match) return false;
-    const target = requirement.targetType === "subsystem"
-      ? snapshot.subsystems.find((item) => item.id === requirement.targetId)
-      : requirement.targetType === "mechanism"
-        ? snapshot.mechanisms.find((item) => item.id === requirement.targetId)
+    const target = targetRef.kind === "subsystem"
+      ? snapshot.subsystems.find((item) => item.id === targetRef.id)
+      : targetRef.kind === "mechanism"
+        ? snapshot.mechanisms.find((item) => item.id === targetRef.id)
         : undefined;
     if (!target) return false;
     const operator = match[1] ?? "=";
@@ -56,15 +57,16 @@ function requirementSatisfied(requirement: MilestoneRequirement, snapshot: Snaps
             : target.iteration === expected;
   }
   const state = requirement.conditionValue.replace(/^state\s*=\s*/i, "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-  if (requirement.targetType === "artifact") {
-    const actual = snapshot.artifacts.find((item) => item.id === requirement.targetId)?.status;
+  if (targetRef.kind === "artifact") {
+    const actual = snapshot.artifacts.find((item) => item.id === targetRef.id)?.status;
     return actual?.toUpperCase().replace(/-/g, "_") === state || (state === "COMPLETE" && actual === "published");
   }
-  if (requirement.targetType === "part-instance") {
-    const part = snapshot.partInstances.find((item) => item.id === requirement.targetId);
+  if (targetRef.kind === "part-instance") {
+    const part = snapshot.partInstances.find((item) => item.id === targetRef.id);
     return part ? derivePartInstanceReadiness(part, snapshot).toUpperCase().replace(/-/g, "_") === state : false;
   }
   return false;
+  });
 }
 
 export function deriveMilestoneReadiness(milestone: ReadonlyData<Milestone>, snapshot: SnapshotView): ReadinessStatus {
@@ -75,6 +77,6 @@ export function deriveMilestoneReadiness(milestone: ReadonlyData<Milestone>, sna
   if (hasOpenRisk) return "blocked";
   const required = (snapshot.milestoneRequirements ?? []).filter((item) => item.milestoneId === milestone.id && item.required);
   if (required.some((item) => !requirementSatisfied(item, snapshot))) return "not-ready";
-  if (required.some((item) => item.targetType === "part-instance" && snapshot.partInstances.some((part) => part.id === item.targetId && derivePartInstanceReadiness(part, snapshot) === "qa"))) return "qa";
+  if (required.some((item) => item.targetRefs.some((ref) => ref.kind === "part-instance" && snapshot.partInstances.some((part) => part.id === ref.id && derivePartInstanceReadiness(part, snapshot) === "qa")))) return "qa";
   return "ready";
 }

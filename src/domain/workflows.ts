@@ -1,11 +1,11 @@
-import type { ReadonlyData, SnapshotView, QaReview, Task, TaskStatus } from "./types";
+import type { ReadonlyData, SnapshotView, Task, TaskStatus } from "./types";
 import { isTaskWaitingOnDependencies } from "./taskDependencyState";
 import { partInstanceMechanismId } from "./partInstanceLocation";
 
 export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: SnapshotView) {
   const workLogs = snapshot.workLogs.filter((workLog) => workLog.taskId === task.id);
-  const qaReviews = snapshot.qaReviews.filter(
-    (review) => review.subjectType === "task" && review.subjectId === task.id,
+  const qaReports = snapshot.qaReports.filter((report) =>
+    report.reportType === "qa" && report.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id),
   );
 
   const missing: string[] = [];
@@ -20,7 +20,7 @@ export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: Snaps
     missing.push("notebook or documentation evidence");
   }
 
-  if (!hasMentorPass(qaReviews)) {
+  if (!hasMentorPass(qaReports)) {
     missing.push("mentor-backed QA approval");
   }
 
@@ -29,7 +29,7 @@ export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: Snaps
     canFinalize: missing.length === 0,
     missing,
     workLogCount: workLogs.length,
-    qaReviewCount: qaReviews.length,
+    qaReportCount: qaReports.length,
   };
 }
 
@@ -98,8 +98,8 @@ export function buildMetrics(snapshot: SnapshotView) {
   });
 
   const totalHours = snapshot.workLogs.reduce((sum, workLog) => sum + workLog.hours, 0);
-  const qaPasses = snapshot.qaReviews.filter(
-    (review) => review.result === "pass" && review.mentorApproved,
+  const qaPasses = snapshot.qaReports.filter(
+    (report) => report.result === "pass" && report.status === "reviewed" && report.reviewedById !== null,
   ).length;
   const deliveredPurchases = snapshot.purchaseItems.filter(
     (purchase) => purchase.orderStatus === "delivered",
@@ -148,9 +148,9 @@ export function formatTaskStatus(status: TaskStatus) {
   return "Complete";
 }
 
-function hasMentorPass(qaReviews: ReadonlyData<QaReview[]>) {
-  return qaReviews.some((review) => {
-    return review.result === "pass" && review.mentorApproved;
+function hasMentorPass(qaReports: SnapshotView["qaReports"]) {
+  return qaReports.some((report) => {
+    return report.result === "pass" && report.status === "reviewed" && report.reviewedById !== null;
   });
 }
 
@@ -168,12 +168,9 @@ function buildTaskMetrics(
     (sum, task) => sum + (workHoursByTaskId.get(task.id) ?? 0),
     0,
   );
-  const qaPassCount = snapshot.qaReviews.filter((review) =>
-    review.subjectType === "task" &&
-    review.result === "pass" &&
-    review.mentorApproved &&
-    review.subjectId !== null &&
-    taskIds.has(review.subjectId),
+  const qaPassCount = snapshot.qaReports.filter((report) =>
+    report.result === "pass" && report.status === "reviewed" && report.reviewedById !== null &&
+    report.targetRefs.some((ref) => ref.kind === "task" && taskIds.has(ref.id)),
   ).length;
 
   return { completeTaskCount, waitingForQaCount, blockerCount, plannedHours, loggedHours, qaPassCount };

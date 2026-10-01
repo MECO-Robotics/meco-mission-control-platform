@@ -150,9 +150,9 @@ function normalizeStateValue(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 }
 
-function extractComparableState(targetType: MilestoneRequirement["targetType"], targetId: string) {
-  if (targetType === "artifact") {
-    const artifact = currentSnapshot.artifacts.find((candidate) => candidate.id === targetId);
+function extractComparableState(targetRef: MilestoneRequirement["targetRefs"][number]) {
+  if (targetRef.kind === "artifact") {
+    const artifact = currentSnapshot.artifacts.find((candidate) => candidate.id === targetRef.id);
     if (!artifact) {
       return null;
     }
@@ -160,9 +160,9 @@ function extractComparableState(targetType: MilestoneRequirement["targetType"], 
     return normalizeStateValue(artifact.status);
   }
 
-  if (targetType === "part-instance") {
+  if (targetRef.kind === "part-instance") {
     const partInstance = currentSnapshot.partInstances.find(
-      (candidate) => candidate.id === targetId,
+      (candidate) => candidate.id === targetRef.id,
     );
     if (!partInstance) {
       return null;
@@ -174,14 +174,14 @@ function extractComparableState(targetType: MilestoneRequirement["targetType"], 
   return null;
 }
 
-function extractComparableIteration(targetType: MilestoneRequirement["targetType"], targetId: string) {
-  if (targetType === "subsystem") {
-    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === targetId);
+function extractComparableIteration(targetRef: MilestoneRequirement["targetRefs"][number]) {
+  if (targetRef.kind === "subsystem") {
+    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === targetRef.id);
     return subsystem?.iteration;
   }
 
-  if (targetType === "mechanism") {
-    const mechanism = currentSnapshot.mechanisms.find((candidate) => candidate.id === targetId);
+  if (targetRef.kind === "mechanism") {
+    const mechanism = currentSnapshot.mechanisms.find((candidate) => candidate.id === targetRef.id);
     return mechanism?.iteration;
   }
 
@@ -189,11 +189,10 @@ function extractComparableIteration(targetType: MilestoneRequirement["targetType
 }
 
 function isConditionSatisfied({
-  targetType,
-  targetId,
+  targetRef,
   conditionType,
   conditionValue,
-}: Pick<MilestoneRequirement, "targetType" | "targetId" | "conditionType" | "conditionValue">) {
+}: { targetRef: MilestoneRequirement["targetRefs"][number] } & Pick<MilestoneRequirement, "conditionType" | "conditionValue">) {
   if (conditionType === "custom") {
     return conditionValue.trim().toLowerCase() === "in_scope";
   }
@@ -204,7 +203,7 @@ function isConditionSatisfied({
       return false;
     }
 
-    const actualIteration = extractComparableIteration(targetType, targetId);
+    const actualIteration = extractComparableIteration(targetRef);
     if (typeof actualIteration !== "number") {
       return false;
     }
@@ -233,7 +232,7 @@ function isConditionSatisfied({
     return false;
   }
 
-  const actualState = extractComparableState(targetType, targetId);
+  const actualState = extractComparableState(targetRef);
   if (!actualState) {
     return false;
   }
@@ -255,11 +254,12 @@ function matchesMilestoneRequirement({
   targetType,
   targetId,
 }: {
-  milestoneRequirement: MilestoneRequirement;
+  milestoneRequirement: ReadonlyData<MilestoneRequirement>;
   targetType: string;
   targetId: string;
 }) {
-  if (milestoneRequirement.targetType !== targetType || milestoneRequirement.targetId !== targetId) {
+  const targetRef = milestoneRequirement.targetRefs.find((ref) => ref.kind === targetType && ref.id === targetId);
+  if (!targetRef) {
     return false;
   }
 
@@ -267,7 +267,7 @@ function matchesMilestoneRequirement({
     return true;
   }
 
-  return isConditionSatisfied(milestoneRequirement);
+  return isConditionSatisfied({ targetRef, conditionType: milestoneRequirement.conditionType, conditionValue: milestoneRequirement.conditionValue });
 }
 
 function normalizeMemberSeasonMembership(
@@ -1783,7 +1783,7 @@ export function getTaskTargets() {
 
 function matchTaskTargetsToMilestoneRequirements(
   targets: ReturnType<typeof flattenTaskTargets>,
-  requirements: readonly MilestoneRequirement[],
+  requirements: readonly ReadonlyData<MilestoneRequirement>[],
 ) {
   const matchedRequirementIdsByMilestone = new Map<string, Set<string>>();
 
@@ -2412,13 +2412,6 @@ export function removeSubsystem(subsystemId: string) {
     purchaseItems: currentSnapshot.purchaseItems.filter(
       (item) => !purchaseItemIdsToRemove.has(item.id),
     ),
-    qaReviews: currentSnapshot.qaReviews.filter((review) => {
-      if (review.subjectType === "task" && taskIdsToRemove.has(review.subjectId)) {
-        return false;
-      }
-
-      return true;
-    }),
   });
 
   recordAuditAction({
@@ -3008,8 +3001,7 @@ function buildScopeRequirementsForMilestone(input: {
     requirements.push({
       id: `${input.milestoneId}:scope:project:${projectId}`,
       milestoneId: input.milestoneId,
-      targetType: "project",
-      targetId: projectId,
+      targetRefs: [{ kind: "project", id: projectId }],
       conditionType: "custom",
       conditionValue: "in_scope",
       required: true,
@@ -3803,9 +3795,6 @@ export function removeTask(taskId: string) {
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
     ),
-    qaReviews: currentSnapshot.qaReviews.filter(
-      (review) => review.subjectType !== "task" || review.subjectId !== taskId,
-    ),
     risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId),
   });
 
@@ -4074,6 +4063,21 @@ export function removeMember(memberId: string) {
       ...item,
       approvedById: item.approvedById === memberId ? null : item.approvedById,
     })),
+    qaReports: currentSnapshot.qaReports.map((report) => ({
+      ...report,
+      createdByMemberId: report.createdByMemberId === memberId ? null : report.createdByMemberId,
+      participantIds: report.participantIds.filter((participantId) => participantId !== memberId),
+      mentorId: report.mentorId === memberId ? null : report.mentorId,
+      requestedById: report.requestedById === memberId ? null : report.requestedById,
+      ...(report.reportType === "qa" ? { reviewedById: report.reviewedById === memberId ? null : report.reviewedById } : {}),
+    })),
+    teamReports: currentSnapshot.teamReports.map((report) => ({
+      ...report,
+      createdByMemberId: report.createdByMemberId === memberId ? null : report.createdByMemberId,
+      participantIds: report.participantIds.filter((participantId) => participantId !== memberId),
+      mentorId: report.mentorId === memberId ? null : report.mentorId,
+      requestedById: report.requestedById === memberId ? null : report.requestedById,
+    })),
     qaRequests: getQaRequests()
       .filter((request) => request.mentorId !== memberId)
       .map((request) => ({
@@ -4081,12 +4085,6 @@ export function removeMember(memberId: string) {
         targetRefs: request.targetRefs.map((ref) => ({ ...ref })),
         requestedById: request.requestedById === memberId ? null : request.requestedById,
       })),
-    qaReviews: currentSnapshot.qaReviews.map((review) => ({
-      ...review,
-      participantIds: review.participantIds.filter(
-        (participantId) => participantId !== memberId,
-      ),
-    })),
   });
 
   recordAuditAction({

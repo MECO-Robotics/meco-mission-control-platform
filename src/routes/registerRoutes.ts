@@ -3366,19 +3366,6 @@ export async function registerRoutes(
     },
   );
 
-  app.get("/api/qa", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    return {
-      reviews: getSnapshot().qaReviews,
-      mentorBackedPasses: getSnapshot().qaReviews.filter((review) => {
-        return review.result === "pass" && review.mentorApproved;
-      }).length,
-    };
-  });
-
   app.get("/api/metrics", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;

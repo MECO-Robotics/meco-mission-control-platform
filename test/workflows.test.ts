@@ -15,7 +15,6 @@ import type {
   Material,
   PlatformSnapshot,
   PurchaseItem,
-  QaReview,
   Task,
   WorkLog,
 } from "../src/domain/types";
@@ -154,19 +153,23 @@ function makeWorkflowSnapshot() {
     } satisfies WorkLog,
   ];
 
-  snapshot.qaReviews = [
-    {
-      id: "qa-a",
-      subjectId: "task-a",
-      subjectType: "task",
-      subjectTitle: "Drive calibration",
-      participantIds: ["ava", "marco"],
-      result: "pass",
-      mentorApproved: true,
-      notes: "Calibration approved for the next practice block.",
-      reviewedAt: "2026-04-03",
-    } satisfies QaReview,
-  ];
+  snapshot.qaReports = [{
+    id: "qa-a",
+    reportType: "qa",
+    projectId: "project-robot-2026",
+    targetRefs: [{ kind: "task", id: "task-a" }],
+    createdByMemberId: "marco",
+    participantIds: ["ava", "marco"],
+    mentorId: "marco",
+    requestedById: null,
+    summary: "Drive calibration",
+    notes: "Calibration approved for the next practice block.",
+    createdAt: "2026-04-03T00:00:00.000Z",
+    status: "reviewed",
+    result: "pass",
+    reviewedById: "marco",
+    reviewedAt: "2026-04-03T00:00:00.000Z",
+  }];
 
   snapshot.materials = [
     {
@@ -298,7 +301,7 @@ test("evaluateTaskCompletion reports missing gate conditions and a passing path"
   assert.equal(missingResult.canFinalize, false);
   assert.deepEqual(missingResult.missing, ["notebook or documentation evidence"]);
   assert.equal(missingResult.workLogCount, 1);
-  assert.equal(missingResult.qaReviewCount, 1);
+  assert.equal(missingResult.qaReportCount, 1);
 
   const passingSnapshot = structuredClone(snapshot) as PlatformSnapshot;
   const passingTask = passingSnapshot.tasks.find(

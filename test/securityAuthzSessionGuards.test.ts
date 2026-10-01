@@ -388,7 +388,6 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         purchaseItems: Array<{ requestedById: string | null; approvedById: string | null }>;
         qaReports: Array<{ participantIds: string[]; mentorId?: string | null; requestedById?: string | null }>;
         qaRequests: Array<{ mentorId: string; requestedById: string | null; taskId: string | null }>;
-        qaReviews: Array<{ participantIds: string[] }>;
         reports: Array<{ createdByMemberId: string | null; participantIds?: string[]; mentorId?: string | null; requestedById?: string | null }>;
         seasons: Array<{ id: string; startDate: string; endDate: string }>;
         subsystems: Array<{ mentorIds: string[]; responsibleEngineerId: string | null }>;

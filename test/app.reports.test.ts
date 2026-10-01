@@ -1074,15 +1074,12 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const qaResponse = await app.inject({
       method: "GET",
-      url: "/api/qa",
+      url: "/api/qa-reports",
     });
     assert.equal(qaResponse.statusCode, 200);
-    const qaBody = qaResponse.json() as {
-      mentorBackedPasses: number;
-      reviews: Array<{ id: string }>;
-    };
-    assert.ok(Array.isArray(qaBody.reviews));
-    assert.ok(qaBody.mentorBackedPasses >= 0);
+    const qaBody = qaResponse.json() as { items: Array<{ reportType: string }> };
+    assert.ok(Array.isArray(qaBody.items));
+    assert.ok(qaBody.items.every((report) => report.reportType === "qa"));
 
     resetLimits();
 

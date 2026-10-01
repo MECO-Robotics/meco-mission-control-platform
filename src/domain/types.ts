@@ -371,22 +371,13 @@ export interface Milestone {
 
 export type MilestoneView = Milestone & { readinessStatus: ReadinessStatus };
 
-export type MilestoneRequirementTargetType =
-  | "project"
-  | "workflow"
-  | "artifact"
-  | "subsystem"
-  | "mechanism"
-  | "part-instance";
-
-export type MilestoneRequirementConditionType = "iteration" | "workflow_state" | "custom";
+export type MilestoneRequirementConditionType = "iteration" | "workflow-state" | "custom";
 
 // Generalized milestone requirements: "What condition must be true by this milestone?"
 export interface MilestoneRequirement {
   id: string;
   milestoneId: string;
-  targetType: MilestoneRequirementTargetType;
-  targetId: string;
+  targetRefs: DomainReference[];
   conditionType: MilestoneRequirementConditionType;
   // Stored as a compact string so we can iterate on semantics without migrations in the seed store.
   // Examples: "iteration>=2", "state=COMPLETE", "state=QA_PASSED", "in_scope"
@@ -621,18 +612,6 @@ export interface Risk {
   resolvedAt: string | null;
 }
 
-export interface QaReview {
-  id: string;
-  subjectId: string;
-  subjectType: "task";
-  subjectTitle: string;
-  participantIds: string[];
-  result: QaResult;
-  mentorApproved: boolean;
-  notes: string;
-  reviewedAt: string;
-}
-
 export interface Escalation {
   title: string;
   detail: string;
@@ -715,7 +694,7 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
-  snapshotSchemaVersion: 5;
+  snapshotSchemaVersion: 1;
   seasons: Season[];
   projects: Project[];
   workTypes: WorkType[];
@@ -748,7 +727,6 @@ export interface PlatformSnapshot {
   attendanceRecords: AttendanceRecord[];
   manufacturingProcesses: ManufacturingProcessRecord[];
   purchaseItems: PurchaseItem[];
-  qaReviews: QaReview[];
   escalations: Escalation[];
   actions?: AuditAction[];
 }

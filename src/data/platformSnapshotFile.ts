@@ -7,14 +7,14 @@ import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
 import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemSchema, reportSchema, riskSchema, taskSchema, testResultSchema, subsystemSchema, milestoneSchema, meetingSchema } from "../routes/routeSchemas";
 
-export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 5 as const;
+export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 
 const snapshotCollectionKeys = [
   "seasons", "projects", "workTypes", "responsibleGroups", "workstreams", "vendors", "members", "subsystems", "mechanisms",
   "materials", "artifacts", "partDefinitions", "partInstances", "tasks", "milestones",
   "milestoneRequirements", "taskDependencies", "qaReports", "qaRequests",
   "testResults", "qaFindings", "testFindings", "teamReports", "designIterations", "risks", "workLogs", "meetings",
-  "attendanceRecords", "events", "manufacturingProcesses", "purchaseItems", "qaReviews", "escalations", "actions",
+  "attendanceRecords", "events", "manufacturingProcesses", "purchaseItems", "escalations", "actions",
 ] as const satisfies readonly (keyof PlatformSnapshot)[];
 type UnvalidatedSnapshotKeys = Exclude<keyof PlatformSnapshot, (typeof snapshotCollectionKeys)[number] | "snapshotSchemaVersion">;
 type AssertNever<T extends never> = T;
