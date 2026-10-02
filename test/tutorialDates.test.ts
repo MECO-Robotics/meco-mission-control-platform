@@ -9,8 +9,11 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
     const data = createTutorialSnapshot(now);
     const day = 86_400_000;
     const monday = Date.parse(date) - ((now.getUTCDay() + 6) % 7) * day;
+    const overdueTaskIds = new Set(["travel-pack-finalize", "intake-guard", "auto-safety-review"]);
+    const overdueDates = new Set(data.tasks.filter((task) => overdueTaskIds.has(task.id)).flatMap((task) => [task.startDate, task.dueDate]));
     const checkDates = (value: unknown): void => {
       if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T|$)/.test(value)) {
+        if (overdueDates.has(value)) return;
         assert.equal(value.slice(0, 7), date.slice(0, 7));
         assert.ok(Date.parse(value) >= monday && Date.parse(value) < monday + 7 * day, value);
       } else if (value && typeof value === "object") Object.values(value).forEach(checkDates);
@@ -89,4 +92,12 @@ test("tutorial tasks use the canonical project work-type catalog", () => {
     assert.equal(workTypes.get(task.workTypeId)?.projectType, project.projectType, task.id);
     assert.ok(Array.isArray(task.workstreamIds) && Array.isArray(task.assigneeIds), task.id);
   }
+});
+
+test("tutorial seed keeps overdue tasks assigned across date rollovers", () => {
+  const now = new Date("2026-10-02T12:00:00Z");
+  const data = createTutorialSnapshot(now);
+  const overdue = data.tasks.filter((task) => task.status !== "complete" && Date.parse(task.dueDate) < Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  assert.ok(overdue.length >= 3);
+  assert.ok(overdue.every((task) => task.ownerId || task.assigneeIds.length > 0 || task.mentorId));
 });
