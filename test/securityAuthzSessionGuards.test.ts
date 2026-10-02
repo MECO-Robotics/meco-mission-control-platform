@@ -141,9 +141,12 @@ test("leads cannot elevate roster roles while admins can perform legitimate role
 
       resetLimits();
 
+      const { getSnapshot } = require("../src/data/store") as typeof import("../src/data/store");
+      const roleChangeMember = getSnapshot().members.find((member) => member.email === "role-change-student@mecorobotics.org");
+      assert.ok(roleChangeMember);
       const allowed = await app.inject({
         method: "PATCH",
-        url: "/api/members/ava",
+        url: `/api/members/${roleChangeMember.id}`,
         headers: { authorization: `Bearer ${adminToken}` },
         payload: { role: "mentor" },
       });
@@ -153,6 +156,11 @@ test("leads cannot elevate roster roles while admins can perform legitimate role
     {
       env: authEnv,
       members: [
+        {
+          name: "Role Change Student",
+          email: "role-change-student@mecorobotics.org",
+          role: "student",
+        },
         {
           name: "Security Test Admin",
           email: "admin@mecorobotics.org",

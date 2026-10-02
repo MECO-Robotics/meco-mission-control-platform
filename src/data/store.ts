@@ -15,6 +15,7 @@ import type {
   Artifact,
   DesignIteration,
   Discipline,
+  DomainReference,
   MilestoneRequirement,
   Milestone,
   Material,
@@ -1696,21 +1697,131 @@ export function getResponsibleGroups(): SnapshotView["responsibleGroups"] {
   return currentSnapshot.responsibleGroups;
 }
 
+function normalizeResponsibleGroupPrimaries(
+  groups: ResponsibleGroup[],
+  preferredGroupId: string,
+  preferredMemberIds: string[],
+) {
+  const membersById = new Map(currentSnapshot.members.map((member) => [member.id, member]));
+  const preferred = new Set(preferredMemberIds);
+  const primaryBySeasonAndMember = new Map<string, string>();
+  for (const member of currentSnapshot.members) {
+    if (member.role !== "student" && member.role !== "lead") continue;
+    const seasons = new Set(groups.filter((group) => group.memberIds.includes(member.id)).map((group) => group.seasonId));
+    for (const seasonId of seasons) {
+      const key = `${seasonId}\u0000${member.id}`;
+      const eligibleGroups = groups.filter((group) => !group.isArchived && group.seasonId === seasonId && group.memberIds.includes(member.id) && (member.activeSeasonIds ?? [member.seasonId]).includes(seasonId));
+      const preferredGroup = preferred.has(member.id) ? eligibleGroups.find((group) => group.id === preferredGroupId) : undefined;
+      const existingPrimary = eligibleGroups.find((group) => (group.primaryMemberIds ?? []).includes(member.id));
+      const primary = preferredGroup ?? existingPrimary ?? eligibleGroups[0];
+      if (primary) primaryBySeasonAndMember.set(key, primary.id);
+    }
+  }
+  return groups.map((group) => ({
+    ...group,
+    primaryMemberIds: group.memberIds.filter((memberId) => {
+      const member = membersById.get(memberId);
+      return (member?.role === "student" || member?.role === "lead") && primaryBySeasonAndMember.get(`${group.seasonId}\u0000${memberId}`) === group.id;
+    }),
+  }));
+}
+
 export function createResponsibleGroup(input: ResponsibleGroupInput) {
+  const previousGroups = currentSnapshot.responsibleGroups;
   const ids = new Set(currentSnapshot.responsibleGroups.map((group) => group.id));
-  const group: ResponsibleGroup = { ...input, projectIds: uniqueIds(input.projectIds), memberIds: uniqueIds(input.memberIds), id: uniqueId(toSlug(input.name) || "team", ids), isArchived: input.isArchived ?? false };
-  replaceCurrentSnapshot({ ...currentSnapshot, responsibleGroups: [...currentSnapshot.responsibleGroups, group] });
-  recordAuditAction({ operation: "create", entityType: "responsible-group", entityId: group.id, entityLabel: group.name, memberIds: group.memberIds });
-  return group;
+  const id = uniqueId(toSlug(input.name) || "team", ids);
+  const groups = normalizeResponsibleGroupPrimaries([
+    ...currentSnapshot.responsibleGroups,
+    { ...input, workTypeIds: input.workTypeIds ?? [], projectIds: uniqueIds(input.projectIds), memberIds: uniqueIds(input.memberIds), primaryMemberIds: uniqueIds(input.primaryMemberIds), id, isArchived: input.isArchived ?? false },
+  ], id, input.primaryMemberIds);
+  const created = groups.find((group) => group.id === id)!;
+  replaceCurrentSnapshot({ ...currentSnapshot, responsibleGroups: groups });
+  for (const group of groups) {
+    const previous = previousGroups.find((candidate) => candidate.id === group.id);
+    if (previous && previous.primaryMemberIds.join("\u0000") !== group.primaryMemberIds.join("\u0000")) {
+      recordAuditAction({ operation: "update", entityType: "responsible-group", entityId: group.id, entityLabel: group.name, memberIds: group.memberIds, changedFields: ["primaryMemberIds"] });
+    }
+  }
+  recordAuditAction({ operation: "create", entityType: "responsible-group", entityId: created.id, entityLabel: created.name, memberIds: created.memberIds });
+  return created;
 }
 
 export function updateResponsibleGroup(groupId: string, input: Partial<ResponsibleGroupInput>, auditContext: AuditMutationContext = {}) {
-  const previous = currentSnapshot.responsibleGroups.find((group) => group.id === groupId);
+  const previousGroups = currentSnapshot.responsibleGroups;
+  const previous = previousGroups.find((group) => group.id === groupId);
   if (!previous) return null;
-  const updated = { ...previous, ...input, projectIds: input.projectIds === undefined ? previous.projectIds : uniqueIds(input.projectIds), memberIds: input.memberIds === undefined ? previous.memberIds : uniqueIds(input.memberIds) };
-  replaceCurrentSnapshot({ ...currentSnapshot, responsibleGroups: currentSnapshot.responsibleGroups.map((group) => group.id === groupId ? updated : group) });
-  recordAuditAction({ operation: "update", entityType: "responsible-group", entityId: updated.id, entityLabel: updated.name, actorMemberId: auditContext.actorMemberId ?? null, requestId: auditContext.requestId ?? null, memberIds: updated.memberIds, changedFields: collectChangedFields(previous, updated) });
-  return updated;
+  const name = input.name ?? previous.name;
+  const projectIds = input.projectIds === undefined ? previous.projectIds : uniqueIds(input.projectIds);
+  const updated = { ...previous, ...input, name, workTypeIds: input.workTypeIds === undefined ? previous.workTypeIds : uniqueIds(input.workTypeIds), projectIds, memberIds: input.memberIds === undefined ? previous.memberIds : uniqueIds(input.memberIds), primaryMemberIds: input.primaryMemberIds === undefined ? previous.primaryMemberIds : uniqueIds(input.primaryMemberIds) };
+  const groups = normalizeResponsibleGroupPrimaries(currentSnapshot.responsibleGroups.map((group) => group.id === groupId ? updated : group), groupId, input.primaryMemberIds ?? []);
+  const normalizedUpdated = groups.find((group) => group.id === groupId)!;
+  replaceCurrentSnapshot({ ...currentSnapshot, responsibleGroups: groups });
+  for (const group of groups) {
+    if (group.id === groupId) continue;
+    const previousGroup = previousGroups.find((candidate) => candidate.id === group.id);
+    if (previousGroup && previousGroup.primaryMemberIds.join("\u0000") !== group.primaryMemberIds.join("\u0000")) {
+      recordAuditAction({ operation: "update", entityType: "responsible-group", entityId: group.id, entityLabel: group.name, actorMemberId: auditContext.actorMemberId ?? null, requestId: auditContext.requestId ?? null, memberIds: group.memberIds, changedFields: ["primaryMemberIds"] });
+    }
+  }
+  recordAuditAction({ operation: "update", entityType: "responsible-group", entityId: normalizedUpdated.id, entityLabel: normalizedUpdated.name, actorMemberId: auditContext.actorMemberId ?? null, requestId: auditContext.requestId ?? null, memberIds: normalizedUpdated.memberIds, changedFields: collectChangedFields(previous, normalizedUpdated) });
+  return normalizedUpdated;
+}
+
+export function removeResponsibleGroup(groupId: string, auditContext: AuditMutationContext = {}) {
+  const group = currentSnapshot.responsibleGroups.find((candidate) => candidate.id === groupId);
+  if (!group) return null;
+  const previousGroups = currentSnapshot.responsibleGroups;
+  const unassignedTaskCount = currentSnapshot.tasks.filter((task) => task.responsibleGroupId === groupId).length;
+  const remainingGroups = normalizeResponsibleGroupPrimaries(
+    currentSnapshot.responsibleGroups.filter((candidate) => candidate.id !== groupId),
+    "",
+    [],
+  );
+  replaceCurrentSnapshot({
+    ...currentSnapshot,
+    responsibleGroups: remainingGroups,
+    tasks: currentSnapshot.tasks.map((task) => task.responsibleGroupId === groupId ? { ...task, responsibleGroupId: null } : task),
+    artifacts: withoutResponsibleGroupTarget(currentSnapshot.artifacts, groupId),
+    milestoneRequirements: currentSnapshot.milestoneRequirements?.map((item) => ({ ...item, targetRefs: withoutResponsibleGroupRef(item.targetRefs, groupId) })),
+    qaReports: withoutResponsibleGroupTarget(currentSnapshot.qaReports, groupId),
+    teamReports: withoutResponsibleGroupTarget(currentSnapshot.teamReports, groupId),
+    qaRequests: currentSnapshot.qaRequests?.map((item) => ({ ...item, targetRefs: withoutResponsibleGroupRef(item.targetRefs, groupId) })),
+    testResults: withoutResponsibleGroupTarget(currentSnapshot.testResults, groupId),
+    qaFindings: withoutResponsibleGroupTarget(currentSnapshot.qaFindings, groupId),
+    testFindings: withoutResponsibleGroupTarget(currentSnapshot.testFindings, groupId),
+    designIterations: withoutResponsibleGroupTarget(currentSnapshot.designIterations, groupId),
+    risks: currentSnapshot.risks.map((risk) => ({
+      ...risk,
+      ownerGroupId: risk.ownerGroupId === groupId ? null : risk.ownerGroupId,
+      relatedTargets: withoutResponsibleGroupRef(risk.relatedTargets, groupId),
+    })),
+  });
+  for (const remaining of remainingGroups) {
+    const previous = previousGroups.find((candidate) => candidate.id === remaining.id);
+    if (previous && previous.primaryMemberIds.join("\u0000") !== remaining.primaryMemberIds.join("\u0000")) {
+      recordAuditAction({ operation: "update", entityType: "responsible-group", entityId: remaining.id, entityLabel: remaining.name, actorMemberId: auditContext.actorMemberId ?? null, requestId: auditContext.requestId ?? null, memberIds: remaining.memberIds, changedFields: ["primaryMemberIds"] });
+    }
+  }
+  recordAuditAction({
+    operation: "delete",
+    entityType: "responsible-group",
+    entityId: group.id,
+    entityLabel: group.name,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
+    projectIds: group.projectIds,
+    memberIds: group.memberIds,
+    detailsJson: { unassignedTaskCount },
+  });
+  return group;
+}
+
+function withoutResponsibleGroupRef(refs: DomainReference[], groupId: string) {
+  return refs.filter((ref) => ref.kind !== "responsible-group" || ref.id !== groupId);
+}
+
+function withoutResponsibleGroupTarget<T extends { targetRefs: DomainReference[] }>(records: T[], groupId: string) {
+  return records.map((record) => ({ ...record, targetRefs: withoutResponsibleGroupRef(record.targetRefs, groupId) }));
 }
 
 export function getMembers(): SnapshotView["members"] {
@@ -3948,7 +4059,6 @@ export function createMember(input: MemberInput) {
     email: (input.email ?? "").trim(),
     photoUrl: (input.photoUrl ?? "").trim(),
     role: input.role,
-    classYear: input.role === "student" || input.role === "lead" ? input.classYear ?? null : null,
     elevated: isElevatedMemberRole(input.role),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
@@ -4012,7 +4122,6 @@ export function updateMember(
     ...previousMember,
     ...input,
     role: nextRole,
-    classYear: nextRole === "student" || nextRole === "lead" ? input.classYear === undefined ? previousMember.classYear ?? null : input.classYear : null,
     email: nextEmail,
     photoUrl: nextPhotoUrl,
     seasonId: nextSeasonId,
@@ -4061,6 +4170,7 @@ export function removeMember(memberId: string) {
     responsibleGroups: currentSnapshot.responsibleGroups.map((group) => ({
       ...group,
       memberIds: group.memberIds.filter((id) => id !== memberId),
+      primaryMemberIds: group.primaryMemberIds.filter((id) => id !== memberId),
     })),
     subsystems: currentSnapshot.subsystems.map((subsystem) => ({
       ...subsystem,

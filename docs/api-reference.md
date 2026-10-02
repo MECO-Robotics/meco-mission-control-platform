@@ -168,11 +168,12 @@ Workflow endpoints return `403` for insufficient role, `404` for a missing item,
 ## Team And Robot Structure
 
 - `GET /api/responsible-groups`: list canonical team groups.
-- `POST /api/responsible-groups`: create a group with a season, applicable project IDs and member IDs. Requires mentor/admin.
-- `PATCH /api/responsible-groups/:groupId`: edit name, season, project applicability, membership, or archive state. Projects and members must belong to the selected season. Tasks continue to reference groups through `responsibleGroupId`.
+- `POST /api/responsible-groups`: create a team with a season, applicable project IDs and member IDs. ResponsibleGroups and WorkTypes are independent; creating or renaming a team does not create or change WorkTypes. An empty project list applies to every project in the season. Requires mentor/admin.
+- `PATCH /api/responsible-groups/:groupId`: edit team name, season, project applicability, membership, primary student membership, or archive state. Students may belong to multiple teams but have one primary team per season. `primaryMemberIds` must be a subset of `memberIds` and contain only students or student leads. Assigning a student as primary in another team transfers the primary membership; archiving/removing the primary membership falls back to another active team membership when available. Projects and members must belong to the selected season. Tasks continue to reference groups through `responsibleGroupId`.
+- `DELETE /api/responsible-groups/:groupId`: remove a team. Existing tasks remain and have `responsibleGroupId` cleared; typed target references and risk group ownership are also cleared. Affected students transfer primary capacity attribution to another active membership when available. Requires mentor/admin.
 - `GET /api/members`: list members.
-- `POST /api/members`: create or invite a member. Students, including members whose role is `lead`, may have an optional `classYear` of `freshman`, `sophomore`, `junior`, or `senior`; other roles must omit it or send `null`. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
-- `PATCH /api/members/:memberId`: update a member, including nullable student or student-lead class year. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
+- `POST /api/members`: create or invite a member. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
+- `PATCH /api/members/:memberId`: update a member. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
 - `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted.
 - `POST /api/subsystems`: create a subsystem.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.

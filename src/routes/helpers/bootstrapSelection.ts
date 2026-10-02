@@ -98,10 +98,13 @@ export function buildBootstrapResponse(
   );
   const activeProjectTypes = new Set(seasonScopedProjects.filter((project) => activeProjectIds.has(project.id)).map((project) => project.projectType));
   const scopedWorkTypes = snapshot.workTypes.filter((workType) => activeProjectTypes.has(workType.projectType));
-  const scopedResponsibleGroups = snapshot.responsibleGroups.filter((group) =>
-    (!selectedSeasonId || group.seasonId === selectedSeasonId) &&
-    (group.projectIds.length === 0 || group.projectIds.some((projectId) => activeProjectIds.has(projectId))),
-  );
+  const scopedWorkTypeIds = new Set(scopedWorkTypes.map((workType) => workType.id));
+  const scopedResponsibleGroups = snapshot.responsibleGroups
+    .filter((group) =>
+      (!selectedSeasonId || group.seasonId === selectedSeasonId) &&
+      (group.projectIds.length === 0 || group.projectIds.some((projectId) => activeProjectIds.has(projectId))),
+    )
+    .map((group) => ({ ...group, workTypeIds: group.workTypeIds.filter((workTypeId) => scopedWorkTypeIds.has(workTypeId)) }));
   const scopedWorkstreams = snapshot.workstreams.filter((workstream) =>
     activeProjectIds.has(workstream.projectId),
   );

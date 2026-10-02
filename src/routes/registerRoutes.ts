@@ -78,6 +78,7 @@ import {
   removePartDefinition,
   removePartInstance,
   removePurchaseItem,
+  removeResponsibleGroup,
   removeRisk,
   removeSubsystem,
   removeTask,
@@ -134,6 +135,7 @@ import {
   validateQaRequestLinks,
   validateRiskLinks,
   validateSubsystemPeople,
+  validateTaskPeople,
   validateTaskLinks,
   validateTestResultLinks,
   validateWorkLogLinks,
@@ -280,7 +282,6 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     role: member.role === "mentor" || member.role === "admin"
       ? "mentor"
       : member.role === "external" ? "external" : "student",
-    classYear: member.role === "student" || member.role === "lead" ? member.classYear ?? null : null,
     // Synthetic availability supports local demo planning without revealing schedules.
     plannedWeeklyAttendanceHours: 6,
     plannedAttendanceDays: ["tuesday", "thursday"],
@@ -294,6 +295,7 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     responsibleGroups: selectedBootstrap.responsibleGroups.map((group) => ({
       ...group,
       memberIds: rewriteDemoMemberIds(group.memberIds, memberIdsByOriginalId),
+      primaryMemberIds: rewriteDemoMemberIds(group.primaryMemberIds, memberIdsByOriginalId),
     })),
     subsystems: selectedBootstrap.subsystems.map((subsystem) => ({
       ...subsystem,
@@ -2094,11 +2096,23 @@ export async function registerRoutes(
         });
       }
 
+      const nextAssigneeIds = (currentTask.assigneeIds ?? []).filter(
+        (assigneeId) => assigneeId !== currentTask.ownerId,
+      );
+      const assignmentError = validateTaskPeople({
+        ownerId: null,
+        assigneeIds: nextAssigneeIds,
+        mentorId: currentTask.mentorId,
+      });
+      if (assignmentError) {
+        return reply.code(409).send({
+          message: "Assign another student, lead, or mentor before releasing this task.",
+        });
+      }
+
       const updatedTask = updateTask(currentTask.id, {
         ownerId: null,
-        assigneeIds: (currentTask.assigneeIds ?? []).filter(
-          (assigneeId) => assigneeId !== currentTask.ownerId,
-        ),
+        assigneeIds: nextAssigneeIds,
       }, buildTaskAuditContext(request, member?.id ?? null));
 
       return {
@@ -2147,6 +2161,14 @@ export async function registerRoutes(
       const nextAssigneeIds = parsed.data.ownerId
         ? uniqueIds([...assigneeIdsWithoutPreviousOwner, parsed.data.ownerId])
         : assigneeIdsWithoutPreviousOwner;
+      const assignmentError = validateTaskPeople({
+        ownerId: parsed.data.ownerId,
+        assigneeIds: nextAssigneeIds,
+        mentorId: currentTask.mentorId,
+      });
+      if (assignmentError) {
+        return reply.code(400).send({ message: assignmentError });
+      }
 
       const updatedTask = updateTask(currentTask.id, {
         ownerId: parsed.data.ownerId,
@@ -2191,6 +2213,8 @@ export async function registerRoutes(
         projectId: nextProjectId,
         workTypeId: parsed.data.workTypeId ?? currentTask.workTypeId,
         responsibleGroupId: parsed.data.responsibleGroupId === undefined ? currentTask.responsibleGroupId : parsed.data.responsibleGroupId,
+        ownerId: parsed.data.ownerId === undefined ? currentTask.ownerId : parsed.data.ownerId,
+        mentorId: parsed.data.mentorId === undefined ? currentTask.mentorId : parsed.data.mentorId,
         scheduleRefs: parsed.data.scheduleRefs === undefined ? currentTask.scheduleRefs : parsed.data.scheduleRefs,
         manufacturingDetails: parsed.data.manufacturingDetails === undefined ? currentTask.manufacturingDetails : parsed.data.manufacturingDetails,
         ...targetIds,
@@ -2404,10 +2428,13 @@ export async function registerRoutes(
     if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
     const parsed = parseRouteInput(responsibleGroupSchema, request.body, reply, "Team payload is invalid.");
     if (!parsed) return reply;
-    const { seasonId, projectIds, memberIds } = parsed.data;
+    const { seasonId, projectIds, memberIds, primaryMemberIds } = parsed.data;
     const snapshot = getSnapshot();
     if (!snapshot.seasons.some((season) => season.id === seasonId) || projectIds.some((id) => !snapshot.projects.some((project) => project.id === id && project.seasonId === seasonId)) || memberIds.some((id) => !snapshot.members.some((member) => member.id === id && (member.activeSeasonIds ?? [member.seasonId]).includes(seasonId)))) {
       return reply.code(400).send({ message: "Teams must reference projects and members in the selected season." });
+    }
+    if (primaryMemberIds.some((id) => !memberIds.includes(id) || !snapshot.members.some((member) => member.id === id && (member.role === "student" || member.role === "lead")))) {
+      return reply.code(400).send({ message: "Primary team membership must be selected members who are students or student leads." });
     }
     return reply.code(201).send({ item: createResponsibleGroup({ ...parsed.data, isArchived: false }) });
   });
@@ -2424,10 +2451,21 @@ export async function registerRoutes(
     if (!snapshot.seasons.some((season) => season.id === next.seasonId) || next.projectIds.some((id) => !snapshot.projects.some((project) => project.id === id && project.seasonId === next.seasonId)) || next.memberIds.some((id) => !snapshot.members.some((member) => member.id === id && (member.activeSeasonIds ?? [member.seasonId]).includes(next.seasonId)))) {
       return reply.code(400).send({ message: "Teams must reference projects and members in the selected season." });
     }
+    if (next.primaryMemberIds.some((id) => !next.memberIds.includes(id) || !snapshot.members.some((member) => member.id === id && (member.role === "student" || member.role === "lead")))) {
+      return reply.code(400).send({ message: "Primary team membership must be selected members who are students or student leads." });
+    }
     if (snapshot.tasks.some((task) => task.responsibleGroupId === current.id && (snapshot.projects.find((project) => project.id === task.projectId)?.seasonId !== next.seasonId || (next.projectIds.length > 0 && !next.projectIds.includes(task.projectId))))) {
       return reply.code(409).send({ message: "Team changes cannot invalidate existing task ownership." });
     }
     return { item: updateResponsibleGroup(current.id, parsed.data, buildTaskAuditContext(request)) };
+  });
+
+  app.delete<{ Params: { groupId: string } }>("/api/responsible-groups/:groupId", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
+    const removed = removeResponsibleGroup(request.params.groupId, buildTaskAuditContext(request));
+    if (!removed) return reply.code(404).send({ message: "Team not found." });
+    return { item: removed };
   });
 
   app.get("/api/members", async (request, reply) => {
@@ -2511,9 +2549,6 @@ export async function registerRoutes(
       });
     }
 
-    if (parsed.data.role !== "student" && parsed.data.role !== "lead" && parsed.data.classYear != null) {
-      return reply.code(400).send({ message: "Class year only applies to students and student leads." });
-    }
     const member = createMember(parsed.data);
     return reply.code(201).send({
       item: member,
@@ -2558,8 +2593,18 @@ export async function registerRoutes(
         return reply.code(404).send({ message: "Member not found." });
       }
       const nextRole = parsed.data.role ?? currentMember.role;
-      if (nextRole !== "student" && nextRole !== "lead" && parsed.data.classYear != null) {
-        return reply.code(400).send({ message: "Class year only applies to students and student leads." });
+
+      if (nextRole !== currentMember.role) {
+        const roleSensitiveTasks = getTasks().filter((task) =>
+          (task.ownerId === currentMember.id && nextRole !== "student" && nextRole !== "lead") ||
+          (task.mentorId === currentMember.id && nextRole !== "mentor") ||
+          ((task.assigneeIds ?? []).includes(currentMember.id) && nextRole !== "student" && nextRole !== "lead" && nextRole !== "mentor"),
+        );
+        if (roleSensitiveTasks.length > 0) {
+          return reply.code(409).send({
+            message: `Reassign ${roleSensitiveTasks.length} task${roleSensitiveTasks.length === 1 ? "" : "s"} before changing this person's role.`,
+          });
+        }
       }
 
       if (
@@ -2632,6 +2677,20 @@ export async function registerRoutes(
       ) {
         return reply.code(409).send({
           message: "The final administrator cannot be deleted.",
+        });
+      }
+
+      const soleAssignedTasks = getTasks().filter((task) => {
+        const contributorIds = uniqueIds([
+          task.ownerId,
+          ...(task.assigneeIds ?? []),
+          task.mentorId,
+        ].filter((id): id is string => Boolean(id)));
+        return contributorIds.includes(request.params.memberId) && contributorIds.every((id) => id === request.params.memberId);
+      });
+      if (soleAssignedTasks.length > 0) {
+        return reply.code(409).send({
+          message: `Reassign ${soleAssignedTasks.length} task${soleAssignedTasks.length === 1 ? "" : "s"} before removing this person.`,
         });
       }
 
