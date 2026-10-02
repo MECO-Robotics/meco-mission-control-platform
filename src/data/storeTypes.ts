@@ -48,7 +48,7 @@ export type MemberInput = OptionalFields<
   "email" | "elevated" | "seasonId"
 >;
 
-export type ResponsibleGroupInput = Omit<ResponsibleGroup, "id" | "isArchived"> & Partial<Pick<ResponsibleGroup, "isArchived">>;
+export type ResponsibleGroupInput = Omit<ResponsibleGroup, "id" | "isArchived" | "workTypeIds"> & Partial<Pick<ResponsibleGroup, "isArchived" | "workTypeIds">>;
 
 export type MeetingInput = Omit<
   Meeting,

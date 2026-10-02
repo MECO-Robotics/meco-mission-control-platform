@@ -4,7 +4,7 @@ import {
   type PartAcquisitionPlan, type PartDefinitionInput,
 } from "../../data/store";
 import type { partDefinitionSchema } from "../routeSchemas";
-import { validatePartDefinitionMaterialId, validateSubsystemPeople } from "./linkValidation";
+import { validatePartDefinitionMaterialId, validateSubsystemPeople, validateTaskPeople } from "./linkValidation";
 import { uniqueIds } from "../../domain/ids";
 import { normalizeTaskTargets } from "./taskTargets";
 
@@ -37,11 +37,11 @@ export function preparePartAcquisition(
   }
   const owner = getMembers().find((member) => member.id === acquisition.ownerId);
   const mentor = getMembers().find((member) => member.id === acquisition.mentorId);
-  if (!owner || owner.role === "external") {
-    return { error: "Select an internal roster member as the acquisition owner." };
+  if (!owner || (owner.role !== "student" && owner.role !== "lead")) {
+    return { error: "Select a student or lead as the acquisition owner." };
   }
-  if (!mentor || (mentor.role !== "mentor" && mentor.role !== "admin")) {
-    return { error: "Select a mentor or admin as the acquisition mentor." };
+  if (!mentor || mentor.role !== "mentor") {
+    return { error: "Select a mentor as the acquisition mentor." };
   }
   const peopleError = validateSubsystemPeople({
     projectId: project.id,
@@ -51,6 +51,8 @@ export function preparePartAcquisition(
   if (peopleError) {
     return { error: peopleError };
   }
+  const taskPeopleError = validateTaskPeople({ ownerId: owner.id, mentorId: mentor.id });
+  if (taskPeopleError) return { error: taskPeopleError };
   const targets = normalizeTaskTargets({ subsystemIds: [subsystem.id] });
   const task = {
     ...targets,

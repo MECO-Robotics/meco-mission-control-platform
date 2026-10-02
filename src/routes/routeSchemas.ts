@@ -25,7 +25,6 @@ const memberFieldsSchema = z.object({
   email: z.union([z.literal(""), z.string().trim().email()]),
   photoUrl: z.string().trim(),
   role: z.enum(["student", "lead", "mentor", "admin", "external"]),
-  classYear: z.enum(["freshman", "sophomore", "junior", "senior"]).nullable().optional(),
   elevated: z.boolean(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
@@ -39,9 +38,12 @@ const responsibleGroupFieldsSchema = z.object({
   name: z.string().trim().min(2),
   projectIds: z.array(z.string().trim().min(1)),
   memberIds: z.array(z.string().trim().min(1)),
+  primaryMemberIds: z.array(z.string().trim().min(1)),
   isArchived: z.boolean().optional(),
 });
-export const responsibleGroupSchema = responsibleGroupFieldsSchema;
+export const responsibleGroupSchema = responsibleGroupFieldsSchema.extend({
+  primaryMemberIds: responsibleGroupFieldsSchema.shape.primaryMemberIds.default([]),
+});
 export const responsibleGroupPatchSchema = responsibleGroupFieldsSchema.partial();
 
 export const memberSchema = memberFieldsSchema.extend({
