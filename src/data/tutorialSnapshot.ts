@@ -54,6 +54,14 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
   for (const task of copy.tasks) {
     task.actualHours = copy.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0);
   }
+  // Keep a few assigned examples overdue after tutorial dates roll forward.
+  // Otherwise the compressed historical timeline can place every due date on
+  // today, hiding overdue workload from the demo views.
+  for (const task of copy.tasks.filter((candidate) => ["travel-pack-finalize", "intake-guard", "auto-safety-review"].includes(candidate.id))) {
+    const yesterday = new Date(today - DAY).toISOString().slice(0, 10);
+    task.startDate = yesterday;
+    task.dueDate = yesterday;
+  }
   // The availability view requires attendance today, not just roster membership.
   for (const member of copy.members.filter((member) => member.id.startsWith("demo-"))) {
     copy.attendanceRecords.push({
