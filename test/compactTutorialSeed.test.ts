@@ -64,6 +64,18 @@ test("restored tutorial seed keeps historical demo records and chapter examples 
   assert.deepEqual(snapshot.workTypes.filter((workType) => workType.projectType === "robot").map((workType) => workType.code), [
     "design", "manufacturing", "assembly", "electrical-wiring", "programming", "testing", "driving", "planning",
   ]);
+  const membersById = new Map(snapshot.members.map((member) => [member.id, member]));
+  const students = snapshot.members.filter((member) => member.role === "student");
+  assert.deepEqual(snapshot.responsibleGroups.map((group) => group.name), ["Mechanical", "Electrical", "Programming", "Business", "Strategy", "Admin", "Media"]);
+  assert.ok(snapshot.responsibleGroups.every((group) => group.workTypeIds.length === 0));
+  for (const team of snapshot.responsibleGroups) {
+    assert.ok(team.memberIds.some((memberId) => membersById.get(memberId)?.role === "student"), `Missing student in ${team.name}`);
+    assert.ok(team.memberIds.some((memberId) => membersById.get(memberId)?.role === "mentor"), `Missing mentor in ${team.name}`);
+  }
+  for (const student of students) {
+    assert.ok(snapshot.responsibleGroups.filter((group) => group.memberIds.includes(student.id)).length >= 2, `Student should appear under multiple teams: ${student.id}`);
+    assert.equal(snapshot.responsibleGroups.filter((group) => group.primaryMemberIds.includes(student.id)).length, 1, `Student should have one primary team: ${student.id}`);
+  }
   assert.deepEqual(snapshot.manufacturingProcesses.map((process) => process.code), ["cnc", "3d-print", "fabrication"]);
   const manufacturingTask = snapshot.tasks.find((task) => task.manufacturingDetails);
   assert.ok(manufacturingTask);
@@ -88,6 +100,13 @@ test("restored bootstrap supports tutorial chapters, resets, and sanitized demo 
       "design", "manufacturing", "assembly", "electrical-wiring", "programming", "testing", "driving", "planning",
     ]);
     assert.ok(Array.isArray(body.responsibleGroups) && Array.isArray(body.vendors) && Array.isArray(body.events));
+    assert.deepEqual(body.responsibleGroups.map((group: { name: string }) => group.name), ["Mechanical", "Electrical", "Programming", "Business", "Strategy", "Admin", "Media"]);
+    const scopedWorkTypeIds = new Set(body.workTypes.map((workType: { id: string }) => workType.id));
+    assert.ok(body.responsibleGroups.every((group: { workTypeIds: string[] }) => group.workTypeIds.every((id) => scopedWorkTypeIds.has(id))));
+    resetLimits();
+    const mediaBootstrap = await app.inject({ method: "GET", url: "/api/bootstrap?projectId=project-media-2026" });
+    assert.equal(mediaBootstrap.statusCode, 200, mediaBootstrap.body);
+    assert.equal(mediaBootstrap.json().responsibleGroups.length, 7);
     assert.deepEqual(body.manufacturingProcesses.map((process: { code: string }) => process.code), ["cnc", "3d-print", "fabrication"]);
     assert.equal(body.tasks.some((task: { id: string }) => task.id === "swerve-sensor-bundle"), true);
     assert.equal(body.milestones.length > 0 && body.workLogs.length > 0, true);

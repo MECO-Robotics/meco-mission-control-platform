@@ -132,7 +132,19 @@
               "type": "string"
             }
           },
+          "workTypeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "primaryMemberIds": {
             "type": "array",
             "items": {
               "type": "string"
@@ -147,7 +159,9 @@
           "seasonId",
           "name",
           "projectIds",
+          "workTypeIds",
           "memberIds",
+          "primaryMemberIds",
           "isArchived"
         ],
         "additionalProperties": false
@@ -204,22 +218,6 @@
         "properties": {
           "id": {
             "type": "string"
-          },
-          "classYear": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "freshman",
-                  "sophomore",
-                  "junior",
-                  "senior"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [

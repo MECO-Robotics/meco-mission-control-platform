@@ -321,7 +321,9 @@ export const snapshot: PlatformSnapshot = {
     "seasonId": "default-season",
     "name": "Drivetrain",
     "projectIds": ["project-robot-2026"],
+    "workTypeIds": [],
     "memberIds": ["ava"],
+    "primaryMemberIds": ["ava"],
     "isArchived": false
   }],
   "workstreams": [
@@ -416,7 +418,6 @@ export const snapshot: PlatformSnapshot = {
       "name": "Ava Chen",
       "email": "ava.chen@mecorobotics.org",
       "role": "student",
-      "classYear": "junior",
       "elevated": false,
       "seasonId": "default-season",
       "activeSeasonIds": [
@@ -5328,3 +5329,89 @@ export const snapshot: PlatformSnapshot = {
   "escalations": [],
   "actions": []
 };
+
+const demoPlannedWeeklyHours: Record<string, number> = {
+  ava: 6,
+  lucas: 4,
+  priya: 8,
+  ethan: 3,
+  jordan: 6,
+  riley: 4,
+  maya: 2,
+  noah: 5,
+  zoe: 2,
+  ben: 7,
+  sofia: 8,
+  marco: 6,
+  lena: 0,
+  olivia: 3,
+  "demo-alex-morgan": 8,
+  "demo-sam-rivera": 6,
+  "demo-taylor-chen": 4,
+  "demo-jamie-patel": 10,
+  "demo-casey-brooks": 6,
+  "demo-quinn-parker": 5,
+  "demo-riley-dawson": 4,
+  "demo-jordan-ellis": 2,
+};
+snapshot.members = snapshot.members.map((member) => ({
+  ...member,
+  plannedWeeklyAttendanceHours: demoPlannedWeeklyHours[member.id] ?? 0,
+}));
+
+const teamDivisions = [
+  { id: "team-mechanical", name: "Mechanical" },
+  { id: "team-electrical", name: "Electrical" },
+  { id: "team-programming", name: "Programming" },
+  { id: "team-business", name: "Business" },
+  { id: "team-strategy", name: "Strategy" },
+  { id: "team-admin", name: "Admin" },
+  { id: "team-media", name: "Media" },
+] as const;
+const demoStudents = snapshot.members.filter((member) => member.role === "student");
+const demoMentors = snapshot.members.filter((member) => member.role === "mentor");
+const seasonId = snapshot.seasons[0]?.id ?? "default-season";
+snapshot.responsibleGroups = teamDivisions.map((division, index) => {
+  const primaryStudents = demoStudents.filter((_, studentIndex) => studentIndex % teamDivisions.length === index);
+  const secondaryStudents = demoStudents.filter((_, studentIndex) => studentIndex % teamDivisions.length === (index + teamDivisions.length - 1) % teamDivisions.length);
+  const mentor = demoMentors[index % demoMentors.length]!;
+  return {
+    ...division,
+    seasonId,
+    projectIds: [],
+    workTypeIds: [],
+    memberIds: [...new Set([...primaryStudents, ...secondaryStudents].map((member) => member.id).concat(mentor.id))],
+    primaryMemberIds: primaryStudents.map((member) => member.id),
+    isArchived: false,
+  };
+});
+
+const teamForTask = (task: (typeof snapshot.tasks)[number]) => {
+  const workType = snapshot.workTypes.find((candidate) => candidate.id === task.workTypeId);
+  const text = `${workType?.name ?? ""} ${task.title}`.toLocaleLowerCase();
+  if (task.projectId === "project-media-2026" || /media|photo|video|graphic|social|website/.test(text)) return "team-media";
+  if (task.projectId === "project-strategy-2026" || /scout|strategy|game analysis|data analysis|risk review/.test(text)) return "team-strategy";
+  if (task.projectId === "project-operations-2026" || /admin|finance|operation|inventory|safety/.test(text)) return "team-admin";
+  if (task.projectId === "project-outreach-2026" || /business|outreach|sponsor|partnership|presentation|writing|communication/.test(text)) return "team-business";
+  if (/electrical|wiring|sensor|power|circuit/.test(text)) return "team-electrical";
+  if (/program|software|code|drive|autonomous|controls/.test(text)) return "team-programming";
+  return "team-mechanical";
+};
+for (const task of snapshot.tasks) task.responsibleGroupId = teamForTask(task);
+
+const overdueDemoTask = snapshot.tasks.find((task) => task.id === "travel-pack-finalize");
+if (overdueDemoTask) {
+  overdueDemoTask.ownerId = "ben";
+  overdueDemoTask.assigneeIds = ["ben"];
+  overdueDemoTask.dueDate = "2026-04-20";
+}
+
+for (const [riskId, taskId] of [
+  ["risk-cnc-throughput", "intake-guard"],
+  ["risk-drive-evidence-delay", "auto-safety-review"],
+] as const) {
+  const risk = snapshot.risks.find((candidate) => candidate.id === riskId);
+  if (risk && !risk.relatedTargets.some((target) => target.kind === "task" && target.id === taskId)) {
+    risk.relatedTargets.push({ kind: "task", id: taskId });
+  }
+}

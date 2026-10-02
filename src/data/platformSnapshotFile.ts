@@ -24,7 +24,15 @@ const optionalSnapshotCollectionKeys = new Set<keyof PlatformSnapshot>([
   "milestoneRequirements", "qaRequests", "actions",
 ]);
 const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
+  members: z.object({
+    id: z.string(), name: z.string(), email: z.string(), photoUrl: z.string().optional(),
+    role: z.enum(["student", "lead", "mentor", "admin", "external"]), elevated: z.boolean(), seasonId: z.string(),
+    activeSeasonIds: z.array(z.string()).optional(), plannedWeeklyAttendanceHours: z.number().optional(),
+    plannedAttendanceDays: z.array(z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])).optional(),
+    plannedAttendanceNotes: z.string().optional(),
+  }).strict(),
   projects: z.object({ id: z.string(), teamId: z.string(), seasonId: z.string(), name: z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]), projectType: z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]), description: z.string(), status: z.enum(["planned", "active", "paused", "complete"]) }).strict(),
+  responsibleGroups: z.object({ id: z.string(), seasonId: z.string(), name: z.string(), projectIds: z.array(z.string()), workTypeIds: z.array(z.string()).default([]), memberIds: z.array(z.string()), primaryMemberIds: z.array(z.string()).default([]), isArchived: z.boolean() }).strict(),
   tasks: taskSchema.passthrough().extend({ id: z.string() }),
   subsystems: subsystemSchema.extend({ id: z.string(), isCore: z.boolean() }).strict(),
   milestones: milestoneSchema.extend({ id: z.string(), seasonId: z.string().optional() }).strict(),

@@ -160,10 +160,51 @@ export function validateRiskLinks(input: {
   return null;
 }
 
+export function validateTaskPeople(input: {
+  ownerId?: string | null;
+  mentorId?: string | null;
+  assigneeIds?: readonly string[];
+}) {
+  const contributorIds = [...new Set([
+    input.ownerId,
+    ...(input.assigneeIds ?? []),
+    input.mentorId,
+  ].filter((id): id is string => Boolean(id)))];
+  if (contributorIds.length === 0) {
+    return "Each task must be assigned to at least one student, lead, or mentor.";
+  }
+
+  const membersById = new Map(getMembers().map((member) => [member.id, member]));
+  for (const contributorId of contributorIds) {
+    const contributor = membersById.get(contributorId);
+    if (!contributor) {
+      return "One or more assigned people do not exist.";
+    }
+
+    if (contributor.role !== "student" && contributor.role !== "lead" && contributor.role !== "mentor") {
+      return "Tasks can only be assigned to students, leads, or mentors.";
+    }
+  }
+
+  if (input.ownerId) {
+    const owner = membersById.get(input.ownerId);
+    if (owner?.role !== "student" && owner?.role !== "lead") {
+      return "Task owner must be a student or lead.";
+    }
+  }
+
+  if (input.mentorId && membersById.get(input.mentorId)?.role !== "mentor") {
+    return "Task mentor must be a mentor.";
+  }
+  return null;
+}
+
 export function validateTaskLinks(input: {
   projectId: string;
   workTypeId: string;
   responsibleGroupId?: string | null;
+  ownerId?: string | null;
+  mentorId?: string | null;
   scheduleRefs?: readonly { kind: "meeting" | "event" | "milestone"; id: string }[];
   manufacturingDetails?: import("../../domain/types").ReadonlyData<import("../../domain/types").Task["manufacturingDetails"]>;
   workstreamIds?: readonly string[];
@@ -268,21 +309,7 @@ export function validateTaskLinks(input: {
     }
   }
 
-  if (input.assigneeIds && input.assigneeIds.length > 0) {
-    const membersById = new Map(getMembers().map((member) => [member.id, member]));
-    for (const assigneeId of input.assigneeIds) {
-      const assignee = membersById.get(assigneeId);
-      if (!assignee) {
-        return "One or more assigned students do not exist.";
-      }
-
-      if (assignee.role !== "student" && assignee.role !== "lead") {
-        return "Assigned task members must be students or leads.";
-      }
-    }
-  }
-
-  return null;
+  return validateTaskPeople(input);
 }
 
 export function validateArtifactLinks(input: {

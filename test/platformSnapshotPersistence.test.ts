@@ -89,6 +89,19 @@ test("current schema snapshots load without rewriting and reset archives the con
   }
 });
 
+test("snapshot member schema rejects removed class grouping fields", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-member-schema-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  const legacy = structuredClone(snapshot) as typeof snapshot & { members: Array<typeof snapshot.members[number] & { classYear?: string }> };
+  legacy.members[0]!.classYear = "junior";
+  writeFileSync(snapshotPath, JSON.stringify(legacy), "utf8");
+  try {
+    assert.throws(() => loadPlatformSnapshotFile(snapshotPath), /does not match schema/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("snapshot:reset archives the configured snapshot and is safe when it is absent", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-reset-command-"));
   const snapshotPath = join(directory, "custom-snapshot.json");
