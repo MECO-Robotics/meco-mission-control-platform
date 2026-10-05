@@ -175,7 +175,7 @@ QA and test findings share typed `targetRefs` and use the canonical nullable
 `reportId` source relationship; test findings additionally require
 `testResultId`. Keep source identities separate from target links.
 
-Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports store typed targets and evidence; Risk owns severity, status, and mitigation state.
+Subsystem layout commands accept nullable `layoutX`/`layoutY` from 0 to 1, zone (`front`, `rear`, `left`, `right`, `center`, `top`, `unplaced`), `layoutView: "top"`, and integer `sortOrder`. QA reports store typed targets and evidence; Risk owns severity, status (`open`, `in-progress`, `blocked`, `resolved`), member assignment, mitigation due date, and linked task.
 
 Route registrations that write snapshot state declare `config.snapshotMutation: true`. Their successful responses commit one staged snapshot; errors discard it. Production mutation outside that boundary fails before replacement. Snapshot loading/seed initialization canonicalizes once; ordinary transaction copies are pure clones. Persistence stores share the application's Prisma client and its close lifecycle. CAD backend selection is explicit and never changes after a database failure.
 

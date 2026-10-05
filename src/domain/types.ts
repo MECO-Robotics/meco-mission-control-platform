@@ -591,7 +591,7 @@ export interface DesignIteration {
   updatedAt: string;
 }
 
-export type RiskStatus = "open" | "mitigating" | "accepted" | "resolved";
+export type RiskStatus = "open" | "in-progress" | "blocked" | "resolved";
 export type RiskCategory = "dependency" | "design" | "manufacturing" | "supply" | "schedule" | "qa" | "inventory" | "other";
 export type DomainReference =
   | { kind: "project" | "workstream" | "responsible-group" | "task" | "subsystem" | "mechanism" | "part-definition" | "part-instance" | "material" | "vendor" | "manufacturing-details" | "purchase-item" | "meeting" | "event" | "milestone" | "qa-request" | "test-result" | "report" | "artifact" | "qa-finding" | "test-finding" | "task-dependency" | "risk" | "design-iteration"; id: string };
@@ -609,6 +609,8 @@ export interface Risk {
   relatedTargets: DomainReference[];
   mitigationTaskId: string | null;
   ownerGroupId: string | null;
+  ownerMemberId: string | null;
+  mitigationDueDate: string | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;

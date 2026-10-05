@@ -137,6 +137,8 @@ export type TaskDependencyInput = TaskDependency extends infer Dependency
   : never;
 
 
-export type RiskInput = Omit<Risk, "id" | "createdAt" | "updatedAt" | "resolvedAt"> & {
+export type RiskInput = Omit<Risk, "id" | "createdAt" | "updatedAt" | "resolvedAt" | "ownerMemberId" | "mitigationDueDate"> & {
   resolvedAt?: string | null;
+  ownerMemberId?: string | null;
+  mitigationDueDate?: string | null;
 };

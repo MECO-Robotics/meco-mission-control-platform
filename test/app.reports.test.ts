@@ -435,6 +435,12 @@ test("web report and task planning contract endpoints persist records", async ()
 
 test("risk endpoints support create, update, and delete with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const bootstrapResponse = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as { members: Array<{ id: string }> };
+    const ownerMemberId = bootstrapBody.members[0]?.id ?? null;
+    assert.ok(ownerMemberId);
+    resetLimits();
     const qaReportsResponse = await app.inject({
       method: "GET",
       url: "/api/qa-reports",
@@ -497,6 +503,8 @@ test("risk endpoints support create, update, and delete with link validation", a
         source: { kind: "report", id: sourceQaReportId },
         relatedTargets: [{ kind: "project", id: attachmentProjectId }],
         mitigationTaskId,
+        ownerMemberId,
+        mitigationDueDate: "2026-10-20",
       },
     });
 
@@ -506,6 +514,8 @@ test("risk endpoints support create, update, and delete with link validation", a
         relatedTargets: Array<{ kind: string; id: string }>;
         id: string;
         mitigationTaskId: string | null;
+        ownerMemberId: string | null;
+        mitigationDueDate: string | null;
         severity: string;
         source: { id?: string; kind: string };
         title: string;
@@ -516,6 +526,8 @@ test("risk endpoints support create, update, and delete with link validation", a
     assert.equal(createdRiskBody.item.source.id, sourceQaReportId);
     assert.deepEqual(createdRiskBody.item.relatedTargets, [{ kind: "project", id: attachmentProjectId }]);
     assert.equal(createdRiskBody.item.mitigationTaskId, mitigationTaskId);
+    assert.equal(createdRiskBody.item.ownerMemberId, ownerMemberId);
+    assert.equal(createdRiskBody.item.mitigationDueDate, "2026-10-20");
 
     resetLimits();
 
@@ -525,6 +537,9 @@ test("risk endpoints support create, update, and delete with link validation", a
       payload: {
         severity: "high",
         mitigationTaskId: null,
+        ownerMemberId: null,
+        mitigationDueDate: null,
+        status: "blocked",
       },
     });
 
@@ -533,10 +548,16 @@ test("risk endpoints support create, update, and delete with link validation", a
       item: {
         mitigationTaskId: string | null;
         severity: string;
+        ownerMemberId: string | null;
+        mitigationDueDate: string | null;
+        status: string;
       };
     };
     assert.equal(updatedRiskBody.item.severity, "high");
     assert.equal(updatedRiskBody.item.mitigationTaskId, null);
+    assert.equal(updatedRiskBody.item.ownerMemberId, null);
+    assert.equal(updatedRiskBody.item.mitigationDueDate, null);
+    assert.equal(updatedRiskBody.item.status, "blocked");
 
     resetLimits();
 
