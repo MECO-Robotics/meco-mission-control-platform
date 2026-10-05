@@ -113,6 +113,7 @@ export function validateRiskLinks(input: {
   relatedTargets: readonly { kind: string; id: string }[];
   mitigationTaskId?: string | null;
   ownerGroupId?: string | null;
+  ownerMemberId?: string | null;
 }) {
   const snapshot = getSnapshot();
   if (!snapshot.projects.some((project) => project.id === input.projectId)) return "The selected project does not exist.";
@@ -157,6 +158,7 @@ export function validateRiskLinks(input: {
   }
   if (input.mitigationTaskId && !snapshot.tasks.some((task) => task.id === input.mitigationTaskId && task.projectId === input.projectId)) return "The selected mitigation task does not exist in this project.";
   if (input.ownerGroupId && !snapshot.responsibleGroups.some((group) => group.id === input.ownerGroupId)) return "The selected responsible group does not exist.";
+  if (input.ownerMemberId && !snapshot.members.some((member) => member.id === input.ownerMemberId)) return "The selected risk owner does not exist.";
   return null;
 }
 

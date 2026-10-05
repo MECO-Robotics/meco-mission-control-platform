@@ -312,7 +312,7 @@ export const riskSchema = z.object({
   detail: z.string().trim().min(2),
   category: z.enum(["dependency", "design", "manufacturing", "supply", "schedule", "qa", "inventory", "other"]),
   severity: z.enum(["critical", "high", "medium", "low"]),
-  status: z.enum(["open", "mitigating", "accepted", "resolved"]).default("open"),
+  status: z.enum(["open", "in-progress", "blocked", "resolved"]).default("open"),
   blocksWork: z.boolean().default(false),
   source: z.union([
     z.object({ kind: z.literal("manual") }).strict(),
@@ -324,10 +324,12 @@ export const riskSchema = z.object({
   }).strict()),
   mitigationTaskId: z.string().trim().min(1).nullable().optional(),
   ownerGroupId: z.string().trim().min(1).nullable().optional(),
+  ownerMemberId: z.string().trim().min(1).nullable().optional(),
+  mitigationDueDate: z.string().date().nullable().optional(),
 }).strict();
 
 export const riskPatchSchema = riskSchema.partial().extend({
-  status: z.enum(["open", "mitigating", "accepted", "resolved"]).optional(),
+  status: z.enum(["open", "in-progress", "blocked", "resolved"]).optional(),
   blocksWork: z.boolean().optional(),
 });
 

@@ -21,6 +21,7 @@ import {
   createPartDefinition,
   createPartInstance,
   createQaRequest,
+  createRisk,
   createMember,
   createMilestone,
   getQaRequests,
@@ -652,6 +653,7 @@ test("removeMember clears linked references across the snapshot", () => {
   updateTask("swerve-sensor-bundle", {
     assigneeIds: ["ava", "marco"],
   });
+  const risk = createRisk({ projectId: "project-robot-2026", title: "Owner cleanup", detail: "The owner is being removed.", category: "other", severity: "low", status: "open", blocksWork: false, source: { kind: "manual" }, relatedTargets: [], mitigationTaskId: null, ownerGroupId: null, ownerMemberId: "marco", mitigationDueDate: null });
 
   const removed = removeMember("marco");
   const snapshot = getSnapshot();
@@ -691,6 +693,7 @@ test("removeMember clears linked references across the snapshot", () => {
     false,
   );
   assert.ok(snapshot.qaReports.every((report) => !report.participantIds.includes("marco")));
+  assert.equal(snapshot.risks.find((item) => item.id === risk.id)?.ownerMemberId, null);
 });
 
 test("task milestone requirements infer milestone matches from explicit target requirements", () => {

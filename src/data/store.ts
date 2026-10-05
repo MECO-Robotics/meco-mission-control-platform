@@ -2045,6 +2045,8 @@ export function createRisk(input: RiskInput) {
   const risk: Risk = {
     id: uniqueId(toSlug(input.title) || "risk", riskIds),
     ...input,
+    ownerMemberId: input.ownerMemberId ?? null,
+    mitigationDueDate: input.mitigationDueDate ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     resolvedAt: input.resolvedAt ?? (input.status === "resolved" ? new Date().toISOString() : null),
@@ -4187,6 +4189,10 @@ export function removeMember(memberId: string) {
         (assigneeId) => assigneeId !== memberId,
       ),
       mentorId: task.mentorId === memberId ? null : task.mentorId,
+    })),
+    risks: currentSnapshot.risks.map((risk) => ({
+      ...risk,
+      ownerMemberId: risk.ownerMemberId === memberId ? null : risk.ownerMemberId,
     })),
     workLogs: currentSnapshot.workLogs.map((workLog) => ({
       ...workLog,

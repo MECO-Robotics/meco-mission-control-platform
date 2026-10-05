@@ -1292,7 +1292,7 @@ export async function registerRoutes(
       });
     }
 
-    const risk = createRisk({ ...parsed.data, mitigationTaskId: parsed.data.mitigationTaskId ?? null, ownerGroupId: parsed.data.ownerGroupId ?? null });
+    const risk = createRisk({ ...parsed.data, mitigationTaskId: parsed.data.mitigationTaskId ?? null, ownerGroupId: parsed.data.ownerGroupId ?? null, ownerMemberId: parsed.data.ownerMemberId ?? null, mitigationDueDate: parsed.data.mitigationDueDate ?? null });
 
     return reply.code(201).send({
       item: risk,

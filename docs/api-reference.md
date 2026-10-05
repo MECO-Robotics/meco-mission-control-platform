@@ -141,6 +141,7 @@ Retention policy:
 - `POST /api/risks`: create a risk.
 - `PATCH /api/risks/:riskId`: update a risk.
 - `DELETE /api/risks/:riskId`: delete a risk.
+- Risk payloads use status `open`, `in-progress`, `blocked`, or `resolved`; new risks default to `open`. `ownerMemberId` and `mitigationDueDate` are nullable. A non-null owner must reference a workspace member, and mitigation due dates use `YYYY-MM-DD`.
 
 ## Inventory And Manufacturing
 

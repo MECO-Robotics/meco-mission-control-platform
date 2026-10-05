@@ -4361,6 +4361,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mitigationTaskId": "intake-guard",
       "ownerGroupId": null,
+      "ownerMemberId": null,
+      "mitigationDueDate": null,
       "createdAt": "2026-04-22T12:00:00Z",
       "updatedAt": "2026-04-22T12:00:00Z",
       "resolvedAt": null
@@ -4386,6 +4388,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mitigationTaskId": "auto-safety-review",
       "ownerGroupId": null,
+      "ownerMemberId": null,
+      "mitigationDueDate": null,
       "createdAt": "2026-04-22T12:00:00Z",
       "updatedAt": "2026-04-22T12:00:00Z",
       "resolvedAt": null
@@ -4411,6 +4415,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mitigationTaskId": "vision-calibration-sweep",
       "ownerGroupId": null,
+      "ownerMemberId": null,
+      "mitigationDueDate": null,
       "createdAt": "2026-04-22T12:00:00Z",
       "updatedAt": "2026-04-22T12:00:00Z",
       "resolvedAt": null
@@ -4436,6 +4442,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mitigationTaskId": "climb-load-test",
       "ownerGroupId": null,
+      "ownerMemberId": null,
+      "mitigationDueDate": null,
       "createdAt": "2026-04-22T12:00:00Z",
       "updatedAt": "2026-04-22T12:00:00Z",
       "resolvedAt": null
@@ -4461,6 +4469,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mitigationTaskId": "scouting-tablet-refresh",
       "ownerGroupId": null,
+      "ownerMemberId": null,
+      "mitigationDueDate": null,
       "createdAt": "2026-04-22T12:00:00Z",
       "updatedAt": "2026-04-22T12:00:00Z",
       "resolvedAt": null
@@ -4486,6 +4496,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mitigationTaskId": "outreach-script-rehearsal",
       "ownerGroupId": null,
+      "ownerMemberId": null,
+      "mitigationDueDate": null,
       "createdAt": "2026-04-22T12:00:00Z",
       "updatedAt": "2026-04-22T12:00:00Z",
       "resolvedAt": null
