@@ -108,23 +108,26 @@ test("tutorial seed keeps overdue tasks assigned across date rollovers", () => {
   assert.ok(overdue.every((task) => task.ownerId || task.assigneeIds.length > 0 || task.mentorId));
 });
 
-test("tutorial tasks span the month and land before their linked checkpoints", () => {
-  const now = new Date("2026-10-06T12:00:00Z");
-  const data = createTutorialSnapshot(now);
-  const overdueIds = new Set(["travel-pack-finalize", "intake-guard", "auto-safety-review"]);
-  const dates = data.tasks.filter((task) => !overdueIds.has(task.id)).flatMap((task) => [task.startDate, task.dueDate]);
-  const firstWeekday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).getUTCDay();
-  const mondayOffset = (firstWeekday + 6) % 7;
-  const weeks = new Set(dates.map((date) => Math.floor((Number(date.slice(8, 10)) - 1 + mondayOffset) / 7)));
-  assert.ok(new Set(dates).size >= 10, `expected task dates across at least ten days; got ${new Set(dates).size}`);
-  assert.ok(weeks.size >= 4, `expected task activity in at least four calendar weeks; got ${weeks.size}`);
+for (const date of ["2026-10-06", "2026-11-06", "2027-01-06"]) {
+  test(`tutorial tasks span the month and land before linked checkpoints at ${date}`, () => {
+    const now = new Date(`${date}T12:00:00Z`);
+    const data = createTutorialSnapshot(now);
+    const overdueIds = new Set(["travel-pack-finalize", "intake-guard", "auto-safety-review"]);
+    const dates = data.tasks.filter((task) => !overdueIds.has(task.id)).flatMap((task) => [task.startDate, task.dueDate]);
+    const firstWeekday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).getUTCDay();
+    const mondayOffset = (firstWeekday + 6) % 7;
+    const weeks = new Set(dates.map((value) => Math.floor((Number(value.slice(8, 10)) - 1 + mondayOffset) / 7)));
+    assert.ok(dates.every((value) => value.slice(0, 7) === date.slice(0, 7)), "task dates should follow the current month");
+    assert.ok(new Set(dates).size >= 10, `expected task dates across at least ten days; got ${new Set(dates).size}`);
+    assert.ok(weeks.size >= 4, `expected task activity in at least four calendar weeks; got ${weeks.size}`);
 
-  const milestones = new Map(data.milestones.map((milestone) => [milestone.id, milestone]));
-  for (const task of data.tasks.filter((candidate) => candidate.status !== "complete")) {
-    const nextCheckpoint = task.scheduleRefs
-      .map((ref) => milestones.get(ref.id))
-      .filter((milestone) => milestone && milestone.startAt.slice(0, 10) > now.toISOString().slice(0, 10))
-      .sort((left, right) => left!.startAt.localeCompare(right!.startAt))[0];
-    if (nextCheckpoint) assert.ok(task.dueDate < nextCheckpoint.startAt.slice(0, 10), `${task.id} should be due before ${nextCheckpoint.title}`);
-  }
-});
+    const milestones = new Map(data.milestones.map((milestone) => [milestone.id, milestone]));
+    for (const task of data.tasks.filter((candidate) => candidate.status !== "complete")) {
+      const nextCheckpoint = task.scheduleRefs
+        .map((ref) => milestones.get(ref.id))
+        .filter((milestone) => milestone && milestone.startAt.slice(0, 10) > date)
+        .sort((left, right) => left!.startAt.localeCompare(right!.startAt))[0];
+      if (nextCheckpoint) assert.ok(task.dueDate < nextCheckpoint.startAt.slice(0, 10), `${task.id} should be due before ${nextCheckpoint.title}`);
+    }
+  });
+}
