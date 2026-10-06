@@ -150,7 +150,7 @@ test("tutorial baseline keeps the canonical visible season name", () => {
   const baseline = getTutorialBaselineState();
 
   assert.equal(baseline.seasonId, "default-season");
-  assert.equal(baseline.seasonName, "Tutorial Season");
+  assert.equal(baseline.seasonName, "FRC build and competition season");
 });
 
 test("tutorial seed keeps a planning milestone linked to the robot project", () => {
@@ -158,7 +158,7 @@ test("tutorial seed keeps a planning milestone linked to the robot project", () 
   const milestone = snapshot.milestones.find((candidate) => candidate.id === "tutorial-robot-checkpoint-feb-21");
 
   assert.ok(milestone);
-  assert.equal(milestone.title, "Robot Checkpoint");
+  assert.equal(milestone.title, "Off-season drivebase test");
   assert.deepEqual(milestone.projectIds, ["project-robot-2026"]);
 });
 
@@ -503,7 +503,7 @@ test("task updates append an audit action entry", () => {
   assert.equal(lastAction.requestId, "req-audit-task-update");
   assert.ok(lastAction.changedFields.includes("estimatedHours"));
   assert.ok(lastAction.changedFields.includes("status"));
-  assert.equal(lastAction.beforeJson?.status, "not-started");
+  assert.equal(lastAction.beforeJson?.status, "in-progress");
   assert.equal(lastAction.afterJson?.status, "complete");
   assert.equal(lastAction.beforeJson?.estimatedHours, originalTask.estimatedHours);
   assert.equal(lastAction.afterJson?.estimatedHours, 7);

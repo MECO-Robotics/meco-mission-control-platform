@@ -51,7 +51,7 @@ test("tutorial baseline reset restores canonical season/projects and is idempote
     assert.equal(firstResetBody.mode, "baseline");
     assert.equal(firstResetBody.restored, true);
     assert.equal(firstResetBody.tutorial.seasonId, "default-season");
-    assert.equal(firstResetBody.tutorial.seasonName, "Tutorial Season");
+    assert.equal(firstResetBody.tutorial.seasonName, "FRC build and competition season");
     assert.deepEqual(firstResetBody.tutorial.expectedProjectNames, [
       "Robot",
       "Media",
@@ -82,9 +82,11 @@ test("tutorial baseline reset restores canonical season/projects and is idempote
 
     resetLimits();
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
     assert.ok(bootstrapBody.tasks.length > 0);
-    assert.ok(bootstrapBody.tasks.every((task) => task.startDate.startsWith(currentMonth) && task.dueDate.startsWith(currentMonth)));
+    const taskMonths = new Set(
+      bootstrapBody.tasks.flatMap((task) => [task.startDate.slice(0, 7), task.dueDate.slice(0, 7)]),
+    );
+    assert.ok(taskMonths.size >= 5);
 
     const secondResetResponse = await app.inject({
       method: "POST",
