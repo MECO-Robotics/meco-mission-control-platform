@@ -4,14 +4,13 @@ import { snapshot } from "./mockData";
 const DAY = 86_400_000;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
-// Tutorial chronology spans the current UTC month. Recorded activity anchors
-// to month-to-date while planned work extends through month-end.
+// Keep two months of team history and the next seven months of season work.
 export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
-  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-  const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const seasonStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1);
+  const seasonEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 8, 1);
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const start = monthStart;
-  const end = monthEnd - 1;
+  const start = seasonStart;
+  const end = seasonEnd - 1;
   const copy = structuredClone(snapshot);
   const dates: Array<{ record: Record<string, unknown>; key: string; value: string; time: number }> = [];
   function collect(value: unknown): void {
@@ -47,8 +46,8 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
     date.record[date.key] = date.value.length === 10 ? shifted.slice(0, 10) : shifted;
   }
   for (const season of copy.seasons) {
-    season.startDate = new Date(monthStart).toISOString().slice(0, 10);
-    season.endDate = new Date(monthEnd - DAY).toISOString().slice(0, 10);
+    season.startDate = new Date(seasonStart).toISOString().slice(0, 10);
+    season.endDate = new Date(seasonEnd - DAY).toISOString().slice(0, 10);
   }
   for (const task of copy.tasks) {
     task.actualHours = copy.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0);

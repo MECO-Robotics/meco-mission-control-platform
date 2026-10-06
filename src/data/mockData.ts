@@ -7,7 +7,7 @@ export const snapshot: PlatformSnapshot = {
   "seasons": [
     {
       "id": "default-season",
-      "name": "Tutorial Season",
+      "name": "FRC build and competition season",
       "type": "season",
       "startDate": "2026-01-06",
       "endDate": "2026-08-31"
@@ -1885,7 +1885,7 @@ export const snapshot: PlatformSnapshot = {
       "startDate": "2026-06-12",
       "dueDate": "2026-06-18",
       "priority": "medium",
-      "status": "not-started",
+      "status": "in-progress",
       "checklistItems": [],
       "estimatedHours": 4,
       "requiresDocumentation": true,
@@ -2080,7 +2080,7 @@ export const snapshot: PlatformSnapshot = {
       "startDate": "2026-04-22",
       "dueDate": "2026-04-27",
       "priority": "high",
-      "status": "not-started",
+      "status": "in-progress",
       "checklistItems": [],
       "estimatedHours": 8,
       "requiresDocumentation": true,
@@ -3318,18 +3318,261 @@ export const snapshot: PlatformSnapshot = {
       "estimatedHours": 8,
       "actualHours": 2.25,
       "requiresDocumentation": false
+    },
+    {
+      "id": "event-registration-followup",
+      "projectId": "project-operations-2026",
+      "workstreamIds": ["workstream-operations-logistics"],
+      "title": "Confirm event registration",
+      "summary": "The event choice is in. I’m checking payment status with Priya before the cutoff.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "noah",
+      "mentorId": "jordan",
+      "startDate": "2026-05-25",
+      "dueDate": "2026-05-30",
+      "priority": "high",
+      "status": "in-progress",
+      "checklistItems": ["Confirm event preference", "Check payment status"],
+      "estimatedHours": 2,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["noah"],
+      "workTypeId": "operations:planning",
+      "responsibleGroupId": null,
+      "requestedById": "priya",
+      "scheduleRefs": [{ "kind": "milestone", "id": "frc-registration-deadline-2027" }],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "impact-award-evidence-draft",
+      "projectId": "project-outreach-2026",
+      "workstreamIds": ["workstream-outreach-content"],
+      "title": "Pull award evidence into one doc",
+      "summary": "I have the demo photos and mentor quotes. Need the fall attendance total from Maya.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "zoe",
+      "mentorId": "jordan",
+      "startDate": "2026-06-20",
+      "dueDate": "2026-07-08",
+      "priority": "medium",
+      "status": "not-started",
+      "checklistItems": ["Choose two outreach examples", "Add student quotes", "Verify counts with Maya"],
+      "estimatedHours": 4,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["zoe", "ben"],
+      "workTypeId": "outreach:documentation",
+      "responsibleGroupId": null,
+      "requestedById": "maya",
+      "scheduleRefs": [{ "kind": "milestone", "id": "impact-award-deadline-2027" }],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "kickoff-game-breakdown",
+      "projectId": "project-strategy-2026",
+      "workstreamIds": ["workstream-strategy-playbooks"],
+      "title": "Break down the new game",
+      "summary": "I’m listing scoring routes first. We can argue about the endgame after we read the rules twice.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "noah",
+      "mentorId": "jordan",
+      "startDate": "2026-06-28",
+      "dueDate": "2026-07-03",
+      "priority": "high",
+      "status": "not-started",
+      "checklistItems": ["Read scoring section", "Mark rule questions", "Bring two strategy options"],
+      "estimatedHours": 5,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["noah", "ethan"],
+      "workTypeId": "strategy:game-analysis",
+      "responsibleGroupId": null,
+      "requestedById": "jordan",
+      "scheduleRefs": [{ "kind": "milestone", "id": "design-tradeoff-review-2027" }],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "intake-prototype-clearance",
+      "projectId": "project-robot-2026",
+      "workstreamIds": ["workstream-manipulator"],
+      "title": "Check intake prototype clearance",
+      "summary": "The sketch clears by a few millimeters. I want one loaded test before we cut the plate.",
+      "subsystemIds": ["manipulator"],
+      "mechanismIds": ["intake-roller"],
+      "partInstanceIds": [],
+      "ownerId": "lucas",
+      "mentorId": "riley",
+      "startDate": "2026-07-06",
+      "dueDate": "2026-07-10",
+      "priority": "high",
+      "status": "not-started",
+      "checklistItems": ["Check loaded clearance", "Record belt tension", "Post one test clip"],
+      "estimatedHours": 3,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["lucas", "ava"],
+      "workTypeId": "robot:testing",
+      "responsibleGroupId": null,
+      "requestedById": "riley",
+      "scheduleRefs": [{ "kind": "milestone", "id": "mechanism-design-freeze-2027" }],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "week-zero-safety-check",
+      "projectId": "project-operations-2026",
+      "workstreamIds": ["workstream-operations-logistics"],
+      "title": "Run the pit safety check",
+      "summary": "The battery strap slipped in the cart test. I’m adding a second tie-down to the checklist.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "ethan",
+      "mentorId": "marco",
+      "startDate": "2026-07-06",
+      "dueDate": "2026-07-12",
+      "priority": "critical",
+      "status": "not-started",
+      "checklistItems": ["Check battery restraint", "Inspect charger leads", "Review pit exits"],
+      "estimatedHours": 2,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["ethan", "ava"],
+      "workTypeId": "operations:research",
+      "responsibleGroupId": null,
+      "requestedById": "marco",
+      "scheduleRefs": [
+        { "kind": "event", "id": "frc-week-zero-2027" },
+        { "kind": "milestone", "id": "week-zero-readiness-2027" }
+      ],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "scouting-shift-practice",
+      "projectId": "project-training-2026",
+      "workstreamIds": ["workstream-scouting-training"],
+      "title": "Practice one scouting shift",
+      "summary": "I miss cycles when I switch tabs. I’m trying the paper backup on the next run.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "zoe",
+      "mentorId": "riley",
+      "startDate": "2026-07-12",
+      "dueDate": "2026-07-19",
+      "priority": "medium",
+      "status": "not-started",
+      "checklistItems": ["Run a timed practice", "Compare notes with the drive team"],
+      "estimatedHours": 3,
+      "actualHours": 0,
+      "requiresDocumentation": false,
+      "assigneeIds": ["zoe", "ben"],
+      "workTypeId": "training:practice",
+      "responsibleGroupId": null,
+      "requestedById": "sofia",
+      "scheduleRefs": [
+        { "kind": "event", "id": "frc-registered-event-2027" },
+        { "kind": "milestone", "id": "registered-event-readiness-2027" }
+      ],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "pit-spares-box",
+      "projectId": "project-operations-2026",
+      "workstreamIds": ["workstream-operations-logistics"],
+      "title": "Pack the pit spares box",
+      "summary": "We ran out of the short bolts at practice. I’m adding the size to the label and count sheet.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "ben",
+      "mentorId": "marco",
+      "startDate": "2026-07-14",
+      "dueDate": "2026-07-19",
+      "priority": "medium",
+      "status": "not-started",
+      "checklistItems": ["Count drivetrain fasteners", "Label electrical spares", "Leave one empty bin"],
+      "estimatedHours": 2.5,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["ben"],
+      "workTypeId": "operations:planning",
+      "responsibleGroupId": null,
+      "requestedById": "marco",
+      "scheduleRefs": [
+        { "kind": "event", "id": "frc-registered-event-2027" },
+        { "kind": "milestone", "id": "registered-event-readiness-2027" }
+      ],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "event-repair-followup",
+      "projectId": "project-robot-2026",
+      "workstreamIds": ["workstream-drive"],
+      "title": "Check the bent intake bracket",
+      "summary": "It still works, but the bracket moved after load-out. I want to measure it before we call it done.",
+      "subsystemIds": ["manipulator"],
+      "mechanismIds": ["intake-roller"],
+      "partInstanceIds": ["pi-intake-guard-set"],
+      "ownerId": "lucas",
+      "mentorId": "riley",
+      "startDate": "2026-07-24",
+      "dueDate": "2026-07-26",
+      "priority": "high",
+      "status": "not-started",
+      "checklistItems": ["Check bracket flatness", "Compare intake gap", "Log repair or replace decision"],
+      "estimatedHours": 2,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["lucas", "ava"],
+      "workTypeId": "robot:testing",
+      "responsibleGroupId": null,
+      "requestedById": "riley",
+      "scheduleRefs": [{ "kind": "milestone", "id": "event-debrief-2027" }],
+      "manufacturingDetails": null
+    },
+    {
+      "id": "season-lessons-one-pager",
+      "projectId": "project-outreach-2026",
+      "workstreamIds": ["workstream-outreach-content"],
+      "title": "Write up three lessons from events",
+      "summary": "I have the repair photos. Add one scouting miss and one thing the new students want to try next year.",
+      "subsystemIds": [],
+      "mechanismIds": [],
+      "partInstanceIds": [],
+      "ownerId": "zoe",
+      "mentorId": "marco",
+      "startDate": "2026-08-20",
+      "dueDate": "2026-09-01",
+      "priority": "low",
+      "status": "not-started",
+      "checklistItems": ["Add repair photos", "Ask scouting for one example", "Get student review"],
+      "estimatedHours": 3,
+      "actualHours": 0,
+      "requiresDocumentation": true,
+      "assigneeIds": ["zoe", "noah"],
+      "workTypeId": "outreach:documentation",
+      "responsibleGroupId": null,
+      "requestedById": "maya",
+      "scheduleRefs": [{ "kind": "milestone", "id": "season-retrospective-2027" }],
+      "manufacturingDetails": null
     }
   ],
   "milestones": [
     {
       "id": "tutorial-season-kickoff-jan-10",
       "seasonId": "default-season",
-      "title": "Tutorial Season Kickoff",
+      "title": "Off-season robot teardown",
       "type": "internal-review",
       "startAt": "2026-01-10T18:00:00-05:00",
       "endAt": "2026-01-10T19:00:00-05:00",
       "isExternal": false,
-      "description": "Introductory milestone for the tutorial season workspace and onboarding flow.",
+      "description": "Label reusable parts and capture what broke at the last event.",
       "status": "complete",
       "projectIds": [
         "project-operations-2026",
@@ -3339,13 +3582,13 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "tutorial-robot-checkpoint-feb-21",
       "seasonId": "default-season",
-      "title": "Robot Checkpoint",
+      "title": "Off-season drivebase test",
       "type": "practice",
       "startAt": "2026-02-21T17:30:00-05:00",
       "endAt": "2026-02-21T19:00:00-05:00",
       "isExternal": false,
-      "description": "Midseason checkpoint for drivetrain tuning and controls integration.",
-      "status": "planned",
+      "description": "The students ran a short drive test and listed two steering issues.",
+      "status": "complete",
       "projectIds": [
         "project-robot-2026"
       ]
@@ -3353,12 +3596,12 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "tutorial-training-showcase-mar-21",
       "seasonId": "default-season",
-      "title": "Training Showcase",
+      "title": "New-member build night",
       "type": "demo",
       "startAt": "2026-03-21T17:00:00-04:00",
       "endAt": "2026-03-21T18:30:00-04:00",
       "isExternal": true,
-      "description": "Tutorial-season demo milestone for training and outreach coordination.",
+      "description": "Students showed new members the shop, battery cart, and pit tools.",
       "status": "complete",
       "projectIds": [
         "project-training-2026",
@@ -3382,13 +3625,13 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "internal-review-apr-24",
       "seasonId": "default-season",
-      "title": "Internal Design Review",
+      "title": "Off-season design review",
       "type": "internal-review",
       "startAt": "2026-04-24T19:00:00-04:00",
       "endAt": "2026-04-24T20:00:00-04:00",
       "isExternal": false,
       "description": "Subsystem leads review readiness before the next practice block.",
-      "status": "planned",
+      "status": "complete",
       "projectIds": [
         "project-robot-2026"
       ]
@@ -3396,13 +3639,13 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "demo-apr-30",
       "seasonId": "default-season",
-      "title": "Sponsor Demo",
+      "title": "Sponsor update",
       "type": "demo",
       "startAt": "2026-04-30T17:30:00-04:00",
       "endAt": "2026-04-30T19:00:00-04:00",
       "isExternal": true,
-      "description": "External milestone that the team is aligning key finishing tasks to.",
-      "status": "planned",
+      "description": "Share the offseason plan and what the team still needs to fund.",
+      "status": "complete",
       "projectIds": [
         "project-robot-2026"
       ]
@@ -3410,13 +3653,13 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "pit-freeze-apr-28",
       "seasonId": "default-season",
-      "title": "Pit Readiness Freeze",
+      "title": "Pit inventory check",
       "type": "deadline",
       "startAt": "2026-04-28T20:00:00-04:00",
       "endAt": null,
       "isExternal": false,
-      "description": "Final freeze for pit checklists, spare bins, and field-support documentation.",
-      "status": "planned",
+      "description": "Count the parts that need replacing before build season.",
+      "status": "complete",
       "projectIds": [
         "project-operations-2026"
       ]
@@ -3424,12 +3667,12 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "week-zero-may-09",
       "seasonId": "default-season",
-      "title": "Week Zero Scrimmage",
+      "title": "Off-season drive practice",
       "type": "competition",
       "startAt": "2026-05-16T08:00:00-04:00",
       "endAt": "2026-05-16T18:30:00-04:00",
       "isExternal": true,
-      "description": "Practice competition to test robot reliability, scouting flow, and pit execution.",
+      "description": "Short practice block for the drive team and new scouts.",
       "status": "planned",
       "projectIds": [
         "project-robot-2026",
@@ -3454,13 +3697,13 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "outreach-milestone-may-05",
       "seasonId": "default-season",
-      "title": "Outreach Milestone",
+      "title": "STEM night setup check",
       "type": "demo",
       "startAt": "2026-05-05T17:00:00-04:00",
       "endAt": "2026-05-05T17:30:00-04:00",
       "isExternal": true,
       "description": "Final outreach readiness checkpoint before STEM Night demos begin.",
-      "status": "planned",
+      "status": "complete",
       "projectIds": [
         "project-outreach-2026"
       ]
@@ -3468,12 +3711,12 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "strategy-picklist-freeze-may-06",
       "seasonId": "default-season",
-      "title": "Strategy Picklist Freeze",
+      "title": "Scouting tablet check",
       "type": "deadline",
       "startAt": "2026-06-05T20:00:00-04:00",
       "endAt": null,
       "isExternal": false,
-      "description": "Lock final picklist criteria and alliance matchup assumptions before week-zero.",
+      "description": "Make sure the tablets still sync and the spare charger is in the kit.",
       "status": "planned",
       "projectIds": [
         "project-strategy-2026",
@@ -3483,12 +3726,12 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "robot-reveal-may-08",
       "seasonId": "default-season",
-      "title": "Robot Reveal Media Drop",
+      "title": "Sponsor media review",
       "type": "demo",
       "startAt": "2026-06-12T19:00:00-04:00",
       "endAt": "2026-06-12T19:45:00-04:00",
       "isExternal": true,
-      "description": "Publish reveal package across team channels with sponsor-approved visuals.",
+      "description": "Get sponsor approval for the offseason recap photos.",
       "status": "planned",
       "projectIds": [
         "project-media-2026",
@@ -3498,16 +3741,124 @@ export const snapshot: PlatformSnapshot = {
     {
       "id": "robot-readiness-may-02",
       "seasonId": "default-season",
-      "title": "Robot Readiness Review",
+      "title": "Preseason readiness check",
       "type": "internal-review",
       "startAt": "2026-06-19T10:00:00-04:00",
       "endAt": "2026-06-19T12:00:00-04:00",
       "isExternal": false,
-      "description": "Cross-functional check before week-zero scrimmage.",
+      "description": "Check registration, roster forms, tool training, and kickoff plans.",
       "status": "planned",
       "projectIds": [
         "project-robot-2026"
       ]
+    },
+    {
+      "id": "frc-registration-deadline-2027",
+      "seasonId": "default-season",
+      "title": "Event registration and payment",
+      "type": "deadline",
+      "startAt": "2026-05-31T04:00:00Z",
+      "endAt": null,
+      "isExternal": false,
+      "description": "Confirm the team's registered event and payment before the FIRST deadline.",
+      "status": "planned",
+      "projectIds": ["project-operations-2026"]
+    },
+    {
+      "id": "impact-award-deadline-2027",
+      "seasonId": "default-season",
+      "title": "Impact Award application due",
+      "type": "deadline",
+      "startAt": "2026-07-11T19:00:00Z",
+      "endAt": null,
+      "isExternal": true,
+      "description": "Submit student-reviewed evidence before the FIRST deadline.",
+      "status": "planned",
+      "projectIds": ["project-outreach-2026"]
+    },
+    {
+      "id": "frc-kickoff-2027",
+      "seasonId": "default-season",
+      "title": "2027 FRC Kickoff",
+      "type": "internal-review",
+      "startAt": "2026-06-25T17:00:00Z",
+      "endAt": "2026-06-25T19:00:00Z",
+      "isExternal": true,
+      "description": "Watch the game reveal, read the rules together, and split up questions.",
+      "status": "planned",
+      "projectIds": ["project-robot-2026", "project-strategy-2026"]
+    },
+    {
+      "id": "design-tradeoff-review-2027",
+      "seasonId": "default-season",
+      "title": "First strategy and design review",
+      "type": "internal-review",
+      "startAt": "2026-07-04T18:00:00Z",
+      "endAt": "2026-07-04T19:30:00Z",
+      "isExternal": false,
+      "description": "Compare two scoring approaches before ordering prototype parts.",
+      "status": "planned",
+      "projectIds": ["project-robot-2026", "project-strategy-2026"]
+    },
+    {
+      "id": "mechanism-design-freeze-2027",
+      "seasonId": "default-season",
+      "title": "Intake design check",
+      "type": "internal-review",
+      "startAt": "2026-07-11T18:00:00Z",
+      "endAt": "2026-07-11T19:00:00Z",
+      "isExternal": false,
+      "description": "Review the loaded clearance test and decide whether to cut the second plate.",
+      "status": "planned",
+      "projectIds": ["project-robot-2026"]
+    },
+    {
+      "id": "week-zero-readiness-2027",
+      "seasonId": "default-season",
+      "title": "Week Zero readiness check",
+      "type": "deadline",
+      "startAt": "2026-07-14T20:00:00Z",
+      "endAt": null,
+      "isExternal": false,
+      "description": "Close battery, pit-safety, and robot inspection checks before the scrimmage.",
+      "status": "planned",
+      "projectIds": ["project-operations-2026", "project-robot-2026"]
+    },
+    {
+      "id": "registered-event-readiness-2027",
+      "seasonId": "default-season",
+      "title": "Registered event readiness",
+      "type": "competition",
+      "startAt": "2026-07-20T18:00:00Z",
+      "endAt": "2026-07-20T19:00:00Z",
+      "isExternal": false,
+      "description": "Final check of the robot, scouting plan, spares, and travel details.",
+      "status": "planned",
+      "projectIds": ["project-robot-2026", "project-training-2026", "project-operations-2026"]
+    },
+    {
+      "id": "event-debrief-2027",
+      "seasonId": "default-season",
+      "title": "Event repair and debrief",
+      "type": "internal-review",
+      "startAt": "2026-07-27T18:00:00Z",
+      "endAt": "2026-07-27T19:00:00Z",
+      "isExternal": false,
+      "description": "Review damage and scouting notes while the event is still fresh.",
+      "status": "planned",
+      "projectIds": ["project-robot-2026", "project-strategy-2026"]
+    },
+    {
+      "id": "season-retrospective-2027",
+      "seasonId": "default-season",
+      "title": "Season review and handoff",
+      "type": "internal-review",
+      "startAt": "2026-09-02T18:00:00Z",
+      "endAt": "2026-09-02T19:00:00Z",
+      "isExternal": false,
+      "description": "Keep the fixes and lessons that will help next year's students.",
+      "status": "planned",
+      "projectIds": ["project-robot-2026", "project-outreach-2026"]
     }
   ],
   "milestoneRequirements": [],
@@ -3520,6 +3871,24 @@ export const snapshot: PlatformSnapshot = {
       "requiredState": "complete",
       "dependencyType": "hard",
       "createdAt": "2026-04-22"
+    },
+    {
+      "id": "dep-intake-prototype-kickoff-analysis",
+      "taskId": "intake-prototype-clearance",
+      "kind": "task",
+      "refId": "kickoff-game-breakdown",
+      "requiredState": "complete",
+      "dependencyType": "hard",
+      "createdAt": "2026-05-10"
+    },
+    {
+      "id": "dep-week-zero-safety-intake-test",
+      "taskId": "week-zero-safety-check",
+      "kind": "task",
+      "refId": "intake-prototype-clearance",
+      "requiredState": "complete",
+      "dependencyType": "hard",
+      "createdAt": "2026-05-10"
     },
     {
       "id": "dep-pit-checklist-pdh-labels",
@@ -4821,6 +5190,33 @@ export const snapshot: PlatformSnapshot = {
       ],
       "notes": "Collected driver feedback on preferred card layout before final brief rehearsal.",
       "createdById": "noah"
+    },
+    {
+      "id": "log-27",
+      "taskId": "intake-guard",
+      "date": "2026-05-07",
+      "hours": 1.25,
+      "participantIds": ["lucas", "riley"],
+      "notes": "The belt still walks left. Riley spotted the spacer rubbing on the return pass.",
+      "createdById": "lucas"
+    },
+    {
+      "id": "log-28",
+      "taskId": "auto-safety-review",
+      "date": "2026-05-08",
+      "hours": 0.75,
+      "participantIds": ["ethan"],
+      "notes": "Turn two crosses the center line. I slowed that segment and flagged it for another run.",
+      "createdById": "ethan"
+    },
+    {
+      "id": "log-29",
+      "taskId": "strategy-opponent-model-update",
+      "date": "2026-05-09",
+      "hours": 1,
+      "participantIds": ["noah", "sofia"],
+      "notes": "The weight held across both runs. I left the bad cycle in the notes for next time.",
+      "createdById": "noah"
     }
   ],
   "meetings": [
@@ -4835,7 +5231,7 @@ export const snapshot: PlatformSnapshot = {
       "startAt": "2026-04-23T18:30:00Z",
       "endAt": null,
       "location": "Workshop",
-      "description": "Tutorial team meeting.",
+      "description": "Bring the intake sketch. I need another set of eyes on the pulley gap.",
       "rsvpsYes": 17,
       "rsvpsMaybe": 4,
       "openSignIns": 3
@@ -4851,7 +5247,7 @@ export const snapshot: PlatformSnapshot = {
       "startAt": "2026-04-26T17:45:00Z",
       "endAt": null,
       "location": "Workshop",
-      "description": "Tutorial team meeting.",
+      "description": "The pit board is missing a charger count. Let's sort the bins before Saturday.",
       "rsvpsYes": 12,
       "rsvpsMaybe": 3,
       "openSignIns": 2
@@ -4867,7 +5263,7 @@ export const snapshot: PlatformSnapshot = {
       "startAt": "2026-04-29T19:00:00Z",
       "endAt": null,
       "location": "Workshop",
-      "description": "Tutorial team meeting.",
+      "description": "The demo table may not fit through the library door. Measure it before we build.",
       "rsvpsYes": 10,
       "rsvpsMaybe": 5,
       "openSignIns": 4
@@ -4883,13 +5279,75 @@ export const snapshot: PlatformSnapshot = {
       "startAt": "2026-05-01T18:15:00Z",
       "endAt": null,
       "location": "Workshop",
-      "description": "Tutorial team meeting.",
+      "description": "Zoe will run the first rep. I'll keep the paper sheet as a backup.",
       "rsvpsYes": 14,
       "rsvpsMaybe": 2,
       "openSignIns": 3
+    },
+    {
+      "id": "kickoff-rules-huddle-2027",
+      "title": "Kickoff rules huddle",
+      "meetingType": "review",
+      "seasonId": "default-season",
+      "projectIds": ["project-robot-2026", "project-strategy-2026"],
+      "startAt": "2026-06-26T18:00:00Z",
+      "endAt": "2026-06-26T19:00:00Z",
+      "location": "Team shop",
+      "description": "I’ll bring the rule questions. Let’s split the manual before we pick a design.",
+      "rsvpsYes": 8,
+      "rsvpsMaybe": 3,
+      "openSignIns": 2
+    },
+    {
+      "id": "event-repair-huddle-2027",
+      "title": "Event repair huddle",
+      "meetingType": "build",
+      "seasonId": "default-season",
+      "projectIds": ["project-robot-2026", "project-strategy-2026"],
+      "startAt": "2026-07-24T18:30:00Z",
+      "endAt": "2026-07-24T19:15:00Z",
+      "location": "Workshop",
+      "description": "Bring the bent bracket and the scouting notes. We can sort the quick fixes first.",
+      "rsvpsYes": 6,
+      "rsvpsMaybe": 4,
+      "openSignIns": 3
     }
   ],
-  "events": [],
+  "events": [
+    {
+      "id": "frc-kickoff-watch-2027",
+      "seasonId": "default-season",
+      "projectIds": ["project-robot-2026", "project-strategy-2026"],
+      "title": "FRC game reveal and kickoff",
+      "description": "Watch the game reveal, then read the scoring and safety rules together.",
+      "startAt": "2026-06-25T16:00:00Z",
+      "endAt": "2026-06-25T19:00:00Z",
+      "location": "Team shop",
+      "eventType": "other"
+    },
+    {
+      "id": "frc-week-zero-2027",
+      "seasonId": "default-season",
+      "projectIds": ["project-robot-2026", "project-training-2026", "project-operations-2026"],
+      "title": "Week Zero scrimmage",
+      "description": "Practice inspection, pit setup, drive-team handoffs, and scouting notes.",
+      "startAt": "2026-07-16T01:30:00Z",
+      "endAt": "2026-07-16T07:00:00Z",
+      "location": "Local scrimmage venue",
+      "eventType": "practice"
+    },
+    {
+      "id": "frc-registered-event-2027",
+      "seasonId": "default-season",
+      "projectIds": ["project-robot-2026", "project-strategy-2026", "project-operations-2026"],
+      "title": "Registered FRC event",
+      "description": "Load in, pass inspection, scout matches, and log repairs before load-out.",
+      "startAt": "2026-07-21T20:00:00Z",
+      "endAt": "2026-07-22T20:00:00Z",
+      "location": "Venue pending",
+      "eventType": "competition"
+    }
+  ],
   "attendanceRecords": [
     {
       "id": "att-1",
@@ -4962,6 +5420,42 @@ export const snapshot: PlatformSnapshot = {
       "memberId": "olivia",
       "date": "2026-04-20",
       "totalHours": 2
+    },
+    {
+      "id": "att-offseason-lucas",
+      "memberId": "lucas",
+      "date": "2026-05-07",
+      "totalHours": 2.5
+    },
+    {
+      "id": "att-offseason-ethan",
+      "memberId": "ethan",
+      "date": "2026-05-08",
+      "totalHours": 1.5
+    },
+    {
+      "id": "att-offseason-noah",
+      "memberId": "noah",
+      "date": "2026-05-09",
+      "totalHours": 2
+    },
+    {
+      "id": "att-offseason-ava",
+      "memberId": "ava",
+      "date": "2026-05-02",
+      "totalHours": 3
+    },
+    {
+      "id": "att-offseason-riley",
+      "memberId": "riley",
+      "date": "2026-05-07",
+      "totalHours": 1.25
+    },
+    {
+      "id": "att-offseason-sofia",
+      "memberId": "sofia",
+      "date": "2026-05-09",
+      "totalHours": 1
     }
   ],
   "manufacturingProcesses": [
