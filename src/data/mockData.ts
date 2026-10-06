@@ -1882,8 +1882,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "ava",
       "mentorId": "jordan",
-      "startDate": "2026-04-21",
-      "dueDate": "2026-04-24",
+      "startDate": "2026-06-12",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -1899,7 +1899,7 @@ export const snapshot: PlatformSnapshot = {
       "scheduleRefs": [
         {
           "kind": "milestone",
-          "id": "drive-practice-apr-25"
+          "id": "robot-readiness-may-02"
         }
       ],
       "manufacturingDetails": null
@@ -2004,7 +2004,7 @@ export const snapshot: PlatformSnapshot = {
       "ownerId": "lucas",
       "mentorId": "riley",
       "startDate": "2026-04-21",
-      "dueDate": "2026-04-25",
+      "dueDate": "2026-05-19",
       "priority": "high",
       "status": "in-progress",
       "checklistItems": [],
@@ -2038,8 +2038,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "ava",
       "mentorId": "jordan",
-      "startDate": "2026-04-21",
-      "dueDate": "2026-04-24",
+      "startDate": "2026-06-10",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2052,7 +2052,12 @@ export const snapshot: PlatformSnapshot = {
       "workTypeId": "robot:testing",
       "responsibleGroupId": null,
       "requestedById": "ava",
-      "scheduleRefs": [],
+      "scheduleRefs": [
+        {
+          "kind": "milestone",
+          "id": "robot-readiness-may-02"
+        }
+      ],
       "manufacturingDetails": null
     },
     {
@@ -2146,8 +2151,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "ethan",
       "mentorId": "riley",
-      "startDate": "2026-04-22",
-      "dueDate": "2026-04-27",
+      "startDate": "2026-06-12",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2163,7 +2168,7 @@ export const snapshot: PlatformSnapshot = {
       "scheduleRefs": [
         {
           "kind": "milestone",
-          "id": "drive-practice-apr-25"
+          "id": "robot-readiness-may-02"
         }
       ],
       "manufacturingDetails": null
@@ -2181,8 +2186,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "ava",
       "mentorId": "jordan",
-      "startDate": "2026-04-22",
-      "dueDate": "2026-04-27",
+      "startDate": "2026-05-11",
+      "dueDate": "2026-05-15",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2195,7 +2200,12 @@ export const snapshot: PlatformSnapshot = {
       "workTypeId": "robot:testing",
       "responsibleGroupId": null,
       "requestedById": "ava",
-      "scheduleRefs": [],
+      "scheduleRefs": [
+        {
+          "kind": "milestone",
+          "id": "week-zero-may-09"
+        }
+      ],
       "manufacturingDetails": null
     },
     {
@@ -2218,7 +2228,7 @@ export const snapshot: PlatformSnapshot = {
       "ownerId": "ethan",
       "mentorId": "riley",
       "startDate": "2026-04-24",
-      "dueDate": "2026-05-01",
+      "dueDate": "2026-06-18",
       "priority": "high",
       "status": "in-progress",
       "checklistItems": [],
@@ -2256,8 +2266,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "ethan",
       "mentorId": "riley",
-      "startDate": "2026-04-25",
-      "dueDate": "2026-04-30",
+      "startDate": "2026-06-12",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2297,8 +2307,8 @@ export const snapshot: PlatformSnapshot = {
       ],
       "ownerId": "ben",
       "mentorId": "jordan",
-      "startDate": "2026-04-27",
-      "dueDate": "2026-05-06",
+      "startDate": "2026-05-11",
+      "dueDate": "2026-05-15",
       "priority": "critical",
       "status": "not-started",
       "checklistItems": [],
@@ -2332,8 +2342,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "ava",
       "mentorId": "jordan",
-      "startDate": "2026-05-01",
-      "dueDate": "2026-05-07",
+      "startDate": "2026-05-11",
+      "dueDate": "2026-05-15",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2412,8 +2422,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "olivia",
       "mentorId": "marco",
-      "startDate": "2026-04-25",
-      "dueDate": "2026-04-28",
+      "startDate": "2026-05-21",
+      "dueDate": "2026-05-25",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2491,7 +2501,7 @@ export const snapshot: PlatformSnapshot = {
       "ownerId": "zoe",
       "mentorId": "marco",
       "startDate": "2026-04-26",
-      "dueDate": "2026-05-04",
+      "dueDate": "2026-05-29",
       "priority": "high",
       "status": "in-progress",
       "checklistItems": [],
@@ -2507,7 +2517,7 @@ export const snapshot: PlatformSnapshot = {
       "scheduleRefs": [
         {
           "kind": "milestone",
-          "id": "stem-night-may-05"
+          "id": "demo-apr-30"
         }
       ],
       "manufacturingDetails": null
@@ -2529,8 +2539,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "zoe",
       "mentorId": "marco",
-      "startDate": "2026-04-28",
-      "dueDate": "2026-05-04",
+      "startDate": "2026-05-24",
+      "dueDate": "2026-05-29",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2546,7 +2556,7 @@ export const snapshot: PlatformSnapshot = {
       "scheduleRefs": [
         {
           "kind": "milestone",
-          "id": "stem-night-may-05"
+          "id": "demo-apr-30"
         }
       ],
       "manufacturingDetails": null
@@ -2571,7 +2581,7 @@ export const snapshot: PlatformSnapshot = {
       "ownerId": "noah",
       "mentorId": "riley",
       "startDate": "2026-04-24",
-      "dueDate": "2026-05-02",
+      "dueDate": "2026-05-15",
       "priority": "high",
       "status": "in-progress",
       "checklistItems": [],
@@ -2607,8 +2617,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "sofia",
       "mentorId": "riley",
-      "startDate": "2026-04-29",
-      "dueDate": "2026-05-06",
+      "startDate": "2026-05-11",
+      "dueDate": "2026-05-15",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2649,7 +2659,7 @@ export const snapshot: PlatformSnapshot = {
       "ownerId": "zoe",
       "mentorId": "marco",
       "startDate": "2026-05-02",
-      "dueDate": "2026-05-07",
+      "dueDate": "2026-06-11",
       "priority": "high",
       "status": "in-progress",
       "checklistItems": [],
@@ -2687,8 +2697,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "zoe",
       "mentorId": "marco",
-      "startDate": "2026-05-04",
-      "dueDate": "2026-05-08",
+      "startDate": "2026-06-07",
+      "dueDate": "2026-06-11",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2766,7 +2776,7 @@ export const snapshot: PlatformSnapshot = {
       "ownerId": "noah",
       "mentorId": "riley",
       "startDate": "2026-05-02",
-      "dueDate": "2026-05-08",
+      "dueDate": "2026-06-04",
       "priority": "medium",
       "status": "in-progress",
       "checklistItems": [],
@@ -2802,8 +2812,8 @@ export const snapshot: PlatformSnapshot = {
       "partInstanceIds": [],
       "ownerId": "noah",
       "mentorId": "riley",
-      "startDate": "2026-05-06",
-      "dueDate": "2026-05-08",
+      "startDate": "2026-05-11",
+      "dueDate": "2026-05-15",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2833,7 +2843,7 @@ export const snapshot: PlatformSnapshot = {
       "scheduleRefs": [
         {
           "kind": "milestone",
-          "id": "drive-practice-apr-25"
+          "id": "robot-readiness-may-02"
         }
       ],
       "manufacturingDetails": {
@@ -2871,8 +2881,8 @@ export const snapshot: PlatformSnapshot = {
         "ava"
       ],
       "mentorId": "jordan",
-      "startDate": "2026-04-17",
-      "dueDate": "2026-04-22",
+      "startDate": "2026-06-12",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -2928,7 +2938,7 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mentorId": "riley",
       "startDate": "2026-04-18",
-      "dueDate": "2026-04-24",
+      "dueDate": "2026-05-19",
       "priority": "medium",
       "status": "in-progress",
       "checklistItems": [],
@@ -2942,7 +2952,12 @@ export const snapshot: PlatformSnapshot = {
       "workTypeId": "robot:manufacturing",
       "responsibleGroupId": null,
       "requestedById": "lucas",
-      "scheduleRefs": [],
+      "scheduleRefs": [
+        {
+          "kind": "milestone",
+          "id": "robot-readiness-may-02"
+        }
+      ],
       "manufacturingDetails": {
         "part": {
           "kind": "provisional",
@@ -2973,8 +2988,8 @@ export const snapshot: PlatformSnapshot = {
         "lucas"
       ],
       "mentorId": null,
-      "startDate": "2026-04-28",
-      "dueDate": "2026-04-28",
+      "startDate": "2026-06-10",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -3029,8 +3044,8 @@ export const snapshot: PlatformSnapshot = {
         "ethan"
       ],
       "mentorId": "riley",
-      "startDate": "2026-04-24",
-      "dueDate": "2026-04-30",
+      "startDate": "2026-06-12",
+      "dueDate": "2026-06-18",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -3086,7 +3101,7 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mentorId": "jordan",
       "startDate": "2026-04-27",
-      "dueDate": "2026-05-02",
+      "dueDate": "2026-05-15",
       "priority": "medium",
       "status": "in-progress",
       "checklistItems": [],
@@ -3138,8 +3153,8 @@ export const snapshot: PlatformSnapshot = {
         "sofia"
       ],
       "mentorId": "marco",
-      "startDate": "2026-04-24",
-      "dueDate": "2026-04-27",
+      "startDate": "2026-05-21",
+      "dueDate": "2026-05-25",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
@@ -3156,7 +3171,7 @@ export const snapshot: PlatformSnapshot = {
       "scheduleRefs": [
         {
           "kind": "milestone",
-          "id": "stem-night-may-05"
+          "id": "demo-apr-30"
         }
       ],
       "manufacturingDetails": {
@@ -3192,7 +3207,7 @@ export const snapshot: PlatformSnapshot = {
       ],
       "mentorId": "marco",
       "startDate": "2026-04-26",
-      "dueDate": "2026-05-03",
+      "dueDate": "2026-05-29",
       "priority": "medium",
       "status": "in-progress",
       "checklistItems": [],
@@ -3243,8 +3258,8 @@ export const snapshot: PlatformSnapshot = {
         "noah"
       ],
       "mentorId": "riley",
-      "startDate": "2026-04-24",
-      "dueDate": "2026-05-02",
+      "startDate": "2026-05-11",
+      "dueDate": "2026-05-15",
       "priority": "medium",
       "status": "not-started",
       "checklistItems": [],
