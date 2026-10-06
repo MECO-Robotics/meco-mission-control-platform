@@ -4,15 +4,14 @@ import { snapshot } from "./mockData";
 const DAY = 86_400_000;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
-// Tutorial chronology is compressed into this week's portion of the current
-// UTC month. Recorded activity anchors at now; plans may extend through Sunday.
+// Tutorial chronology spans the current UTC month. Recorded activity anchors
+// to month-to-date while planned work extends through month-end.
 export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
   const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const monday = today - ((now.getUTCDay() + 6) % 7) * DAY;
-  const start = Math.max(monthStart, monday);
-  const end = Math.min(monthEnd, monday + 7 * DAY) - 1;
+  const start = monthStart;
+  const end = monthEnd - 1;
   const copy = structuredClone(snapshot);
   const dates: Array<{ record: Record<string, unknown>; key: string; value: string; time: number }> = [];
   function collect(value: unknown): void {

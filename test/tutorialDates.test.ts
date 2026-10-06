@@ -4,21 +4,27 @@ import { isTaskDisciplineAllowedForProject } from "../src/domain/taskDisciplines
 import { createTutorialSnapshot } from "../src/data/tutorialSnapshot";
 
 for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
-  test(`tutorial activity stays in the current month and Monday week at ${date}`, () => {
+  test(`tutorial activity spans the current month at ${date}`, () => {
     const now = new Date(`${date}T12:00:00Z`);
     const data = createTutorialSnapshot(now);
-    const day = 86_400_000;
-    const monday = Date.parse(date) - ((now.getUTCDay() + 6) % 7) * day;
+    const month = date.slice(0, 7);
+    const firstWeekday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).getUTCDay();
+    const mondayOffset = (firstWeekday + 6) % 7;
+    const weekFor = (value: string) => Math.floor((Number(value.slice(8, 10)) - 1 + mondayOffset) / 7);
+    const observedWeeks = new Set<number>();
     const overdueTaskIds = new Set(["travel-pack-finalize", "intake-guard", "auto-safety-review"]);
     const overdueDates = new Set(data.tasks.filter((task) => overdueTaskIds.has(task.id)).flatMap((task) => [task.startDate, task.dueDate]));
     const checkDates = (value: unknown): void => {
       if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T|$)/.test(value)) {
         if (overdueDates.has(value)) return;
-        assert.equal(value.slice(0, 7), date.slice(0, 7));
-        assert.ok(Date.parse(value) >= monday && Date.parse(value) < monday + 7 * day, value);
+        assert.equal(value.slice(0, 7), month);
+        observedWeeks.add(weekFor(value));
       } else if (value && typeof value === "object") Object.values(value).forEach(checkDates);
     };
     for (const [key, value] of Object.entries(data)) if (key !== "seasons") checkDates(value);
+    assert.ok(observedWeeks.size >= 4, `expected activity in at least four calendar weeks; got ${observedWeeks.size}`);
+    const milestoneWeeks = new Set(data.milestones.map((milestone) => weekFor(milestone.startAt)));
+    assert.ok(milestoneWeeks.size >= 4, `expected milestones in at least four calendar weeks; got ${milestoneWeeks.size}`);
     for (const task of data.tasks) {
       assert.ok(task.startDate <= task.dueDate);
       assert.equal(task.actualHours, data.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0));
