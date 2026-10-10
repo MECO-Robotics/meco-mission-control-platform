@@ -73,6 +73,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
+
       - name: Typecheck
         run: npm run typecheck
 

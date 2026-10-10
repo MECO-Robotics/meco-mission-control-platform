@@ -95,18 +95,21 @@ The workflow deploy path is:
 
 1. Validate the deploy source.
 2. Install dependencies with `npm ci`.
-3. Run `npm run typecheck`.
-4. Run `npm test`.
-5. Run `npm run build`.
-6. Validate Prisma schema with `npx prisma validate`.
-7. Validate required deploy secrets.
-8. Configure SSH to the VPS.
-9. Back up the existing VPS deployment.
-10. Ensure `/opt/pm-server` exists.
-11. Sync repository files to `/opt/pm-server` with `rsync --delete`.
-12. Upload `.env.production.partial` from GitHub secrets.
-13. Merge `.env.production.partial` into `/opt/pm-server/.env.production`.
-14. Run:
+3. Generate the Prisma client before typechecking with
+   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public npm run prisma:generate`.
+   This validation URL configures generation; generation does not connect to the database.
+4. Run `npm run typecheck`.
+5. Run `npm test`.
+6. Run `npm run build`.
+7. Validate Prisma schema with `npx prisma validate`.
+8. Validate required deploy secrets.
+9. Configure SSH to the VPS.
+10. Back up the existing VPS deployment.
+11. Ensure `/opt/pm-server` exists.
+12. Sync repository files to `/opt/pm-server` with `rsync --delete`.
+13. Upload `.env.production.partial` from GitHub secrets.
+14. Merge `.env.production.partial` into `/opt/pm-server/.env.production`.
+15. Run:
 
     ```bash
     docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres
@@ -118,8 +121,8 @@ The workflow deploy path is:
     Building `app` before `prisma:deploy` ensures schema updates run with the
     same revision that will be started after schema synchronization.
 
-15. Run `docker image prune -f`.
-16. Poll `http://127.0.0.1:8080/health` for up to 30 attempts.
+16. Run `docker image prune -f`.
+17. Poll `http://127.0.0.1:8080/health` for up to 30 attempts.
 
 The Compose stack contains:
 
