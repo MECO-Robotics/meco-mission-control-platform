@@ -59,6 +59,8 @@ jobs:
     name: validate
     needs: deploy-source-gate
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 
     steps:
       - name: Check out repository
@@ -75,8 +77,6 @@ jobs:
 
       - name: Generate Prisma client
         run: npm run prisma:generate
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 
       - name: Typecheck
         run: npm run typecheck
@@ -89,8 +89,6 @@ jobs:
 
       - name: Validate Prisma schema
         run: npx prisma validate
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 
   deploy:
     name: deploy
