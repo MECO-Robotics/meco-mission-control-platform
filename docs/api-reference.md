@@ -122,7 +122,7 @@ Retention policy:
 - `PATCH /api/work-logs/:workLogId`: update a work log. Requires mentor or admin; leads are excluded.
 - `DELETE /api/work-logs/:workLogId`: delete a work log. Requires mentor or admin; leads are excluded.
 - `GET /api/meetings`: list meeting-focused workflow data.
-- `POST /api/meetings`: create a meeting. Requires mentor, lead, or admin when auth is enabled.
+- `POST /api/meetings`: create a meeting. Requires mentor, lead, or admin when auth is enabled. Meeting and milestone timestamps accept ISO local/offset datetimes; create and PATCH validate the complete start/end interval.
 
 ## Reports, QA, And Risks
 
@@ -138,8 +138,8 @@ Retention policy:
 - `GET /api/test-results`: list test results.
 - `POST /api/test-results`: create a test result.
 - `GET /api/risks`: list risks.
-- `POST /api/risks`: create a risk.
-- `PATCH /api/risks/:riskId`: update a risk.
+- `POST /api/risks`: create a risk, including typed `category: "help"` requests. Optional `createdByMemberId` references a roster member; authenticated requests derive the creator from the session.
+- `PATCH /api/risks/:riskId`: update a risk. Creator attribution is immutable.
 - `DELETE /api/risks/:riskId`: delete a risk.
 - Risk payloads use status `open`, `in-progress`, `blocked`, or `resolved`; new risks default to `open`. `ownerMemberId` and `mitigationDueDate` are nullable. A non-null owner must reference a workspace member, and mitigation due dates use `YYYY-MM-DD`.
 
@@ -161,7 +161,7 @@ Retention policy:
 - `POST /api/purchases`: create a requested, unapproved purchase item.
 - `PATCH /api/purchases/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
 - `PUT /api/purchases/:itemId/approval`: approve or revoke approval with `{ "approved": boolean }`. Requires mentor or admin and derives approver metadata from the session; approval cannot be revoked after purchasing begins.
-- `POST /api/purchases/:itemId/transition`: advance one step through `approved -> purchased -> shipped -> delivered`. Requires mentor or admin and accepts optional non-negative `finalCost`.
+- `POST /api/purchases/:itemId/transition`: advance through `not-ordered -> ordered -> shipped -> delivered`, or cancel before delivery. Ordering requires approval. Requires mentor/admin; accepts optional `finalCost: { amount, currency } | null` and `purchaseOrderNumber: string | null`. The current order state is accepted to edit metadata without advancing, and same-state retries preserve transition timestamps.
 - `DELETE /api/purchases/:itemId`: delete a purchase item. Requires mentor or admin.
 
 Workflow endpoints return `403` for insufficient role, `404` for a missing item, and `409` for a non-adjacent or otherwise invalid transition.
@@ -206,7 +206,7 @@ Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and 
 ## STEP CAD
 
 - `POST /api/cad/step-imports/debug-parse`: parse a STEP payload and return diagnostics without persisting an import.
-- `POST /api/cad/step-imports`: create a STEP import run and CAD snapshot.
+- `POST /api/cad/step-imports`: create a STEP import run and CAD snapshot. Supplied project/season IDs must exist and agree; omitted season uses the selected project season.
 - `GET /api/cad/import-runs`: list STEP/generic CAD import runs.
 - `GET /api/cad/import-runs/:importRunId`: get one import run with snapshot and warnings.
 - `GET /api/cad/snapshots`: list CAD snapshots.

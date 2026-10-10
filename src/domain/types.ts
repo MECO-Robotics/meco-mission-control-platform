@@ -592,11 +592,12 @@ export interface DesignIteration {
 }
 
 export type RiskStatus = "open" | "in-progress" | "blocked" | "resolved";
-export type RiskCategory = "dependency" | "design" | "manufacturing" | "supply" | "schedule" | "qa" | "inventory" | "other";
+export type RiskCategory = "help" | "dependency" | "design" | "manufacturing" | "supply" | "schedule" | "qa" | "inventory" | "other";
 export type DomainReference =
   | { kind: "project" | "workstream" | "responsible-group" | "task" | "subsystem" | "mechanism" | "part-definition" | "part-instance" | "material" | "vendor" | "manufacturing-details" | "purchase-item" | "meeting" | "event" | "milestone" | "qa-request" | "test-result" | "report" | "artifact" | "qa-finding" | "test-finding" | "task-dependency" | "risk" | "design-iteration"; id: string };
 export type RiskSource = { kind: "manual" } | { kind: "task" | "task-dependency" | "qa-finding" | "test-finding" | "qa-request" | "test-result" | "report" | "event" | "milestone" | "manufacturing-details" | "part-instance" | "material"; id: string };
 export interface Risk {
+  createdByMemberId?: string | null;
   id: string;
   projectId: string;
   title: string;
