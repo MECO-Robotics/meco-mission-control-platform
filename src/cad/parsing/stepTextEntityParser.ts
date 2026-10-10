@@ -112,7 +112,7 @@ export function parseStepEntities(fileText: string) {
       id: normalizeEntityId(`#${match[1]}`),
       type: match[2]!.toUpperCase(),
       args,
-      refs: [...argsText.matchAll(/#\d+/g)].map((ref) => normalizeEntityId(ref[0])),
+      refs: [...argsText.replace(/'([^']|'')*'/g, "").matchAll(/#\d+/g)].map((ref) => normalizeEntityId(ref[0])),
     });
     entityPattern.lastIndex = closeIndex + 1;
   }

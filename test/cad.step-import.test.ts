@@ -372,8 +372,8 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
       fileName: `${label}.step`,
       fileText,
       label,
-      projectId: "robot-2026",
-      seasonId: "season-2026",
+      projectId: "project-robot-2026",
+      seasonId: "default-season",
     },
   });
   assert.equal(response.statusCode, 201, response.body);
@@ -446,10 +446,10 @@ function multipartStepPayload(input: {
     append(`${input.label}\r\n`);
     append(`--${input.boundary}\r\n`);
     append(`Content-Disposition: form-data; name="projectId"\r\n\r\n`);
-    append(`${input.projectId ?? "robot-2026"}\r\n`);
+    append(`${input.projectId ?? "project-robot-2026"}\r\n`);
     append(`--${input.boundary}\r\n`);
     append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
-    append(`${input.seasonId ?? "season-2026"}\r\n`);
+    append(`${input.seasonId ?? "default-season"}\r\n`);
     if (input.requestedBy !== undefined) {
       append(`--${input.boundary}\r\n`);
       append(`Content-Disposition: form-data; name="requestedBy"\r\n\r\n`);
@@ -496,7 +496,7 @@ test("STEP text parser extracts an Onshape-style assembly graph", async () => {
   assert.equal(parsed.partDefinitions.length, 1);
   assert.equal(parsed.partDefinitions[0]?.name, "Spacer");
   assert.equal(parsed.partInstances.length, 1);
-  assert.equal(parsed.partInstances[0]?.parentAssemblySourceId, "step-asm-occ:#101");
+  assert.equal(parsed.partInstances[0]?.parentAssemblySourceId, "step-asm-occ:#3/#100/#101");
   assert.equal(parsed.rawStats.nextAssemblyUsageOccurrenceCount, 3);
   assert.equal(parsed.rawStats.assemblyUsageCount, 3);
 });
@@ -594,7 +594,7 @@ test("STEP text parser extracts uploaded Onshape-style top-level assemblies and 
     importRunId: "import-test",
   });
 
-  assert.equal(parsed.parserVersion, "step-text-assembly-parser-1");
+  assert.equal(parsed.parserVersion, "step-text-assembly-parser-2");
   assert.equal(parsed.rootName, "MAIN ASSEMBLY");
   assert.ok(parsed.assemblyNodes.length > 6);
   assert.ok(parsed.partInstances.length > 1);
@@ -678,7 +678,7 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
     assert.equal(result.summary.partDefinitionCount, 3);
     assert.equal(result.summary.partInstanceCount, 3);
     assert.equal(result.summary.configuredParserMode, "auto");
-    assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-1");
+    assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-2");
     assert.equal(result.summary.parserUsedPlaceholder, false);
 
     const treeResponse = await app.inject({
@@ -880,14 +880,14 @@ test("grouped mapping rows expose mixed mappings for repeated instances", async 
           {
             mappingId: rawMappings[0]?.id,
             targetKind: "PART_INSTANCE",
-            targetId: "mc-spacer-a",
+            targetId: getSnapshot().partInstances[0]!.id,
             confidence: "MANUAL",
             status: "CONFIRMED",
           },
           {
             mappingId: rawMappings[1]?.id,
             targetKind: "PART_INSTANCE",
-            targetId: "mc-spacer-b",
+            targetId: getSnapshot().partInstances[1]!.id,
             confidence: "MANUAL",
             status: "CONFIRMED",
           },
@@ -954,7 +954,7 @@ test("mapping a grouped part row updates all instances and creates one future ru
             sourceKind: "PART_INSTANCE",
             sourceIds: spacerGroup?.sourceIds,
             targetKind: "PART_DEFINITION",
-            targetId: "mc-spacer-definition",
+            targetId: getSnapshot().partDefinitions[0]!.id,
             confidence: "MANUAL",
             status: "CONFIRMED",
             applyToFuture: true,
@@ -969,7 +969,7 @@ test("mapping a grouped part row updates all instances and creates one future ru
     };
     assert.equal(applied.updated.length, 4);
     assert.ok(applied.updated.every((mapping) => mapping.targetKind === "PART_DEFINITION"));
-    assert.ok(applied.updated.every((mapping) => mapping.targetId === "mc-spacer-definition"));
+    assert.ok(applied.updated.every((mapping) => mapping.targetId === getSnapshot().partDefinitions[0]!.id));
     assert.ok(applied.updated.every((mapping) => mapping.status === "CONFIRMED"));
     assert.equal(applied.mappingRules.length, 1);
     assert.equal(applied.mappingRules[0]?.sourceKind, "PART_INSTANCE");
@@ -985,7 +985,7 @@ test("mapping a grouped part row updates all instances and creates one future ru
       items: Array<{ sourceKind: string; sourceName: string; targetId: string | null; status: string }>;
     }).items.filter((mapping) => mapping.sourceKind === "PART_INSTANCE" && mapping.sourceName.includes("Spacer"));
     assert.equal(rawSpacerMappings.length, 4);
-    assert.ok(rawSpacerMappings.every((mapping) => mapping.targetId === "mc-spacer-definition"));
+    assert.ok(rawSpacerMappings.every((mapping) => mapping.targetId === getSnapshot().partDefinitions[0]!.id));
     assert.ok(rawSpacerMappings.every((mapping) => mapping.status === "CONFIRMED"));
   });
 });
@@ -1021,7 +1021,7 @@ test("batch mapping part instances creates future rules per stable signature", a
             sourceKind: "PART_INSTANCE",
             sourceIds: partInstanceMappings.map((mapping) => mapping.sourceId),
             targetKind: "PART_DEFINITION",
-            targetId: "mc-shooter-kit",
+            targetId: getSnapshot().partDefinitions[0]!.id,
             confidence: "MANUAL",
             status: "CONFIRMED",
             applyToFuture: true,
@@ -1213,7 +1213,7 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     resetLimits();
 
     assert.equal(result.summary.configuredParserMode, "step_text");
-    assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-1");
+    assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-2");
     assert.equal(result.summary.parserUsedPlaceholder, false);
     assert.equal(result.summary.productCount, 14);
     assert.equal(result.summary.productDefinitionCount, 14);
@@ -1246,7 +1246,7 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(importRunResponse.statusCode, 200);
     const importRun = importRunResponse.json() as { item: { rawSummaryJson: Record<string, unknown> } };
     assert.equal(importRun.item.rawSummaryJson.parserMode, "step_text");
-    assert.equal(importRun.item.rawSummaryJson.parserVersion, "step-text-assembly-parser-1");
+    assert.equal(importRun.item.rawSummaryJson.parserVersion, "step-text-assembly-parser-2");
     assert.deepEqual(importRun.item.rawSummaryJson.rootNames, ["MAIN ASSEMBLY"]);
     resetLimits();
 
@@ -1257,7 +1257,7 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(snapshotSummaryResponse.statusCode, 200);
     const snapshotSummary = snapshotSummaryResponse.json() as { summary: Record<string, unknown> };
     assert.equal(snapshotSummary.summary.configuredParserMode, "step_text");
-    assert.equal(snapshotSummary.summary.actualParserVersion, "step-text-assembly-parser-1");
+    assert.equal(snapshotSummary.summary.actualParserVersion, "step-text-assembly-parser-2");
     assert.equal(snapshotSummary.summary.productCount, 14);
     assert.deepEqual(snapshotSummary.summary.rootNames, ["MAIN ASSEMBLY"]);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
@@ -1290,7 +1290,7 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
       partInstanceCount: number;
       warnings: Array<{ code: string }>;
     };
-    assert.equal(parsed.parserVersion, "step-text-assembly-parser-1");
+    assert.equal(parsed.parserVersion, "step-text-assembly-parser-2");
     assert.equal(parsed.parserUsedPlaceholder, false);
     assert.equal(parsed.productCount, 14);
     assert.equal(parsed.productDefinitionCount, 14);
@@ -1822,10 +1822,10 @@ test("multipart STEP uploads preserve project context when metadata follows the 
       snapshot: { projectId: string | null; seasonId: string | null };
       summary: { parserUsedPlaceholder?: boolean; rootNames?: string[] };
     };
-    assert.equal(parsed.importRun.projectId, "robot-2026");
-    assert.equal(parsed.importRun.seasonId, "season-2026");
-    assert.equal(parsed.snapshot.projectId, "robot-2026");
-    assert.equal(parsed.snapshot.seasonId, "season-2026");
+    assert.equal(parsed.importRun.projectId, "project-robot-2026");
+    assert.equal(parsed.importRun.seasonId, "default-season");
+    assert.equal(parsed.snapshot.projectId, "project-robot-2026");
+    assert.equal(parsed.snapshot.seasonId, "default-season");
     assert.equal(parsed.summary.parserUsedPlaceholder, false);
     assert.deepEqual(parsed.summary.rootNames, ["MAIN ASSEMBLY"]);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
@@ -1894,7 +1894,7 @@ test("confirmed future mappings carry forward to the next STEP snapshot", async 
           {
             mappingId: shooterMapping.id,
             targetKind: "MECHANISM",
-            targetId: "mechanism-shooter-flywheel",
+            targetId: getSnapshot().mechanisms[0]!.id,
             confidence: "MANUAL",
             status: "CONFIRMED",
             applyToFuture: true,
@@ -1918,7 +1918,7 @@ test("confirmed future mappings carry forward to the next STEP snapshot", async 
       items: Array<{ sourceName: string; targetKind: string; targetId: string | null; mappingRuleId: string | null }>;
     }).items.find((mapping) => mapping.sourceName.includes("Shooter"));
     assert.equal(carried?.targetKind, "MECHANISM");
-    assert.equal(carried?.targetId, "mechanism-shooter-flywheel");
+    assert.equal(carried?.targetId, getSnapshot().mechanisms[0]!.id);
     assert.ok(carried?.mappingRuleId);
   });
 });
@@ -2068,5 +2068,53 @@ test("failed STEP finalization leaves snapshot, import run, and audit unchanged"
     });
     assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
     assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, result.importRun.status);
+  });
+});
+
+test("STEP text occurrence identity follows ancestry and quoted labels contain no pointers", async () => {
+  const fixture = stepEntityFixture();
+  const fileText = fixture.replace("Shooter Assembly <1>", "#22 Bolt's Assembly".replace("'", "''")) +
+    "\n#110=NEXT_ASSEMBLY_USAGE_OCCURRENCE('','Rear Shooter','',#3,#6,$);";
+  const parsed = await createStepParserClient().parseStepFile({ fileText, originalFilename: "repeated.step", importRunId: "repeated-test" });
+  assert.equal(new Set(parsed.assemblyNodes.map((node) => node.sourceId)).size, parsed.assemblyNodes.length);
+  assert.equal(new Set(parsed.partInstances.map((part) => part.sourceId)).size, parsed.partInstances.length);
+  assert.equal(parsed.partInstances.length, 2);
+  assert.ok(parsed.partInstances.every((part) => parsed.assemblyNodes.some((node) => node.sourceId === part.parentAssemblySourceId)));
+});
+
+test("mapping confirmation rejects a missing domain target before publishing any mappings", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const result = await uploadStep(app, "invalid-target", repeatedPartCadFixture({ spacerCount: 2 }));
+    resetLimits();
+    const before = await app.cadStore.listSnapshotMappings(result.snapshot.id);
+    const response = await app.inject({ method: "POST", url: `/api/cad/snapshots/${result.snapshot.id}/mappings/apply`, payload: { updates: [
+      { mappingId: before[0]!.id, targetKind: "SUBSYSTEM", targetId: "missing-subsystem", status: "CONFIRMED", applyToFuture: true },
+    ] } });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(await app.cadStore.listSnapshotMappings(result.snapshot.id), before);
+  });
+});
+
+test("CAD confirmations cannot bind project-owned targets from another project", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const result = await uploadStep(app, "project-target", repeatedPartCadFixture({ spacerCount: 1 }));
+    const snapshot = getSnapshot();
+    const projectId = (await app.cadStore.findSnapshot(result.snapshot.id))!.projectId;
+    assert.ok(projectId);
+    const foreign = snapshot.subsystems.find((subsystem) => subsystem.projectId !== projectId)!;
+    const mapping = (await app.cadStore.listSnapshotMappings(result.snapshot.id))[0]!;
+    resetLimits();
+    const response = await app.inject({ method: "POST", url: `/api/cad/snapshots/${result.snapshot.id}/mappings/apply`, payload: { updates: [{ mappingId: mapping.id, targetKind: "SUBSYSTEM", targetId: foreign.id, status: "CONFIRMED" }] } });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.match(response.body, /different project/);
+  });
+});
+
+test("STEP uploads reject nonexistent project metadata before creating import state", async () => {
+  await withIntegrationApp(async ({ app }) => {
+    const response = await app.inject({ method: "POST", url: "/api/cad/step-imports", payload: { fileName: "scope.step", fileText: repeatedPartCadFixture({ spacerCount: 1 }), projectId: "missing-project" } });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.match(response.body, /project does not exist/);
+    assert.equal((await app.cadStore.listImportRuns({})).length, 0);
   });
 });

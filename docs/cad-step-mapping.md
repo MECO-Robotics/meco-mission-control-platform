@@ -91,3 +91,9 @@ STEP uploads default to a 32 MiB server-side limit and cannot be configured abov
 - No shape-level geometry diffing.
 - No automatic subsystem, mechanism, manufacturing, or QA task creation.
 - Onshape sync remains future-compatible scaffolding and should eventually emit the same normalized CAD graph as STEP.
+
+## Occurrence and mapping integrity
+
+STEP text parser version 2 identifies each assembly or part occurrence by its root and full occurrence ancestry. Reused product definitions retain one definition identity while their physical occurrences remain distinct. Quoted labels, including escaped apostrophes and `#` text, are excluded from entity reference extraction. Reimport old disposable development STEP snapshots before comparing occurrence identities across this parser change.
+
+Mapping batches validate supplied domain target IDs before writes. Project-owned subsystem, mechanism and placed-part targets must belong to the snapshot project; reusable part definitions remain global. Finalize rechecks targets and cannot bypass missing or cross-project IDs with `allowUnresolved`. Upload routes reject nonexistent project/season metadata before creating an import run.

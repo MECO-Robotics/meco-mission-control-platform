@@ -10,6 +10,8 @@ import type {
   CadSnapshotMappingStatus,
 } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
+import { partInstanceSubsystemId } from "../domain/partInstanceLocation";
+import { findSubsystem, findMechanism, findPartDefinition, findPartInstance } from "../data/store";
 import { normalizeCadName, sourceNameWithParent } from "./cadUtils";
 import { partInstanceRuleSignature } from "./cadInstanceGrouping";
 
@@ -347,12 +349,31 @@ async function syncSnapshotLifecycleAfterMappingUpdates(store: CadStore, snapsho
   };
 }
 
+export function invalidMappingTarget(mapping: { targetKind: CadMappingTargetKind; targetId?: string | null }, projectId?: string | null) {
+  if (!mapping.targetId) return null;
+  const target = mapping.targetKind === "SUBSYSTEM" ? findSubsystem(mapping.targetId)
+    : mapping.targetKind === "MECHANISM" || mapping.targetKind === "COMPONENT_ASSEMBLY" ? findMechanism(mapping.targetId)
+    : mapping.targetKind === "PART_DEFINITION" ? findPartDefinition(mapping.targetId)
+    : mapping.targetKind === "PART_INSTANCE" ? findPartInstance(mapping.targetId)
+    : null;
+  if (!target) return `The selected ${mapping.targetKind} target does not exist.`;
+  const subsystem = mapping.targetKind === "SUBSYSTEM" ? findSubsystem(mapping.targetId)
+    : mapping.targetKind === "MECHANISM" || mapping.targetKind === "COMPONENT_ASSEMBLY" ? findSubsystem(findMechanism(mapping.targetId)!.subsystemId)
+    : mapping.targetKind === "PART_INSTANCE" ? findSubsystem(partInstanceSubsystemId(findPartInstance(mapping.targetId)!) ?? "")
+    : null;
+  return projectId && subsystem && subsystem.projectId !== projectId ? "The selected CAD target belongs to a different project." : null;
+}
+
 export async function applyMappingUpdates(args: {
   store: CadStore;
   snapshot: CadSnapshot;
   updates: MappingUpdateInput[];
   reviewedBy?: string | null;
 }) {
+  for (const update of args.updates) {
+    const message = invalidMappingTarget(update, args.snapshot.projectId);
+    if (message) throw Object.assign(new Error(message), { statusCode: 400 });
+  }
   const assemblyNodes = await args.store.listAssemblyNodes(args.snapshot.id);
   const partDefinitions = await args.store.listPartDefinitions(args.snapshot.id);
   const partInstances = await args.store.listPartInstances(args.snapshot.id);
