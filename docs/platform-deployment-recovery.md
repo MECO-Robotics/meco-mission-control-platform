@@ -91,13 +91,17 @@ manual dispatches, and caller-supplied release manifests do not start this
 workflow. The source gate verifies that `GITHUB_SHA` is the current public
 `origin/main` revision before validation or deployment continues.
 
+The validation job sets `DATABASE_URL` to
+`postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public`
+for dependency installation, Prisma generation, typechecking, tests, build, and
+schema validation. This configuration URL does not require a running database
+for client generation or schema validation.
+
 The workflow deploy path is:
 
 1. Validate the deploy source.
 2. Install dependencies with `npm ci`.
-3. Generate the Prisma client before typechecking with
-   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public npm run prisma:generate`.
-   This validation URL configures generation; generation does not connect to the database.
+3. Generate the Prisma client before typechecking with `npm run prisma:generate`.
 4. Run `npm run typecheck`.
 5. Run `npm test`.
 6. Run `npm run build`.
