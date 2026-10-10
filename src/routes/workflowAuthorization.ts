@@ -85,7 +85,7 @@ export function validatePurchaseTransition(
   current: PurchaseOrderStatus,
   next: PurchaseOrderStatus,
 ): WorkflowPolicyFailure | null {
-  return purchaseTransitions[current] === next || (next === "cancelled" && current !== "delivered" && current !== "cancelled")
+  return current === next || purchaseTransitions[current] === next || (next === "cancelled" && current !== "delivered" && current !== "cancelled")
     ? null
     : { statusCode: 409, message: `Purchase cannot transition from ${current} to ${next}.` };
 }

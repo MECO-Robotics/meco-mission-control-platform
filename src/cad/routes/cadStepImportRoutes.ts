@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from "fastify";
 
+import { findProject, getSeasons } from "../../data/store";
 import { cadStepUploadConfig, resolveCadStepParserMode } from "../../config/env";
 import { createRequestLimitGuard } from "../../security/requestLimits";
 import {
@@ -72,6 +73,10 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
   app.post("/api/cad/step-imports", stepUploadRouteOptions, async (request, reply) => {
     try {
       const payload = await readStepImportPayload(request);
+      const project = payload.projectId ? findProject(payload.projectId) : undefined;
+      if (payload.projectId && !project) throw new CadImportError("The selected CAD project does not exist.", 400);
+      if (payload.seasonId && !getSeasons().some((season) => season.id === payload.seasonId)) throw new CadImportError("The selected CAD season does not exist.", 400);
+      if (project && payload.seasonId && project.seasonId !== payload.seasonId) throw new CadImportError("CAD project and season must match.", 400);
       let parserMode: ReturnType<typeof resolveCadStepParserMode>;
       try {
         parserMode = resolveCadStepParserMode();
@@ -90,7 +95,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
           originalFilename: payload.fileName,
           label: payload.label,
           projectId: payload.projectId,
-          seasonId: payload.seasonId,
+          seasonId: payload.seasonId ?? project?.seasonId ?? null,
           requestedBy: payload.requestedBy,
         },
       });
