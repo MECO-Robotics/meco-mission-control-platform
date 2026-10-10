@@ -33,53 +33,47 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         color: "#4F86C6",
         description: "Temporary subsystem for audit export retention coverage.",
         parentSubsystemId: null,
-        responsibleEngineerId: admin.id,
+        responsibleEngineerId: "ava",
         mentorIds: [],
-        risks: [],
-      });
+      }, { actorMemberId: admin.id });
       const operationsSubsystem = createSubsystem({
         projectId: operationsProject.id,
         name: "Operations Audit Subsystem",
         color: "#4F86C6",
         description: "Destination for audit export move coverage.",
         parentSubsystemId: null,
-        responsibleEngineerId: admin.id,
+        responsibleEngineerId: "ava",
         mentorIds: [],
-        risks: [],
-      });
+      }, { actorMemberId: admin.id });
       const sourceSubsystem = createSubsystem({
         projectId: robotProject.id,
         name: "Robot Audit Move Source",
         color: "#4F86C6",
         description: "Source for audit export move coverage.",
         parentSubsystemId: null,
-        responsibleEngineerId: admin.id,
+        responsibleEngineerId: "ava",
         mentorIds: [],
-        risks: [],
-      });
+      }, { actorMemberId: admin.id });
       const mechanism = createMechanism({
         subsystemId: subsystem.id,
         name: "Audit Export Deleted Mechanism",
         description: "Mechanism audit row should keep project scope.",
-      });
+      }, { actorMemberId: admin.id });
       const partDefinition = createPartDefinition({
         name: "Audit Export Deleted Subsystem Part",
         partNumber: "AUD-EXP-SUB",
         revision: "A",
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Part fixture for deleted subsystem audit coverage.",
         seasonId: "default-season",
       });
       const partInstance = createPartInstance({
-        subsystemId: subsystem.id,
-        mechanismId: mechanism.id,
+        intendedSubsystemId: subsystem.id,
+        intendedMechanismId: mechanism.id,
         partDefinitionId: partDefinition.id,
-        name: "Audit Export Deleted Part Instance",
-        quantity: 1,
-        trackIndividually: false,
-        status: "not ready",
+        location: { kind: "stock", location: "Audit fixture" },
       });
 
       assert.ok(removeSubsystem(subsystem.id));
@@ -170,21 +164,18 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         partNumber: "AUD-EXP-MOVE",
         revision: "A",
         type: "custom",
-        source: "Onshape",
+        defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Part definition for moved part instance audit coverage.",
         seasonId: "default-season",
       });
       const movedPartInstance = createPartInstance({
-        subsystemId: sourceSubsystem.id,
-        mechanismId: null,
+        intendedSubsystemId: sourceSubsystem.id,
+        intendedMechanismId: null,
         partDefinitionId: movedPartDefinition.id,
-        name: "Audit Export Moved Part Instance",
-        quantity: 1,
-        trackIndividually: false,
-        status: "not ready",
+        location: { kind: "stock", location: "Audit export bin" },
       });
-      assert.ok(updatePartInstance(movedPartInstance.id, { subsystemId: operationsSubsystem.id }));
+      assert.ok(updatePartInstance(movedPartInstance.id, { intendedSubsystemId: operationsSubsystem.id }));
 
       resetLimits();
 

@@ -67,20 +67,20 @@ test("dependency commands reject impossible states and validate the full merged 
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 
-test("duplicate blocker descriptions stay visible until the last open record resolves", async () => {
+test("blocking task summaries derive from canonical unresolved Risks", async () => {
   await withIntegrationApp(async ({ app }) => {
+    const { createRisk, getSnapshot } = await import("../src/data/store");
     const task = getSnapshot().tasks[0];
-    const create = () => app.inject({ method: "POST", url: "/api/task-blockers", payload: {
-      blockedTaskId: task.id, blockerType: "external", blockerId: null,
-      description: "Waiting on shared delivery", severity: "medium", status: "open", createdByMemberId: null,
-    }});
-    const a = await create(); const b = await create();
-    assert.equal(a.statusCode, 201, a.body); assert.equal(b.statusCode, 201, b.body);
-    const first = await app.inject({ method: "PATCH", url: `/api/task-blockers/${a.json().item.id}`, payload: { status: "resolved" }});
-    assert.equal(first.statusCode, 200, first.body);
-    assert.ok(getSnapshot().tasks.find((item) => item.id === task.id)!.blockers.includes("Waiting on shared delivery"));
-    await app.inject({ method: "DELETE", url: `/api/task-blockers/${b.json().item.id}` });
-    assert.ok(!getSnapshot().tasks.find((item) => item.id === task.id)!.blockers.includes("Waiting on shared delivery"));
+    const risk = createRisk({
+      projectId: task.projectId, title: "Waiting on shared delivery", detail: "Blocking risk.",
+      category: "supply", severity: "medium", status: "open", blocksWork: true,
+      source: { kind: "manual" }, relatedTargets: [{ kind: "task", id: task.id }],
+      mitigationTaskId: null, ownerGroupId: null,
+    });
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)!.isBlocked, true);
+    const risks = await app.inject({ method: "GET", url: "/api/risks" });
+    assert.ok(risks.json().items.some((item: { id: string }) => item.id === risk.id));
+    assert.equal((await app.inject({ method: "GET", url: "/api/task-blockers" })).statusCode, 404);
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 
@@ -101,18 +101,12 @@ test("layout and QA proposals persist on actual records and approved risk change
     assert.equal((await app.inject({ method: "PATCH", url: `/api/subsystems/${subsystem.id}`, payload: { layoutX: 1.1 } })).statusCode, 400);
     assert.equal((await app.inject({ method: "PATCH", url: `/api/subsystems/${subsystem.id}`, payload: { layoutZ: 0.3 } })).statusCode, 400);
     const task = snapshot.tasks[0]; const risk = snapshot.risks[0];
-    const report = { reportType: "QA", projectId: task.projectId, taskId: task.id, milestoneId: null, workstreamId: (task.workstreamIds[0] ?? null), createdByMemberId: null, result: "pass", summary: "Reassessed risk", notes: "Verified mitigation", participantIds: [snapshot.members[0].id], mentorApproved: false, createdAt: "2026-09-08", reviewedAt: "2026-09-08", targetRiskId: risk.id, proposedRiskSeverity: "low", proposedRiskStatus: "full-mitigation" };
+    const report = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "project", id: task.projectId }], createdByMemberId: null, result: "pass", summary: "QA report", notes: "Verified mitigation", participantIds: [snapshot.members[0].id], mentorId: null, requestedById: null, status: "submitted", createdAt: "2026-09-08T12:00:00Z", reviewedById: null, reviewedAt: null };
     const pending = await app.inject({ method: "POST", url: "/api/reports", payload: report });
     assert.equal(pending.statusCode, 201, pending.body);
-    assert.equal(pending.json().item.targetRiskId, risk.id);
-    assert.equal(getSnapshot().qaReports.find((r) => r.id === pending.json().item.id)?.proposedRiskStatus, "full-mitigation");
+    assert.equal("targetRiskId" in pending.json().item, false);
+    assert.equal("taskId" in getSnapshot().qaReports.find((r) => r.id === pending.json().item.id)!, false);
     assert.equal(getSnapshot().risks.find((r) => r.id === risk.id)?.severity, risk.severity);
-    const approved = await app.inject({ method: "POST", url: "/api/reports", payload: { ...report, mentorApproved: true } });
-    assert.equal(approved.statusCode, 201, approved.body);
-    assert.equal(getSnapshot().risks.find((r) => r.id === risk.id)?.severity, "low");
-    const count = getSnapshot().qaReports.length;
-    const invalid = await app.inject({ method: "POST", url: "/api/reports", payload: { ...report, targetRiskId: "missing", mentorApproved: true } });
-    assert.equal(invalid.statusCode, 400); assert.equal(getSnapshot().qaReports.length, count);
   }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" } });
 });
 
@@ -181,17 +175,19 @@ test("a failed required CAD terminal transition cannot return the earlier snapsh
 
 test("explicit snapshot mutation handlers roll back error responses and release the next writer", async () => {
   await withIntegrationApp(async ({ app }) => {
-    const { createProject } = await import("../src/data/store");
+    const project = getSnapshot().projects[0]!;
+    const originalDescription = project.description;
     app.post("/test/rejected-command", { config: { snapshotMutation: true } }, async (_request, reply) => {
-      createProject({ name: "Must roll back", seasonId: "default-season", projectType: "operations", description: "Rejected command", status: "active" });
+      const { updateProject } = await import("../src/data/store");
+      updateProject(project.id, { description: "Rejected command" });
       return reply.code(409).send({ message: "Rejected after staging" });
     });
     const rejected = await app.inject({ method: "POST", url: "/test/rejected-command" });
     assert.equal(rejected.statusCode, 409);
-    assert.equal(getSnapshot().projects.some((project) => project.name === "Must roll back"), false);
-    const accepted = await app.inject({ method: "POST", url: "/api/projects", payload: { name: "Next writer", seasonId: "default-season", projectType: "operations", description: "Succeeds after rollback", status: "active" } });
-    assert.equal(accepted.statusCode, 201, accepted.body);
-    assert.ok(getSnapshot().projects.some((project) => project.name === "Next writer"));
+    assert.equal(getSnapshot().projects.find((item) => item.id === project.id)?.description, originalDescription);
+    const accepted = await app.inject({ method: "PATCH", url: `/api/projects/${project.id}`, payload: { description: "Succeeds after rollback" } });
+    assert.equal(accepted.statusCode, 200, accepted.body);
+    assert.equal(getSnapshot().projects.find((item) => item.id === project.id)?.description, "Succeeds after rollback");
   });
 });
 

@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  createPlatformStore,
+  startInteractiveTutorialSession,
+  runWithInteractiveTutorialSession,
+  createTask,
+  acquireSnapshotMutation,
   createMaterial,
   updateProject,
   updateWorkstream,
@@ -15,13 +20,13 @@ import {
   removeWorkLog,
   createProject,
   createSeason,
-  createManufacturingItem,
   createMechanism,
   createSubsystem,
   createWorkstream,
   createPartDefinition,
   createPartInstance,
   createQaRequest,
+  createRisk,
   createMember,
   createMilestone,
   getQaRequests,
@@ -37,7 +42,6 @@ import {
   resetStore,
   updateSubsystem,
   updatePartDefinition,
-  updateManufacturingItem,
   updateMember,
   updatePartInstance,
   updateTask,
@@ -143,7 +147,7 @@ test("createProject seeds drivetrain defaults for robot projects", () => {
 test("the tutorial baseline retains its six canonical projects", () => {
   assert.deepEqual(
     getSnapshot().projects.map((project) => project.name).sort(),
-    ["Media", "Operations", "Outreach", "Strategy", "Training", "Tutorial Robot 2026"].sort(),
+    ["Media", "Operations", "Outreach", "Robot", "Strategy", "Training"].sort(),
   );
 });
 
@@ -151,7 +155,7 @@ test("tutorial baseline keeps the canonical visible season name", () => {
   const baseline = getTutorialBaselineState();
 
   assert.equal(baseline.seasonId, "default-season");
-  assert.equal(baseline.seasonName, "Tutorial Season");
+  assert.equal(baseline.seasonName, "FRC build and competition season");
 });
 
 test("tutorial seed keeps a planning milestone linked to the robot project", () => {
@@ -159,11 +163,11 @@ test("tutorial seed keeps a planning milestone linked to the robot project", () 
   const milestone = snapshot.milestones.find((candidate) => candidate.id === "tutorial-robot-checkpoint-feb-21");
 
   assert.ok(milestone);
-  assert.equal(milestone.title, "Robot Checkpoint");
+  assert.equal(milestone.title, "Off-season drivebase test");
   assert.deepEqual(milestone.projectIds, ["project-robot-2026"]);
 });
 
-test("compact tutorial seed includes its planning milestone", () => {
+test("restored tutorial seed includes its planning milestones", () => {
   const snapshot = getSnapshot();
   const tutorialMilestones = snapshot.milestones.filter(
     (milestone) => milestone.seasonId === "default-season",
@@ -176,7 +180,6 @@ test("demo seed references are internally consistent", () => {
   const snapshot = getSnapshot();
   const ids = {
     artifacts: new Set(snapshot.artifacts.map((item) => item.id)),
-    manufacturing: new Set(snapshot.manufacturingItems.map((item) => item.id)),
     materials: new Set(snapshot.materials.map((item) => item.id)),
     mechanisms: new Set(snapshot.mechanisms.map((item) => item.id)),
     members: new Set(snapshot.members.map((item) => item.id)),
@@ -206,33 +209,15 @@ test("demo seed references are internally consistent", () => {
     expectId(ids.subsystems, (task.subsystemIds[0] ?? ""), `task ${task.id} subsystemId`);
     expectId(ids.mechanisms, (task.mechanismIds[0] ?? null), `task ${task.id} mechanismId`);
     expectId(ids.partInstances, (task.partInstanceIds[0] ?? null), `task ${task.id} partInstanceId`);
-    expectId(ids.artifacts, (task.artifactIds[0] ?? null), `task ${task.id} artifactId`);
-    expectId(ids.milestones, task.targetMilestoneId, `task ${task.id} targetMilestoneId`);
+    task.scheduleRefs.filter((ref) => ref.kind === "milestone").forEach((ref) => expectId(ids.milestones, ref.id, `task ${task.id} scheduleRefs`));
     expectId(ids.members, task.ownerId, `task ${task.id} ownerId`);
     expectId(ids.members, task.mentorId, `task ${task.id} mentorId`);
     task.assigneeIds.forEach((id) => expectId(ids.members, id, `task ${task.id} assigneeIds`));
-    task.linkedManufacturingIds.forEach((id) =>
-      expectId(ids.manufacturing, id, `task ${task.id} linkedManufacturingIds`),
-    );
-    task.linkedPurchaseIds.forEach((id) =>
-      expectId(ids.purchases, id, `task ${task.id} linkedPurchaseIds`),
-    );
-  }
 
-  for (const manufacturingItem of snapshot.manufacturingItems) {
-    expectId(ids.subsystems, manufacturingItem.subsystemId, `manufacturing ${manufacturingItem.id} subsystemId`);
-    expectId(ids.members, manufacturingItem.requestedById, `manufacturing ${manufacturingItem.id} requestedById`);
-    expectId(ids.materials, manufacturingItem.materialId, `manufacturing ${manufacturingItem.id} materialId`);
-    expectId(ids.partDefinitions, manufacturingItem.partDefinitionId, `manufacturing ${manufacturingItem.id} partDefinitionId`);
-    expectId(ids.partInstances, manufacturingItem.partInstanceId, `manufacturing ${manufacturingItem.id} partInstanceId`);
-    manufacturingItem.partInstanceIds.forEach((id) =>
-      expectId(ids.partInstances, id, `manufacturing ${manufacturingItem.id} partInstanceIds`),
-    );
   }
 
   for (const purchaseItem of snapshot.purchaseItems) {
-    expectId(ids.subsystems, purchaseItem.subsystemId, `purchase ${purchaseItem.id} subsystemId`);
-    expectId(ids.members, purchaseItem.requestedById, `purchase ${purchaseItem.id} requestedById`);
+    expectId(ids.tasks, purchaseItem.taskId, `purchase ${purchaseItem.id} taskId`);
     expectId(ids.partDefinitions, purchaseItem.partDefinitionId, `purchase ${purchaseItem.id} partDefinitionId`);
   }
 
@@ -241,8 +226,12 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const partInstance of snapshot.partInstances) {
-    expectId(ids.subsystems, partInstance.subsystemId, `part instance ${partInstance.id} subsystemId`);
-    expectId(ids.mechanisms, partInstance.mechanismId, `part instance ${partInstance.id} mechanismId`);
+    expectId(ids.subsystems, partInstance.intendedSubsystemId, `part instance ${partInstance.id} intendedSubsystemId`);
+    expectId(ids.mechanisms, partInstance.intendedMechanismId, `part instance ${partInstance.id} intendedMechanismId`);
+    if (partInstance.location.kind === "installed") {
+      expectId(ids.subsystems, partInstance.location.subsystemId, `part instance ${partInstance.id} location subsystemId`);
+      expectId(ids.mechanisms, partInstance.location.mechanismId, `part instance ${partInstance.id} location mechanismId`);
+    }
     expectId(ids.partDefinitions, partInstance.partDefinitionId, `part instance ${partInstance.id} partDefinitionId`);
   }
 
@@ -264,12 +253,12 @@ test("demo seed references are internally consistent", () => {
   }
 
   for (const qaReport of snapshot.qaReports) {
-    expectId(ids.tasks, qaReport.taskId, `qa report ${qaReport.id} taskId`);
+    qaReport.targetRefs.forEach((ref) => { if (ref.kind === "task") expectId(ids.tasks, ref.id, `qa report ${qaReport.id} task target`); });
     qaReport.participantIds.forEach((id) => expectId(ids.members, id, `qa report ${qaReport.id} participantIds`));
   }
 
   for (const testResult of snapshot.testResults) {
-    expectId(ids.milestones, testResult.milestoneId, `test result ${testResult.id} milestoneId`);
+    expectId(ids.projects, testResult.projectId, `test result ${testResult.id} projectId`);
   }
 
   for (const taskDependency of snapshot.taskDependencies) {
@@ -283,58 +272,37 @@ test("demo seed references are internally consistent", () => {
     }
   }
 
-  for (const taskBlocker of snapshot.taskBlockers) {
-    expectId(ids.tasks, taskBlocker.blockedTaskId, `task blocker ${taskBlocker.id} blockedTaskId`);
-    expectId(ids.members, taskBlocker.createdByMemberId, `task blocker ${taskBlocker.id} createdByMemberId`);
-  }
-
   for (const qaFinding of snapshot.qaFindings) {
-    expectId(ids.qaReports, qaFinding.qaReportId, `qa finding ${qaFinding.id} qaReportId`);
-    expectId(ids.tasks, qaFinding.taskId, `qa finding ${qaFinding.id} taskId`);
+    if (qaFinding.reportId) expectId(ids.qaReports, qaFinding.reportId, `qa finding ${qaFinding.id} reportId`);
     expectId(ids.projects, qaFinding.projectId, `qa finding ${qaFinding.id} projectId`);
-    expectId(ids.workstreams, qaFinding.workstreamId, `qa finding ${qaFinding.id} workstreamId`);
-    expectId(ids.subsystems, qaFinding.subsystemId, `qa finding ${qaFinding.id} subsystemId`);
-    expectId(ids.mechanisms, qaFinding.mechanismId, `qa finding ${qaFinding.id} mechanismId`);
-    expectId(ids.partInstances, qaFinding.partInstanceId, `qa finding ${qaFinding.id} partInstanceId`);
-    expectId(ids.artifacts, qaFinding.artifactId, `qa finding ${qaFinding.id} artifactId`);
+    assert.ok(qaFinding.targetRefs.length > 0);
   }
 
   for (const testFinding of snapshot.testFindings) {
     expectId(ids.testResults, testFinding.testResultId, `test finding ${testFinding.id} testResultId`);
-    expectId(ids.milestones, testFinding.milestoneId, `test finding ${testFinding.id} milestoneId`);
-    expectId(ids.tasks, testFinding.taskId, `test finding ${testFinding.id} taskId`);
     expectId(ids.projects, testFinding.projectId, `test finding ${testFinding.id} projectId`);
-    expectId(ids.workstreams, testFinding.workstreamId, `test finding ${testFinding.id} workstreamId`);
-    expectId(ids.subsystems, testFinding.subsystemId, `test finding ${testFinding.id} subsystemId`);
-    expectId(ids.mechanisms, testFinding.mechanismId, `test finding ${testFinding.id} mechanismId`);
-    expectId(ids.partInstances, testFinding.partInstanceId, `test finding ${testFinding.id} partInstanceId`);
-    expectId(ids.artifacts, testFinding.artifactId, `test finding ${testFinding.id} artifactId`);
+    assert.ok(testFinding.targetRefs.length > 0);
   }
 
   for (const designIteration of snapshot.designIterations) {
     const findingIds = designIteration.sourceType === "qa" ? ids.qaFindings : ids.testFindings;
     expectId(findingIds, designIteration.findingId, `design iteration ${designIteration.id} findingId`);
     expectId(ids.projects, designIteration.projectId, `design iteration ${designIteration.id} projectId`);
-    expectId(ids.workstreams, designIteration.workstreamId, `design iteration ${designIteration.id} workstreamId`);
-    expectId(ids.subsystems, designIteration.subsystemId, `design iteration ${designIteration.id} subsystemId`);
-    expectId(ids.mechanisms, designIteration.mechanismId, `design iteration ${designIteration.id} mechanismId`);
-    expectId(ids.partInstances, designIteration.partInstanceId, `design iteration ${designIteration.id} partInstanceId`);
-    expectId(ids.artifacts, designIteration.artifactId, `design iteration ${designIteration.id} artifactId`);
-    expectId(ids.tasks, designIteration.taskId, `design iteration ${designIteration.id} taskId`);
+    assert.ok(designIteration.targetRefs.length > 0);
   }
 
   for (const risk of snapshot.risks) {
-    const sourceSet = risk.sourceType === "qa-report" ? ids.qaReports : ids.testResults;
-    expectId(sourceSet, risk.sourceId, `risk ${risk.id} sourceId`);
-    if (risk.attachmentType === "project") {
-      expectId(ids.projects, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    } else if (risk.attachmentType === "workstream") {
-      expectId(ids.workstreams, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    } else if (risk.attachmentType === "mechanism") {
-      expectId(ids.mechanisms, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    } else {
-      expectId(ids.partInstances, risk.attachmentId, `risk ${risk.id} attachmentId`);
-    }
+    if (risk.source.kind === "qa-finding") expectId(ids.qaFindings, risk.source.id, `risk ${risk.id} source`);
+    else if (risk.source.kind === "test-finding") expectId(ids.testFindings, risk.source.id, `risk ${risk.id} source`);
+    else if (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") expectId(ids.tasks, risk.source.id, `risk ${risk.id} source`);
+    else if (risk.source.kind === "part-instance") expectId(ids.partInstances, risk.source.id, `risk ${risk.id} source`);
+    expectId(ids.projects, risk.projectId, `risk ${risk.id} projectId`);
+    risk.relatedTargets.forEach((target) => {
+      if (target.kind === "task") expectId(ids.tasks, target.id, `risk ${risk.id} target`);
+      if (target.kind === "project") expectId(ids.projects, target.id, `risk ${risk.id} target`);
+      if (target.kind === "part-instance") expectId(ids.partInstances, target.id, `risk ${risk.id} target`);
+      if (target.kind === "workstream") expectId(ids.workstreams, target.id, `risk ${risk.id} target`);
+    });
     expectId(ids.tasks, risk.mitigationTaskId, `risk ${risk.id} mitigationTaskId`);
   }
 });
@@ -414,7 +382,7 @@ test("createPartDefinition defaults active season membership and can be reactiva
     partNumber: "SEA-001",
     revision: "A",
     type: "custom",
-    source: "Onshape",
+    defaultAcquisitionMethod: "stock",
     materialId: "mat-onyx-filament",
     description: "Season-scoped part definition.",
     seasonId: "default-season",
@@ -470,19 +438,18 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
 
   assert.ok(wiringTask);
   assert.equal((wiringTask.subsystemIds[0] ?? ""), "drive");
-  assert.equal(wiringTask?.disciplineId, "electrical");
+  assert.equal(wiringTask?.workTypeId, "robot:electrical-wiring");
 });
 
 test("createSubsystem auto-generates a testing task for its parent subsystem", () => {
   const subsystem = createSubsystem({
-    projectId: "default-season-robot",
+    projectId: "project-robot-2026",
     name: "Test Subsystem",
     color: "#4F86C6",
     description: "Temporary subsystem for coverage.",
     parentSubsystemId: "drive",
     responsibleEngineerId: "ava",
     mentorIds: ["marco"],
-    risks: ["Temporary integration risk"],
   });
 
   const integrationTask = getSnapshot().tasks.find(
@@ -493,7 +460,7 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
   assert.equal(subsystem.parentSubsystemId, "drive");
   assert.ok(integrationTask);
   assert.equal((integrationTask.subsystemIds[0] ?? ""), "drive");
-  assert.equal(integrationTask?.disciplineId, "testing");
+  assert.equal(integrationTask?.workTypeId, "robot:testing");
   assert.equal((integrationTask.mechanismIds[0] ?? null), null);
   assert.equal(integrationTask?.ownerId, "ava");
   assert.equal(integrationTask?.mentorId, "marco");
@@ -541,7 +508,7 @@ test("task updates append an audit action entry", () => {
   assert.equal(lastAction.requestId, "req-audit-task-update");
   assert.ok(lastAction.changedFields.includes("estimatedHours"));
   assert.ok(lastAction.changedFields.includes("status"));
-  assert.equal(lastAction.beforeJson?.status, "not-started");
+  assert.equal(lastAction.beforeJson?.status, "in-progress");
   assert.equal(lastAction.afterJson?.status, "complete");
   assert.equal(lastAction.beforeJson?.estimatedHours, originalTask.estimatedHours);
   assert.equal(lastAction.afterJson?.estimatedHours, 7);
@@ -576,280 +543,26 @@ test("audit summaries redact sensitive before and after fields", () => {
   assert.equal(lastAction.afterJson?.name, "Practice API v2");
 });
 
-test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {
-  const subsystem = createSubsystem({
-    projectId: "project-robot-2026",
-    name: "Test Mechanism Subsystem",
-    description: "Scenario created for parent alignment behavior.",
-    parentSubsystemId: null,
-    responsibleEngineerId: null,
-    mentorIds: [],
-    risks: [],
-  });
-  const mechanism = createMechanism({
-    subsystemId: subsystem.id,
-    name: "Test Mechanism",
-    description: "Scenario mechanism.",
-  });
-  updatePartInstance("pi-swerve-encoder-bracket-front-left", {
-    mechanismId: mechanism.id,
-  });
+test("PartInstance records one physical item's location separately from readiness", () => {
+  const seeded = getSnapshot().partInstances.find((part) => part.id === "pi-swerve-encoder-bracket-front-left");
+  assert.ok(seeded);
+  assert.equal(seeded.location.kind, "installed");
 
-  const updatedPartInstance = getSnapshot().partInstances.find(
-    (item) => item.id === "pi-swerve-encoder-bracket-front-left",
-  );
-  assert.ok(updatedPartInstance);
-  assert.equal(updatedPartInstance.mechanismId, mechanism.id);
-  assert.equal(updatedPartInstance.subsystemId, subsystem.id);
+  const updated = updatePartInstance(seeded.id, { location: { kind: "repair", location: "Pit repair cart" } });
+  assert.equal(updated?.location.kind, "repair");
+  assert.equal("readinessStatus" in (updated ?? {}), false);
 });
 
-test("createPartInstance merges duplicate part and mechanism quantities", () => {
-  const temporaryPartDefinition = createPartDefinition({
-    name: "Temporary Merge Part",
-    partNumber: "TMP-MERGE-000",
-    revision: "A",
-    type: "custom",
-    source: "Onshape",
-    materialId: "mat-onyx-filament",
-    description: "Temporary fixture for merge coverage.",
-  });
+test("manufacturing technical state belongs to the Robot Kanban Task", () => {
+  const task = getSnapshot().tasks.find((candidate) => candidate.id === "swerve-sensor-bundle");
+  assert.ok(task);
+  assert.equal(task.workTypeId, "robot:manufacturing");
+  assert.equal(task.manufacturingDetails?.processId, "3d-print");
+  assert.equal(task.manufacturingDetails?.fulfillmentSource, "outsourced");
+  assert.deepEqual(task.manufacturingDetails?.part, { kind: "part-definition", partDefinitionId: "pd-swerve-encoder-bracket" });
 
-  const firstPartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Encoder bracket set",
-    quantity: 2,
-    trackIndividually: false,
-    status: "not ready",
-  });
-
-  const mergedPartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Encoder bracket set",
-    quantity: 3,
-    trackIndividually: true,
-    status: "ready",
-  });
-
-  const matchingPartInstances = getSnapshot().partInstances.filter(
-    (partInstance) =>
-      partInstance.subsystemId === "drive" &&
-      partInstance.mechanismId === "swerve-module" &&
-      partInstance.partDefinitionId === temporaryPartDefinition.id,
-  );
-
-  assert.equal(matchingPartInstances.length, 1);
-  assert.equal(mergedPartInstance.id, firstPartInstance.id);
-  assert.equal(matchingPartInstances[0].quantity, 5);
-});
-
-test("createPartInstance keeps shared definitions separate by mechanism ownership", () => {
-  const sharedPartDefinition = createPartDefinition({
-    name: "Temporary Shared Hardware",
-    partNumber: "TMP-SHARED-000",
-    revision: "A",
-    type: "hardware",
-    source: "COTS",
-    materialId: "mat-onyx-filament",
-    description: "Temporary fixture for mechanism ownership coverage.",
-  });
-
-  const drivePartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: sharedPartDefinition.id,
-    name: "Drive shared hardware",
-    quantity: 2,
-    trackIndividually: false,
-    status: "not ready",
-  });
-  const intakePartInstance = createPartInstance({
-    subsystemId: "manipulator",
-    mechanismId: "intake-roller",
-    partDefinitionId: sharedPartDefinition.id,
-    name: "Intake shared hardware",
-    quantity: 3,
-    trackIndividually: false,
-    status: "ready",
-  });
-
-  const matchingPartInstances = getSnapshot().partInstances.filter(
-    (partInstance) => partInstance.partDefinitionId === sharedPartDefinition.id,
-  );
-
-  assert.notEqual(drivePartInstance.id, intakePartInstance.id);
-  assert.equal(matchingPartInstances.length, 2);
-  assert.deepEqual(
-    matchingPartInstances.map((partInstance) => ({
-      mechanismId: partInstance.mechanismId,
-      quantity: partInstance.quantity,
-      subsystemId: partInstance.subsystemId,
-    })),
-    [
-      { mechanismId: "swerve-module", quantity: 2, subsystemId: "drive" },
-      { mechanismId: "intake-roller", quantity: 3, subsystemId: "manipulator" },
-    ],
-  );
-});
-
-test("updatePartInstance merges onto an existing part and retargets task references", () => {
-  const temporaryPartDefinition = createPartDefinition({
-    name: "Temporary Merge Part",
-    partNumber: "TMP-MERGE-001",
-    revision: "A",
-    type: "custom",
-    source: "Onshape",
-    materialId: "mat-onyx-filament",
-    description: "Temporary fixture for merge coverage.",
-  });
-
-  const drivePartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Drive merge part",
-    quantity: 2,
-    trackIndividually: false,
-    status: "not ready",
-  });
-  const intakePartInstance = createPartInstance({
-    subsystemId: "manipulator",
-    mechanismId: "intake-roller",
-    partDefinitionId: temporaryPartDefinition.id,
-    name: "Intake merge part",
-    quantity: 3,
-    trackIndividually: false,
-    status: "blocked",
-  });
-
-  updateTask("swerve-sensor-bundle", {
-    partInstanceIds: [intakePartInstance.id],
-  });
-
-  const mergedPartInstance = updatePartInstance(intakePartInstance.id, {
-    mechanismId: "swerve-module",
-  });
-
-  const matchingPartInstances = getSnapshot().partInstances.filter(
-    (partInstance) => partInstance.partDefinitionId === temporaryPartDefinition.id,
-  );
-  const updatedTask = getSnapshot().tasks.find((task) => task.id === "swerve-sensor-bundle");
-
-  assert.ok(mergedPartInstance);
-  assert.equal(mergedPartInstance.id, drivePartInstance.id);
-  assert.equal(matchingPartInstances.length, 1);
-  assert.equal(matchingPartInstances[0].quantity, 5);
-  assert.equal(matchingPartInstances[0].mechanismId, "swerve-module");
-  assert.equal(updatedTask?.partInstanceIds[0], drivePartInstance.id);
-});
-
-test("fabrication manufacturing items stay seeded and update cleanly", () => {
-  const seededFabricationItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === "frame-weldment",
-  );
-
-  assert.ok(seededFabricationItem);
-  assert.equal(seededFabricationItem?.process, "fabrication");
-  assert.equal(seededFabricationItem?.partDefinitionId, null);
-
-  const createdFabricationItem = createManufacturingItem({
-    title: "Temporary Weldment",
-    subsystemId: "drive",
-    requestedById: "ava",
-    process: "fabrication",
-    dueDate: "2026-04-30",
-    material: "1/8 aluminum tube",
-    partDefinitionId: null,
-    quantity: 1,
-    status: "requested",
-    mentorReviewed: false,
-    batchLabel: "FAB-99",
-  });
-
-  assert.equal(createdFabricationItem.process, "fabrication");
-  assert.equal(createdFabricationItem.partDefinitionId, null);
-  assert.equal(createdFabricationItem.batchLabel, "FAB-99");
-
-  updateManufacturingItem(createdFabricationItem.id, {
-    title: "Temporary Weldment Rev B",
-    status: "approved",
-  });
-
-  const updatedFabricationItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === createdFabricationItem.id,
-  );
-  assert.ok(updatedFabricationItem);
-  assert.equal(updatedFabricationItem.process, "fabrication");
-  assert.equal(updatedFabricationItem.title, "Temporary Weldment Rev B");
-  assert.equal(updatedFabricationItem.status, "approved");
-});
-
-test("cnc manufacturing items keep the in-house flag through create and update", () => {
-  const createdCncItem = createManufacturingItem({
-    title: "Temporary CNC Plate",
-    subsystemId: "drive",
-    requestedById: "ava",
-    process: "cnc",
-    dueDate: "2026-05-01",
-    material: "6061 aluminum",
-    partDefinitionId: "pd-swerve-encoder-bracket",
-    quantity: 2,
-    status: "requested",
-    mentorReviewed: false,
-    batchLabel: "CNC-99",
-    inHouse: false,
-  });
-
-  assert.equal(createdCncItem.inHouse, false);
-
-  updateManufacturingItem(createdCncItem.id, {
-    inHouse: true,
-  });
-
-  const updatedCncItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === createdCncItem.id,
-  );
-  assert.ok(updatedCncItem);
-  assert.equal(updatedCncItem.inHouse, true);
-});
-
-test("manufacturing items keep linked part instances through create and update", () => {
-  const createdCncItem = createManufacturingItem({
-    title: "Temporary Encoder Bracket",
-    subsystemId: "drive",
-    requestedById: "ava",
-    process: "cnc",
-    dueDate: "2026-05-01",
-    material: "6061 aluminum",
-    partDefinitionId: "pd-swerve-encoder-bracket",
-    partInstanceId: "pi-swerve-encoder-bracket-front-left",
-    partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
-    quantity: 2,
-    status: "requested",
-    mentorReviewed: false,
-    batchLabel: "CNC-100",
-    inHouse: true,
-  });
-
-  assert.equal(createdCncItem.partInstanceId, "pi-swerve-encoder-bracket-front-left");
-  assert.deepEqual(createdCncItem.partInstanceIds, ["pi-swerve-encoder-bracket-front-left"]);
-
-  updateManufacturingItem(createdCncItem.id, {
-    subsystemId: "manipulator",
-    partDefinitionId: "pd-intake-guard",
-    partInstanceId: "pi-intake-guard-set",
-    partInstanceIds: ["pi-intake-guard-set"],
-  });
-
-  const updatedCncItem = getSnapshot().manufacturingItems.find(
-    (item) => item.id === createdCncItem.id,
-  );
-  assert.ok(updatedCncItem);
-  assert.equal(updatedCncItem.partInstanceId, "pi-intake-guard-set");
-  assert.deepEqual(updatedCncItem.partInstanceIds, ["pi-intake-guard-set"]);
+  const outsourcedTask = task;
+  assert.ok(getSnapshot().purchaseItems.some((item) => item.taskId === outsourcedTask.id && item.kind === "manufacturing-service"));
 });
 
 test("removePartDefinition clears linked part instances and task references", () => {
@@ -858,19 +571,16 @@ test("removePartDefinition clears linked part instances and task references", ()
     partNumber: "TMP-001",
     revision: "A",
     type: "custom",
-    source: "Onshape",
+    defaultAcquisitionMethod: "stock",
     materialId: "mat-onyx-filament",
     description: "Temporary fixture for store coverage.",
   });
   assert.equal(createdPartDefinition.isArchived, false);
   const createdPartInstance = createPartInstance({
-    subsystemId: "drive",
-    mechanismId: "swerve-module",
     partDefinitionId: createdPartDefinition.id,
-    name: "Temporary test part instance",
-    quantity: 1,
-    trackIndividually: false,
-    status: "not ready",
+    intendedSubsystemId: "drive",
+    intendedMechanismId: "swerve-module",
+    location: { kind: "stock", location: "Test bin" },
   });
 
   updateTask("swerve-sensor-bundle", {
@@ -901,9 +611,8 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
     name: "QA cleanup root",
     description: "Scenario for QA request cascade behavior.",
     parentSubsystemId: null,
-    responsibleEngineerId: null,
-    mentorIds: [],
-    risks: [],
+    responsibleEngineerId: "ava",
+    mentorIds: ["marco"],
   });
   const childSubsystem = createSubsystem({
     projectId: "project-robot-2026",
@@ -912,19 +621,22 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
     parentSubsystemId: subsystem.id,
     responsibleEngineerId: null,
     mentorIds: [],
-    risks: [],
   });
   const generatedTask = getSnapshot().tasks.find((task) =>
     task.title === `Integrate ${childSubsystem.name}`,
   );
   assert.ok(generatedTask);
+  updateTask(generatedTask.id, { status: "in-progress", ownerId: "ava", assigneeIds: ["ava"], mentorId: "marco" });
   const taskRequest = createQaRequest({
-    taskId: generatedTask.id,
+    projectId: generatedTask.projectId,
+    targetRefs: [{ kind: "task", id: generatedTask.id }],
     subject: "Tablet refresh QA",
     mentorId: "marco",
     requestedById: "ava",
   });
   const tasklessRequest = createQaRequest({
+    projectId: getSnapshot().projects[0]!.id,
+    targetRefs: [{ kind: "project", id: getSnapshot().projects[0]!.id }],
     subject: "General QA",
     mentorId: "marco",
     requestedById: "ava",
@@ -947,6 +659,7 @@ test("removeMember clears linked references across the snapshot", () => {
   updateTask("swerve-sensor-bundle", {
     assigneeIds: ["ava", "marco"],
   });
+  const risk = createRisk({ projectId: "project-robot-2026", title: "Owner cleanup", detail: "The owner is being removed.", category: "other", severity: "low", status: "open", blocksWork: false, source: { kind: "manual" }, relatedTargets: [], mitigationTaskId: null, ownerGroupId: null, ownerMemberId: "marco", mitigationDueDate: null });
 
   const removed = removeMember("marco");
   const snapshot = getSnapshot();
@@ -985,15 +698,16 @@ test("removeMember clears linked references across the snapshot", () => {
     snapshot.attendanceRecords.some((record) => record.memberId === "marco"),
     false,
   );
-  assert.ok(snapshot.qaReviews.every((review) => !review.participantIds.includes("marco")));
+  assert.ok(snapshot.qaReports.every((report) => !report.participantIds.includes("marco")));
+  assert.equal(snapshot.risks.find((item) => item.id === risk.id)?.ownerMemberId, null);
 });
 
 test("task milestone requirements infer milestone matches from explicit target requirements", () => {
   const milestone = createMilestone({
     title: "Drive Checkpoint",
     type: "deadline",
-    startDateTime: "2026-06-10T10:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-06-10T10:00:00-04:00",
+    endAt: null,
     isExternal: false,
     description: "Checkpoint for drive subsystem readiness.",
     projectIds: [],
@@ -1011,8 +725,7 @@ test("task milestone requirements infer milestone matches from explicit target r
     {
       id: "drive-check-iteration",
       milestoneId: milestone.id,
-      targetType: "subsystem",
-      targetId: "drive",
+      targetRefs: [{ kind: "subsystem", id: "drive" }],
       conditionType: "iteration",
       conditionValue: "iteration>=2",
       required: true,
@@ -1022,9 +735,8 @@ test("task milestone requirements infer milestone matches from explicit target r
     {
       id: "drive-check-part-state",
       milestoneId: milestone.id,
-      targetType: "part-instance",
-      targetId: "pi-swerve-encoder-bracket-front-left",
-      conditionType: "workflow_state",
+      targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }],
+      conditionType: "workflow-state",
       conditionValue: "state=READY",
       required: true,
       sortOrder: 2,
@@ -1037,19 +749,16 @@ test("task milestone requirements infer milestone matches from explicit target r
 
   const driveMatch = matches.find((match) => match.milestoneId === milestone.id);
   assert.ok(driveMatch);
-  assert.equal(driveMatch.isLegacyLink, false);
-  assert.deepEqual(driveMatch.matchedRequirementIds, [
-    "drive-check-iteration",
-    "drive-check-part-state",
-  ]);
+  assert.equal(driveMatch.isExplicitScheduleRef, false);
+  assert.deepEqual(driveMatch.matchedRequirementIds, ["drive-check-iteration"]);
 });
 
 test("project-scoped requirements match through project task target inference", () => {
   const milestone = createMilestone({
     title: "Robot Scope Checkpoint",
     type: "deadline",
-    startDateTime: "2026-06-18T09:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-06-18T09:00:00-04:00",
+    endAt: null,
     isExternal: false,
     description: "Scope requirement inferred from milestone project membership.",
     projectIds: [],
@@ -1063,8 +772,7 @@ test("project-scoped requirements match through project task target inference", 
     {
       id: "robot-scope-match",
       milestoneId: milestone.id,
-      targetType: "project",
-      targetId: "project-robot-2026",
+      targetRefs: [{ kind: "project", id: "project-robot-2026" }],
       conditionType: "custom",
       conditionValue: "in_scope",
       required: true,
@@ -1078,42 +786,42 @@ test("project-scoped requirements match through project task target inference", 
   const scopeMatch = matches.find((match) => match.milestoneId === milestone.id);
 
   assert.ok(scopeMatch);
-  assert.equal(scopeMatch.isLegacyLink, false);
+  assert.equal(scopeMatch.isExplicitScheduleRef, false);
   assert.ok(scopeMatch.matchedRequirementIds.includes("robot-scope-match"));
 });
 
-test("legacy target-milestone links are preserved when no requirement match exists", () => {
+test("explicit schedule milestone references are preserved when no requirement match exists", () => {
   const milestone = createMilestone({
-    title: "Legacy-Only Milestone",
+    title: "Direct-Reference Milestone",
     type: "deadline",
-    startDateTime: "2026-07-10T09:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-07-10T09:00:00-04:00",
+    endAt: null,
     isExternal: false,
-    description: "Legacy-only mapping validation fixture.",
+    description: "Direct schedule reference validation fixture.",
     projectIds: [],
   });
 
   const updated = updateTask("wire-swerve-module", {
-    targetMilestoneId: milestone.id,
+    scheduleRefs: [{ kind: "milestone", id: milestone.id }],
   });
   assert.ok(updated);
 
   const matches = getMilestonesForTask(updated.id);
 
-  const legacyMatch = matches.find((match) => match.milestoneId === milestone.id);
-  assert.ok(legacyMatch);
-  assert.equal(legacyMatch.isLegacyLink, true);
-  assert.deepEqual(legacyMatch.matchedRequirementIds, []);
+  const explicitMatch = matches.find((match) => match.milestoneId === milestone.id);
+  assert.ok(explicitMatch);
+  assert.equal(explicitMatch.isExplicitScheduleRef, true);
+  assert.deepEqual(explicitMatch.matchedRequirementIds, []);
 });
 
-test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
+test("getTasksForMilestone aggregates inferred and explicit schedule references", () => {
   const milestone = createMilestone({
     title: "Drive Milestone",
     type: "deadline",
-    startDateTime: "2026-08-12T11:00:00-04:00",
-    endDateTime: null,
+    startAt: "2026-08-12T11:00:00-04:00",
+    endAt: null,
     isExternal: false,
-    description: "Drive milestone that supports inferred and legacy matches.",
+    description: "Drive milestone that supports inferred and explicit task references.",
     projectIds: [],
   });
 
@@ -1129,8 +837,7 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
     {
       id: "drive-readiness-iteration",
       milestoneId: milestone.id,
-      targetType: "subsystem",
-      targetId: "drive",
+      targetRefs: [{ kind: "subsystem", id: "drive" }],
       conditionType: "iteration",
       conditionValue: "iteration>=2",
       required: true,
@@ -1140,26 +847,29 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
     ],
   });
 
-  const legacyTask = updateTask("wire-swerve-module", {
-    subsystemIds: ["outreach"],
-    targetMilestoneId: milestone.id,
+  const auxiliary = createSubsystem({ projectId: "project-robot-2026", name: "Auxiliary", description: "Explicit milestone-only fixture", parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [] });
+  const explicitTask = updateTask("wire-swerve-module", {
+    subsystemIds: [auxiliary.id],
+    mechanismIds: [],
+    partInstanceIds: [],
+    scheduleRefs: [{ kind: "milestone", id: milestone.id }],
   });
-  assert.ok(legacyTask);
+  assert.ok(explicitTask);
 
   const matches = getTasksForMilestone(milestone.id);
 
   const inferredTask = matches.find((match) =>
     match.taskId === "swerve-sensor-bundle",
   );
-  const legacyTaskMatch = matches.find((match) => match.taskId === legacyTask.id);
+  const explicitTaskMatch = matches.find((match) => match.taskId === explicitTask.id);
 
   assert.ok(inferredTask);
-  assert.equal(inferredTask.isLegacyLink, false);
+  assert.equal(inferredTask.isExplicitScheduleRef, false);
   assert.deepEqual(inferredTask.matchedRequirementIds, ["drive-readiness-iteration"]);
 
-  assert.ok(legacyTaskMatch);
-  assert.equal(legacyTaskMatch.isLegacyLink, true);
-  assert.deepEqual(legacyTaskMatch.matchedRequirementIds, []);
+  assert.ok(explicitTaskMatch);
+  assert.equal(explicitTaskMatch.isExplicitScheduleRef, true);
+  assert.deepEqual(explicitTaskMatch.matchedRequirementIds, []);
 });
 
 
@@ -1189,9 +899,16 @@ test("task targets preserve kind order, first-target context, and unique array l
     subsystemIds: ["shared", "primary-subsystem"],
     mechanismIds: ["mechanism", "mechanism"],
     partInstanceIds: ["part"],
-    artifactIds: ["artifact", "artifact", "primary-artifact"],
-    targetMilestoneId: "milestone",
+    scheduleRefs: [{ kind: "milestone" as const, id: "milestone" }],
   };
+  resetStore({
+    ...snapshot,
+    workstreams: [...snapshot.workstreams, ...["shared", "primary-workstream"].map((id) => ({ ...snapshot.workstreams[0], id, projectId: task.projectId }))],
+    subsystems: [...snapshot.subsystems, ...["shared", "primary-subsystem"].map((id) => ({ ...snapshot.subsystems[0], id, projectId: task.projectId }))],
+    mechanisms: [...snapshot.mechanisms, { ...snapshot.mechanisms[0], id: "mechanism", subsystemId: "shared" }],
+    partInstances: [...snapshot.partInstances, { ...snapshot.partInstances[0], id: "part", intendedSubsystemId: "shared", intendedMechanismId: "mechanism", location: { kind: "installed", subsystemId: "shared", mechanismId: "mechanism" } }],
+    milestones: [...snapshot.milestones, { ...snapshot.milestones[0], id: "milestone" }],
+  });
   updateTask(task.id, targets);
 
   const links = getTaskTargets().filter((link) => link.taskId === task.id);
@@ -1203,8 +920,6 @@ test("task targets preserve kind order, first-target context, and unique array l
     ["subsystem", "primary-subsystem"],
     ["mechanism", "mechanism"],
     ["part-instance", "part"],
-    ["artifact", "artifact"],
-    ["artifact", "primary-artifact"],
     ["milestone", "milestone"],
   ]);
   for (const link of links) {
@@ -1215,7 +930,7 @@ test("task targets preserve kind order, first-target context, and unique array l
     assert.equal(link.subsystemId, "shared");
   }
 
-  updateTask(task.id, { targetMilestoneId: null });
+  updateTask(task.id, { scheduleRefs: [] });
   assert.deepEqual(getTaskTargets().filter((link) => link.taskId === task.id), links.slice(0, -1));
 });
 
@@ -1225,7 +940,7 @@ test("missing update targets leave the published snapshot and audit trail untouc
   for (const update of [
     updateProject, updateWorkstream, updateRisk, updateMaterial, updateArtifact,
     updateMember, updatePartDefinition, updateSubsystem, updateMechanism,
-    updateWorkLog, updatePurchaseItem, updateManufacturingItem,
+    updateWorkLog, updatePurchaseItem,
   ]) {
     assert.equal(update("missing-update-target", {}), null);
     assert.equal(getSnapshot(), before);
@@ -1235,7 +950,7 @@ test("missing update targets leave the published snapshot and audit trail untouc
 test("prepared updates retain detached results, audit changes, and reject invalid publication", () => {
   const material = createMaterial({
     name: "Update contract stock", category: "metal", unit: "sheet",
-    onHandQuantity: 5, reorderPoint: 1, location: "Rack", vendor: "Supplier", notes: "Retain notes",
+    onHandQuantity: 5, reorderPoint: 1, location: "Rack", preferredVendorId: "vendor-tutorial-supplier", notes: "Retain notes",
   });
   const before = getSnapshot();
   const updated = updateMaterial(material.id, { onHandQuantity: 3 });
@@ -1254,4 +969,147 @@ test("prepared updates retain detached results, audit changes, and reject invali
   assert.equal(unchanged?.onHandQuantity, 3);
   assert.equal(getSnapshot().actions?.length, (published.actions?.length ?? 0) + 1);
   assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, []);
+});
+
+
+test("task commands reject invalid links and people without publishing data or audits", () => {
+  const before = getSnapshot();
+  const task = before.tasks[0];
+  for (const input of [{ projectId: "missing-project" }, { workTypeId: "missing-work-type" }, { ownerId: "missing-member" }, { scheduleRefs: [{ kind: "event" as const, id: "missing-event" }] }]) {
+    assert.throws(() => updateTask(task.id, input), /does not exist|do not exist|does not belong/);
+    assert.equal(getSnapshot(), before);
+    assert.throws(() => createTask({ ...JSON.parse(JSON.stringify(task)), ...input }), /does not exist|do not exist|does not belong/);
+    assert.equal(getSnapshot(), before);
+  }
+});
+
+test("snapshot owners isolate records, tutorial sessions and mutation queues", async () => {
+  const first = createPlatformStore();
+  const second = createPlatformStore();
+  await first.run(async () => {
+    const transaction = await acquireSnapshotMutation();
+    transaction.enter();
+    updateTask(getSnapshot().tasks[0].id, { title: "First owner edit" });
+    await second.run(async () => {
+      const otherTransaction = await acquireSnapshotMutation();
+      otherTransaction.enter();
+      assert.notEqual(getSnapshot().tasks[0].title, "First owner edit");
+      updateTask(getSnapshot().tasks[0].id, { title: "Second owner edit" });
+      await otherTransaction.commit();
+      otherTransaction.release();
+    });
+    assert.equal(getSnapshot().tasks[0].title, "First owner edit");
+    await transaction.commit();
+    transaction.release();
+  });
+  assert.equal(first.run(() => getSnapshot().tasks[0].title), "First owner edit");
+  assert.equal(second.run(() => getSnapshot().tasks[0].title), "Second owner edit");
+  first.run(() => startInteractiveTutorialSession("shared-user"));
+  first.run(() => runWithInteractiveTutorialSession("shared-user", () => {
+    updateTask(getSnapshot().tasks[0].id, { title: "First owner tutorial" });
+  }));
+  second.run(() => startInteractiveTutorialSession("shared-user"));
+  assert.equal(first.run(() => runWithInteractiveTutorialSession("shared-user", () => getSnapshot().tasks[0].title)), "First owner tutorial");
+  assert.notEqual(second.run(() => runWithInteractiveTutorialSession("shared-user", () => getSnapshot().tasks[0].title)), "First owner tutorial");
+});
+
+
+test("task commands infer ancestors for nested targets before validating links", () => {
+  const before = getSnapshot();
+  const part = before.partInstances.find((record) => record.intendedMechanismId)!;
+  assert.ok(part);
+  const task = before.tasks.find((record) => record.projectId === before.subsystems.find((subsystem) => subsystem.id === part.intendedSubsystemId)?.projectId)!;
+  const updated = updateTask(task.id, { subsystemIds: [], mechanismIds: [], partInstanceIds: [part.id] });
+  assert.ok(updated);
+  assert.ok(updated.subsystemIds.includes(part.intendedSubsystemId!));
+  assert.ok(updated.mechanismIds.includes(part.intendedMechanismId!));
+});
+
+
+test("generated tasks inherit eligible contributors or an explicit creator before atomic publication", () => {
+  const parent = createSubsystem({ projectId: "project-robot-2026", name: "Unassigned parent", description: "Creator ownership fixture", parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [] });
+  const initial = getSnapshot();
+  assert.throws(() => createMechanism({ subsystemId: "missing-parent", name: "Invalid parent", description: "Atomic fixture" }, { actorMemberId: "ava" }), /subsystem does not exist/);
+  assert.equal(getSnapshot(), initial);
+  const mechanismInput = { subsystemId: parent.id, name: "Creator wiring", description: "Generated task fixture" };
+  const childInput = { projectId: parent.projectId, name: "Creator integration", description: "Generated task fixture", parentSubsystemId: parent.id, responsibleEngineerId: null, mentorIds: [] };
+  for (const actorMemberId of [undefined, "maya", "missing-creator"]) {
+    const before = getSnapshot();
+    assert.throws(() => createMechanism(mechanismInput, { actorMemberId }), /Assign a student\/lead engineer or mentor/);
+    assert.equal(getSnapshot(), before);
+    assert.throws(() => createSubsystem(childInput, { actorMemberId }), /Assign a student\/lead engineer or mentor/);
+    assert.equal(getSnapshot(), before);
+  }
+  const mechanism = createMechanism(mechanismInput, { actorMemberId: "ava", requestId: "creator-wiring" });
+  const wiring = getSnapshot().tasks.find((task) => task.mechanismIds.includes(mechanism.id))!;
+  assert.equal(wiring.ownerId, "ava");
+  assert.equal(wiring.mentorId, null);
+  const child = createSubsystem(childInput, { actorMemberId: "jordan", requestId: "creator-integration" });
+  const integration = getSnapshot().tasks.find((task) => task.title === `Integrate ${child.name}`)!;
+  assert.equal(integration.ownerId, null);
+  assert.equal(integration.mentorId, "jordan");
+  for (const requestId of ["creator-wiring", "creator-integration"]) {
+    const audits = getSnapshot().actions!.filter((action) => action.requestId === requestId);
+    assert.equal(audits.length, 2);
+    assert.equal(new Set(audits.map((action) => action.id)).size, 2);
+    assert.ok(audits.every((action) => action.actorMemberId === (requestId === "creator-wiring" ? "ava" : "jordan")));
+  }
+  const inherited = createMechanism({ ...mechanismInput, subsystemId: "drive", name: "Inherited wiring" }, { actorMemberId: "maya" });
+  const inheritedTask = getSnapshot().tasks.find((task) => task.mechanismIds.includes(inherited.id))!;
+  assert.equal(inheritedTask.ownerId, "ava");
+  assert.equal(inheritedTask.mentorId, "marco");
+});
+
+
+test("generated tasks reject missing or inactive workflow work types without publishing", () => {
+  const seed = getSnapshot();
+  for (const remove of [false, true]) {
+    resetStore({ ...seed, workTypes: remove
+      ? seed.workTypes.filter((type) => !["robot:electrical-wiring", "robot:testing"].includes(type.id))
+      : seed.workTypes.map((type) => ["robot:electrical-wiring", "robot:testing"].includes(type.id) ? { ...type, isActive: false } : type),
+    });
+    const before = getSnapshot();
+    assert.throws(() => createMechanism({ subsystemId: "drive", name: "Missing wiring workflow", description: "No fallback" }), /active electrical-wiring work type/);
+    assert.equal(getSnapshot(), before);
+    assert.throws(() => createSubsystem({ projectId: "project-robot-2026", parentSubsystemId: "drive", name: "Missing integration workflow", description: "No fallback", responsibleEngineerId: null, mentorIds: [] }), /active testing work type/);
+    assert.equal(getSnapshot(), before);
+  }
+});
+
+
+test("member commands preserve task people across role changes and deletion", () => {
+  const task = getSnapshot().tasks.find((record) => record.ownerId && record.mentorId)!;
+  const before = getSnapshot();
+  assert.throws(() => updateMember(task.ownerId!, { role: "mentor" }), /Reassign.*before changing this person's role/);
+  assert.equal(getSnapshot(), before);
+  assert.throws(() => updateMember(task.mentorId!, { role: "student" }), /Reassign.*before changing this person's role/);
+  assert.equal(getSnapshot(), before);
+  const contributor = createMember({ name: "Only Task Contributor", role: "student" });
+  const sole = createTask({ ...JSON.parse(JSON.stringify(task)), title: "Sole contributor task", ownerId: contributor.id, assigneeIds: [contributor.id], mentorId: null });
+  const assigned = getSnapshot();
+  assert.throws(() => removeMember(contributor.id), /Reassign 1 task before removing this person/);
+  assert.equal(getSnapshot(), assigned);
+  updateTask(sole.id, { mentorId: task.mentorId });
+  assert.ok(removeMember(contributor.id));
+  const retained = getSnapshot().tasks.find((record) => record.id === sole.id)!;
+  assert.equal(retained.ownerId, null);
+  assert.deepEqual(retained.assigneeIds, []);
+  assert.equal(retained.mentorId, task.mentorId);
+});
+
+test("removing a QA mentor atomically cancels the request and reopens work for its remaining contributor", () => {
+  const snapshot = getSnapshot();
+  const task = snapshot.tasks.find((record) => record.status === "in-progress" && !record.isBlocked && !snapshot.taskDependencies.some((dependency) => dependency.taskId === record.id))!;
+  const mentor = createMember({ name: "Temporary QA Mentor", role: "mentor" });
+  const request = createQaRequest({ targetRefs: [{ kind: "task", id: task.id }], subject: "Mentor removal QA", mentorId: mentor.id, requestedById: task.ownerId });
+  const removed = removeMember(mentor.id, { actorMemberId: "maya", requestId: "cancel-mentor-qa" });
+  assert.ok(removed);
+  const after = getSnapshot();
+  assert.ok(!after.qaRequests!.some((record) => record.id === request.id));
+  const reopened = after.tasks.find((record) => record.id === task.id)!;
+  assert.equal(reopened.status, "in-progress");
+  assert.equal(reopened.mentorId, null);
+  assert.equal(reopened.ownerId, task.ownerId);
+  assert.equal(after.actions!.at(-1)!.actorMemberId, "maya");
+  assert.deepEqual(after.actions!.at(-1)!.detailsJson?.cancelledQaTaskIds, [task.id]);
 });

@@ -4,15 +4,13 @@ import { snapshot } from "./mockData";
 const DAY = 86_400_000;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
-// Tutorial chronology is compressed into this week's portion of the current
-// UTC month. Recorded activity anchors at now; plans may extend through Sunday.
+// Keep two months of team history and the next seven months of season work.
 export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
-  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-  const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const seasonStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1);
+  const seasonEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 8, 1);
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const monday = today - ((now.getUTCDay() + 6) % 7) * DAY;
-  const start = Math.max(monthStart, monday);
-  const end = Math.min(monthEnd, monday + 7 * DAY) - 1;
+  const start = seasonStart;
+  const end = seasonEnd - 1;
   const copy = structuredClone(snapshot);
   const dates: Array<{ record: Record<string, unknown>; key: string; value: string; time: number }> = [];
   function collect(value: unknown): void {
@@ -26,7 +24,7 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
   // Seasons frame the activity rather than contributing to its date range.
   for (const [key, value] of Object.entries(copy)) if (key !== "seasons") collect(value);
   const historicalDates: number[] = [];
-  const recordedCollections = [copy.workLogs, copy.qaReports, copy.qaReviews, copy.attendanceRecords, copy.testResults, copy.actions];
+  const recordedCollections = [copy.workLogs, copy.qaReports, copy.attendanceRecords, copy.testResults, copy.actions];
   function recordDates(value: unknown): void {
     if (typeof value === "string" && ISO_DATE.test(value)) historicalDates.push(Date.parse(value));
     else if (value && typeof value === "object") Object.values(value).forEach(recordDates);
@@ -48,8 +46,19 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
     date.record[date.key] = date.value.length === 10 ? shifted.slice(0, 10) : shifted;
   }
   for (const season of copy.seasons) {
-    season.startDate = new Date(monthStart).toISOString().slice(0, 10);
-    season.endDate = new Date(monthEnd - DAY).toISOString().slice(0, 10);
+    season.startDate = new Date(seasonStart).toISOString().slice(0, 10);
+    season.endDate = new Date(seasonEnd - DAY).toISOString().slice(0, 10);
+  }
+  for (const task of copy.tasks) {
+    task.actualHours = copy.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0);
+  }
+  // Keep a few assigned examples overdue after tutorial dates roll forward.
+  // Otherwise the compressed historical timeline can place every due date on
+  // today, hiding overdue workload from the demo views.
+  for (const task of copy.tasks.filter((candidate) => ["travel-pack-finalize", "intake-guard", "auto-safety-review"].includes(candidate.id))) {
+    const yesterday = new Date(today - DAY).toISOString().slice(0, 10);
+    task.startDate = yesterday;
+    task.dueDate = yesterday;
   }
   // The availability view requires attendance today, not just roster membership.
   for (const member of copy.members.filter((member) => member.id.startsWith("demo-"))) {

@@ -5,13 +5,15 @@ import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMember, resetStore } from "../src/data/store";
+import { createPlatformStore, createMember, resetStore } from "../src/data/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
-test("buildApp exposes a development-only sign-in bypass", async () => {
+const platformStore = createPlatformStore();
+
+test("buildApp exposes a development-only sign-in bypass", () => platformStore.run(async () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
   const saved = saveEnv([
     "NODE_ENV",
@@ -48,7 +50,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
     const { buildApp } = await import("../src/app");
 
-    const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json"), mobileSessionStore: testMobileSessionStore, webSessionStore: new MemoryWebSessionStore() });
+    const app = await buildApp({ platformStore, userPreferencesPath: join(directory, "preferences.json"), mobileSessionStore: testMobileSessionStore, webSessionStore: new MemoryWebSessionStore() });
 
     try {
       resetStore();
@@ -354,17 +356,15 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           title: "Student-created task",
           summary: "Students should not be allowed to create tasks.",
           subsystemIds: ["drive"],
-          disciplineId: "design",
+          workTypeId: "robot:design",
           mechanismIds: [],
           partInstanceIds: [],
-          targetMilestoneId: null,
+          scheduleRefs: [],
           ownerId: "ava",
           mentorId: "marco",
           dueDate: "2026-05-06",
           priority: "medium",
           status: "not-started",
-          linkedManufacturingIds: [],
-          linkedPurchaseIds: [],
           estimatedHours: 0,
         },
       });
@@ -419,17 +419,15 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
         title: "Claimable student task",
         summary: "Students can claim this task from mobile.",
         subsystemIds: ["drive"],
-        disciplineId: "design",
+        workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: null,
         mentorId: "marco",
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 0,
       };
       const claimableTaskResponse = await app.inject({
@@ -642,12 +640,20 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
           origin: "http://localhost:5173",
         },
         payload: {
-          taskId: "swerve-sensor-bundle",
+          reportType: "qa",
+          projectId: "project-robot-2026",
+          targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
+          createdByMemberId: "ava",
           participantIds: ["ava"],
+          mentorId: null,
+          requestedById: "ava",
           result: "pass",
-          mentorApproved: true,
+          summary: "",
           notes: "Students should not be allowed to approve QA.",
-          reviewedAt: "2026-05-06",
+          createdAt: "2026-05-06T00:00:00.000Z",
+          status: "reviewed",
+          reviewedById: "student-ava",
+          reviewedAt: "2026-05-06T00:00:00.000Z",
         },
       });
 
@@ -760,4 +766,4 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     rmSync(directory, { recursive: true, force: true });
     restoreEnv(saved);
   }
-});
+}));

@@ -16,7 +16,6 @@ export interface RosterInsightsMember {
   memberId: string;
   memberName: string;
   role: MemberRole;
-  disciplineId: string | null;
   activeTaskCount: number;
   blockedTaskCount: number;
   waitingForQaTaskCount: number;
@@ -87,7 +86,6 @@ export interface RosterInsightsSource {
     id: string;
     name: string;
     role: MemberRole;
-    disciplineId?: string | null;
     plannedWeeklyAttendanceHours?: number;
     plannedAttendanceDays?: ReadonlyArray<import("../../domain/types").PlannedAttendanceDay>;
     plannedAttendanceNotes?: string;
@@ -95,10 +93,6 @@ export interface RosterInsightsSource {
   projects: ReadonlyArray<{
     id: string;
     name: string;
-  }>;
-  taskBlockers?: ReadonlyArray<{
-    blockedTaskId: string;
-    status: "open" | "resolved";
   }>;
   tasks: ReadonlyArray<{
     id: string;
@@ -114,4 +108,3 @@ export interface RosterInsightsSource {
     isBlocked?: boolean;
   }>;
 }
-

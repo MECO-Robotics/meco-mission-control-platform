@@ -111,14 +111,6 @@ function candidatesForPart(cadPart: CadPartDefinition, domainParts: ReadonlyData
     return exactNames.map((part) => candidateFrom(part, "EXACT_NORMALIZED_NAME", confidence, 0.95)).sort(byBestCandidate);
   }
 
-  const vendor = normalizeCadName(String(cadPart.metadataJson.vendor ?? ""));
-  const vendorMatches = vendor
-    ? domainParts.filter((part) => normalizeCadName(part.source) === vendor && tokenScore(cadPart.name, part.name) >= 0.5)
-    : [];
-  if (vendorMatches.length > 0) {
-    return vendorMatches.map((part) => candidateFrom(part, "VENDOR_METADATA", "MEDIUM", tokenScore(cadPart.name, part.name))).sort(byBestCandidate);
-  }
-
   if (isStockOrFastenerName(cadPart.name)) {
     const stockMatches = domainParts.filter((part) => {
       const score = tokenScore(cadPart.name, `${part.name} ${part.type} ${part.description}`);

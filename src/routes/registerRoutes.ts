@@ -10,10 +10,12 @@ import {
 } from "../auth/authService";
 import {
   createArtifact,
+  createManufacturingProcess,
+  archiveManufacturingProcess,
   createMilestone,
-  createManufacturingItem,
   createMaterial,
   createMember,
+  createResponsibleGroup,
   createMechanism,
   createReport,
   createReportFinding,
@@ -28,12 +30,10 @@ import {
   createPurchaseItem,
   createRisk,
   createTask,
-  createTaskBlocker,
   createTaskDependency,
   createTestResult,
   createWorkLog,
   createWorkstream,
-  findDiscipline,
   findMilestone,
   findArtifact,
   findMaterial,
@@ -48,7 +48,7 @@ import {
   findSubsystem,
   findWorkstream,
   getMembers,
-  getManufacturingItems,
+  getResponsibleGroups,
   getArtifacts,
   getMaterials,
   getPartDefinitions,
@@ -64,7 +64,6 @@ import {
   getTaskTargets,
   getMilestonesForTask,
   getTasks,
-  getTaskBlockers,
   getTaskDependencies,
   getTasksForMilestone,
   getTestResults,
@@ -76,22 +75,21 @@ import {
   removeMaterial,
   removeMember,
   removeMechanism,
-  removeManufacturingItem,
   removePartDefinition,
   removePartInstance,
   removePurchaseItem,
+  removeResponsibleGroup,
   removeRisk,
   removeSubsystem,
   removeTask,
-  removeTaskBlocker,
   removeTaskDependency,
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
-  updateManufacturingItem,
   updateArtifact,
   updateMaterial,
   updateMember,
+  updateResponsibleGroup,
   updateMechanism,
   updateMilestone,
   updatePartDefinition,
@@ -102,7 +100,6 @@ import {
   updateRisk,
   startInteractiveTutorialSession,
   updateTask,
-  updateTaskBlocker,
   updateTaskDependency,
   updateWorkLog,
   updateWorkstream,
@@ -115,12 +112,10 @@ import {
 } from "../domain/workflows";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
-  filterManufacturingItemsForPerson,
   filterPurchaseItemsForPerson,
   filterTasksForPerson,
   paginateItems,
   readPersonFilter,
-  withManufacturingQaReviewCounts,
 } from "./helpers/paginationFilters";
 
 import {
@@ -133,7 +128,6 @@ import { uniqueIds } from "../domain/ids";
 import {
   validateArtifactLinks,
   validateMilestoneProjectLinks,
-  resolveManufacturingItem,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
@@ -141,8 +135,7 @@ import {
   validateQaRequestLinks,
   validateRiskLinks,
   validateSubsystemPeople,
-  validateTaskBlockerLinks,
-  validateTaskLinks,
+  validateTaskPeople,
   validateTestResultLinks,
   validateWorkLogLinks,
   wouldCreateSubsystemCycle,
@@ -163,15 +156,13 @@ import {
   artifactSchema,
   milestonePatchSchema,
   milestoneSchema,
-  manufacturingItemPatchSchema,
-  manufacturingItemSchema,
-  manufacturingReviewSchema,
-  manufacturingTransitionSchema,
   materialPatchSchema,
   materialSchema,
   mediaUploadRequestSchema,
   memberPatchSchema,
   memberSchema,
+  responsibleGroupPatchSchema,
+  responsibleGroupSchema,
   profilePatchSchema,
   mechanismPatchSchema,
   mechanismSchema,
@@ -190,6 +181,8 @@ import {
   riskSchema,
   purchaseItemPatchSchema,
   purchaseItemSchema,
+  manufacturingProcessCreateSchema,
+  manufacturingProcessArchiveSchema,
   purchaseApprovalSchema,
   purchaseTransitionSchema,
   seasonSchema,
@@ -199,8 +192,6 @@ import {
   taskPatchSchema,
   taskReassignSchema,
   taskSchema,
-  taskBlockerPatchSchema,
-  taskBlockerSchema,
   taskDependencyPatchSchema,
   taskDependencySchema,
   testResultSchema,
@@ -214,8 +205,6 @@ import {
   assessGenericPatch,
   isWorkflowApproverRole,
   isNoopPatch,
-  validateManufacturingReview,
-  validateManufacturingTransition,
   validatePurchaseApproval,
   validatePurchaseTransition,
 } from "./workflowAuthorization";
@@ -297,12 +286,16 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     plannedAttendanceDays: ["tuesday", "thursday"],
     seasonId: member.seasonId,
     activeSeasonIds: member.activeSeasonIds,
-    ...(member.disciplineId !== undefined ? { disciplineId: member.disciplineId } : null),
   }));
 
   return {
     ...selectedBootstrap,
     members,
+    responsibleGroups: selectedBootstrap.responsibleGroups.map((group) => ({
+      ...group,
+      memberIds: rewriteDemoMemberIds(group.memberIds, memberIdsByOriginalId),
+      primaryMemberIds: rewriteDemoMemberIds(group.primaryMemberIds, memberIdsByOriginalId),
+    })),
     subsystems: selectedBootstrap.subsystems.map((subsystem) => ({
       ...subsystem,
       responsibleEngineerId: rewriteDemoMemberId(
@@ -323,16 +316,10 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
     })),
     tasks: selectedBootstrap.tasks.map((task) => ({
       ...task,
+      requestedById: rewriteDemoMemberId(task.requestedById, memberIdsByOriginalId),
       ownerId: rewriteDemoMemberId(task.ownerId, memberIdsByOriginalId),
       assigneeIds: rewriteDemoMemberIds(task.assigneeIds, memberIdsByOriginalId),
       mentorId: rewriteDemoMemberId(task.mentorId, memberIdsByOriginalId),
-    })),
-    taskBlockers: selectedBootstrap.taskBlockers.map((blocker) => ({
-      ...blocker,
-      createdByMemberId: rewriteDemoMemberId(
-        blocker.createdByMemberId,
-        memberIdsByOriginalId,
-      ),
     })),
     workLogs: selectedBootstrap.workLogs.map((workLog) => ({
       ...workLog,
@@ -343,30 +330,14 @@ function sanitizePublicDemoBootstrap(selectedBootstrap: ReturnType<typeof buildB
       ...record,
       memberId: rewriteDemoMemberId(record.memberId, memberIdsByOriginalId),
     })),
-    manufacturingItems: selectedBootstrap.manufacturingItems.map((item) => ({
-      ...item,
-      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
-      reviewedById: rewriteDemoMemberId(item.reviewedById, memberIdsByOriginalId),
-    })),
     purchaseItems: selectedBootstrap.purchaseItems.map((item) => ({
       ...item,
-      requestedById: rewriteDemoMemberId(item.requestedById, memberIdsByOriginalId),
       approvedById: rewriteDemoMemberId(item.approvedById, memberIdsByOriginalId),
-    })),
-    qaReports: selectedBootstrap.qaReports.map((report) => ({
-      ...report,
-      mentorId: rewriteDemoMemberId(report.mentorId, memberIdsByOriginalId),
-      requestedById: rewriteDemoMemberId(report.requestedById, memberIdsByOriginalId),
-      participantIds: rewriteDemoMemberIds(report.participantIds, memberIdsByOriginalId),
     })),
     qaRequests: selectedBootstrap.qaRequests.map((request) => ({
       ...request,
       mentorId: rewriteDemoMemberId(request.mentorId, memberIdsByOriginalId),
       requestedById: rewriteDemoMemberId(request.requestedById, memberIdsByOriginalId),
-    })),
-    qaReviews: selectedBootstrap.qaReviews.map((review) => ({
-      ...review,
-      participantIds: rewriteDemoMemberIds(review.participantIds, memberIdsByOriginalId),
     })),
     actions: [],
   };
@@ -561,7 +532,7 @@ export async function registerRoutes(
     return task
       ? {
           ...task,
-          isBlocked: (task.blockers ?? []).length > 0,
+          isBlocked: Boolean(task.isBlocked),
           isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
         }
       : null;
@@ -570,13 +541,13 @@ export async function registerRoutes(
   const isTaskStartReady = (task: ReturnType<typeof getTasks>[number]) => {
     return (
       task.status !== "complete" &&
-      task.blockers.length === 0 &&
+      !task.isBlocked &&
       !isTaskWaitingOnDependencies(task, getSnapshot())
     );
   };
 
   const isValidTaskDependencyTarget = (
-    kind: "task" | "milestone" | "part_instance",
+    kind: "task" | "milestone" | "part-instance",
     refId: string,
   ) => {
     if (kind === "task") {
@@ -587,7 +558,7 @@ export async function registerRoutes(
       return getMilestones().some((milestone) => milestone.id === refId);
     }
 
-    if (kind === "part_instance") {
+    if (kind === "part-instance") {
       return getPartInstances().some((partInstance) => partInstance.id === refId);
     }
 
@@ -699,9 +670,7 @@ export async function registerRoutes(
     const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
     const isPublicDemoBootstrap = session?.isPublicDemo === true ||
       (!session && (isAuthEnabled() || selection.seasonId === PUBLIC_DEMO_SEASON_ID));
-    const selectedBootstrap = buildBootstrapResponse(snapshot, selection, {
-      sanitizeEscalations: isPublicDemoBootstrap,
-    });
+    const selectedBootstrap = buildBootstrapResponse(snapshot, selection);
     const responseBootstrap = isPublicDemoBootstrap
       ? sanitizePublicDemoBootstrap(selectedBootstrap)
       : selectedBootstrap;
@@ -733,7 +702,6 @@ export async function registerRoutes(
     if (!parsed) {
       return reply;
     }
-
     const { format, ...filters } = parsed.data;
     const actions = filterAuditActions(getSnapshot(), filters);
 
@@ -909,6 +877,12 @@ export async function registerRoutes(
       });
     }
 
+    const duplicateProject = getProjects().some((project) => project.seasonId === parsed.data.seasonId && project.projectType === parsed.data.projectType);
+    const expectedNames = { robot: "Robot", media: "Media", outreach: "Outreach", operations: "Operations", strategy: "Strategy", training: "Training" } as const;
+    if (parsed.data.name !== expectedNames[parsed.data.projectType] || duplicateProject) {
+      return reply.code(409).send({ message: "Each season has exactly one canonical project for each project type." });
+    }
+
     const project = createProject(parsed.data);
 
     return reply.code(201).send({
@@ -931,10 +905,16 @@ export async function registerRoutes(
         return reply;
       }
 
-      if (!findProject(request.params.projectId)) {
+      const existingProject = findProject(request.params.projectId);
+      if (!existingProject) {
         return reply.code(404).send({
           message: "Project not found.",
         });
+      }
+
+      const canonicalName = { robot: "Robot", media: "Media", outreach: "Outreach", operations: "Operations", strategy: "Strategy", training: "Training" } as const;
+      if (parsed.data.name !== undefined && parsed.data.name !== canonicalName[existingProject.projectType]) {
+        return reply.code(400).send({ message: "Project names are canonical and determined by project type." });
       }
 
       const project = updateProject(request.params.projectId, parsed.data);
@@ -1055,8 +1035,8 @@ export async function registerRoutes(
     }
 
     if (
-      parsed.data.reportType === "QA" &&
-      parsed.data.mentorApproved === true &&
+      parsed.data.reportType === "qa" &&
+      parsed.data.status === "reviewed" &&
       !requireWorkflowApprovalPermission(
         request,
         reply,
@@ -1066,18 +1046,10 @@ export async function registerRoutes(
       return;
     }
 
-    const validationError =
-      parsed.data.reportType === "QA"
-        ? parsed.data.taskId
-          ? validateQaReportLinks({
-              ...parsed.data,
-              taskId: parsed.data.taskId,
-              participantIds: parsed.data.participantIds ?? [],
-            })
-          : "The selected task does not exist."
-        : parsed.data.milestoneId
-          ? validateTestResultLinks({ milestoneId: parsed.data.milestoneId })
-          : "The selected milestone does not exist.";
+    const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
+    const validationError = parsed.data.reportType === "qa"
+      ? taskId ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds }) : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs })
+      : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
@@ -1105,7 +1077,8 @@ export async function registerRoutes(
       getSnapshot(),
       readBootstrapSelection(request.query),
     );
-    const paginated = paginateItems(bootstrap.reportFindings, request.query);
+    const projectIds = new Set(bootstrap.projects.map((project) => project.id));
+    const paginated = paginateItems(getFindings().filter((finding) => projectIds.has(finding.projectId)), request.query);
 
     return {
       items: paginated.items,
@@ -1160,7 +1133,7 @@ export async function registerRoutes(
     }
 
     if (
-      parsed.data.mentorApproved &&
+      parsed.data.status === "reviewed" &&
       !requireWorkflowApprovalPermission(
         request,
         reply,
@@ -1170,7 +1143,10 @@ export async function registerRoutes(
       return;
     }
 
-    const validationError = validateQaReportLinks(parsed.data);
+    const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
+    const validationError = taskId
+      ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
+      : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
@@ -1180,7 +1156,6 @@ export async function registerRoutes(
     const report = createQaReport({
       ...parsed.data,
       participantIds: Array.from(new Set(parsed.data.participantIds)),
-      notes: parsed.data.notes.trim(),
     });
 
     return reply.code(201).send({
@@ -1195,8 +1170,11 @@ export async function registerRoutes(
     if (!parsed) {
       return reply;
     }
-    if (parsed.data.mentorApproved && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
-    const validationError = validateQaReportLinks(parsed.data);
+    if (parsed.data.status === "reviewed" && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
+    const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
+    const validationError = taskId
+      ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
+      : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) return reply.code(400).send({ message: validationError });
     const result = submitQaReport({ ...parsed.data, participantIds: Array.from(new Set(parsed.data.participantIds)) });
     if (result.error) return reply.code(409).send({ message: result.error });
@@ -1233,14 +1211,23 @@ export async function registerRoutes(
       });
     }
 
+    const taskTargeted = parsed.data.targetRefs.some((ref) => ref.kind === "task");
+    const actor = taskTargeted && isAuthEnabled() ? getTaskActionMember(request) : null;
+    if (taskTargeted && isAuthEnabled() && !actor) {
+      return reply.code(403).send({ message: "A roster member is required to request task QA." });
+    }
     const requestItem = createQaRequest({
       ...parsed.data,
       subject: parsed.data.subject.trim(),
-      requestedById: parsed.data.requestedById ?? null,
+      requestedById: taskTargeted && isAuthEnabled()
+        ? actor!.id
+        : parsed.data.requestedById ?? null,
     });
 
+    const taskId = requestItem.targetRefs.find((ref) => ref.kind === "task")?.id;
     return reply.code(201).send({
       item: requestItem,
+      task: taskId ? buildTaskActionItem(taskId) : null,
     });
   });
 
@@ -1276,9 +1263,6 @@ export async function registerRoutes(
 
     const testResult = createTestResult({
       ...parsed.data,
-      findings: Array.from(new Set(parsed.data.findings.map((finding) => finding.trim()))).filter(
-        (finding) => finding.length > 0,
-      ),
     });
 
     return reply.code(201).send({
@@ -1316,14 +1300,7 @@ export async function registerRoutes(
       });
     }
 
-    const risk = createRisk({
-      ...parsed.data,
-      title: parsed.data.title.trim(),
-      detail: parsed.data.detail.trim(),
-      sourceId: parsed.data.sourceId.trim(),
-      attachmentId: parsed.data.attachmentId.trim(),
-      mitigationTaskId: parsed.data.mitigationTaskId ?? null,
-    });
+    const risk = createRisk({ ...parsed.data, mitigationTaskId: parsed.data.mitigationTaskId ?? null, ownerGroupId: parsed.data.ownerGroupId ?? null, ownerMemberId: parsed.data.ownerMemberId ?? null, mitigationDueDate: parsed.data.mitigationDueDate ?? null });
 
     return reply.code(201).send({
       item: risk,
@@ -1349,16 +1326,7 @@ export async function registerRoutes(
         });
       }
 
-      const nextRiskShape = {
-        sourceType: parsed.data.sourceType ?? currentRisk.sourceType,
-        sourceId: parsed.data.sourceId ?? currentRisk.sourceId,
-        attachmentType: parsed.data.attachmentType ?? currentRisk.attachmentType,
-        attachmentId: parsed.data.attachmentId ?? currentRisk.attachmentId,
-        mitigationTaskId:
-          parsed.data.mitigationTaskId === undefined
-            ? currentRisk.mitigationTaskId
-            : parsed.data.mitigationTaskId,
-      };
+      const nextRiskShape = { ...currentRisk, ...parsed.data };
 
       const validationError = validateRiskLinks(nextRiskShape);
       if (validationError) {
@@ -1516,15 +1484,17 @@ export async function registerRoutes(
     const items = filterTasksForPerson(personId).map((task) => ({
       id: task.id,
       projectId: task.projectId,
+      workTypeId: task.workTypeId,
+      responsibleGroupId: task.responsibleGroupId,
+      requestedById: task.requestedById,
+      scheduleRefs: task.scheduleRefs,
+      manufacturingDetails: task.manufacturingDetails,
       workstreamIds: task.workstreamIds,
       title: task.title,
       summary: task.summary,
       subsystemIds: task.subsystemIds,
-      disciplineId: task.disciplineId,
       mechanismIds: task.mechanismIds,
       partInstanceIds: task.partInstanceIds,
-      artifactIds: task.artifactIds,
-      targetMilestoneId: task.targetMilestoneId,
       ownerId: task.ownerId,
       assigneeIds: task.assigneeIds ?? [],
       mentorId: task.mentorId,
@@ -1536,12 +1506,9 @@ export async function registerRoutes(
       estimatedHours: task.estimatedHours,
       actualHours: task.actualHours,
       gate: evaluateTaskCompletion(task, snapshot),
-      isBlocked: (task.blockers ?? []).length > 0,
+      isBlocked: Boolean(task.isBlocked),
       isWaitingOnDependency: isTaskWaitingOnDependencies(task, snapshot),
-      linkedManufacturingIds: task.linkedManufacturingIds,
-      linkedPurchaseIds: task.linkedPurchaseIds,
-      requiresDocumentation: task.requiresDocumentation,
-      documentationLinked: task.documentationLinked,
+                  requiresDocumentation: task.requiresDocumentation,
     }));
     const paginated = paginateItems(items, request.query);
 
@@ -1659,7 +1626,7 @@ export async function registerRoutes(
 
     const milestone = createMilestone({
       ...parsed.data,
-      endDateTime: parsed.data.endDateTime ?? null,
+      endAt: parsed.data.endAt ?? null,
       description: parsed.data.description ?? "",
       projectIds,
       photoUrl: parsed.data.photoUrl ?? "",
@@ -1702,10 +1669,10 @@ export async function registerRoutes(
 
       const milestone = updateMilestone(request.params.milestoneId, {
         ...parsed.data,
-        endDateTime:
-          parsed.data.endDateTime === undefined
-            ? currentMilestone.endDateTime
-            : parsed.data.endDateTime,
+        endAt:
+          parsed.data.endAt === undefined
+            ? currentMilestone.endAt
+            : parsed.data.endAt,
         description:
           parsed.data.description === undefined
             ? currentMilestone.description
@@ -1925,7 +1892,7 @@ export async function registerRoutes(
 
     const validationError = validateArtifactLinks({
       projectId: parsed.data.projectId,
-      workstreamId: parsed.data.workstreamId ?? null,
+      targetRefs: parsed.data.targetRefs,
     });
     if (validationError) {
       return reply.code(400).send({
@@ -1935,11 +1902,9 @@ export async function registerRoutes(
 
     const artifact = createArtifact({
       ...parsed.data,
-      workstreamId: parsed.data.workstreamId ?? null,
       summary: parsed.data.summary ?? "",
       status: parsed.data.status ?? "draft",
-      link: parsed.data.link ?? "",
-      isArchived: parsed.data.isArchived ?? false,
+      uri: parsed.data.uri ?? "",
       updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
     });
 
@@ -1968,13 +1933,10 @@ export async function registerRoutes(
       }
 
       const nextProjectId = parsed.data.projectId ?? currentArtifact.projectId;
-      const nextWorkstreamId =
-        parsed.data.workstreamId === undefined
-          ? currentArtifact.workstreamId
-          : parsed.data.workstreamId;
+      const nextTargetRefs = parsed.data.targetRefs ?? currentArtifact.targetRefs;
       const validationError = validateArtifactLinks({
         projectId: nextProjectId,
-        workstreamId: nextWorkstreamId,
+        targetRefs: nextTargetRefs.map((ref) => ({ ...ref })),
       });
       if (validationError) {
         return reply.code(400).send({
@@ -1985,7 +1947,7 @@ export async function registerRoutes(
       const artifact = updateArtifact(request.params.artifactId, {
         ...parsed.data,
         projectId: nextProjectId,
-        workstreamId: nextWorkstreamId ?? null,
+        targetRefs: nextTargetRefs.map((ref) => ({ ...ref })),
         updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
       });
 
@@ -2046,21 +2008,13 @@ export async function registerRoutes(
       assigneeIds: uniqueIds(parsed.data.assigneeIds ?? []),
       startDate: parsed.data.startDate ?? parsed.data.dueDate,
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
-      documentationLinked: parsed.data.documentationLinked ?? false,
     };
-
-    const taskValidationError = validateTaskLinks(taskInput);
-    if (taskValidationError) {
-      return reply.code(400).send({
-        message: taskValidationError,
-      });
-    }
 
     const createdTask = createTask(taskInput);
     return reply.code(201).send({
       item: {
         ...createdTask,
-        isBlocked: (createdTask.blockers ?? []).length > 0,
+        isBlocked: Boolean(createdTask.isBlocked),
         isWaitingOnDependency: isTaskWaitingOnDependencies(createdTask, getSnapshot()),
       },
     });
@@ -2143,11 +2097,23 @@ export async function registerRoutes(
         });
       }
 
+      const nextAssigneeIds = (currentTask.assigneeIds ?? []).filter(
+        (assigneeId) => assigneeId !== currentTask.ownerId,
+      );
+      const assignmentError = validateTaskPeople({
+        ownerId: null,
+        assigneeIds: nextAssigneeIds,
+        mentorId: currentTask.mentorId,
+      });
+      if (assignmentError) {
+        return reply.code(409).send({
+          message: "Assign another student, lead, or mentor before releasing this task.",
+        });
+      }
+
       const updatedTask = updateTask(currentTask.id, {
         ownerId: null,
-        assigneeIds: (currentTask.assigneeIds ?? []).filter(
-          (assigneeId) => assigneeId !== currentTask.ownerId,
-        ),
+        assigneeIds: nextAssigneeIds,
       }, buildTaskAuditContext(request, member?.id ?? null));
 
       return {
@@ -2196,6 +2162,14 @@ export async function registerRoutes(
       const nextAssigneeIds = parsed.data.ownerId
         ? uniqueIds([...assigneeIdsWithoutPreviousOwner, parsed.data.ownerId])
         : assigneeIdsWithoutPreviousOwner;
+      const assignmentError = validateTaskPeople({
+        ownerId: parsed.data.ownerId,
+        assigneeIds: nextAssigneeIds,
+        mentorId: currentTask.mentorId,
+      });
+      if (assignmentError) {
+        return reply.code(400).send({ message: assignmentError });
+      }
 
       const updatedTask = updateTask(currentTask.id, {
         ownerId: parsed.data.ownerId,
@@ -2236,41 +2210,16 @@ export async function registerRoutes(
         projectId: parsed.data.projectId,
         subsystemId: targetIds.subsystemIds[0],
       }) ?? currentTask.projectId;
-      const nextTaskShape = {
-        projectId: nextProjectId,
-        ...targetIds,
-        assigneeIds:
-          parsed.data.assigneeIds === undefined
-            ? currentTask.assigneeIds ?? []
-            : uniqueIds(parsed.data.assigneeIds),
-        disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
-        targetMilestoneId:
-          parsed.data.targetMilestoneId === undefined
-            ? currentTask.targetMilestoneId
-            : parsed.data.targetMilestoneId,
-      };
-
-      const taskValidationError = validateTaskLinks(nextTaskShape);
-      if (taskValidationError) {
-        return reply.code(400).send({
-          message: taskValidationError,
-        });
-      }
-
       const updatedTask = updateTask(request.params.taskId, {
         ...parsed.data,
-        projectId: nextTaskShape.projectId,
-        workstreamIds: nextTaskShape.workstreamIds,
-        subsystemIds: nextTaskShape.subsystemIds,
-        mechanismIds: nextTaskShape.mechanismIds,
-        partInstanceIds: nextTaskShape.partInstanceIds,
-        artifactIds: nextTaskShape.artifactIds,
+        projectId: nextProjectId,
+        ...targetIds,
       }, buildTaskAuditContext(request));
       return {
         item: updatedTask
           ? {
               ...updatedTask,
-              isBlocked: (updatedTask.blockers ?? []).length > 0,
+              isBlocked: Boolean(updatedTask.isBlocked),
               isWaitingOnDependency: isTaskWaitingOnDependencies(updatedTask, getSnapshot()),
             }
           : updatedTask,
@@ -2298,7 +2247,7 @@ export async function registerRoutes(
       return {
         item: {
           ...task,
-          isBlocked: (task.blockers ?? []).length > 0,
+          isBlocked: Boolean(task.isBlocked),
           isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
         },
       };
@@ -2401,13 +2350,16 @@ export async function registerRoutes(
         });
       }
 
-      const merged = taskDependencySchema.safeParse({
+      const mergedPayload = {
         taskId: nextTaskId,
         kind: nextKind,
         refId: nextRefId,
-        requiredState: parsed.data.requiredState ?? currentDependency.requiredState,
         dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,
-      });
+        ...(nextKind === "part-instance"
+          ? { requiredCondition: parsed.data.requiredCondition ?? (currentDependency.kind === "part-instance" ? currentDependency.requiredCondition : undefined) }
+          : { requiredState: parsed.data.requiredState ?? (currentDependency.kind !== "part-instance" ? currentDependency.requiredState : undefined) }),
+      };
+      const merged = taskDependencySchema.safeParse(mergedPayload);
       if (!merged.success) {
         return reply.code(400).send({
           message: "Task dependency update payload is invalid.",
@@ -2440,110 +2392,56 @@ export async function registerRoutes(
     },
   );
 
-  app.get("/api/task-blockers", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const bootstrap = buildBootstrapResponse(
-      getSnapshot(),
-      readBootstrapSelection(request.query),
-    );
-    const paginated = paginateItems(bootstrap.taskBlockers, request.query);
-
-    return {
-      items: paginated.items,
-      pagination: paginated.pagination,
-    };
+  app.get("/api/responsible-groups", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    const paginated = paginateItems(getResponsibleGroups(), request.query);
+    return { items: paginated.items, pagination: paginated.pagination };
   });
 
-  app.post<{ Body: unknown }>("/api/task-blockers", { config: { snapshotMutation: true } }, async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
+  app.post<{ Body: unknown }>("/api/responsible-groups", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
+    const parsed = parseRouteInput(responsibleGroupSchema, request.body, reply, "Team payload is invalid.");
+    if (!parsed) return reply;
+    const { seasonId, projectIds, memberIds, primaryMemberIds } = parsed.data;
+    const snapshot = getSnapshot();
+    if (!snapshot.seasons.some((season) => season.id === seasonId) || projectIds.some((id) => !snapshot.projects.some((project) => project.id === id && project.seasonId === seasonId)) || memberIds.some((id) => !snapshot.members.some((member) => member.id === id && (member.activeSeasonIds ?? [member.seasonId]).includes(seasonId)))) {
+      return reply.code(400).send({ message: "Teams must reference projects and members in the selected season." });
     }
-
-    const parsed = parseRouteInput(taskBlockerSchema, request.body, reply, "Task blocker payload is invalid.");
-    if (!parsed) {
-      return reply;
+    if (primaryMemberIds.some((id) => !memberIds.includes(id) || !snapshot.members.some((member) => member.id === id && (member.role === "student" || member.role === "lead")))) {
+      return reply.code(400).send({ message: "Primary team membership must be selected members who are students or student leads." });
     }
-
-    const validationError = validateTaskBlockerLinks(parsed.data);
-    if (validationError) {
-      return reply.code(400).send({
-        message: validationError,
-      });
-    }
-
-    const blocker = createTaskBlocker(parsed.data);
-    return reply.code(201).send({
-      item: blocker,
-    });
+    return reply.code(201).send({ item: createResponsibleGroup({ ...parsed.data, isArchived: false }) });
   });
 
-  app.patch<{ Body: unknown; Params: { blockerId: string } }>(
-    "/api/task-blockers/:blockerId",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
+  app.patch<{ Body: unknown; Params: { groupId: string } }>("/api/responsible-groups/:groupId", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
+    const parsed = parseRouteInput(responsibleGroupPatchSchema, request.body, reply, "Team update payload is invalid.");
+    if (!parsed) return reply;
+    const current = getResponsibleGroups().find((group) => group.id === request.params.groupId);
+    if (!current) return reply.code(404).send({ message: "Team not found." });
+    const next = { ...current, ...parsed.data };
+    const snapshot = getSnapshot();
+    if (!snapshot.seasons.some((season) => season.id === next.seasonId) || next.projectIds.some((id) => !snapshot.projects.some((project) => project.id === id && project.seasonId === next.seasonId)) || next.memberIds.some((id) => !snapshot.members.some((member) => member.id === id && (member.activeSeasonIds ?? [member.seasonId]).includes(next.seasonId)))) {
+      return reply.code(400).send({ message: "Teams must reference projects and members in the selected season." });
+    }
+    if (next.primaryMemberIds.some((id) => !next.memberIds.includes(id) || !snapshot.members.some((member) => member.id === id && (member.role === "student" || member.role === "lead")))) {
+      return reply.code(400).send({ message: "Primary team membership must be selected members who are students or student leads." });
+    }
+    if (snapshot.tasks.some((task) => task.responsibleGroupId === current.id && (snapshot.projects.find((project) => project.id === task.projectId)?.seasonId !== next.seasonId || (next.projectIds.length > 0 && !next.projectIds.includes(task.projectId))))) {
+      return reply.code(409).send({ message: "Team changes cannot invalidate existing task ownership." });
+    }
+    return { item: updateResponsibleGroup(current.id, parsed.data, buildTaskAuditContext(request)) };
+  });
 
-      const parsed = parseRouteInput(
-        taskBlockerPatchSchema, request.body, reply,
-        "Task blocker update payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentBlocker = getTaskBlockers().find(
-        (blocker) => blocker.id === request.params.blockerId,
-      );
-      if (!currentBlocker) {
-        return reply.code(404).send({
-          message: "Task blocker not found.",
-        });
-      }
-
-      const nextBlockedTaskId = parsed.data.blockedTaskId ?? currentBlocker.blockedTaskId;
-      const validationError = validateTaskBlockerLinks({
-        blockedTaskId: nextBlockedTaskId,
-        blockerType: parsed.data.blockerType ?? currentBlocker.blockerType,
-        blockerId:
-          parsed.data.blockerId === undefined
-            ? currentBlocker.blockerId
-            : parsed.data.blockerId,
-      });
-      if (validationError) {
-        return reply.code(400).send({
-          message: validationError,
-        });
-      }
-
-      const blocker = updateTaskBlocker(request.params.blockerId, parsed.data);
-      return {
-        item: blocker,
-      };
-    },
-  );
-
-  app.delete<{ Params: { blockerId: string } }>(
-    "/api/task-blockers/:blockerId", { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const blocker = removeTaskBlocker(request.params.blockerId);
-      if (!blocker) {
-        return reply.code(404).send({
-          message: "Task blocker not found.",
-        });
-      }
-
-      return {
-        item: blocker,
-      };
-    },
-  );
+  app.delete<{ Params: { groupId: string } }>("/api/responsible-groups/:groupId", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can manage teams.")) return;
+    const removed = removeResponsibleGroup(request.params.groupId, buildTaskAuditContext(request));
+    if (!removed) return reply.code(404).send({ message: "Team not found." });
+    return { item: removed };
+  });
 
   app.get("/api/members", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -2626,16 +2524,6 @@ export async function registerRoutes(
       });
     }
 
-    if (
-      parsed.data.disciplineId !== undefined &&
-      parsed.data.disciplineId !== null &&
-      !findDiscipline(parsed.data.disciplineId)
-    ) {
-      return reply.code(400).send({
-        message: "Roster payload references an unknown discipline.",
-      });
-    }
-
     const member = createMember(parsed.data);
     return reply.code(201).send({
       item: member,
@@ -2679,7 +2567,6 @@ export async function registerRoutes(
       if (!currentMember) {
         return reply.code(404).send({ message: "Member not found." });
       }
-
       if (
         currentMember.role === "admin" &&
         parsed.data.role !== undefined &&
@@ -2708,15 +2595,10 @@ export async function registerRoutes(
           message: "Roster update payload references an unknown active season.",
         });
       }
-
-      if (
-        parsed.data.disciplineId !== undefined &&
-        parsed.data.disciplineId !== null &&
-        !findDiscipline(parsed.data.disciplineId)
-      ) {
-        return reply.code(400).send({
-          message: "Roster update payload references an unknown discipline.",
-        });
+      const nextActiveSeasons = parsed.data.activeSeasonIds ?? currentMember.activeSeasonIds ?? [parsed.data.seasonId ?? currentMember.seasonId];
+      const nextSeasonId = parsed.data.seasonId ?? currentMember.seasonId;
+      if (getResponsibleGroups().some((group) => group.memberIds.includes(currentMember.id) && group.seasonId !== nextSeasonId && !nextActiveSeasons.includes(group.seasonId))) {
+        return reply.code(409).send({ message: "Remove the member from teams in other seasons before changing their season membership." });
       }
 
       const member = updateMember(
@@ -2758,7 +2640,7 @@ export async function registerRoutes(
         });
       }
 
-      const member = removeMember(request.params.memberId);
+      const member = removeMember(request.params.memberId, buildTaskAuditContext(request));
       if (!member) {
         return reply.code(404).send({
           message: "Member not found.",
@@ -2817,9 +2699,8 @@ export async function registerRoutes(
       projectId,
       parentSubsystemId: parsed.data.parentSubsystemId ?? null,
       mentorIds: parsed.data.mentorIds ?? [],
-      risks: parsed.data.risks ?? [],
       responsibleEngineerId: parsed.data.responsibleEngineerId ?? null,
-    });
+    }, buildTaskAuditContext(request));
 
     return reply.code(201).send({
       item: subsystem,
@@ -2908,7 +2789,6 @@ export async function registerRoutes(
         ...parsed.data,
         projectId: nextProjectId,
         mentorIds: [...nextMentorIds],
-        risks: [...(parsed.data.risks ?? currentSubsystem.risks)],
         parentSubsystemId: nextParentSubsystemId,
         responsibleEngineerId: nextResponsibleEngineerId,
       });
@@ -2965,7 +2845,7 @@ export async function registerRoutes(
       });
     }
 
-    const mechanism = createMechanism(parsed.data);
+    const mechanism = createMechanism(parsed.data, buildTaskAuditContext(request));
     return reply.code(201).send({
       item: mechanism,
     });
@@ -3152,10 +3032,7 @@ export async function registerRoutes(
       });
     }
 
-    const partInstance = createPartInstance({
-      ...parsed.data,
-      mechanismId: parsed.data.mechanismId ?? null,
-    });
+    const partInstance = createPartInstance(parsed.data);
 
     return reply.code(201).send({
       item: partInstance,
@@ -3185,11 +3062,9 @@ export async function registerRoutes(
       }
 
       const nextPartInstanceShape = {
-        subsystemId: parsed.data.subsystemId ?? currentPartInstance.subsystemId,
-        mechanismId:
-          parsed.data.mechanismId === undefined
-            ? currentPartInstance.mechanismId
-            : parsed.data.mechanismId,
+        location: parsed.data.location ?? currentPartInstance.location,
+        intendedSubsystemId: parsed.data.intendedSubsystemId ?? currentPartInstance.intendedSubsystemId,
+        intendedMechanismId: parsed.data.intendedMechanismId ?? currentPartInstance.intendedMechanismId,
         partDefinitionId:
           parsed.data.partDefinitionId === undefined
             ? currentPartInstance.partDefinitionId
@@ -3205,8 +3080,6 @@ export async function registerRoutes(
 
       const partInstance = updatePartInstance(request.params.partInstanceId, {
         ...parsed.data,
-        subsystemId: nextPartInstanceShape.subsystemId,
-        mechanismId: nextPartInstanceShape.mechanismId ?? null,
         partDefinitionId: nextPartInstanceShape.partDefinitionId,
       });
 
@@ -3274,290 +3147,36 @@ export async function registerRoutes(
       attendanceRecords: scopedAttendance,
       members: snapshot.members,
       projects: snapshot.projects,
-      taskBlockers: snapshot.taskBlockers,
-      tasks: snapshot.tasks,
+            tasks: snapshot.tasks,
     });
   });
 
-  app.get("/api/manufacturing", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const snapshot = getSnapshot();
-    const personId = readPersonFilter(request);
-    const paginated = paginateItems(
-      filterManufacturingItemsForPerson(personId),
-      request.query,
-    );
-
-    return {
-      items: withManufacturingQaReviewCounts(paginated.items, snapshot),
-      pagination: paginated.pagination,
-      qaReviews: snapshot.qaReviews.filter(
-        (review) => review.subjectType === "manufacturing",
-      ),
-    };
+  app.get("/api/manufacturing/processes", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    return { items: getSnapshot().manufacturingProcesses };
   });
 
-  app.post<{ Body: unknown }>("/api/manufacturing", { config: { snapshotMutation: true } }, async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    const parsed = parseRouteInput(manufacturingItemSchema, request.body, reply, "Manufacturing payload is invalid.");
-    if (!parsed) {
-      return reply;
-    }
-
-    const initialPolicyFailure = assessGenericPatch({
-      current: { status: "requested", mentorReviewed: false },
-      patch: {
-        status: parsed.data.status,
-        mentorReviewed: parsed.data.mentorReviewed,
-      },
-      protectedFields: ["status", "mentorReviewed"],
-      isApprover: hasWorkflowApprovalPermission(request),
-      isPending: true,
-      entityLabel: "Manufacturing item",
-    });
-    if (initialPolicyFailure) {
-      return reply.code(initialPolicyFailure.statusCode).send({
-        message: initialPolicyFailure.message,
-      });
-    }
-
-    const resolved = resolveManufacturingItem(parsed.data);
-    if ("error" in resolved) {
-      return reply.code(400).send({ message: resolved.error });
-    }
-
-    const partInstanceIds = uniqueIds([
-      ...(parsed.data.partInstanceIds ?? []),
-      parsed.data.partInstanceId,
-    ]);
-    const item = createManufacturingItem({
-      ...parsed.data,
-      status: "requested",
-      mentorReviewed: false,
-      reviewedById: null,
-      reviewedAt: null,
-      materialId: resolved.materialId,
-      partDefinitionId: parsed.data.partDefinitionId ?? null,
-      partInstanceId: partInstanceIds[0] ?? null,
-      partInstanceIds,
-      title: resolved.title,
-    }, buildTaskAuditContext(request));
-    return reply.code(201).send({
-      item: withManufacturingQaReviewCounts([item])[0],
-    });
+  app.post<{ Body: unknown }>("/api/manufacturing/processes", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can configure manufacturing processes.")) return;
+    const parsed = parseRouteInput(manufacturingProcessCreateSchema, request.body, reply, "Manufacturing process payload is invalid.");
+    if (!parsed) return reply;
+    if (getSnapshot().manufacturingProcesses.some((process) => process.code === parsed.data.code)) return reply.code(409).send({ message: "A manufacturing process with this code already exists." });
+    return reply.code(201).send({ item: createManufacturingProcess(parsed.data) });
   });
 
-  app.patch<{ Body: unknown; Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        manufacturingItemPatchSchema, request.body, reply,
-        "Manufacturing update payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
-      if (!currentItem) {
-        return reply.code(404).send({
-          message: "Manufacturing item not found.",
-        });
-      }
-
-
-      const policyFailure = assessGenericPatch({
-        current: currentItem as unknown as Record<string, unknown>,
-        patch: parsed.data as Record<string, unknown>,
-        protectedFields: ["status", "mentorReviewed", "reviewedById", "reviewedAt"],
-        isApprover: hasWorkflowApprovalPermission(request),
-        isPending: currentItem.status === "requested",
-        entityLabel: "Manufacturing item",
-      });
-      if (policyFailure) {
-        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
-      }
-      if (isNoopPatch(
-        currentItem as unknown as Record<string, unknown>,
-        parsed.data as Record<string, unknown>,
-      )) {
-        return { item: withManufacturingQaReviewCounts([currentItem])[0] };
-      }
-
-      const nextItemShape = {
-        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
-        process: parsed.data.process ?? currentItem.process,
-        partDefinitionId:
-          parsed.data.partDefinitionId === undefined
-            ? currentItem.partDefinitionId
-            : parsed.data.partDefinitionId,
-        partInstanceId:
-          parsed.data.partInstanceId === undefined
-            ? currentItem.partInstanceId
-            : parsed.data.partInstanceId,
-        partInstanceIds:
-          parsed.data.partInstanceIds === undefined &&
-          parsed.data.partInstanceId === undefined
-            ? currentItem.partInstanceIds ?? uniqueIds([currentItem.partInstanceId])
-            : uniqueIds([
-                ...(parsed.data.partInstanceIds ?? []),
-                parsed.data.partInstanceId,
-              ]),
-      };
-
-      const resolved = resolveManufacturingItem({
-        ...nextItemShape,
-        title: parsed.data.title ?? currentItem.title,
-        materialId: parsed.data.materialId,
-      }, currentItem.materialId);
-      if ("error" in resolved) {
-        return reply.code(400).send({ message: resolved.error });
-      }
-
-      const item = updateManufacturingItem(request.params.itemId, {
-        ...parsed.data,
-        materialId: resolved.materialId,
-        partDefinitionId: nextItemShape.partDefinitionId ?? null,
-        partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
-        partInstanceIds: [...nextItemShape.partInstanceIds],
-        title: resolved.title,
-      }, buildTaskAuditContext(request));
-
-      return {
-        item: item ? withManufacturingQaReviewCounts([item])[0] : item,
-      };
-    },
-  );
-
-  app.put<{ Body: unknown; Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId/review",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-      if (!requireWorkflowApprovalPermission(
-        request,
-        reply,
-        "Only mentors and admins can review manufacturing items.",
-      )) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        manufacturingReviewSchema, request.body, reply,
-        "Manufacturing review payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
-      if (!currentItem) {
-        return reply.code(404).send({ message: "Manufacturing item not found." });
-      }
-
-      if (
-        currentItem.mentorReviewed === parsed.data.reviewed &&
-        ((parsed.data.reviewed && currentItem.status === "approved") ||
-          (!parsed.data.reviewed && currentItem.status === "requested"))
-      ) {
-        return { item: withManufacturingQaReviewCounts([currentItem])[0] };
-      }
-
-      const policyFailure = validateManufacturingReview(currentItem, parsed.data.reviewed);
-      if (policyFailure) {
-        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
-      }
-
-      const actor = getWorkflowApprovalMember(request);
-      if (!actor) {
-        return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
-      }
-      const reviewedAt = parsed.data.reviewed ? new Date().toISOString() : null;
-      const item = updateManufacturingItem(request.params.itemId, {
-        mentorReviewed: parsed.data.reviewed,
-        status: parsed.data.reviewed ? "approved" : "requested",
-        reviewedById: parsed.data.reviewed ? actor.id : null,
-        reviewedAt,
-      }, buildTaskAuditContext(request, actor.id));
-
-      return { item: item ? withManufacturingQaReviewCounts([item])[0] : item };
-    },
-  );
-
-  app.post<{ Body: unknown; Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId/transition",
-    { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      const parsed = parseRouteInput(
-        manufacturingTransitionSchema, request.body, reply,
-        "Manufacturing transition payload is invalid.",
-      );
-      if (!parsed) {
-        return reply;
-      }
-
-      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
-      if (!currentItem) {
-        return reply.code(404).send({ message: "Manufacturing item not found." });
-      }
-
-      const policyFailure = validateManufacturingTransition(currentItem, parsed.data.status);
-      if (policyFailure) {
-        return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
-      }
-
-      const item = updateManufacturingItem(
-        request.params.itemId,
-        { status: parsed.data.status },
-        buildTaskAuditContext(request),
-      );
-      return { item: item ? withManufacturingQaReviewCounts([item])[0] : item };
-    },
-  );
-
-  app.delete<{ Params: { itemId: string } }>(
-    "/api/manufacturing/:itemId", { config: { snapshotMutation: true } }, async (request, reply) => {
-      if (!requireApiSessionIfEnabled(request, reply)) {
-        return;
-      }
-
-      if (!requireWorkflowApprovalPermission(
-        request,
-        reply,
-        "Only mentors and admins can delete manufacturing items.",
-      )) {
-        return;
-      }
-
-      const item = removeManufacturingItem(
-        request.params.itemId,
-        buildTaskAuditContext(request),
-      );
-      if (!item) {
-        return reply.code(404).send({
-          message: "Manufacturing item not found.",
-        });
-      }
-
-      return {
-        item,
-      };
-    },
-  );
+  app.patch<{ Body: unknown; Params: { processId: string } }>("/api/manufacturing/processes/:processId", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireMentorPermission(request, reply, "Only mentors can configure manufacturing processes.")) return;
+    const parsed = parseRouteInput(manufacturingProcessArchiveSchema, request.body, reply, "Manufacturing process update is invalid.");
+    if (!parsed) return reply;
+    if (getSnapshot().tasks.some((task) => task.manufacturingDetails?.processId === request.params.processId)) {
+      return reply.code(409).send({ message: "A process referenced by manufacturing Tasks cannot be archived." });
+    }
+    const item = archiveManufacturingProcess(request.params.processId);
+    if (!item) return reply.code(404).send({ message: "Manufacturing process not found." });
+    return { item };
+  });
 
   app.get("/api/purchases", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -3583,22 +3202,13 @@ export async function registerRoutes(
       return reply;
     }
 
-    const initialPolicyFailure = assessGenericPatch({
-      current: { status: "requested", approvedByMentor: false, finalCost: undefined },
-      patch: {
-        status: parsed.data.status,
-        approvedByMentor: parsed.data.approvedByMentor,
-        finalCost: parsed.data.finalCost,
-      },
-      protectedFields: ["status", "approvedByMentor", "finalCost"],
-      isApprover: hasWorkflowApprovalPermission(request),
-      isPending: true,
-      entityLabel: "Purchase item",
-    });
-    if (initialPolicyFailure) {
-      return reply.code(initialPolicyFailure.statusCode).send({
-        message: initialPolicyFailure.message,
-      });
+    if (
+      parsed.data.approvalStatus !== "pending" || parsed.data.approvedById !== null ||
+      parsed.data.approvedAt !== null || parsed.data.orderStatus !== "not-ordered" ||
+      parsed.data.purchaseOrderNumber !== null || parsed.data.finalCost !== null ||
+      parsed.data.orderedAt !== null || parsed.data.deliveredAt !== null
+    ) {
+      return reply.code(403).send({ message: "Approval and order state must use the purchasing workflow." });
     }
 
     const validationError = validatePurchaseItemLinks(parsed.data);
@@ -3608,27 +3218,7 @@ export async function registerRoutes(
       });
     }
 
-    const partDefinition = parsed.data.partDefinitionId
-      ? findPartDefinition(parsed.data.partDefinitionId)
-      : null;
-    if (parsed.data.partDefinitionId && !partDefinition) {
-      return reply.code(400).send({
-        message: "Please select a real part from the Parts tab.",
-      });
-    }
-
-    const item = createPurchaseItem({
-      ...parsed.data,
-      status: "requested",
-      approvedByMentor: false,
-      finalCost: undefined,
-      approvedById: null,
-      approvedAt: null,
-      purchasedAt: null,
-      deliveredAt: null,
-      partDefinitionId: parsed.data.partDefinitionId ?? null,
-      title: partDefinition?.name ?? parsed.data.title,
-    }, buildTaskAuditContext(request));
+    const item = createPurchaseItem(parsed.data, buildTaskAuditContext(request));
     return reply.code(201).send({
       item,
     });
@@ -3661,16 +3251,19 @@ export async function registerRoutes(
         current: currentItem as unknown as Record<string, unknown>,
         patch: parsed.data as Record<string, unknown>,
         protectedFields: [
-          "status",
-          "approvedByMentor",
+          "taskId",
+          "kind",
+          "approvalStatus",
           "finalCost",
           "approvedById",
           "approvedAt",
-          "purchasedAt",
+          "orderStatus",
+          "purchaseOrderNumber",
+          "orderedAt",
           "deliveredAt",
         ],
         isApprover: hasWorkflowApprovalPermission(request),
-        isPending: currentItem.status === "requested",
+        isPending: currentItem.approvalStatus === "pending" && currentItem.orderStatus === "not-ordered",
         entityLabel: "Purchase item",
       });
       if (policyFailure) {
@@ -3683,13 +3276,7 @@ export async function registerRoutes(
         return { item: currentItem };
       }
 
-      const nextItemShape = {
-        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
-        partDefinitionId:
-          parsed.data.partDefinitionId === undefined
-            ? currentItem.partDefinitionId
-            : parsed.data.partDefinitionId,
-      };
+      const nextItemShape = { ...currentItem, ...parsed.data };
 
       const validationError = validatePurchaseItemLinks(nextItemShape);
       if (validationError) {
@@ -3698,19 +3285,8 @@ export async function registerRoutes(
         });
       }
 
-      const partDefinition = nextItemShape.partDefinitionId
-        ? findPartDefinition(nextItemShape.partDefinitionId)
-        : null;
-      if (nextItemShape.partDefinitionId && !partDefinition) {
-        return reply.code(400).send({
-          message: "Please select a real part from the Parts tab.",
-        });
-      }
-
       const item = updatePurchaseItem(request.params.itemId, {
         ...parsed.data,
-        partDefinitionId: nextItemShape.partDefinitionId ?? null,
-        title: partDefinition?.name ?? parsed.data.title ?? currentItem.title,
       }, buildTaskAuditContext(request));
 
       return {
@@ -3746,15 +3322,11 @@ export async function registerRoutes(
         return reply.code(404).send({ message: "Purchase item not found." });
       }
 
-      if (
-        currentItem.approvedByMentor === parsed.data.approved &&
-        ((parsed.data.approved && currentItem.status === "approved") ||
-          (!parsed.data.approved && currentItem.status === "requested"))
-      ) {
+      if (currentItem.approvalStatus === parsed.data.approvalStatus) {
         return { item: currentItem };
       }
 
-      const policyFailure = validatePurchaseApproval(currentItem, parsed.data.approved);
+      const policyFailure = validatePurchaseApproval(currentItem, parsed.data.approvalStatus);
       if (policyFailure) {
         return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
       }
@@ -3764,10 +3336,9 @@ export async function registerRoutes(
         return reply.code(403).send({ message: "A mentor or admin roster profile is required." });
       }
       const item = updatePurchaseItem(request.params.itemId, {
-        approvedByMentor: parsed.data.approved,
-        status: parsed.data.approved ? "approved" : "requested",
-        approvedById: parsed.data.approved ? actor.id : null,
-        approvedAt: parsed.data.approved ? new Date().toISOString() : null,
+        approvalStatus: parsed.data.approvalStatus,
+        approvedById: actor.id,
+        approvedAt: new Date().toISOString(),
       }, buildTaskAuditContext(request, actor.id));
 
       return { item };
@@ -3801,7 +3372,10 @@ export async function registerRoutes(
         return reply.code(404).send({ message: "Purchase item not found." });
       }
 
-      const policyFailure = validatePurchaseTransition(currentItem.status, parsed.data.status);
+      if (parsed.data.orderStatus === "ordered" && currentItem.approvalStatus !== "approved") {
+        return reply.code(409).send({ message: "A purchase must be approved before ordering." });
+      }
+      const policyFailure = validatePurchaseTransition(currentItem.orderStatus, parsed.data.orderStatus);
       if (policyFailure) {
         return reply.code(policyFailure.statusCode).send({ message: policyFailure.message });
       }
@@ -3812,10 +3386,10 @@ export async function registerRoutes(
       }
       const now = new Date().toISOString();
       const item = updatePurchaseItem(request.params.itemId, {
-        status: parsed.data.status,
-        finalCost: parsed.data.finalCost ?? currentItem.finalCost,
-        purchasedAt: parsed.data.status === "purchased" ? now : currentItem.purchasedAt,
-        deliveredAt: parsed.data.status === "delivered" ? now : currentItem.deliveredAt,
+        orderStatus: parsed.data.orderStatus,
+        finalCost: parsed.data.finalCost === undefined ? currentItem.finalCost : parsed.data.finalCost,
+        orderedAt: parsed.data.orderStatus === "ordered" ? now : currentItem.orderedAt,
+        deliveredAt: parsed.data.orderStatus === "delivered" ? now : currentItem.deliveredAt,
       }, buildTaskAuditContext(request, actor.id));
 
       return { item };
@@ -3851,19 +3425,6 @@ export async function registerRoutes(
       };
     },
   );
-
-  app.get("/api/qa", async (request, reply) => {
-    if (!requireApiSessionIfEnabled(request, reply)) {
-      return;
-    }
-
-    return {
-      reviews: getSnapshot().qaReviews,
-      mentorBackedPasses: getSnapshot().qaReviews.filter((review) => {
-        return review.result === "pass" && review.mentorApproved;
-      }).length,
-    };
-  });
 
   app.get("/api/metrics", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

@@ -14,22 +14,22 @@ test("purchase approval and transitions are mentor/admin-only adjacent operation
     assert.equal(pendingEdit.json().item.quantity, 2);
 
     resetLimits();
-    const forgedApproval = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: studentHeaders, payload: { approvedByMentor: true, status: "approved" } });
+    const forgedApproval = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: studentHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(forgedApproval.statusCode, 403);
 
     resetLimits();
-    const leadApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: leadHeaders, payload: { approved: true } });
+    const leadApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: leadHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(leadApproval.statusCode, 403);
 
     resetLimits();
-    const mentorApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approved: true } });
+    const mentorApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(mentorApproval.statusCode, 200);
-    assert.equal(mentorApproval.json().item.status, "approved");
+    assert.equal(mentorApproval.json().item.approvalStatus, "approved");
     assert.equal(mentorApproval.json().item.approvedById, "jordan");
     assert.equal(Number.isNaN(Date.parse(mentorApproval.json().item.approvedAt)), false);
 
     resetLimits();
-    const safeLegacyNoop = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: studentHeaders, payload: { approvedByMentor: true, status: "approved" } });
+    const safeLegacyNoop = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: studentHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(safeLegacyNoop.statusCode, 200);
 
     resetLimits();
@@ -37,30 +37,29 @@ test("purchase approval and transitions are mentor/admin-only adjacent operation
     assert.equal(postApprovalEdit.statusCode, 409);
 
     resetLimits();
-    const revoked = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approved: false } });
-    assert.equal(revoked.statusCode, 200);
-    assert.equal(revoked.json().item.status, "requested");
+    const revoked = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approvalStatus: "rejected" } });
+    assert.equal(revoked.statusCode, 409);
 
     resetLimits();
-    const reapproved = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approved: true } });
+    const reapproved = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(reapproved.statusCode, 200);
 
     resetLimits();
-    const skippedTransition = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentorHeaders, payload: { status: "delivered" } });
+    const skippedTransition = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentorHeaders, payload: { orderStatus: "delivered" } });
     assert.equal(skippedTransition.statusCode, 409);
 
     resetLimits();
-    const studentTransition = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: studentHeaders, payload: { status: "purchased" } });
+    const studentTransition = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: studentHeaders, payload: { orderStatus: "ordered" } });
     assert.equal(studentTransition.statusCode, 403);
 
     resetLimits();
-    const purchased = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentorHeaders, payload: { status: "purchased", finalCost: 37.5 } });
+    const purchased = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentorHeaders, payload: { orderStatus: "ordered", finalCost: { amount: 37.5, currency: "USD" } } });
     assert.equal(purchased.statusCode, 200);
-    assert.equal(purchased.json().item.finalCost, 37.5);
-    assert.ok(purchased.json().item.purchasedAt);
+    assert.deepEqual(purchased.json().item.finalCost, { amount: 37.5, currency: "USD" });
+    assert.ok(purchased.json().item.orderedAt);
 
     resetLimits();
-    const revokeAfterPurchase = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approved: false } });
+    const revokeAfterPurchase = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentorHeaders, payload: { approvalStatus: "rejected" } });
     assert.equal(revokeAfterPurchase.statusCode, 409);
 
     resetLimits();
@@ -83,26 +82,36 @@ test("purchase creation cannot self-approve and missing workflow records return 
       url: "/api/purchases",
       headers: studentHeaders,
       payload: {
+        taskId: "procure-ferrule-kit",
+        kind: "cots-goods",
         title: "Forged approval",
-        subsystemId: "drive",
-        requestedById: "ava",
+        partDefinitionId: null,
+        materialId: null,
         quantity: 1,
-        vendor: "Vendor",
-        linkLabel: "vendor.example/item",
-        estimatedCost: 10,
-        approvedByMentor: true,
-        status: "approved",
+        quotes: [],
+        selectedQuoteId: null,
+        approvalStatus: "approved",
+        approvedById: "ava",
+        approvedAt: new Date().toISOString(),
+        purchaseOrderNumber: null,
+        orderStatus: "not-ordered",
+        finalCost: null,
+        expectedDeliveryDate: null,
+        trackingNumber: null,
+        trackingUrl: null,
+        orderedAt: null,
+        deliveredAt: null,
       },
     });
     assert.equal(forgedCreate.statusCode, 403);
 
     resetLimits();
-    const adminApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: adminHeaders, payload: { approved: true } });
+    const adminApproval = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: adminHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(adminApproval.statusCode, 200);
     assert.equal(adminApproval.json().item.approvedById, "maya");
 
     resetLimits();
-    const missing = await app.inject({ method: "PUT", url: "/api/purchases/missing/approval", headers: mentorHeaders, payload: { approved: true } });
+    const missing = await app.inject({ method: "PUT", url: "/api/purchases/missing/approval", headers: mentorHeaders, payload: { approvalStatus: "approved" } });
     assert.equal(missing.statusCode, 404);
   });
 });

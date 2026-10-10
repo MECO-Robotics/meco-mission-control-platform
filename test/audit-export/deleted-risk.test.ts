@@ -23,14 +23,12 @@ test("audit export preserves workstream risk scope after deletion", async () => 
       );
       assert.ok(robotWorkstream);
       const workstreamRisk = createRisk({
+        projectId: robotWorkstream.projectId,
         title: "Audit Export Deleted Workstream Risk",
         detail: "Deleted risk attached through a project workstream.",
-        severity: "medium",
-        sourceType: "qa-report",
-        sourceId: "qa-report-audit-export-delete",
-        attachmentType: "workstream",
-        attachmentId: robotWorkstream.id,
-        mitigationTaskId: null,
+        severity: "medium", category: "supply", status: "open", blocksWork: false,
+        source: { kind: "manual" }, relatedTargets: [{ kind: "workstream", id: robotWorkstream.id }],
+        mitigationTaskId: null, ownerGroupId: null,
       });
 
       assert.ok(removeRisk(workstreamRisk.id));
@@ -76,19 +74,17 @@ test("audit export preserves workstream risk scope after deletion", async () => 
       );
 
       const movedRisk = createRisk({
+        projectId: "project-robot-2026",
         title: "Audit Export Moved Project Risk",
-        detail: "Risk moved between project attachments.",
-        severity: "medium",
-        sourceType: "qa-report",
-        sourceId: "qa-report-audit-export-move",
-        attachmentType: "project",
-        attachmentId: "project-robot-2026",
-        mitigationTaskId: null,
+        detail: "Risk moved between projects.",
+        severity: "medium", category: "supply", status: "open", blocksWork: false,
+        source: { kind: "manual" }, relatedTargets: [{ kind: "project", id: "project-robot-2026" }],
+        mitigationTaskId: null, ownerGroupId: null,
       });
       assert.ok(
         updateRisk(movedRisk.id, {
-          attachmentType: "project",
-          attachmentId: "project-operations-2026",
+          projectId: "project-operations-2026",
+          relatedTargets: [{ kind: "project", id: "project-operations-2026" }],
         }),
       );
 

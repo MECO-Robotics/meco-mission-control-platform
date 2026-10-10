@@ -38,7 +38,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         parentSubsystemId: "drive",
         responsibleEngineerId: mobileMemberCreatedBody.item.id,
         mentorIds: ["marco"],
-        risks: [],
       },
     });
 
@@ -60,18 +59,16 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         title: "Mobile task payload",
         summary: "Created from the mobile app's compact task draft.",
         subsystemIds: [mobileSubsystemCreatedBody.item.id],
-        disciplineId: "design",
+        workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: mobileMemberCreatedBody.item.id,
         assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
         mentorId: "marco",
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 0,
         photoUrl: "https://cdn.example.test/tasks/mobile-task.png",
       },
@@ -111,7 +108,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         parentSubsystemId: null,
         responsibleEngineerId: null,
         mentorIds: [],
-        risks: [],
       },
     });
     assert.equal(mediaSubsystemResponse.statusCode, 201);
@@ -124,20 +120,18 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         projectId: "project-media-2026",
         workstreamIds: [],
-        title: "Invalid operations discipline",
+        title: "Invalid work type",
         summary: "Attempts to use a robot-only discipline on a business task.",
         subsystemIds: [mediaSubsystemId],
-        disciplineId: "design",
+        workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: "ava",
         mentorId: "marco",
         dueDate: "2026-05-01",
         priority: "medium",
         status: "not-started",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 2,
       },
     });
@@ -145,7 +139,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     assert.equal(invalidOperationsTaskResponse.statusCode, 400);
     assert.match(
       invalidOperationsTaskResponse.body,
-      /selected discipline does not belong to the selected project/i,
+      /selected work type does not belong to the selected project/i,
     );
 
     resetLimits();
@@ -159,7 +153,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         parentSubsystemId: null,
         responsibleEngineerId: null,
         mentorIds: [],
-        risks: [],
       },
     });
     assert.equal(controlsSubsystemResponse.statusCode, 201);
@@ -191,17 +184,15 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         title: "Multi-target task payload",
         summary: "Created with multiple linked workstreams, subsystems, mechanisms, and parts.",
         subsystemIds: ["drive", controlsSubsystem.id],
-        disciplineId: "design",
+        workTypeId: "robot:design",
         mechanismIds: ["swerve-module", controlsMechanism.id],
         partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: mobileMemberCreatedBody.item.id,
         mentorId: "marco",
         dueDate: "2026-05-08",
         priority: "high",
         status: "not-started",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 2,
         photoUrl: "https://cdn.example.test/tasks/multi-target-task.png",
       },
@@ -242,8 +233,8 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         title: "Cross Project Demo",
         type: "demo",
-        startDateTime: "2026-05-14T18:00:00-04:00",
-        endDateTime: null,
+        startAt: "2026-05-14T18:00:00-04:00",
+        endAt: null,
         isExternal: true,
         description: "Milestone shared across robot and operations work.",
         projectIds: ["project-robot-2026", "project-operations-2026"],
@@ -348,8 +339,8 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         title: "Unknown Project Demo",
         type: "demo",
-        startDateTime: "2026-05-15T18:00:00-04:00",
-        endDateTime: null,
+        startAt: "2026-05-15T18:00:00-04:00",
+        endAt: null,
         isExternal: true,
         description: "",
         projectIds: ["missing-project"],
@@ -417,7 +408,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       items: Array<{
         taskId: string;
         matchedRequirementIds: string[];
-        isLegacyLink: boolean;
+        isExplicitScheduleRef: boolean;
       }>;
     };
     assert.equal(inferredTasksBody.milestoneId, createdMilestoneBody.item.id);
@@ -434,7 +425,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     assert.equal(taskMilestonesResponse.statusCode, 200);
     const taskMilestonesBody = taskMilestonesResponse.json() as {
       taskId: string;
-      items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isLegacyLink: boolean }>;
+      items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isExplicitScheduleRef: boolean }>;
     };
     assert.equal(taskMilestonesBody.taskId, "swerve-sensor-bundle");
     assert.ok(
@@ -454,18 +445,16 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
         title: "Assignment semantics task",
         summary: "Validates owner assignment list behavior.",
         subsystemIds: ["drive"],
-        disciplineId: "design",
+        workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
+        scheduleRefs: [],
         ownerId: "ava",
         assigneeIds: ["ava", "demo-alex-morgan"],
         mentorId: "marco",
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 0,
       },
     });

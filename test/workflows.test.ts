@@ -15,7 +15,6 @@ import type {
   Material,
   PlatformSnapshot,
   PurchaseItem,
-  QaReview,
   Task,
   WorkLog,
 } from "../src/domain/types";
@@ -24,15 +23,17 @@ function makeTask(overrides: Partial<Task> = {}) {
   const baseTask: Task = {
     id: "task-a",
     projectId: "project-robot-2026",
+    workTypeId: "robot:design",
+    responsibleGroupId: null,
+    requestedById: null,
+    scheduleRefs: [],
+    manufacturingDetails: null,
     workstreamIds: [],
     title: "Drive calibration",
     summary: "Validate encoder calibration before practice.",
     subsystemIds: ["drive"],
-    disciplineId: "design",
     mechanismIds: [],
     partInstanceIds: [],
-    artifactIds: [],
-    targetMilestoneId: null,
     ownerId: "ava",
     assigneeIds: ["ava"],
     mentorId: "jordan",
@@ -42,13 +43,9 @@ function makeTask(overrides: Partial<Task> = {}) {
     status: "in-progress",
 
     checklistItems: [],
-    blockers: [],
-    linkedManufacturingIds: [],
-    linkedPurchaseIds: [],
     estimatedHours: 4,
     actualHours: 1,
     requiresDocumentation: false,
-    documentationLinked: false,
   };
 
   return { ...baseTask, ...overrides };
@@ -66,7 +63,6 @@ function makeWorkflowSnapshot() {
     parentSubsystemId: null,
     responsibleEngineerId: "ava",
     mentorIds: ["marco"],
-    risks: [],
     iteration: 1,
     isArchived: false,
   });
@@ -77,7 +73,6 @@ function makeWorkflowSnapshot() {
       status: "waiting-for-qa",
       priority: "critical",
       requiresDocumentation: true,
-      documentationLinked: false,
       estimatedHours: 4,
       actualHours: 3,
     }),
@@ -85,13 +80,11 @@ function makeWorkflowSnapshot() {
       id: "task-b",
       title: "Controls firmware",
       subsystemIds: ["controls"],
-      disciplineId: "programming",
       ownerId: "ava",
       mentorId: "marco",
       status: "complete",
       priority: "medium",
       requiresDocumentation: false,
-      documentationLinked: false,
       estimatedHours: 2,
       actualHours: 2,
     }),
@@ -99,16 +92,14 @@ function makeWorkflowSnapshot() {
       id: "task-c",
       title: "Controls integration",
       subsystemIds: ["controls"],
-      disciplineId: "testing",
       ownerId: "ava",
       mentorId: "marco",
       status: "in-progress",
       priority: "high",
 
       checklistItems: [],
-      blockers: ["Waiting on parts"],
+      isBlocked: true,
       requiresDocumentation: false,
-      documentationLinked: false,
       estimatedHours: 6,
       actualHours: 1,
     }),
@@ -136,13 +127,10 @@ function makeWorkflowSnapshot() {
   snapshot.partInstances = [
     {
       id: "part-instance-a",
-      subsystemId: "drive",
-      mechanismId: "drive-shaft",
       partDefinitionId,
-      name: "Drive shaft assembly",
-      quantity: 1,
-      trackIndividually: true,
-      status: "ready",
+      intendedSubsystemId: "drive",
+      intendedMechanismId: "drive-shaft",
+      location: { kind: "installed", subsystemId: "drive", mechanismId: "drive-shaft" },
     },
   ];
 
@@ -165,19 +153,23 @@ function makeWorkflowSnapshot() {
     } satisfies WorkLog,
   ];
 
-  snapshot.qaReviews = [
-    {
-      id: "qa-a",
-      subjectId: "task-a",
-      subjectType: "task",
-      subjectTitle: "Drive calibration",
-      participantIds: ["ava", "marco"],
-      result: "pass",
-      mentorApproved: true,
-      notes: "Calibration approved for the next practice block.",
-      reviewedAt: "2026-04-03",
-    } satisfies QaReview,
-  ];
+  snapshot.qaReports = [{
+    id: "qa-a",
+    reportType: "qa",
+    projectId: "project-robot-2026",
+    targetRefs: [{ kind: "task", id: "task-a" }],
+    createdByMemberId: "marco",
+    participantIds: ["ava", "marco"],
+    mentorId: "marco",
+    requestedById: null,
+    summary: "Drive calibration",
+    notes: "Calibration approved for the next practice block.",
+    createdAt: "2026-04-03T00:00:00.000Z",
+    status: "reviewed",
+    result: "pass",
+    reviewedById: "marco",
+    reviewedAt: "2026-04-03T00:00:00.000Z",
+  }];
 
   snapshot.materials = [
     {
@@ -188,7 +180,7 @@ function makeWorkflowSnapshot() {
       onHandQuantity: 1,
       reorderPoint: 2,
       location: "Shelf A1",
-      vendor: "McMaster-Carr",
+      preferredVendorId: null,
       notes: "Guard stock.",
     } satisfies Material,
     {
@@ -199,7 +191,7 @@ function makeWorkflowSnapshot() {
       onHandQuantity: 5,
       reorderPoint: 5,
       location: "Hardware drawers",
-      vendor: "Grainger",
+      preferredVendorId: null,
       notes: "Fastener kit.",
     } satisfies Material,
     {
@@ -210,37 +202,34 @@ function makeWorkflowSnapshot() {
       onHandQuantity: 6,
       reorderPoint: 2,
       location: "Wire rack",
-      vendor: "Online Metals",
+      preferredVendorId: null,
       notes: "Power routing stock.",
     } satisfies Material,
   ];
 
   snapshot.purchaseItems = [
     {
+      ...initialSnapshot.purchaseItems[0]!,
       id: "purchase-a",
+      taskId: "task-a",
       title: "Polycarbonate sheet",
-      subsystemId: "manipulator",
-      requestedById: "lucas",
+      kind: "cots-goods",
       partDefinitionId: null,
+      materialId: null,
       quantity: 2,
-      vendor: "McMaster",
-      linkLabel: "mcmaster.com/8560K239",
-      estimatedCost: 82,
-      approvedByMentor: true,
-      status: "delivered",
+      orderStatus: "delivered",
+      deliveredAt: "2026-04-03",
     } satisfies PurchaseItem,
     {
+      ...initialSnapshot.purchaseItems[0]!,
       id: "purchase-b",
+      taskId: "task-c",
       title: "Ferrule refill kit",
-      subsystemId: "drive",
-      requestedById: "priya",
       partDefinitionId: null,
+      materialId: null,
       quantity: 1,
-      vendor: "AutomationDirect",
-      linkLabel: "automationdirect.com/ferrules",
-      estimatedCost: 39,
-      approvedByMentor: false,
-      status: "requested",
+      orderStatus: "not-ordered",
+      deliveredAt: null,
     } satisfies PurchaseItem,
   ];
 
@@ -263,8 +252,8 @@ function makeWorkflowSnapshot() {
     {
       id: "meeting-1",
       title: "Planning",
-      date: "2026-04-04",
-      time: "7:00 PM",
+      startAt: "2026-04-04T19:00:00Z",
+      endAt: "2026-04-04T20:00:00Z",
       rsvpsYes: 6,
       rsvpsMaybe: 1,
       openSignIns: 2,
@@ -312,7 +301,7 @@ test("evaluateTaskCompletion reports missing gate conditions and a passing path"
   assert.equal(missingResult.canFinalize, false);
   assert.deepEqual(missingResult.missing, ["notebook or documentation evidence"]);
   assert.equal(missingResult.workLogCount, 1);
-  assert.equal(missingResult.qaReviewCount, 1);
+  assert.equal(missingResult.qaReportCount, 1);
 
   const passingSnapshot = structuredClone(snapshot) as PlatformSnapshot;
   const passingTask = passingSnapshot.tasks.find(
@@ -321,7 +310,17 @@ test("evaluateTaskCompletion reports missing gate conditions and a passing path"
 
   assert.ok(passingTask);
 
-  passingTask.documentationLinked = true;
+  passingSnapshot.artifacts.push({
+    id: "task-a-doc",
+    projectId: passingTask.projectId,
+    kind: "document",
+    title: "Calibration notes",
+    summary: "Recorded calibration evidence.",
+    status: "published",
+    uri: "https://example.invalid/calibration",
+    targetRefs: [{ kind: "task", id: passingTask.id }],
+    updatedAt: "2026-04-02T00:00:00.000Z",
+  });
 
   const passingResult = evaluateTaskCompletion(passingTask, passingSnapshot);
 

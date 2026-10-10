@@ -1,8 +1,4 @@
-import {
-  reportFromQaReport,
-  reportFromTestResult,
-  reportFindingFromFinding,
-} from "../../data/store/reportDerivations";
+import { reportFromQaReport } from "../../data/store/reportDerivations";
 import type {
   ReadonlyData,
   AuditAction,
@@ -10,7 +6,6 @@ import type {
   MilestoneRequirement,
   SnapshotView,
   Report,
-  ReportFinding,
   QaFinding,
   QaReport,
   QaRequest,
@@ -21,15 +16,13 @@ import type {
 import { normalizePmCadProvenance } from "../../domain/pmCadProvenance";
 import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
 import { isActiveInSeason } from "../../domain/seasonMembership";
+import { partInstanceSubsystemId, partInstanceMechanismId } from "../../domain/partInstanceLocation";
+import { deriveMilestoneReadiness, derivePartInstanceReadiness } from "../../domain/readiness";
 
 export interface BootstrapSelection {
   personId: string | null;
   seasonId: string | null;
   projectId: string | null;
-}
-
-export interface BootstrapResponseOptions {
-  sanitizeEscalations?: boolean;
 }
 
 function readScopedId(value: unknown) {
@@ -39,35 +32,20 @@ function readScopedId(value: unknown) {
 // Bootstrap chooses an in-scope milestone project and intentionally omits photos.
 function buildReports(args: {
   qaReports: ReadonlyData<QaReport[]>;
-  tasksById: Map<string, ReadonlyData<Task>>;
-  testResults: ReadonlyData<TestResult[]>;
-  milestonesById: Map<string, ReadonlyData<Milestone>>;
+  teamReports: ReadonlyData<Report[]>;
   activeProjectIds: Set<string>;
 }) {
   return [
     ...args.qaReports.map((report) => {
-      const task = args.tasksById.get(report.taskId);
-      return task && args.activeProjectIds.has(task.projectId)
-        ? reportFromQaReport(task, report, { includePhoto: false })
+      return args.activeProjectIds.has(report.projectId)
+        ? reportFromQaReport(undefined, report, { includePhoto: false })
         : null;
     }),
-    ...args.testResults.map((result) => {
-      const milestone = args.milestonesById.get(result.milestoneId);
-      const projectId = milestone?.projectIds.find((id) => args.activeProjectIds.has(id)) ?? null;
-      return projectId ? reportFromTestResult(milestone, result, projectId, { includePhoto: false }) : null;
+    ...args.teamReports.filter((report) => args.activeProjectIds.has(report.projectId)).map((report) => {
+      const { photoUrl: _photoUrl, ...withoutPhoto } = report;
+      return withoutPhoto;
     }),
   ].filter((report): report is ReadonlyData<Report> => report !== null);
-}
-
-function buildReportFindings(args: {
-  qaFindings: ReadonlyData<QaFinding[]>;
-  testFindings: ReadonlyData<TestFinding[]>;
-  reportIds: Set<string>;
-}) {
-  return [
-    ...args.qaFindings.map(reportFindingFromFinding),
-    ...args.testFindings.map(reportFindingFromFinding),
-  ].filter((finding): finding is ReadonlyData<ReportFinding> => finding !== null && args.reportIds.has(finding.reportId));
 }
 
 function parseDateMs(value: string) {
@@ -98,7 +76,6 @@ function isSeasonScopedByProjectLinks(args: {
 export function buildBootstrapResponse(
   snapshot: SnapshotView,
   selection: BootstrapSelection,
-  options: BootstrapResponseOptions = {},
 ) {
   const selectedSeasonId = selection.seasonId;
   const selectedSeason = selectedSeasonId
@@ -119,6 +96,15 @@ export function buildBootstrapResponse(
       : seasonScopedProjects
     ).map((project) => project.id),
   );
+  const activeProjectTypes = new Set(seasonScopedProjects.filter((project) => activeProjectIds.has(project.id)).map((project) => project.projectType));
+  const scopedWorkTypes = snapshot.workTypes.filter((workType) => activeProjectTypes.has(workType.projectType));
+  const scopedWorkTypeIds = new Set(scopedWorkTypes.map((workType) => workType.id));
+  const scopedResponsibleGroups = snapshot.responsibleGroups
+    .filter((group) =>
+      (!selectedSeasonId || group.seasonId === selectedSeasonId) &&
+      (group.projectIds.length === 0 || group.projectIds.some((projectId) => activeProjectIds.has(projectId))),
+    )
+    .map((group) => ({ ...group, workTypeIds: group.workTypeIds.filter((workTypeId) => scopedWorkTypeIds.has(workTypeId)) }));
   const scopedWorkstreams = snapshot.workstreams.filter((workstream) =>
     activeProjectIds.has(workstream.projectId),
   );
@@ -142,10 +128,13 @@ export function buildBootstrapResponse(
   const scopedPartInstances = snapshot.partInstances
     .filter(
       (partInstance) =>
-        scopedSubsystemIds.has(partInstance.subsystemId) &&
-        (!partInstance.mechanismId || scopedMechanismIds.has(partInstance.mechanismId)),
+        scopedSubsystemIds.has(partInstanceSubsystemId(partInstance) ?? "") &&
+        (!partInstanceMechanismId(partInstance) || scopedMechanismIds.has(partInstanceMechanismId(partInstance)!)),
     )
-    .map(normalizePmCadProvenance);
+    .map((partInstance) => ({
+      ...normalizePmCadProvenance(partInstance),
+      readinessStatus: derivePartInstanceReadiness(partInstance, snapshot),
+    }));
   const scopedPartInstanceIds = new Set(
     scopedPartInstances.map((partInstance) => partInstance.id),
   );
@@ -165,7 +154,10 @@ export function buildBootstrapResponse(
     return milestoneProjectIds.length === 0
       ? true
       : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
-  });
+  }).map((milestone) => ({
+    ...milestone,
+    readinessStatus: deriveMilestoneReadiness(milestone, snapshot),
+  }));
   const scopedMeetings = snapshot.meetings.filter((meeting) => {
     const meetingProjectIds = meeting.projectIds ?? [];
     if (
@@ -183,6 +175,10 @@ export function buildBootstrapResponse(
       ? true
       : meetingProjectIds.some((projectId) => activeProjectIds.has(projectId));
   });
+  const scopedEvents = snapshot.events.filter((event) =>
+    (!selectedSeasonId || event.seasonId === selectedSeasonId) &&
+    (event.projectIds.length === 0 || event.projectIds.some((projectId) => activeProjectIds.has(projectId))),
+  );
   const scopedMilestoneIds = new Set(scopedMilestones.map((milestone) => milestone.id));
   const scopedMilestonesById = new Map(scopedMilestones.map((milestone) => [milestone.id, milestone] as const));
   const scopedMilestoneRequirements = (snapshot.milestoneRequirements ?? []).filter((requirement) => {
@@ -190,21 +186,16 @@ export function buildBootstrapResponse(
       return false;
     }
 
-    switch (requirement.targetType) {
-      case "project":
-        return activeProjectIds.has(requirement.targetId);
-      case "subsystem":
-        return scopedSubsystemIds.has(requirement.targetId);
-      case "mechanism":
-        return scopedMechanismIds.has(requirement.targetId);
-      case "artifact":
-        return scopedArtifacts.some((artifact) => artifact.id === requirement.targetId);
-      case "part-instance":
-        return scopedPartInstanceIds.has(requirement.targetId);
-      case "workflow":
-        // Not currently modeled in the seed store; allow requirements through for forward compatibility.
-        return true;
-    }
+    return requirement.targetRefs.length > 0 && requirement.targetRefs.every((ref) => {
+      switch (ref.kind) {
+        case "project": return activeProjectIds.has(ref.id);
+        case "subsystem": return scopedSubsystemIds.has(ref.id);
+        case "mechanism": return scopedMechanismIds.has(ref.id);
+        case "artifact": return scopedArtifacts.some((artifact) => artifact.id === ref.id);
+        case "part-instance": return scopedPartInstanceIds.has(ref.id);
+        default: return true;
+      }
+    });
   });
   const scopedTasks = snapshot.tasks.filter(
     (task) =>
@@ -220,79 +211,31 @@ export function buildBootstrapResponse(
   );
   const scopedPurchaseItems = snapshot.purchaseItems.filter(
     (item) =>
-      scopedSubsystemIds.has(item.subsystemId) &&
-      (selection.personId === null || item.requestedById === selection.personId),
-  );
-  const scopedManufacturingItems = snapshot.manufacturingItems.filter(
-    (item) =>
-      scopedSubsystemIds.has(item.subsystemId) &&
-      (selection.personId === null || item.requestedById === selection.personId),
-  );
-  const scopedManufacturingItemIds = new Set(
-    scopedManufacturingItems.map((item) => item.id),
+      scopedTasksById.has(item.taskId) &&
+      (selection.personId === null || [scopedTasksById.get(item.taskId)?.requestedById, scopedTasksById.get(item.taskId)?.ownerId, ...(scopedTasksById.get(item.taskId)?.assigneeIds ?? [])].includes(selection.personId)),
   );
   const scopedQaReports = snapshot.qaReports.filter((report) => {
-    const task = scopedTasksById.get(report.taskId);
-    return Boolean(task);
+    return activeProjectIds.has(report.projectId);
   });
   const isProjectScoped = selection.projectId !== null;
   const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: ReadonlyData<QaRequest>) => {
-    if (selectedSeasonId && !request.taskId) {
-      return false;
-    }
-
-    const isTaskInScope = request.taskId
-      ? scopedTaskIds.has(request.taskId)
-      : !isProjectScoped;
+    const isTaskInScope = request.targetRefs.some((ref) => ref.kind === "task" && scopedTaskIds.has(ref.id)) || !isProjectScoped;
     const isPersonInScope =
       selection.personId === null ||
       request.mentorId === selection.personId ||
       request.requestedById === selection.personId;
     return isTaskInScope && isPersonInScope;
   });
-  const scopedTestResults = snapshot.testResults.filter((result) => {
-    const milestone = scopedMilestonesById.get(result.milestoneId);
-    return Boolean(milestone);
-  });
+  const scopedTeamReports = snapshot.teamReports.filter((report) => activeProjectIds.has(report.projectId));
+  const scopedTestResults = snapshot.testResults.filter((result) => activeProjectIds.has(result.projectId));
   const scopedReports = buildReports({
     qaReports: scopedQaReports,
-    tasksById: scopedTasksById,
-    testResults: scopedTestResults,
-    milestonesById: scopedMilestonesById,
+    teamReports: scopedTeamReports,
     activeProjectIds,
   });
-  const scopedReportIds = new Set(scopedReports.map((report) => report.id));
-  const scopedReportFindings = buildReportFindings({
-    qaFindings: snapshot.qaFindings,
-    testFindings: snapshot.testFindings,
-    reportIds: scopedReportIds,
-  });
   const scopedRisks = snapshot.risks.filter((risk) => {
-    if (risk.attachmentType === "project" && !activeProjectIds.has(risk.attachmentId)) {
-      return false;
-    }
-
-    if (risk.attachmentType === "workstream" && !scopedWorkstreamIds.has(risk.attachmentId)) {
-      return false;
-    }
-
-    if (risk.attachmentType === "mechanism" && !scopedMechanismIds.has(risk.attachmentId)) {
-      return false;
-    }
-
-    if (risk.attachmentType === "part-instance" && !scopedPartInstanceIds.has(risk.attachmentId)) {
-      return false;
-    }
-
+    if (!activeProjectIds.has(risk.projectId)) return false;
     if (risk.mitigationTaskId && !scopedTaskIds.has(risk.mitigationTaskId)) {
-      return false;
-    }
-
-    if (risk.sourceType === "qa-report" && !scopedReportIds.has(risk.sourceId)) {
-      return false;
-    }
-
-    if (risk.sourceType === "test-result" && !scopedReportIds.has(risk.sourceId)) {
       return false;
     }
 
@@ -327,33 +270,11 @@ export function buildBootstrapResponse(
   const scopedTaskDependencies = snapshot.taskDependencies.filter((dependency) =>
     scopedTaskIds.has(dependency.taskId),
   );
-  const scopedTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
-    scopedTaskIds.has(blocker.blockedTaskId),
-  );
   const scopedSnapshot = {
     ...snapshot,
     tasks: scopedTasks,
     taskDependencies: scopedTaskDependencies,
-    taskBlockers: scopedTaskBlockers,
   } as SnapshotView;
-  const scopedQaReviews = snapshot.qaReviews.filter((review) => {
-    if (review.subjectType === "task") {
-      return scopedTaskIds.has(review.subjectId);
-    }
-
-    return scopedManufacturingItemIds.has(review.subjectId);
-  });
-  const manufacturingQaReviewCounts = new Map<string, number>();
-  for (const review of snapshot.qaReviews) {
-    if (review.subjectType !== "manufacturing") {
-      continue;
-    }
-
-    manufacturingQaReviewCounts.set(
-      review.subjectId,
-      (manufacturingQaReviewCounts.get(review.subjectId) ?? 0) + 1,
-    );
-  }
   const scopedActions = (snapshot.actions ?? [])
     .filter((action) => {
       const actionProjectIds =
@@ -397,29 +318,21 @@ export function buildBootstrapResponse(
   const scopedMaterialIds = new Set(
     [
       ...scopedPartDefinitions.map((partDefinition) => partDefinition.materialId),
-      ...scopedManufacturingItems.map((item) => item.materialId),
+      ...scopedTasks.flatMap((task) => task.manufacturingDetails?.material.kind === "inventory-material" ? [task.manufacturingDetails.material.materialId] : []),
     ].filter((materialId): materialId is string => Boolean(materialId)),
   );
   const scopedMaterials = selectedSeasonId
     ? snapshot.materials.filter((material) => scopedMaterialIds.has(material.id))
     : snapshot.materials;
-  const scopedDisciplineIds = new Set(
-    [
-      ...scopedTasks.map((task) => task.disciplineId),
-      ...scopedMembers.map((member) => member.disciplineId ?? null),
-    ].filter((disciplineId): disciplineId is string => Boolean(disciplineId)),
-  );
-  const scopedDisciplines = selectedSeasonId
-    ? snapshot.disciplines.filter((discipline) => scopedDisciplineIds.has(discipline.id))
-    : snapshot.disciplines;
-
   return {
     seasons: scopedSeasons,
     projects: seasonScopedProjects,
+    workTypes: scopedWorkTypes,
+    responsibleGroups: scopedResponsibleGroups,
     workstreams: scopedWorkstreams,
+    vendors: snapshot.vendors,
     members: scopedMembers,
     subsystems: scopedSubsystems,
-    disciplines: scopedDisciplines,
     mechanisms: scopedMechanisms,
     materials: scopedMaterials,
     artifacts: scopedArtifacts,
@@ -428,30 +341,50 @@ export function buildBootstrapResponse(
     milestones: scopedMilestones,
     milestoneRequirements: scopedMilestoneRequirements as MilestoneRequirement[],
     reports: scopedReports,
-    reportFindings: scopedReportFindings,
-    qaReports: scopedQaReports,
     qaRequests: scopedQaRequests,
+    qaFindings: snapshot.qaFindings.filter((finding) => activeProjectIds.has(finding.projectId)),
     testResults: scopedTestResults,
+    testFindings: snapshot.testFindings.filter((finding) => activeProjectIds.has(finding.projectId)),
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({
-      ...task,
-      isBlocked: scopedTaskBlockers.some(
-        (blocker) => blocker.blockedTaskId === task.id && blocker.status === "open",
-      ),
-      isWaitingOnDependency: isTaskWaitingOnDependencies(task, scopedSnapshot),
-    })),
+        id: task.id,
+        ...(task.createdAt ? { createdAt: task.createdAt } : {}),
+        ...(task.serialNumber !== undefined ? { serialNumber: task.serialNumber } : {}),
+        ...(task.serial !== undefined ? { serial: task.serial } : {}),
+        projectId: task.projectId,
+        workTypeId: task.workTypeId,
+        responsibleGroupId: task.responsibleGroupId,
+        workstreamIds: task.workstreamIds,
+        title: task.title,
+        summary: task.summary,
+        ...(task.photoUrl !== undefined ? { photoUrl: task.photoUrl } : {}),
+        subsystemIds: task.subsystemIds,
+        mechanismIds: task.mechanismIds,
+        partInstanceIds: task.partInstanceIds,
+        scheduleRefs: task.scheduleRefs,
+        requestedById: task.requestedById,
+        ownerId: task.ownerId,
+        assigneeIds: task.assigneeIds,
+        mentorId: task.mentorId,
+        startDate: task.startDate,
+        dueDate: task.dueDate,
+        priority: task.priority,
+        status: task.status,
+        checklistItems: task.checklistItems,
+        estimatedHours: task.estimatedHours,
+        actualHours: task.actualHours,
+        requiresDocumentation: task.requiresDocumentation,
+        manufacturingDetails: task.manufacturingDetails,
+        isBlocked: task.isBlocked ?? false,
+        isWaitingOnDependency: isTaskWaitingOnDependencies(task, scopedSnapshot),
+      })),
     taskDependencies: scopedTaskDependencies,
-    taskBlockers: scopedTaskBlockers,
     workLogs: scopedWorkLogs,
     meetings: scopedMeetings,
+    events: scopedEvents,
     attendanceRecords: scopedAttendanceRecords,
-    manufacturingItems: scopedManufacturingItems.map((item) => ({
-      ...item,
-      qaReviewCount: manufacturingQaReviewCounts.get(item.id) ?? 0,
-    })),
+    manufacturingProcesses: snapshot.manufacturingProcesses,
     purchaseItems: scopedPurchaseItems,
-    qaReviews: scopedQaReviews,
-    escalations: options.sanitizeEscalations ? [] : snapshot.escalations,
     actions: scopedActions as ReadonlyData<AuditAction[]>,
   };
 }

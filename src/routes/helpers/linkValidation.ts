@@ -1,24 +1,19 @@
+import { validateTaskPeople as taskPeopleError } from "../../domain/taskLinks";
 import {
-  findArtifact,
-  findDiscipline,
-  findMilestone,
   findMaterial,
   findMechanism,
   findPartDefinition,
-  findPartInstance,
   findProject,
   findSubsystem,
-  findWorkstream,
-  getMilestones,
   getMembers,
-  getQaReports,
-  getRisks,
+  getReports,
   getTasks,
-  getTestResults,
+  getSnapshot,
 } from "../../data/store";
-import { isTaskDisciplineAllowedForProject } from "../../domain/taskDisciplines";
 import { uniqueIds } from "../../domain/ids";
 import { isActiveInSeason } from "../../domain/seasonMembership";
+import { partInstanceMechanismId, partInstanceSubsystemId } from "../../domain/partInstanceLocation";
+import type { PartInstance, PurchaseItem } from "../../domain/types";
 
 function taskParticipantLinksError(taskId: string, participantIds: readonly string[]) {
   if (!getTasks().some((task) => task.id === taskId)) {
@@ -39,38 +34,56 @@ export function validateWorkLogLinks(input: {
   return taskParticipantLinksError(input.taskId, input.participantIds);
 }
 
-export function validateQaReportLinks(input: {
-  targetRiskId?: string | null;
-  proposedRiskSeverity?: string | null;
-  proposedRiskStatus?: string | null;
-  taskId: string;
-  participantIds: readonly string[];
-}) {
-  const linkError = taskParticipantLinksError(input.taskId, input.participantIds);
-  if (linkError) {
-    return linkError;
-  }
-
-  if ((input.proposedRiskSeverity || input.proposedRiskStatus) && !input.targetRiskId) {
-    return "A risk reassessment requires a target risk.";
-  }
-  if (input.targetRiskId && !getRisks().some((risk) => risk.id === input.targetRiskId)) {
-    return "The selected risk does not exist.";
+function validateTargetReferences(targetRefs: readonly { kind: string; id: string }[] = []) {
+  const snapshot = getSnapshot();
+  const collections: Record<string, readonly { id: string }[]> = {
+    project: snapshot.projects, workstream: snapshot.workstreams, "responsible-group": snapshot.responsibleGroups,
+    task: snapshot.tasks, subsystem: snapshot.subsystems, mechanism: snapshot.mechanisms,
+    "part-definition": snapshot.partDefinitions, "part-instance": snapshot.partInstances, material: snapshot.materials,
+    vendor: snapshot.vendors, "manufacturing-details": snapshot.tasks.filter((task) => task.manufacturingDetails),
+    "purchase-item": snapshot.purchaseItems, meeting: snapshot.meetings, event: snapshot.events,
+    milestone: snapshot.milestones, "qa-request": snapshot.qaRequests ?? [], "test-result": snapshot.testResults,
+    report: [...snapshot.qaReports.map(({ id }) => ({ id })), ...snapshot.testResults.map(({ id }) => ({ id }))],
+    artifact: snapshot.artifacts, "qa-finding": snapshot.qaFindings, "test-finding": snapshot.testFindings,
+    "task-dependency": snapshot.taskDependencies, risk: snapshot.risks, "design-iteration": snapshot.designIterations,
+  };
+  for (const target of targetRefs) {
+    if (!collections[target.kind]?.some((record) => record.id === target.id)) {
+      return `The selected ${target.kind} target does not exist.`;
+    }
   }
   return null;
 }
 
+export function validateQaReportLinks(input: {
+  targetRefs?: readonly { kind: string; id: string }[];
+  taskId?: string;
+  participantIds: readonly string[];
+}) {
+  const linkError = input.taskId
+    ? taskParticipantLinksError(input.taskId, input.participantIds)
+    : input.participantIds.some((id) => !getMembers().some((member) => member.id === id))
+      ? "One or more selected participants do not exist."
+      : null;
+  if (linkError) {
+    return linkError;
+  }
+  const targetError = validateTargetReferences(input.targetRefs);
+  if (targetError) return targetError;
+
+  return null;
+}
+
 export function validateQaRequestLinks(input: {
-  taskId?: string | null;
-  mentorId: string;
+  projectId?: string;
+  targetRefs?: readonly { kind: string; id: string }[];
+  mentorId?: string | null;
   requestedById?: string | null;
 }) {
-  if (input.taskId && !getTasks().some((task) => task.id === input.taskId)) {
-    return "The selected task does not exist.";
-  }
-
+  const targetError = validateTargetReferences(input.targetRefs);
+  if (targetError) return targetError;
   const memberIds = new Set(getMembers().map((member) => member.id));
-  if (!memberIds.has(input.mentorId)) {
+  if (input.mentorId && !memberIds.has(input.mentorId)) {
     return "The selected mentor does not exist.";
   }
 
@@ -81,259 +94,95 @@ export function validateQaRequestLinks(input: {
   return null;
 }
 
-export function validateTestResultLinks(input: { milestoneId: string }) {
-  if (!findMilestone(input.milestoneId)) {
-    return "The selected milestone does not exist.";
-  }
-
-  return null;
+export function validateTestResultLinks(input: { projectId: string; targetRefs: readonly { kind: string; id: string }[] }) {
+  const targetError = validateTargetReferences(input.targetRefs);
+  if (targetError) return targetError;
+  return getSnapshot().projects.some((project) => project.id === input.projectId) ? null : "The selected project does not exist.";
 }
 
 export function validateRiskLinks(input: {
-  sourceType: "qa-report" | "test-result";
-  sourceId: string;
-  attachmentType: "project" | "workstream" | "mechanism" | "part-instance";
-  attachmentId: string;
-  mitigationTaskId?: string | null;
-}) {
-  if (input.sourceType === "qa-report") {
-    const qaReportExists = getQaReports().some((report) => report.id === input.sourceId);
-    if (!qaReportExists) {
-      return "The selected QA report does not exist.";
-    }
-  } else {
-    const testResultExists = getTestResults().some(
-      (testResult) => testResult.id === input.sourceId,
-    );
-    if (!testResultExists) {
-      return "The selected test result does not exist.";
-    }
-  }
-
-  switch (input.attachmentType) {
-    case "project":
-      if (!findProject(input.attachmentId)) {
-        return "The selected project does not exist.";
-      }
-      break;
-    case "workstream":
-      if (!findWorkstream(input.attachmentId)) {
-        return "The selected workstream does not exist.";
-      }
-      break;
-    case "mechanism":
-      if (!findMechanism(input.attachmentId)) {
-        return "The selected mechanism does not exist.";
-      }
-      break;
-    case "part-instance":
-      if (!findPartInstance(input.attachmentId)) {
-        return "The selected part instance does not exist.";
-      }
-      break;
-    default:
-      return "The selected attachment type is invalid.";
-  }
-
-  if (input.mitigationTaskId && !getTasks().some((task) => task.id === input.mitigationTaskId)) {
-    return "The selected mitigation task does not exist.";
-  }
-
-  return null;
-}
-
-export function validateTaskLinks(input: {
   projectId: string;
-  workstreamIds?: readonly string[];
-  subsystemIds: readonly string[];
-  disciplineId?: string;
-  mechanismIds?: readonly string[];
-  partInstanceIds?: readonly string[];
-  artifactIds?: readonly string[];
-  targetMilestoneId?: string | null;
-  assigneeIds?: readonly string[];
+  source: { kind: string; id?: string };
+  relatedTargets: readonly { kind: string; id: string }[];
+  mitigationTaskId?: string | null;
+  ownerGroupId?: string | null;
+  ownerMemberId?: string | null;
 }) {
-  const project = findProject(input.projectId);
-  if (!project) {
-    return "The selected project does not exist.";
+  const snapshot = getSnapshot();
+  if (!snapshot.projects.some((project) => project.id === input.projectId)) return "The selected project does not exist.";
+  if (input.source.kind !== "manual") {
+    const sourceExists = input.source.kind === "manufacturing-details"
+      ? snapshot.tasks.some((task) => task.id === input.source.id && task.manufacturingDetails !== null)
+      : input.source.kind === "report"
+        ? getReports().some((report) => report.id === input.source.id)
+        : input.source.kind === "task-dependency"
+          ? snapshot.taskDependencies.some((record) => record.id === input.source.id)
+          : input.source.kind === "qa-finding"
+            ? snapshot.qaFindings.some((record) => record.id === input.source.id)
+            : input.source.kind === "test-finding"
+              ? snapshot.testFindings.some((record) => record.id === input.source.id)
+              : input.source.kind === "qa-request"
+                ? snapshot.qaRequests?.some((record) => record.id === input.source.id)
+                : input.source.kind === "test-result"
+                  ? snapshot.testResults.some((record) => record.id === input.source.id)
+                  : input.source.kind === "event"
+                    ? snapshot.events.some((record) => record.id === input.source.id)
+                    : input.source.kind === "milestone"
+                      ? snapshot.milestones.some((record) => record.id === input.source.id)
+                      : input.source.kind === "part-instance"
+                        ? snapshot.partInstances.some((record) => record.id === input.source.id)
+                        : input.source.kind === "material"
+                          ? snapshot.materials.some((record) => record.id === input.source.id)
+                          : snapshot.tasks.some((record) => record.id === input.source.id);
+    if (!sourceExists) return `The selected ${input.source.kind} source does not exist.`;
   }
-
-  const workstreamIds = input.workstreamIds ?? [];
-  for (const workstreamId of workstreamIds) {
-    const workstream = findWorkstream(workstreamId);
-    if (!workstream) {
-      return "The selected workstream does not exist.";
-    }
-
-    if (workstream.projectId !== project.id) {
-      return "The selected workstream does not belong to the selected project.";
-    }
+  const collections: Record<string, readonly { id: string }[]> = {
+    project: snapshot.projects, workstream: snapshot.workstreams, "responsible-group": snapshot.responsibleGroups,
+    task: snapshot.tasks, subsystem: snapshot.subsystems, mechanism: snapshot.mechanisms,
+    "part-definition": snapshot.partDefinitions, "part-instance": snapshot.partInstances, material: snapshot.materials,
+    vendor: snapshot.vendors, "manufacturing-details": snapshot.tasks, "purchase-item": snapshot.purchaseItems,
+    meeting: snapshot.meetings, event: snapshot.events, milestone: snapshot.milestones,
+    "qa-request": snapshot.qaRequests ?? [], "test-result": snapshot.testResults, report: getReports(),
+    artifact: snapshot.artifacts, "qa-finding": snapshot.qaFindings, "test-finding": snapshot.testFindings,
+    "task-dependency": snapshot.taskDependencies, risk: snapshot.risks, "design-iteration": snapshot.designIterations,
+  };
+  for (const target of input.relatedTargets) {
+    if (!collections[target.kind]?.some((record) => record.id === target.id)) return `The selected ${target.kind} target does not exist.`;
   }
-
-  const subsystemIds = input.subsystemIds ?? [];
-  if (subsystemIds.length === 0) {
-    return "Select at least one subsystem, mechanism, or part instance target.";
-  }
-  for (const subsystemId of subsystemIds) {
-    const subsystem = findSubsystem(subsystemId);
-    if (!subsystem) {
-      return "The selected subsystem does not exist.";
-    }
-    if (subsystem.projectId !== project.id) {
-      return "The selected subsystem does not belong to the selected project.";
-    }
-  }
-
-  if (input.disciplineId) {
-    const discipline = findDiscipline(input.disciplineId);
-    if (!discipline) {
-      return "The selected discipline does not exist.";
-    }
-
-    if (!isTaskDisciplineAllowedForProject(project, discipline.id)) {
-      return "The selected discipline does not belong to the selected project.";
-    }
-  }
-
-  const mechanismIds = input.mechanismIds ?? [];
-  for (const mechanismId of mechanismIds) {
-    const mechanism = findMechanism(mechanismId);
-    if (!mechanism) {
-      return "The selected mechanism does not exist.";
-    }
-
-    if (!subsystemIds.includes(mechanism.subsystemId)) {
-      return "One or more selected mechanisms do not belong to a selected subsystem.";
-    }
-  }
-
-  const partInstanceIds = input.partInstanceIds ?? [];
-  for (const partInstanceId of partInstanceIds) {
-    const partInstance = findPartInstance(partInstanceId);
-    if (!partInstance) {
-      return "The selected part instance does not exist.";
-    }
-
-    if (!subsystemIds.includes(partInstance.subsystemId)) {
-      return "One or more selected part instances do not belong to a selected subsystem.";
-    }
-
-    if (!partInstance.mechanismId) {
-      return "The selected part instance must be linked to a mechanism.";
-    }
-
-    if (!mechanismIds.includes(partInstance.mechanismId)) {
-      return "One or more selected part instances do not belong to a selected mechanism.";
-    }
-  }
-
-  const artifactIds = input.artifactIds ?? [];
-  for (const artifactId of artifactIds) {
-    const artifact = findArtifact(artifactId);
-    if (!artifact) {
-      return "The selected artifact does not exist.";
-    }
-
-    if (artifact.projectId !== project.id) {
-      return "The selected artifact does not belong to the selected project.";
-    }
-  }
-
-  if (input.targetMilestoneId) {
-    const milestone = getMilestones().find((candidate) => candidate.id === input.targetMilestoneId);
-    if (!milestone) {
-      return "The selected milestone does not exist.";
-    }
-  }
-
-  if (input.assigneeIds && input.assigneeIds.length > 0) {
-    const membersById = new Map(getMembers().map((member) => [member.id, member]));
-    for (const assigneeId of input.assigneeIds) {
-      const assignee = membersById.get(assigneeId);
-      if (!assignee) {
-        return "One or more assigned students do not exist.";
-      }
-
-      if (assignee.role !== "student" && assignee.role !== "lead") {
-        return "Assigned task members must be students or leads.";
-      }
-    }
-  }
-
+  if (input.mitigationTaskId && !snapshot.tasks.some((task) => task.id === input.mitigationTaskId && task.projectId === input.projectId)) return "The selected mitigation task does not exist in this project.";
+  if (input.ownerGroupId && !snapshot.responsibleGroups.some((group) => group.id === input.ownerGroupId)) return "The selected responsible group does not exist.";
+  if (input.ownerMemberId && !snapshot.members.some((member) => member.id === input.ownerMemberId)) return "The selected risk owner does not exist.";
   return null;
 }
 
-export function validateTaskBlockerLinks(input: {
-  blockedTaskId: string;
-  blockerType:
-    | "task"
-    | "milestone"
-    | "workstream"
-    | "mechanism"
-    | "part_instance"
-    | "artifact_instance"
-    | "external";
-  blockerId: string | null;
-}) {
-  if (!getTasks().some((task) => task.id === input.blockedTaskId)) {
-    return "The selected blocked task does not exist.";
-  }
-
-  if (input.blockerType === "external") {
-    return input.blockerId === null ? null : "External blockers cannot link to another record.";
-  }
-
-  if (!input.blockerId) {
-    return "The selected blocker record does not exist.";
-  }
-
-  switch (input.blockerType) {
-    case "task":
-      return getTasks().some((task) => task.id === input.blockerId)
-        ? null
-        : "The selected blocker task does not exist.";
-    case "milestone":
-      return findMilestone(input.blockerId)
-        ? null
-        : "The selected blocker milestone does not exist.";
-    case "workstream":
-      return findWorkstream(input.blockerId)
-        ? null
-        : "The selected blocker workstream does not exist.";
-    case "mechanism":
-      return findMechanism(input.blockerId)
-        ? null
-        : "The selected blocker mechanism does not exist.";
-    case "part_instance":
-      return findPartInstance(input.blockerId)
-        ? null
-        : "The selected blocker part instance does not exist.";
-    case "artifact_instance":
-      return findArtifact(input.blockerId)
-        ? null
-        : "The selected blocker artifact does not exist.";
-    default:
-      return "The selected blocker type is invalid.";
-  }
+export function validateTaskPeople(input: Parameters<typeof taskPeopleError>[1]) {
+  return taskPeopleError(getSnapshot(), input);
 }
+
 
 export function validateArtifactLinks(input: {
   projectId: string;
-  workstreamId?: string | null | undefined;
+  targetRefs?: readonly { kind: string; id: string }[];
 }) {
   const project = findProject(input.projectId);
   if (!project) {
     return "The selected project does not exist.";
   }
 
-  if (input.workstreamId) {
-    const workstream = findWorkstream(input.workstreamId);
-    if (!workstream) {
-      return "The selected workstream does not exist.";
-    }
-
-    if (workstream.projectId !== project.id) {
-      return "The selected workstream does not belong to the selected project.";
+  const snapshot = getSnapshot();
+  const collections: Record<string, readonly { id: string }[]> = {
+    project: snapshot.projects, workstream: snapshot.workstreams, "responsible-group": snapshot.responsibleGroups,
+    task: snapshot.tasks, subsystem: snapshot.subsystems, mechanism: snapshot.mechanisms,
+    "part-definition": snapshot.partDefinitions, "part-instance": snapshot.partInstances,
+    material: snapshot.materials, vendor: snapshot.vendors, "manufacturing-details": snapshot.tasks,
+    "purchase-item": snapshot.purchaseItems, meeting: snapshot.meetings, event: snapshot.events,
+    milestone: snapshot.milestones, "qa-request": snapshot.qaRequests ?? [], "test-result": snapshot.testResults,
+    artifact: snapshot.artifacts, "qa-finding": snapshot.qaFindings, "test-finding": snapshot.testFindings,
+    "task-dependency": snapshot.taskDependencies, risk: snapshot.risks, "design-iteration": snapshot.designIterations,
+  };
+  for (const target of input.targetRefs ?? []) {
+    if (!collections[target.kind]?.some((record) => record.id === target.id)) {
+      return `The selected ${target.kind} target does not exist.`;
     }
   }
 
@@ -364,22 +213,17 @@ export function validatePartDefinitionMaterialId(materialId: string | null | und
   return null;
 }
 
-export function validatePartInstanceLinks(input: {
-  subsystemId: string;
-  mechanismId?: string | null | undefined;
-  partDefinitionId: string;
-}) {
-  if (!findSubsystem(input.subsystemId)) {
-    return "The selected subsystem does not exist.";
-  }
-
-  if (input.mechanismId) {
-    const mechanism = findMechanism(input.mechanismId);
+export function validatePartInstanceLinks(input: Pick<PartInstance, "location" | "intendedSubsystemId" | "intendedMechanismId" | "partDefinitionId">) {
+  const subsystemId = input.location.kind === "installed" ? input.location.subsystemId : input.intendedSubsystemId;
+  const mechanismId = input.location.kind === "installed" ? input.location.mechanismId : input.intendedMechanismId;
+  if (subsystemId && !findSubsystem(subsystemId)) return "The selected subsystem does not exist.";
+  if (mechanismId) {
+    const mechanism = findMechanism(mechanismId);
     if (!mechanism) {
       return "The selected mechanism does not exist.";
     }
 
-    if (mechanism.subsystemId !== input.subsystemId) {
+    if (mechanism.subsystemId !== subsystemId) {
       return "The selected mechanism does not belong to the selected subsystem.";
     }
   }
@@ -387,78 +231,21 @@ export function validatePartInstanceLinks(input: {
   return validatePartDefinitionLink(input.partDefinitionId);
 }
 
-export function validatePurchaseItemLinks(input: {
-  subsystemId: string;
-  partDefinitionId?: string | null | undefined;
-}) {
-  if (!findSubsystem(input.subsystemId)) {
-    return "The selected subsystem does not exist.";
+export function validatePurchaseItemLinks(input: { taskId: string; kind: PurchaseItem["kind"]; partDefinitionId: string | null; materialId: string | null; quotes: readonly Pick<PurchaseItem["quotes"][number], "id" | "vendorId">[]; selectedQuoteId: string | null }) {
+  const snapshot = getSnapshot();
+  const task = snapshot.tasks.find((candidate) => candidate.id === input.taskId);
+  if (!task) return "The associated procurement task does not exist.";
+  if (input.kind === "cots-goods" && task.manufacturingDetails) return "COTS purchasing tasks cannot carry ManufacturingDetails.";
+  if (input.kind === "manufacturing-service") {
+    const workType = snapshot.workTypes.find((candidate) => candidate.id === task.workTypeId);
+    const project = snapshot.projects.find((candidate) => candidate.id === task.projectId);
+    if (!task.manufacturingDetails || task.manufacturingDetails.fulfillmentSource !== "outsourced" || project?.projectType !== "robot" || workType?.projectType !== "robot" || workType.code !== "manufacturing") return "Manufacturing service purchases must link to an outsourced Robot manufacturing task.";
   }
-
-  if (!input.partDefinitionId) {
-    return null;
-  }
-
-  return validatePartDefinitionLink(input.partDefinitionId);
-}
-
-export function resolveManufacturingItem(input: {
-  subsystemId: string;
-  process: string;
-  title: string;
-  materialId?: string | null;
-  partDefinitionId?: string | null | undefined;
-  partInstanceId?: string | null | undefined;
-  partInstanceIds?: readonly string[];
-}, fallbackMaterialId: string | null = null):
-  { error: string } | { materialId: string | null; title: string } {
-  if (!findSubsystem(input.subsystemId)) {
-    return { error: "The selected subsystem does not exist." };
-  }
-
-  const partDefinition = input.partDefinitionId
-    ? findPartDefinition(input.partDefinitionId)
-    : null;
-  if (input.partDefinitionId && !partDefinition) {
-    return { error: "Please select a real part from the Parts tab." };
-  }
-
-  const partInstanceIds = uniqueIds([
-    ...(input.partInstanceIds ?? []),
-    input.partInstanceId,
-  ]);
-  for (const partInstanceId of partInstanceIds) {
-    const partInstance = findPartInstance(partInstanceId);
-    if (!partInstance) {
-      return { error: "The selected part instance does not exist." };
-    }
-
-    if (
-      input.partDefinitionId &&
-      partInstance.partDefinitionId !== input.partDefinitionId
-    ) {
-      return { error: "The selected part instance does not match the selected part definition." };
-    }
-  }
-
-  if (
-    partDefinition &&
-    input.materialId !== undefined &&
-    input.materialId !== (partDefinition.materialId ?? null)
-  ) {
-    return { error: "The selected material does not match the selected part." };
-  }
-  const requestedMaterialId = input.materialId === undefined ? fallbackMaterialId : input.materialId;
-  const materialId = partDefinition ? partDefinition.materialId ?? null : requestedMaterialId;
-  const materialError = validatePartDefinitionMaterialId(materialId);
-  if (materialError) {
-    return { error: materialError };
-  }
-
-  return {
-    materialId,
-    title: input.process === "fabrication" || !partDefinition ? input.title : partDefinition.name,
-  };
+  if (input.partDefinitionId && !snapshot.partDefinitions.some((part) => part.id === input.partDefinitionId)) return "The selected part definition does not exist.";
+  if (input.materialId && !snapshot.materials.some((material) => material.id === input.materialId)) return "The selected material does not exist.";
+  if (input.quotes.some((quote) => !snapshot.vendors.some((vendor) => vendor.id === quote.vendorId))) return "Every quote must reference an existing vendor.";
+  if (input.selectedQuoteId && !input.quotes.some((quote) => quote.id === input.selectedQuoteId)) return "The selected quote does not exist on this purchase item.";
+  return null;
 }
 
 export function validateSubsystemPeople(input: {

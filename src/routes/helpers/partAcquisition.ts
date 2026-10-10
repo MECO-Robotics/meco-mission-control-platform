@@ -4,7 +4,7 @@ import {
   type PartAcquisitionPlan, type PartDefinitionInput,
 } from "../../data/store";
 import type { partDefinitionSchema } from "../routeSchemas";
-import { validatePartDefinitionMaterialId, validateSubsystemPeople, validateTaskLinks } from "./linkValidation";
+import { validatePartDefinitionMaterialId, validateSubsystemPeople, validateTaskPeople } from "./linkValidation";
 import { uniqueIds } from "../../domain/ids";
 import { normalizeTaskTargets } from "./taskTargets";
 
@@ -35,16 +35,13 @@ export function preparePartAcquisition(
   if (definition.isArchived) {
     return { error: "Archived part definitions cannot start acquisition work." };
   }
-  if (definition.source.length < 2) {
-    return { error: "Acquisition source must contain at least two characters." };
-  }
   const owner = getMembers().find((member) => member.id === acquisition.ownerId);
   const mentor = getMembers().find((member) => member.id === acquisition.mentorId);
-  if (!owner || owner.role === "external") {
-    return { error: "Select an internal roster member as the acquisition owner." };
+  if (!owner || (owner.role !== "student" && owner.role !== "lead")) {
+    return { error: "Select a student or lead as the acquisition owner." };
   }
-  if (!mentor || (mentor.role !== "mentor" && mentor.role !== "admin")) {
-    return { error: "Select a mentor or admin as the acquisition mentor." };
+  if (!mentor || mentor.role !== "mentor") {
+    return { error: "Select a mentor as the acquisition mentor." };
   }
   const peopleError = validateSubsystemPeople({
     projectId: project.id,
@@ -54,6 +51,8 @@ export function preparePartAcquisition(
   if (peopleError) {
     return { error: peopleError };
   }
+  const taskPeopleError = validateTaskPeople({ ownerId: owner.id, mentorId: mentor.id });
+  if (taskPeopleError) return { error: taskPeopleError };
   const targets = normalizeTaskTargets({ subsystemIds: [subsystem.id] });
   const task = {
     ...targets,
@@ -62,25 +61,30 @@ export function preparePartAcquisition(
     summary: acquisition.method === "manufacture"
       ? `Manufacture ${definition.name} and move it through QA.`
       : `Purchase ${definition.name} and confirm it is ready for installation.`,
-    disciplineId: acquisition.disciplineId,
+    workTypeId: acquisition.workTypeId,
+    responsibleGroupId: null,
+    requestedById: actorMemberId,
+    scheduleRefs: [],
+    manufacturingDetails: acquisition.method === "manufacture" ? {
+      part: { kind: "part-definition" as const, partDefinitionId: "" },
+      quantity: 1,
+      processId: "cnc",
+      fulfillmentSource: acquisition.method === "manufacture" ? acquisition.fulfillmentSource : "in-house",
+      material: definition.materialId ? { kind: "inventory-material" as const, materialId: definition.materialId } : { kind: "specified-material" as const, name: definition.type },
+      fileArtifactIds: [],
+      tolerances: [],
+      qaRequirements: [],
+    } : null,
     ownerId: owner.id,
     assigneeIds: [],
     mentorId: mentor.id,
-    targetMilestoneId: null,
     startDate: acquisition.dueDate,
     dueDate: acquisition.dueDate,
     priority: "medium" as const,
     status: "not-started" as const,
-    linkedManufacturingIds: [],
-    linkedPurchaseIds: [],
     estimatedHours: 0,
     requiresDocumentation: false,
-    documentationLinked: false,
   };
-  const taskError = validateTaskLinks(task);
-  if (taskError) {
-    return { error: taskError };
-  }
   return {
     definition: { ...definition, seasonId, activeSeasonIds },
     plan: { method: acquisition.method, requestedById: actorMemberId, task },

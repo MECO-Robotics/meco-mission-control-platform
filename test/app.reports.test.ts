@@ -7,6 +7,7 @@ import {
 } from "../src/routes/helpers/rosterInsightsMemberMetrics";
 import { buildRosterInsights } from "../src/routes/helpers/rosterInsights";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { getSnapshot } from "../src/data/store";
 
 test("parseDateValue rejects invalid calendar YYYY-MM-DD values", () => {
   const validDate = parseDateValue("2026-02-28");
@@ -30,7 +31,6 @@ test("buildMemberInsights includes same-day timestamps and excludes future atten
           id: "ava",
           name: "Ava",
           role: "student",
-          disciplineId: "design",
         },
       ],
       projects: [],
@@ -57,7 +57,6 @@ test("buildMemberInsights includes same-day timestamps and excludes future atten
       ],
     },
     openTasks: [],
-    openTaskBlockerIds: new Set<string>(),
     projectsById: new Map(),
     day7Start: new Date("2026-04-24T00:00:00Z"),
     day14Start: new Date("2026-04-17T00:00:00Z"),
@@ -87,7 +86,6 @@ test("buildRosterInsights includes same-day timestamps and excludes future atten
         id: "ava",
         name: "Ava",
         role: "student",
-        disciplineId: "design",
       },
     ],
     projects: [],
@@ -134,7 +132,6 @@ test("buildRosterInsights bases availability on planned weekly attendance", () =
         id: "ava",
         name: "Ava",
         role: "student",
-        disciplineId: "design",
         plannedWeeklyAttendanceHours: 6,
         plannedAttendanceDays: ["monday", "wednesday"],
         plannedAttendanceNotes: "Expected for build nights.",
@@ -143,7 +140,6 @@ test("buildRosterInsights bases availability on planned weekly attendance", () =
         id: "ben",
         name: "Ben",
         role: "student",
-        disciplineId: "programming",
         plannedWeeklyAttendanceHours: 0,
         plannedAttendanceDays: [],
       },
@@ -195,215 +191,38 @@ test("buildRosterInsights bases availability on planned weekly attendance", () =
   assert.equal(response.summary.noPlannedAttendanceWithTasksCount, 1);
 });
 
-test("qa report and milestone report endpoints support create flows with link validation", async () => {
+test("QA reports, requests and TestResults use typed targets without duplicate scalar links", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const qaReportCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/qa-reports",
-      payload: {
-        taskId: "swerve-sensor-bundle",
-        participantIds: ["ava", "marco", "ava"],
-        result: "minor-fix",
-        mentorApproved: false,
-        notes: "  QA report from web form  ",
-        reviewedAt: "2026-04-25",
-        photoUrl: "https://cdn.example.test/forms/qa-report.png",
-      },
-    });
-
-    assert.equal(qaReportCreateResponse.statusCode, 201);
-    const qaReportCreatedBody = qaReportCreateResponse.json() as {
-      item: {
-        id: string;
-        mentorApproved: boolean;
-        notes: string;
-        participantIds: string[];
-        result: string;
-        reviewedAt: string;
-        taskId: string;
-        photoUrl: string;
-      };
-    };
-    assert.equal(qaReportCreatedBody.item.taskId, "swerve-sensor-bundle");
-    assert.deepEqual(qaReportCreatedBody.item.participantIds, ["ava", "marco"]);
-    assert.equal(qaReportCreatedBody.item.result, "minor-fix");
-    assert.equal(qaReportCreatedBody.item.mentorApproved, false);
-    assert.equal(qaReportCreatedBody.item.notes, "QA report from web form");
-    assert.equal(qaReportCreatedBody.item.reviewedAt, "2026-04-25");
-    assert.equal(
-      qaReportCreatedBody.item.photoUrl,
-      "https://cdn.example.test/forms/qa-report.png",
-    );
+    const projectId = "project-robot-2026";
+    const qaResponse = await app.inject({ method: "POST", url: "/api/qa-reports", payload: {
+      reportType: "qa", projectId, targetRefs: [{ kind: "project", id: projectId }],
+      createdByMemberId: "ava", participantIds: ["ava", "marco", "ava"], mentorId: null, requestedById: "ava",
+      result: "minor-fix", summary: "QA review", notes: "QA report from web form", evidenceNotes: "Observed frame movement",
+      createdAt: "2026-04-25T12:00:00Z", status: "submitted", reviewedById: null, reviewedAt: null,
+      photoUrl: "https://cdn.example.test/forms/qa-report.png",
+    } });
+    assert.equal(qaResponse.statusCode, 201, qaResponse.body);
+    const qa = qaResponse.json().item;
+    assert.deepEqual(qa.targetRefs, [{ kind: "project", id: projectId }]);
+    assert.equal("taskId" in qa, false);
+    assert.equal(qa.participantIds.length, 2);
 
     resetLimits();
-
-    const qaReportInvalidTaskResponse = await app.inject({
-      method: "POST",
-      url: "/api/qa-reports",
-      payload: {
-        taskId: "missing-task",
-        participantIds: ["ava"],
-        result: "pass",
-        mentorApproved: true,
-        notes: "Invalid task linkage",
-        reviewedAt: "2026-04-25",
-      },
-    });
-
-    assert.equal(qaReportInvalidTaskResponse.statusCode, 400);
-    assert.equal(
-      qaReportInvalidTaskResponse.json().message,
-      "The selected task does not exist.",
-    );
+    const requestResponse = await app.inject({ method: "POST", url: "/api/qa-requests", payload: {
+      projectId, targetRefs: [{ kind: "project", id: projectId }], subject: "Project QA", mentorId: null, requestedById: "ava",
+    } });
+    assert.equal(requestResponse.statusCode, 201, requestResponse.body);
+    assert.equal("taskId" in requestResponse.json().item, false);
+    assert.equal(requestResponse.json().item.mentorId, null);
 
     resetLimits();
-
-    const qaRequestCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/qa-requests",
-      payload: {
-        taskId: "swerve-sensor-bundle",
-        subject: "Swerve sensor QA",
-        mentorId: "marco",
-        requestedById: "ava",
-      },
-    });
-
-    assert.equal(qaRequestCreateResponse.statusCode, 201);
-    const qaRequestCreatedBody = qaRequestCreateResponse.json() as {
-      item: {
-        id: string;
-        mentorId: string;
-        requestedById: string | null;
-        status: string;
-        subject: string;
-        taskId: string | null;
-      };
-    };
-    assert.equal(qaRequestCreatedBody.item.taskId, "swerve-sensor-bundle");
-    assert.equal(qaRequestCreatedBody.item.subject, "Swerve sensor QA");
-    assert.equal(qaRequestCreatedBody.item.mentorId, "marco");
-    assert.equal(qaRequestCreatedBody.item.requestedById, "ava");
-    assert.equal(qaRequestCreatedBody.item.status, "requested");
-
-    resetLimits();
-
-    const tasklessQaRequestCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/qa-requests",
-      payload: {
-        taskId: null,
-        subject: "General pit QA",
-        mentorId: "marco",
-        requestedById: "ava",
-      },
-    });
-
-    assert.equal(tasklessQaRequestCreateResponse.statusCode, 201);
-    const tasklessQaRequestCreatedBody = tasklessQaRequestCreateResponse.json() as {
-      item: {
-        id: string;
-        taskId: string | null;
-      };
-    };
-    assert.equal(tasklessQaRequestCreatedBody.item.taskId, null);
-
-    resetLimits();
-
-    const bootstrapResponse = await app.inject({
-      method: "GET",
-      url: "/api/bootstrap?projectId=project-robot-2026",
-    });
-
-    assert.equal(bootstrapResponse.statusCode, 200);
-    const bootstrapBody = bootstrapResponse.json() as {
-      qaRequests: Array<{ id: string; subject: string }>;
-    };
-    assert.ok(
-      bootstrapBody.qaRequests.some(
-        (request) => request.id === qaRequestCreatedBody.item.id,
-      ),
-    );
-    assert.equal(
-      bootstrapBody.qaRequests.some(
-        (request) => request.id === tasklessQaRequestCreatedBody.item.id,
-      ),
-      false,
-    );
-
-    resetLimits();
-
-    const globalBootstrapResponse = await app.inject({
-      method: "GET",
-      url: "/api/bootstrap",
-    });
-
-    assert.equal(globalBootstrapResponse.statusCode, 200);
-    const globalBootstrapBody = globalBootstrapResponse.json() as {
-      qaRequests: Array<{ id: string }>;
-    };
-    assert.ok(
-      globalBootstrapBody.qaRequests.some(
-        (request) => request.id === tasklessQaRequestCreatedBody.item.id,
-      ),
-    );
-
-    resetLimits();
-
-    const milestoneReportCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/test-results",
-      payload: {
-        milestoneId: "tutorial-robot-checkpoint-feb-21",
-        title: "Milestone report route test",
-        status: "pass",
-        findings: ["Drive team aligned", "Drive team aligned", "Checklist complete"],
-        photoUrl: "https://cdn.example.test/forms/milestone-report.png",
-      },
-    });
-
-    assert.equal(milestoneReportCreateResponse.statusCode, 201);
-    const milestoneReportCreatedBody = milestoneReportCreateResponse.json() as {
-      item: {
-        milestoneId: string;
-        findings: string[];
-        id: string;
-        status: string;
-        title: string;
-        photoUrl: string;
-      };
-    };
-    assert.equal(milestoneReportCreatedBody.item.milestoneId, "tutorial-robot-checkpoint-feb-21");
-    assert.equal(milestoneReportCreatedBody.item.title, "Milestone report route test");
-    assert.equal(milestoneReportCreatedBody.item.status, "pass");
-    assert.equal(
-      milestoneReportCreatedBody.item.photoUrl,
-      "https://cdn.example.test/forms/milestone-report.png",
-    );
-    assert.deepEqual(milestoneReportCreatedBody.item.findings, [
-      "Drive team aligned",
-      "Checklist complete",
-    ]);
-
-    resetLimits();
-
-    const milestoneReportInvalidMilestoneResponse = await app.inject({
-      method: "POST",
-      url: "/api/test-results",
-      payload: {
-        milestoneId: "missing-milestone",
-        title: "Invalid milestone linkage",
-        status: "blocked",
-        findings: ["No milestone match"],
-        photoUrl: "https://cdn.example.test/forms/milestone-report-invalid.png",
-      },
-    });
-
-    assert.equal(milestoneReportInvalidMilestoneResponse.statusCode, 400);
-    assert.equal(
-      milestoneReportInvalidMilestoneResponse.json().message,
-      "The selected milestone does not exist.",
-    );
+    const testResponse = await app.inject({ method: "POST", url: "/api/test-results", payload: {
+      projectId, targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }], title: "Bracket fit", status: "pass",
+    } });
+    assert.equal(testResponse.statusCode, 201, testResponse.body);
+    assert.deepEqual(testResponse.json().item.targetRefs, [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }]);
+    assert.equal("milestoneId" in testResponse.json().item, false);
+    assert.equal("findings" in testResponse.json().item, false);
   });
 });
 
@@ -413,20 +232,21 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/reports",
       payload: {
-        reportType: "QA",
+        reportType: "qa",
         projectId: "project-robot-2026",
-        taskId: "swerve-sensor-bundle",
-        milestoneId: null,
-        workstreamId: null,
+        targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
         createdByMemberId: "ava",
+        participantIds: ["ava"],
+        mentorId: null,
+        requestedById: "ava",
         result: "minor-fix",
         summary: "QA report contract route",
         notes: "QA report contract route",
         photoUrl: "https://cdn.example.test/report.png",
-        createdAt: "2026-04-26",
-        participantIds: ["ava"],
-        mentorApproved: false,
-        reviewedAt: "2026-04-26",
+        createdAt: "2026-04-26T12:00:00Z",
+        status: "submitted",
+        reviewedById: null,
+        reviewedAt: null,
       },
     });
 
@@ -435,11 +255,11 @@ test("web report and task planning contract endpoints persist records", async ()
       item: {
         id: string;
         reportType: string;
-        taskId: string | null;
+        targetRefs: Array<{ kind: string; id: string }>;
       };
     };
-    assert.equal(reportBody.item.reportType, "QA");
-    assert.equal(reportBody.item.taskId, "swerve-sensor-bundle");
+    assert.equal(reportBody.item.reportType, "qa");
+    assert.deepEqual(reportBody.item.targetRefs, [{ kind: "task", id: "swerve-sensor-bundle" }]);
 
     resetLimits();
 
@@ -449,9 +269,7 @@ test("web report and task planning contract endpoints persist records", async ()
       payload: {
         reportType: "Practice",
         projectId: "project-robot-2026",
-        taskId: null,
-        milestoneId: "drive-practice-apr-30",
-        workstreamId: null,
+        targetRefs: [{ kind: "milestone", id: "drive-practice-apr-30" }],
         createdByMemberId: "ava",
         result: "pass",
         summary: "Unsupported report type",
@@ -469,9 +287,7 @@ test("web report and task planning contract endpoints persist records", async ()
       url: "/api/report-findings",
       payload: {
         reportId: reportBody.item.id,
-        mechanismId: null,
-        partInstanceId: "pi-swerve-encoder-bracket-front-left",
-        artifactInstanceId: null,
+        targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }],
         issueType: "Bracket needs edge cleanup",
         severity: "medium",
         notes: "Deburr the bracket before final install.",
@@ -543,67 +359,6 @@ test("web report and task planning contract endpoints persist records", async ()
 
     resetLimits();
 
-    const invalidBlockerCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/task-blockers",
-      payload: {
-        blockedTaskId: "swerve-sensor-bundle",
-        blockerType: "task",
-        blockerId: "not-a-real-task",
-        description: "Invalid linked task",
-        severity: "high",
-        status: "open",
-        createdByMemberId: "ava",
-      },
-    });
-
-    assert.equal(invalidBlockerCreateResponse.statusCode, 400);
-    assert.equal(
-      invalidBlockerCreateResponse.json().message,
-      "The selected blocker task does not exist.",
-    );
-
-    resetLimits();
-
-    const blockerCreateResponse = await app.inject({
-      method: "POST",
-      url: "/api/task-blockers",
-      payload: {
-        blockedTaskId: "swerve-sensor-bundle",
-        blockerType: "external",
-        blockerId: null,
-        description: "Waiting for replacement encoder stock.",
-        severity: "high",
-        status: "open",
-        createdByMemberId: "ava",
-      },
-    });
-
-    assert.equal(blockerCreateResponse.statusCode, 201);
-    const blockerBody = blockerCreateResponse.json() as {
-      item: {
-        id: string;
-        severity: string;
-      };
-    };
-    assert.equal(blockerBody.item.severity, "high");
-
-    resetLimits();
-
-    const blockerUpdateResponse = await app.inject({
-      method: "PATCH",
-      url: `/api/task-blockers/${blockerBody.item.id}`,
-      payload: {
-        description: "Waiting for replacement encoder stock and mentor review.",
-        severity: "critical",
-      },
-    });
-
-    assert.equal(blockerUpdateResponse.statusCode, 200);
-    assert.equal(blockerUpdateResponse.json().item.severity, "critical");
-
-    resetLimits();
-
     const taskDependenciesResponse = await app.inject({
       method: "GET",
       url: "/api/task-dependencies?pageSize=60",
@@ -617,17 +372,6 @@ test("web report and task planning contract endpoints persist records", async ()
 
     resetLimits();
 
-    const taskBlockersResponse = await app.inject({
-      method: "GET",
-      url: "/api/task-blockers",
-    });
-    assert.equal(taskBlockersResponse.statusCode, 200);
-    assert.ok(
-      (taskBlockersResponse.json() as { items: Array<{ id: string }> }).items.some(
-        (blocker) => blocker.id === blockerBody.item.id,
-      ),
-    );
-
     resetLimits();
 
     const bootstrapResponse = await app.inject({
@@ -637,9 +381,9 @@ test("web report and task planning contract endpoints persist records", async ()
 
     assert.equal(bootstrapResponse.statusCode, 200);
     const bootstrapBody = bootstrapResponse.json() as {
-      reportFindings: Array<{ reportId: string }>;
+      qaFindings: Array<{ reportId?: string | null; testResultId?: string | null }>;
+      testFindings: Array<{ reportId?: string | null; testResultId?: string | null }>;
       reports: Array<{ id: string }>;
-      taskBlockers: Array<{ id: string; severity: string }>;
       taskDependencies: Array<{
         taskId: string;
         kind: string;
@@ -650,7 +394,7 @@ test("web report and task planning contract endpoints persist records", async ()
     };
     assert.ok(bootstrapBody.reports.some((report) => report.id === reportBody.item.id));
     assert.ok(
-      bootstrapBody.reportFindings.some((finding) => finding.reportId === reportBody.item.id),
+      [...bootstrapBody.qaFindings, ...bootstrapBody.testFindings].some((finding) => finding.reportId === reportBody.item.id || finding.testResultId === reportBody.item.id),
     );
     assert.ok(
       bootstrapBody.taskDependencies.some(
@@ -666,11 +410,7 @@ test("web report and task planning contract endpoints persist records", async ()
           dependency.dependencyType === "soft",
       ),
     );
-    assert.ok(
-      bootstrapBody.taskBlockers.some(
-        (blocker) => blocker.id === blockerBody.item.id && blocker.severity === "critical",
-      ),
-    );
+
 
     resetLimits();
 
@@ -690,16 +430,17 @@ test("web report and task planning contract endpoints persist records", async ()
 
     resetLimits();
 
-    const blockerDeleteResponse = await app.inject({
-      method: "DELETE",
-      url: `/api/task-blockers/${blockerBody.item.id}`,
-    });
-    assert.equal(blockerDeleteResponse.statusCode, 200);
   });
 });
 
 test("risk endpoints support create, update, and delete with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const bootstrapResponse = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as { members: Array<{ id: string }> };
+    const ownerMemberId = bootstrapBody.members[0]?.id ?? null;
+    assert.ok(ownerMemberId);
+    resetLimits();
     const qaReportsResponse = await app.inject({
       method: "GET",
       url: "/api/qa-reports",
@@ -752,36 +493,41 @@ test("risk endpoints support create, update, and delete with link validation", a
       method: "POST",
       url: "/api/risks",
       payload: {
+        projectId: attachmentProjectId,
         title: "Cable routing delay risk",
         detail: "Awaiting updated harness path confirmation from controls.",
+        category: "supply",
         severity: "medium",
-        sourceType: "qa-report",
-        sourceId: sourceQaReportId,
-        attachmentType: "project",
-        attachmentId: attachmentProjectId,
+        status: "open",
+        blocksWork: true,
+        source: { kind: "report", id: sourceQaReportId },
+        relatedTargets: [{ kind: "project", id: attachmentProjectId }],
         mitigationTaskId,
+        ownerMemberId,
+        mitigationDueDate: "2026-10-20",
       },
     });
 
     assert.equal(createRiskResponse.statusCode, 201);
     const createdRiskBody = createRiskResponse.json() as {
       item: {
-        attachmentId: string;
-        attachmentType: string;
+        relatedTargets: Array<{ kind: string; id: string }>;
         id: string;
         mitigationTaskId: string | null;
+        ownerMemberId: string | null;
+        mitigationDueDate: string | null;
         severity: string;
-        sourceId: string;
-        sourceType: string;
+        source: { id?: string; kind: string };
         title: string;
       };
     };
     assert.equal(createdRiskBody.item.title, "Cable routing delay risk");
-    assert.equal(createdRiskBody.item.sourceType, "qa-report");
-    assert.equal(createdRiskBody.item.sourceId, sourceQaReportId);
-    assert.equal(createdRiskBody.item.attachmentType, "project");
-    assert.equal(createdRiskBody.item.attachmentId, attachmentProjectId);
+    assert.equal(createdRiskBody.item.source.kind, "report");
+    assert.equal(createdRiskBody.item.source.id, sourceQaReportId);
+    assert.deepEqual(createdRiskBody.item.relatedTargets, [{ kind: "project", id: attachmentProjectId }]);
     assert.equal(createdRiskBody.item.mitigationTaskId, mitigationTaskId);
+    assert.equal(createdRiskBody.item.ownerMemberId, ownerMemberId);
+    assert.equal(createdRiskBody.item.mitigationDueDate, "2026-10-20");
 
     resetLimits();
 
@@ -791,6 +537,9 @@ test("risk endpoints support create, update, and delete with link validation", a
       payload: {
         severity: "high",
         mitigationTaskId: null,
+        ownerMemberId: null,
+        mitigationDueDate: null,
+        status: "blocked",
       },
     });
 
@@ -799,10 +548,16 @@ test("risk endpoints support create, update, and delete with link validation", a
       item: {
         mitigationTaskId: string | null;
         severity: string;
+        ownerMemberId: string | null;
+        mitigationDueDate: string | null;
+        status: string;
       };
     };
     assert.equal(updatedRiskBody.item.severity, "high");
     assert.equal(updatedRiskBody.item.mitigationTaskId, null);
+    assert.equal(updatedRiskBody.item.ownerMemberId, null);
+    assert.equal(updatedRiskBody.item.mitigationDueDate, null);
+    assert.equal(updatedRiskBody.item.status, "blocked");
 
     resetLimits();
 
@@ -810,13 +565,13 @@ test("risk endpoints support create, update, and delete with link validation", a
       method: "POST",
       url: "/api/risks",
       payload: {
+        projectId: attachmentProjectId,
         title: "Missing linkage",
         detail: "Should fail because source is missing.",
+        category: "qa",
         severity: "low",
-        sourceType: "qa-report",
-        sourceId: "missing-qa-report",
-        attachmentType: "project",
-        attachmentId: attachmentProjectId,
+        source: { kind: "report", id: "missing-qa-report" },
+        relatedTargets: [{ kind: "project", id: attachmentProjectId }],
         mitigationTaskId: null,
       },
     });
@@ -824,7 +579,7 @@ test("risk endpoints support create, update, and delete with link validation", a
     assert.equal(invalidRiskResponse.statusCode, 400);
     assert.equal(
       invalidRiskResponse.json().message,
-      "The selected QA report does not exist.",
+      "The selected report source does not exist.",
     );
 
     resetLimits();
@@ -1042,13 +797,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       method: "GET",
       url: "/api/manufacturing?pageSize=60",
     });
-    assert.equal(manufacturingResponse.statusCode, 200);
-    const manufacturingBody = manufacturingResponse.json() as {
-      items: Array<{ id: string }>;
-      pagination: { pageSize: number };
-    };
-    assert.equal(manufacturingBody.pagination.pageSize, 60);
-    assert.ok(Array.isArray(manufacturingBody.items));
+    assert.equal(manufacturingResponse.statusCode, 404);
 
     resetLimits();
 
@@ -1088,8 +837,8 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         title: "Route Test Build Night",
         meetingType: "build",
-        startDateTime: "2026-05-08T18:00:00-04:00",
-        endDateTime: "2026-05-08T20:30:00-04:00",
+        startAt: "2026-05-08T18:00:00-04:00",
+        endAt: "2026-05-08T20:30:00-04:00",
         location: "MECO shop",
         description: "Planned attendance input coverage.",
         projectIds: ["project-robot-2026"],
@@ -1101,21 +850,19 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         id: string;
         title: string;
         meetingType: string;
-        startDateTime: string;
-        endDateTime: string | null;
+        startAt: string;
+        endAt: string | null;
         location: string;
         description: string;
         projectIds: string[];
-        date: string;
       };
     };
     assert.equal(meetingCreateBody.item.title, "Route Test Build Night");
     assert.equal(meetingCreateBody.item.meetingType, "build");
-    assert.equal(meetingCreateBody.item.startDateTime, "2026-05-08T18:00:00-04:00");
-    assert.equal(meetingCreateBody.item.endDateTime, "2026-05-08T20:30:00-04:00");
+    assert.equal(meetingCreateBody.item.startAt, "2026-05-08T18:00:00-04:00");
+    assert.equal(meetingCreateBody.item.endAt, "2026-05-08T20:30:00-04:00");
     assert.equal(meetingCreateBody.item.location, "MECO shop");
     assert.deepEqual(meetingCreateBody.item.projectIds, ["project-robot-2026"]);
-    assert.equal(meetingCreateBody.item.date, "2026-05-08");
 
     resetLimits();
 
@@ -1135,22 +882,9 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     };
 
     resetLimits();
-
-    const meetingProjectResponse = await app.inject({
-      method: "POST",
-      url: "/api/projects",
-      payload: {
-        seasonId: meetingSeasonBody.item.id,
-        name: "Route Test 2027 Robot",
-        projectType: "robot",
-        description: "Project used to validate meeting season consistency.",
-        status: "active",
-      },
-    });
-    assert.equal(meetingProjectResponse.statusCode, 201);
-    const meetingProjectBody = meetingProjectResponse.json() as {
-      item: { id: string };
-    };
+    const meetingProject = getSnapshot().projects.find((project) => project.seasonId === meetingSeasonBody.item.id && project.projectType === "robot");
+    assert.ok(meetingProject);
+    const meetingProjectBody = { item: { id: meetingProject.id } };
 
     resetLimits();
 
@@ -1160,7 +894,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         title: "Invalid cross-season meeting",
         seasonId: "default-season",
-        startDateTime: "2026-05-08T18:00:00-04:00",
+        startAt: "2026-05-08T18:00:00-04:00",
         projectIds: [meetingProjectBody.item.id],
       },
     });
@@ -1193,13 +927,13 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     });
     assert.equal(meetingBootstrapResponse.statusCode, 200);
     const meetingBootstrapBody = meetingBootstrapResponse.json() as {
-      meetings: Array<{ id: string; startDateTime: string; projectIds: string[] }>;
+      meetings: Array<{ id: string; startAt: string; projectIds: string[] }>;
     };
     assert.ok(
       meetingBootstrapBody.meetings.some(
         (meeting) =>
           meeting.id === meetingCreateBody.item.id &&
-          meeting.startDateTime === "2026-05-08T18:00:00-04:00" &&
+          meeting.startAt === "2026-05-08T18:00:00-04:00" &&
           meeting.projectIds.includes("project-robot-2026"),
       ),
     );
@@ -1238,7 +972,6 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         parentSubsystemId: "drive",
         responsibleEngineerId: "ava",
         mentorIds: ["marco"],
-        risks: [],
       },
     });
     assert.equal(rosterSummarySubsystemCreateResponse.statusCode, 201);
@@ -1256,19 +989,21 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         title: "Roster summary dedupe task",
         summary: "Ensures roster summary task counts stay deduplicated.",
+        projectId: "project-robot-2026",
+        workTypeId: "robot:design",
+        responsibleGroupId: null,
+        requestedById: "ava",
+        scheduleRefs: [],
+        manufacturingDetails: null,
         subsystemIds: [rosterSummarySubsystemBody.item.id],
-        disciplineId: "design",
         mechanismIds: [],
         partInstanceIds: [],
-        targetMilestoneId: null,
         ownerId: "ava",
         assigneeIds: ["ava", "demo-alex-morgan"],
         mentorId: "marco",
         dueDate: "2026-04-01",
         priority: "high",
         status: "waiting-for-qa",
-        linkedManufacturingIds: [],
-        linkedPurchaseIds: [],
         estimatedHours: 2,
       },
     });
@@ -1281,20 +1016,22 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     resetLimits();
 
-    const rosterSummaryBlockerCreateResponse = await app.inject({
+    const rosterSummaryRiskCreateResponse = await app.inject({
       method: "POST",
-      url: "/api/task-blockers",
+      url: "/api/risks",
       payload: {
-        blockedTaskId: rosterSummaryTaskBody.item.id,
-        blockerType: "external",
-        blockerId: null,
-        description: "Scoped blocker for roster summary dedupe coverage.",
+        projectId: "project-robot-2026",
+        title: "Scoped roster blocker",
+        detail: "Scoped blocker for roster summary dedupe coverage.",
+        category: "dependency",
         severity: "high",
         status: "open",
-        createdByMemberId: "ava",
+        blocksWork: true,
+        source: { kind: "manual" },
+        relatedTargets: [{ kind: "task", id: rosterSummaryTaskBody.item.id }],
       },
     });
-    assert.equal(rosterSummaryBlockerCreateResponse.statusCode, 201);
+    assert.equal(rosterSummaryRiskCreateResponse.statusCode, 201);
 
     resetLimits();
 
@@ -1358,15 +1095,12 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const qaResponse = await app.inject({
       method: "GET",
-      url: "/api/qa",
+      url: "/api/qa-reports",
     });
     assert.equal(qaResponse.statusCode, 200);
-    const qaBody = qaResponse.json() as {
-      mentorBackedPasses: number;
-      reviews: Array<{ id: string }>;
-    };
-    assert.ok(qaBody.reviews.length > 0);
-    assert.ok(qaBody.mentorBackedPasses >= 0);
+    const qaBody = qaResponse.json() as { items: Array<{ reportType: string }> };
+    assert.ok(Array.isArray(qaBody.items));
+    assert.ok(qaBody.items.every((report) => report.reportType === "qa"));
 
     resetLimits();
 
@@ -1440,43 +1174,53 @@ test("report derivations retain bootstrap scope and photo policy", async () => {
   const { buildBootstrapResponse } = await import("../src/routes/helpers/bootstrapSelection");
   const snapshot = structuredClone(seed);
   const task = snapshot.tasks[0]!;
-  const milestone = snapshot.milestones[0]!;
-  const otherProject = snapshot.projects.find((project) => project.id !== task.projectId)!;
-  milestone.projectIds = [otherProject.id, task.projectId];
-  snapshot.qaReports = [{ ...snapshot.qaReports[0]!, id: "photo-qa", taskId: task.id, photoUrl: "https://example.test/qa.png" }];
-  snapshot.testResults = [{ ...snapshot.testResults[0]!, id: "photo-test", milestoneId: milestone.id, photoUrl: "https://example.test/test.png" }];
-  snapshot.qaFindings = [{ ...snapshot.qaFindings[0]!, id: "qa-finding", qaReportId: "photo-qa", status: "in-progress" }];
-  snapshot.testFindings = [{ ...snapshot.testFindings[0]!, id: "test-finding", testResultId: "photo-test", status: "resolved" }];
+  const qaReport = snapshot.qaReports[0]!;
+  snapshot.qaReports = [{ ...qaReport, id: "photo-qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], photoUrl: "https://example.test/qa.png" }];
+  snapshot.teamReports = [{ id: "photo-test", reportType: "practice", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: null, participantIds: [], mentorId: null, requestedById: null, summary: "Practice", notes: "Practice notes", createdAt: "2026-04-22T12:00:00Z", status: "submitted", result: "Complete", photoUrl: "https://example.test/test.png" }];
+  snapshot.qaFindings = [{ ...snapshot.qaFindings[0]!, id: "qa-finding", reportId: "photo-qa", status: "in-progress" }];
+  snapshot.testFindings = [{ ...snapshot.testFindings[0]!, id: "test-finding", reportId: "photo-test", status: "resolved" }];
   const reports = buildReports(snapshot);
   const bootstrap = buildBootstrapResponse(snapshot, { projectId: task.projectId, seasonId: null, personId: null });
-  assert.equal(reports.find((report) => report.id === "photo-test")!.projectId, otherProject.id);
+  assert.equal(reports.find((report) => report.id === "photo-test")!.projectId, task.projectId);
   assert.equal(bootstrap.reports.find((report) => report.id === "photo-test")!.projectId, task.projectId);
   for (const report of reports) {
     const { photoUrl, ...withoutPhoto } = report;
     assert.ok(photoUrl);
     assert.deepEqual(bootstrap.reports.find((item) => item.id === report.id), { ...withoutPhoto, projectId: task.projectId });
   }
-  assert.deepEqual(bootstrap.reportFindings.map((finding) => [finding.id, finding.status]), [["qa-finding", "open"], ["test-finding", "resolved"]]);
-  snapshot.testResults[0]!.milestoneId = "missing-milestone";
-  snapshot.qaReports[0]!.taskId = "missing-task";
-  assert.equal(buildReports(snapshot)[0]!.projectId, snapshot.projects[0]!.id);
+    assert.deepEqual(bootstrap.qaFindings.map((finding) => [finding.id, finding.status]), [["qa-finding", "in-progress"]]);
+  assert.deepEqual(bootstrap.testFindings.map((finding) => [finding.id, finding.status]), [["test-finding", "resolved"]]);
+  snapshot.qaReports[0]!.projectId = "missing-project";
+  snapshot.teamReports = [];
   const orphanBootstrap = buildBootstrapResponse(snapshot, { projectId: null, seasonId: null, personId: null });
   assert.deepEqual(orphanBootstrap.reports, []);
-  assert.deepEqual(orphanBootstrap.reportFindings, []);
+  assert.deepEqual(orphanBootstrap.qaFindings.map((finding) => finding.id), ["qa-finding"]);
+  assert.deepEqual(orphanBootstrap.testFindings.map((finding) => finding.id), ["test-finding"]);
 });
 
 test("report and finding endpoints match bootstrap projections", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
     assert.equal(bootstrap.statusCode, 200);
-    for (const [path, collection] of [["reports", "reports"], ["report-findings", "reportFindings"]] as const) {
+    for (const [path, collection] of [["reports", "reports"], ["report-findings", "findings"]] as const) {
       resetLimits();
       const response = await app.inject({ method: "GET", url: `/api/${path}?pageSize=60` });
       assert.equal(response.statusCode, 200);
-      const expected = bootstrap.json()[collection];
+      const bootstrapBody = bootstrap.json();
+      const expected = collection === "findings" ? [...bootstrapBody.qaFindings, ...bootstrapBody.testFindings] : bootstrapBody[collection];
       const actual = response.json().items;
       assert.equal(actual.length, expected.length);
-      for (const item of actual) assert.deepEqual(item, expected.find((entry: { id: string }) => entry.id === item.id));
+      for (const item of actual) {
+        const matching = expected.find((entry: { id: string }) => entry.id === item.id);
+        assert.ok(matching);
+        if (collection === "findings") {
+          assert.deepEqual(item.targetRefs, matching.targetRefs);
+          assert.equal(item.taskId, matching.taskId);
+          assert.equal(item.projectId, matching.projectId);
+        } else {
+          assert.deepEqual(item, matching);
+        }
+      }
     }
   });
 });

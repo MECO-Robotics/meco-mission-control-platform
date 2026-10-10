@@ -115,10 +115,6 @@ Retention policy:
 - `POST /api/task-dependencies`: create a dependency.
 - `PATCH /api/task-dependencies/:dependencyId`: update a dependency.
 - `DELETE /api/task-dependencies/:dependencyId`: delete a dependency.
-- `GET /api/task-blockers`: list blockers.
-- `POST /api/task-blockers`: create a blocker.
-- `PATCH /api/task-blockers/:blockerId`: update a blocker.
-- `DELETE /api/task-blockers/:blockerId`: delete a blocker.
 
 ## Work Logs And Meetings
 
@@ -131,21 +127,21 @@ Retention policy:
 ## Reports, QA, And Risks
 
 - `GET /api/reports`: list reports.
-- `POST /api/reports`: create a report. A QA report with `mentorApproved: true` requires mentor or admin authorization.
+- `POST /api/reports`: create a typed report (`qa`, `practice`, `competition`, or `review`) with project ownership and typed `targetRefs`.
 - `GET /api/report-findings`: list report findings.
 - `POST /api/report-findings`: create a report finding.
 - `GET /api/qa-reports`: list QA reports.
-- `POST /api/qa-reports`: create a QA report. Mentor approval requires mentor or admin; leads are excluded.
-- `POST /api/qa-reports/submit`: submit the task QA workflow atomically. Requires lead, mentor or admin task-edit authority regardless of result or approval flag. Accepts the QA report fields plus `evidenceNotes`, optional `followUpTaskTitle`, and optional `qaRequestId`. Pass requires `waiting-for-qa` and no open blockers or unsatisfied hard dependencies, then completes the task. A failed result creates a follow-up task; `iteration-worthy` also creates a QA blocker. All pending QA requests for the task are removed on success. A stale/mismatched request or unready pass returns 409 without writes. Mentor approval has the same authorization as report creation. Report, evidence, request provenance, task effects and approved risk reassessment persist together; disk failures publish none of them. Record-only report creation endpoints do not execute task workflow effects.
+- `POST /api/qa-reports`: create a QA report using project ownership and typed `targetRefs`; reports may target any supported domain entity.
+- `POST /api/qa-reports/submit`: submit QA evidence atomically. Task completion, follow-up, and dependency effects apply only when a Task is among the report's typed targets. Report creation does not duplicate Risk-owned state.
 - `GET /api/qa-requests`: list QA requests.
-- `POST /api/qa-requests`: create a QA request.
+- `POST /api/qa-requests`: create a QA request. A task-targeted request requires exactly one in-progress task without blocking risks or unfinished dependencies, an active mentor in its season, and an assigned requester or lead/mentor/admin. The authenticated requester overrides client identity. The command atomically persists the request, task mentor, `waiting-for-qa` status and audit entry; the response contains `{ item, task }`. Retrying a pending request for the same mentor returns the existing request without duplicate writes. Taskless requests retain their independent subject/target workflow and return `task: null`.
 - `GET /api/test-results`: list test results.
 - `POST /api/test-results`: create a test result.
-- `GET /api/qa`: combined QA workflow summary.
 - `GET /api/risks`: list risks.
 - `POST /api/risks`: create a risk.
 - `PATCH /api/risks/:riskId`: update a risk.
 - `DELETE /api/risks/:riskId`: delete a risk.
+- Risk payloads use status `open`, `in-progress`, `blocked`, or `resolved`; new risks default to `open`. `ownerMemberId` and `mitigationDueDate` are nullable. A non-null owner must reference a workspace member, and mitigation due dates use `YYYY-MM-DD`.
 
 ## Inventory And Manufacturing
 
@@ -157,12 +153,10 @@ Retention policy:
 - `POST /api/artifacts`: create an artifact.
 - `PATCH /api/artifacts/:artifactId`: update an artifact.
 - `DELETE /api/artifacts/:artifactId`: delete an artifact.
-- `GET /api/manufacturing`: list manufacturing items.
-- `POST /api/manufacturing`: create a requested, unreviewed manufacturing item.
-- `PATCH /api/manufacturing/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
-- `PUT /api/manufacturing/:itemId/review`: approve or revoke review with `{ "reviewed": boolean }`. Requires mentor or admin and derives reviewer metadata from the session.
-- `POST /api/manufacturing/:itemId/transition`: advance one step through `approved -> in-progress -> qa -> complete`. Any internal user may advance actively reviewed work.
-- `DELETE /api/manufacturing/:itemId`: delete a manufacturing item. Requires mentor or admin.
+- `GET /api/manufacturing/processes`: list the process catalog.
+- `POST /api/manufacturing/processes`: add a process `{ "code": "laser-cut", "name": "Laser Cut" }`. Requires mentor/admin.
+- `PATCH /api/manufacturing/processes/:processId`: archive an unused process with `{ "isActive": false }`. Requires mentor/admin; in-use processes return `409`.
+- Manufacturing work is represented by a Robot Kanban Task with `workType=manufacturing`; `manufacturingDetails` holds its technical part, quantity, process, fulfillment source, material/files, tolerances, and QA requirements. It has no separate status or assignment workflow.
 - `GET /api/purchases`: list purchase items.
 - `POST /api/purchases`: create a requested, unapproved purchase item.
 - `PATCH /api/purchases/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
@@ -174,19 +168,22 @@ Workflow endpoints return `403` for insufficient role, `404` for a missing item,
 
 ## Team And Robot Structure
 
+- `GET /api/responsible-groups`: list canonical team groups.
+- `POST /api/responsible-groups`: create a team with a season, applicable project IDs and member IDs. ResponsibleGroups and WorkTypes are independent; creating or renaming a team does not create or change WorkTypes. An empty project list applies to every project in the season. Requires mentor/admin.
+- `PATCH /api/responsible-groups/:groupId`: edit team name, season, project applicability, membership, primary student membership, or archive state. Students may belong to multiple teams but have one primary team per season. `primaryMemberIds` must be a subset of `memberIds` and contain only students or student leads. Assigning a student as primary in another team transfers the primary membership; archiving/removing the primary membership falls back to another active team membership when available. Projects and members must belong to the selected season. Tasks continue to reference groups through `responsibleGroupId`.
+- `DELETE /api/responsible-groups/:groupId`: remove a team. Existing tasks remain and have `responsibleGroupId` cleared; typed target references and risk group ownership are also cleared. Affected students transfer primary capacity attribution to another active membership when available. Requires mentor/admin.
 - `GET /api/members`: list members.
 - `POST /api/members`: create or invite a member. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
 - `PATCH /api/members/:memberId`: update a member. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
-- `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted.
-- `POST /api/subsystems`: create a subsystem.
+- `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted. Member commands reject task-invalidating role changes or sole-contributor deletion until tasks are reassigned. Deleting a QA mentor with legal remaining task contributors cancels their active requests and returns the affected waiting tasks to `in-progress` atomically, so another mentor can be requested.
+- `POST /api/subsystems`: create a subsystem. Child integration tasks inherit eligible active parent contributors or the authenticated student/lead/mentor creator. Creation fails atomically when no legal task contributor is available.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.
 - `DELETE /api/subsystems/:subsystemId`: delete a subsystem.
-- `POST /api/mechanisms`: create a mechanism.
+- `POST /api/mechanisms`: create a mechanism and its wiring task. Task contributors inherit eligible active subsystem people or the authenticated student/lead/mentor creator; missing legal contributors reject the entire creation.
 - `PATCH /api/mechanisms/:mechanismId`: update a mechanism.
 - `DELETE /api/mechanisms/:mechanismId`: delete a mechanism.
 - `GET /api/part-definitions`: list part definitions.
-- `POST /api/part-definitions`: create a part definition, optionally with atomic acquisition work. Omitted `acquisition` or `{ "method": "stock" }` creates only the definition. Manufacture/purchase use `{ "method": "manufacture" | "purchase", "subsystemId": string, "disciplineId": string, "ownerId": string, "mentorId": string, "dueDate": "YYYY-MM-DD" }`. These fields are explicit; the server resolves project/workstream and fixes quantity at one, CNC for manufacturing, requested/unapproved state, and source as vendor/material text. Response: `{ item, acquisitionItem, task }`, with the latter two null for stock.
-  Acquisition requires lead/mentor/admin permission (as does existing shared catalog creation when auth is enabled), an active subsystem, a project-compatible discipline, and owner/mentor membership in its project's season. Owner must be internal; mentor must be mentor/admin. The definition's season defaults to the project's season and must match when supplied; additional active seasons must exist. Material references must exist and carry through to manufacturing. Requester and audit actor come from the session's roster member, or remain null when unmatched/auth-off; selected owner is never used to impersonate the requester. All records and their audits publish together, including in tutorial sessions. Durable save failures discard the global request transaction. Transport failures can still leave the caller uncertain whether the complete command committed; do not blindly retry creation.
+- `POST /api/part-definitions`: create a part definition. Acquisition is expressed by its default acquisition method; executable work is created as a Task and COTS purchasing as a PurchaseItem.
 - `PATCH /api/part-definitions/:partDefinitionId`: update a part definition.
 - `DELETE /api/part-definitions/:partDefinitionId`: delete a part definition.
 - `GET /api/part-instances`: list part instances.
@@ -244,11 +241,4 @@ Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and 
 - `POST /api/onshape/oauth/refresh`: refresh Onshape OAuth credentials.
 
 
-Task blocker requests and responses keep `blockerType` as the source relationship
-(`task`, `milestone`, `workstream`, `mechanism`, `part_instance`,
-`artifact_instance`, or `external`) and `blockerId` as its validated reference.
-The independent optional `issueType` classifies the problem: `external`,
-`lost-part`, `broken-part`, `lost-tool`, `broken-tool`, `design-issue`,
-`shipping-delay`, `manufacturing-unavailable`, `qa-failed`, or `other`.
-New records default to `external` when no issue category is supplied.
-Changing the issue category does not change or relax source-link validation.
+Dependencies are stored as typed TaskDependency records. Unresolved problems are stored in Risks with typed related targets; Task blocked state and readiness are projections, not duplicate blocker fields.

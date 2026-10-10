@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { getSnapshot } from "../src/data/store";
 
 test("tutorial mutations remain isolated to the authenticated user", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
@@ -28,18 +29,16 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     assert.equal(start.statusCode, 200);
     resetLimits();
 
+    const outreach = getSnapshot().projects.find((project) => project.projectType === "outreach");
+    assert.ok(outreach);
     const created = await app.inject({
-      method: "POST",
-      url: "/api/projects",
+      method: "PATCH",
+      url: `/api/projects/${outreach.id}`,
       headers: firstHeaders,
-      payload: {
-        name: "First mentor sandbox project",
-        seasonId: "default-season",
-        projectType: "outreach",
-      },
+      payload: { description: "First mentor sandbox project" },
     });
-    assert.equal(created.statusCode, 201);
-    const projectId = created.json().item.id as string;
+    assert.equal(created.statusCode, 200);
+    const projectId = outreach.id;
     resetLimits();
 
     const firstProjects = await app.inject({ method: "GET", url: "/api/projects", headers: firstHeaders });
@@ -47,8 +46,8 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     const secondProjects = await app.inject({ method: "GET", url: "/api/projects", headers: secondHeaders });
     assert.equal(firstProjects.statusCode, 200);
     assert.equal(secondProjects.statusCode, 200);
-    assert.ok(firstProjects.json().items.some((project: { id: string }) => project.id === projectId));
-    assert.equal(secondProjects.json().items.some((project: { id: string }) => project.id === projectId), false);
+    assert.equal(firstProjects.json().items.find((project: { id: string }) => project.id === projectId)?.description, "First mentor sandbox project");
+    assert.notEqual(secondProjects.json().items.find((project: { id: string }) => project.id === projectId)?.description, "First mentor sandbox project");
 
     resetLimits();
     const reset = await app.inject({
@@ -61,18 +60,16 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     assert.equal(reset.json().restored, true);
 
     resetLimits();
+    const operations = getSnapshot().projects.find((project) => project.projectType === "operations");
+    assert.ok(operations);
     const globalProject = await app.inject({
-      method: "POST",
-      url: "/api/projects",
+      method: "PATCH",
+      url: `/api/projects/${operations.id}`,
       headers: firstHeaders,
-      payload: {
-        name: "Post-tutorial shared project",
-        seasonId: "default-season",
-        projectType: "operations",
-      },
+      payload: { description: "Post-tutorial shared project" },
     });
-    assert.equal(globalProject.statusCode, 201);
-    const globalProjectId = globalProject.json().item.id as string;
+    assert.equal(globalProject.statusCode, 200);
+    const globalProjectId = operations.id;
 
     resetLimits();
     const peerProjectsAfterReset = await app.inject({
@@ -94,18 +91,16 @@ test("tutorial mutations remain isolated to the authenticated user", async () =>
     assert.equal(baselineWithoutSession.statusCode, 200);
 
     resetLimits();
+    const strategy = getSnapshot().projects.find((project) => project.projectType === "strategy");
+    assert.ok(strategy);
     const sharedAfterBaseline = await app.inject({
-      method: "POST",
-      url: "/api/projects",
+      method: "PATCH",
+      url: `/api/projects/${strategy.id}`,
       headers: secondHeaders,
-      payload: {
-        name: "Shared after baseline inspection",
-        seasonId: "default-season",
-        projectType: "operations",
-      },
+      payload: { description: "Shared after baseline inspection" },
     });
-    assert.equal(sharedAfterBaseline.statusCode, 201);
-    const sharedAfterBaselineId = sharedAfterBaseline.json().item.id as string;
+    assert.equal(sharedAfterBaseline.statusCode, 200);
+    const sharedAfterBaselineId = strategy.id;
 
     resetLimits();
     const firstProjectsAfterBaseline = await app.inject({

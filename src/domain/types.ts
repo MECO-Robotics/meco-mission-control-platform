@@ -42,25 +42,34 @@ export type TaskStatus =
   | "in-progress"
   | "waiting-for-qa"
   | "complete";
+export type ReadinessStatus = "not-ready" | "blocked" | "qa" | "ready";
 
-export type MilestoneStatus = "not ready" | "blocked" | "qa" | "ready";
+export type ScheduleReference =
+  | { kind: "meeting"; id: string }
+  | { kind: "event"; id: string }
+  | { kind: "milestone"; id: string };
 
-export type MilestoneBlockedByType =
-  | "task"
-  | "milestone"
-  | "artifact"
-  | "subsystem"
-  | "mechanism"
-  | "part-instance"
-  | "external";
+export type ManufacturedPartRef =
+  | { kind: "part-definition"; partDefinitionId: string }
+  | { kind: "provisional"; partNumber: string; revision: string };
+export type MaterialRequirement =
+  | { kind: "inventory-material"; materialId: string }
+  | { kind: "specified-material"; name: string };
+export type FulfillmentSource = "in-house" | "outsourced";
+export interface ManufacturingDetails {
+  part: ManufacturedPartRef;
+  quantity: number;
+  processId: string;
+  fulfillmentSource: FulfillmentSource;
+  material: MaterialRequirement;
+  fileArtifactIds: string[];
+  tolerances: string[];
+  qaRequirements: string[];
+  batchLabel?: string;
+}
+
+export type MilestoneStatus = "planned" | "active" | "complete";
 export type TaskPriority = "critical" | "high" | "medium" | "low";
-export type ManufacturingProcess = "3d-print" | "cnc" | "fabrication";
-export type ManufacturingStatus =
-  | "requested"
-  | "approved"
-  | "in-progress"
-  | "qa"
-  | "complete";
 export type MaterialCategory =
   | "metal"
   | "plastic"
@@ -69,19 +78,14 @@ export type MaterialCategory =
   | "hardware"
   | "consumable"
   | "other";
-export type ArtifactKind = "document" | "nontechnical";
-export type ArtifactStatus = "draft" | "in-review" | "published";
+export type ArtifactKind = "document" | "evidence" | "media" | "other";
+export type ArtifactStatus = "draft" | "in-review" | "published" | "archived";
 export type PurchaseStatus =
   | "requested"
   | "approved"
   | "purchased"
   | "shipped"
   | "delivered";
-export type PartInstanceStatus =
-  | "not ready"
-  | "blocked"
-  | "qa"
-  | "ready";
 export type PmCadSource = "manual" | "step" | "onshape";
 export type PmCadImportSource = "MANUAL" | "STEP_UPLOAD" | "ONSHAPE_API" | "ONSHAPE_BOM_CSV" | "MANUAL_BOM_CSV";
 
@@ -94,16 +98,17 @@ export interface PmCadProvenance {
 }
 export type QaResult = "pass" | "minor-fix" | "iteration-worthy";
 export type SeasonType = "season" | "offseason" | "initiative";
-export type ProjectType = "robot" | "operations" | "outreach" | "other";
+export type ProjectType = "robot" | "media" | "outreach" | "operations" | "strategy" | "training";
+export type CanonicalProjectName = "Robot" | "Media" | "Outreach" | "Operations" | "Strategy" | "Training";
 export type ProjectStatus = "planned" | "active" | "paused" | "complete";
 export type TestResultStatus = "pass" | "fail" | "blocked";
-export type RiskSeverity = "high" | "medium" | "low";
+export type RiskSeverity = "critical" | "high" | "medium" | "low";
 export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-instance";
 export type FindingStatus = "open" | "in-progress" | "resolved";
 export type FindingSourceType = "qa" | "test";
 export type IterationStatus = "planned" | "in-progress" | "complete";
-export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
-export type TaskDependencyKind = "task" | "milestone" | "part_instance";
+export type ReportType = "qa" | "practice" | "competition" | "review";
+export type TaskDependencyKind = "task" | "milestone" | "part-instance";
 export type TaskDependencyType = "hard" | "soft";
 export const DEFAULT_PROJECT_TEAM_ID = "default-team";
 export type PlannedAttendanceDay =
@@ -115,19 +120,6 @@ export type PlannedAttendanceDay =
   | "saturday"
   | "sunday";
 export type MeetingType = "general" | "build" | "review" | "outreach" | "competition" | "other";
-export type TaskBlockerType =
-  | "task"
-  | "milestone"
-  | "workstream"
-  | "mechanism"
-  | "part_instance"
-  | "artifact_instance"
-  | "external";
-export type TaskBlockerIssueType =
-  | "external" | "lost-part" | "broken-part" | "lost-tool" | "broken-tool"
-  | "design-issue" | "shipping-delay" | "manufacturing-unavailable" | "qa-failed" | "other";
-export type TaskBlockerSeverity = "low" | "medium" | "high" | "critical";
-export type TaskBlockerStatus = "open" | "resolved";
 export type AuditActionOperation = "create" | "update" | "delete";
 
 export interface AuditAction {
@@ -158,7 +150,6 @@ export interface Member {
   photoUrl?: string;
   role: MemberRole;
   elevated: boolean;
-  disciplineId?: string | null;
   seasonId: string;
   activeSeasonIds?: string[];
   plannedWeeklyAttendanceHours?: number;
@@ -185,13 +176,46 @@ export interface Subsystem extends PmCadProvenance {
   parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
   mentorIds: string[];
-  risks: string[];
 }
 
+// Static task work-type catalog entries; distinct from Member responsibility.
 export interface Discipline {
   id: string;
   code: DisciplineCode;
   name: string;
+}
+
+export interface WorkType {
+  id: string;
+  projectType: ProjectType;
+  code: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface ResponsibleGroup {
+  id: string;
+  seasonId: string;
+  name: string;
+  projectIds: string[];
+  workTypeIds: string[];
+  memberIds: string[];
+  primaryMemberIds: string[];
+  isArchived: boolean;
+}
+
+export interface Vendor {
+  id: string;
+  name: string;
+  website: string | null;
+  isArchived: boolean;
+}
+
+export interface ManufacturingProcessRecord {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
 }
 
 export interface Mechanism extends PmCadProvenance {
@@ -216,23 +240,30 @@ export interface PartDefinition extends PmCadProvenance {
   iteration: number;
   isArchived: boolean;
   type: string;
-  source: string;
+  defaultAcquisitionMethod: AcquisitionMethod;
   materialId: string | null;
   description: string;
   photoUrl?: string;
 }
 
+export type PartInstanceLocation =
+  | { kind: "stock"; location: string }
+  | { kind: "installed"; subsystemId: string; mechanismId: string | null }
+  | { kind: "repair"; location: string }
+  | { kind: "retired"; location: string | null }
+  | { kind: "lost" }
+  | { kind: "unlocated" };
+
 export interface PartInstance extends PmCadProvenance {
   id: string;
-  subsystemId: string;
-  mechanismId: string | null;
   partDefinitionId: string;
-  name: string;
-  quantity: number;
-  trackIndividually: boolean;
-  status: PartInstanceStatus;
+  intendedSubsystemId: string | null;
+  intendedMechanismId: string | null;
+  location: PartInstanceLocation;
   photoUrl?: string;
 }
+
+export type PartInstanceView = PartInstance & { readinessStatus: ReadinessStatus };
 
 export interface Material {
   id: string;
@@ -242,20 +273,19 @@ export interface Material {
   onHandQuantity: number;
   reorderPoint: number;
   location: string;
-  vendor: string;
+  preferredVendorId: string | null;
   notes: string;
 }
 
 export interface Artifact {
   id: string;
   projectId: string;
-  workstreamId: string | null;
+  targetRefs: DomainReference[];
   kind: ArtifactKind;
   title: string;
   summary: string;
   status: ArtifactStatus;
-  link: string;
-  isArchived: boolean;
+  uri: string;
   updatedAt: string;
 }
 
@@ -265,10 +295,13 @@ export interface Task extends TaskTargets {
   serialNumber?: number;
   serial?: string;
   projectId: string;
+  workTypeId: string;
+  responsibleGroupId: string | null;
+  requestedById: string | null;
+  scheduleRefs: ScheduleReference[];
+  manufacturingDetails: ManufacturingDetails | null;
   title: string;
   summary: string;
-  disciplineId: string;
-  targetMilestoneId: string | null;
   photoUrl?: string;
   ownerId: string | null;
   assigneeIds: string[];
@@ -278,15 +311,11 @@ export interface Task extends TaskTargets {
   priority: TaskPriority;
   status: TaskStatus;
   checklistItems: string[];
-  blockers: string[];
   isBlocked?: boolean;
   isWaitingOnDependency?: boolean;
-  linkedManufacturingIds: string[];
-  linkedPurchaseIds: string[];
   estimatedHours: number;
   actualHours: number;
   requiresDocumentation: boolean;
-  documentationLinked: boolean;
 }
 
 export interface WorkLog {
@@ -306,15 +335,25 @@ export interface Meeting {
   meetingType?: MeetingType;
   seasonId?: string;
   projectIds?: string[];
-  startDateTime?: string;
-  endDateTime?: string | null;
+  startAt: string;
+  endAt: string | null;
   location?: string;
   description?: string;
-  date: string;
-  time: string;
   rsvpsYes: number;
   rsvpsMaybe: number;
   openSignIns: number;
+}
+
+export interface ScheduleEvent {
+  id: string;
+  seasonId: string;
+  projectIds: string[];
+  title: string;
+  description: string;
+  startAt: string;
+  endAt: string | null;
+  location: string;
+  eventType: "competition" | "practice" | "outreach" | "other";
 }
 
 export interface Milestone {
@@ -323,35 +362,24 @@ export interface Milestone {
   seasonId?: string;
   title: string;
   type: MilestoneType;
-  startDateTime: string;
-  endDateTime: string | null;
+  startAt: string;
+  endAt: string | null;
   isExternal: boolean;
   description: string;
   projectIds: string[];
-  status?: MilestoneStatus;
-  isBlocked?: boolean;
-  blockedReason?: string | null;
-  blockedByType?: MilestoneBlockedByType | null;
-  blockedById?: string | null;
+  status: MilestoneStatus;
   photoUrl?: string;
 }
 
-export type MilestoneRequirementTargetType =
-  | "project"
-  | "workflow"
-  | "artifact"
-  | "subsystem"
-  | "mechanism"
-  | "part-instance";
+export type MilestoneView = Milestone & { readinessStatus: ReadinessStatus };
 
-export type MilestoneRequirementConditionType = "iteration" | "workflow_state" | "custom";
+export type MilestoneRequirementConditionType = "iteration" | "workflow-state" | "custom";
 
 // Generalized milestone requirements: "What condition must be true by this milestone?"
 export interface MilestoneRequirement {
   id: string;
   milestoneId: string;
-  targetType: MilestoneRequirementTargetType;
-  targetId: string;
+  targetRefs: DomainReference[];
   conditionType: MilestoneRequirementConditionType;
   // Stored as a compact string so we can iterate on semantics without migrations in the seed store.
   // Examples: "iteration>=2", "state=COMPLETE", "state=QA_PASSED", "in_scope"
@@ -368,61 +396,41 @@ export interface AttendanceRecord {
   totalHours: number;
 }
 
-export interface ManufacturingItem {
+export interface ReportBase {
   id: string;
-  title: string;
-  subsystemId: string;
-  requestedById: string | null;
-  process: ManufacturingProcess;
-  dueDate: string;
-  material: string;
-  materialId: string | null;
-  partDefinitionId: string | null;
-  partInstanceId: string | null;
-  partInstanceIds: string[];
-  quantity: number;
-  status: ManufacturingStatus;
-  mentorReviewed: boolean;
-  reviewedById?: string | null;
-  reviewedAt?: string | null;
-  inHouse: boolean;
-  batchLabel?: string;
-}
-
-export interface Report {
-  evidenceNotes?: string;
-  qaRequestId?: string | null;
-  mentorId?: string | null;
-  requestedById?: string | null;
-  targetRiskId?: string | null;
-  proposedRiskSeverity?: RiskSeverity | null;
-  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
-  id: string;
-  reportType: ReportType;
   projectId: string;
-  taskId: string | null;
-  milestoneId: string | null;
-  workstreamId: string | null;
+  targetRefs: DomainReference[];
   createdByMemberId: string | null;
-  result: string;
+  participantIds: string[];
+  mentorId: string | null;
+  requestedById: string | null;
   summary: string;
   notes: string;
+  evidenceNotes?: string;
   photoUrl?: string;
   createdAt: string;
-  participantIds?: string[];
-  mentorApproved?: boolean;
-  reviewedAt?: string;
-  title?: string;
-  status?: TestResultStatus;
-  findings?: string[];
+  status: "draft" | "submitted" | "reviewed";
 }
+
+export interface QaReport extends ReportBase {
+  reportType: "qa";
+  result: QaResult;
+  reviewedById: string | null;
+  reviewedAt: string | null;
+}
+
+export interface TeamReport extends ReportBase {
+  reportType: "practice" | "competition" | "review";
+  result: string | null;
+}
+
+export type QaDomainReport = QaReport;
+export type Report = QaReport | TeamReport;
 
 export interface ReportFinding {
   id: string;
   reportId: string;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactInstanceId: string | null;
+  targetRefs: DomainReference[];
   issueType: string;
   severity: RiskSeverity;
   notes: string;
@@ -432,56 +440,76 @@ export interface ReportFinding {
   title?: string;
   detail?: string;
   status?: "open" | "resolved";
-  projectId?: string;
-  workstreamId?: string | null;
-  subsystemId?: string | null;
-  taskId?: string | null;
-  milestoneId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
 
-export interface TaskDependency {
+export type TaskDependency =
+  | {
   id: string;
   taskId: string;
-  kind: TaskDependencyKind;
+  kind: "task";
   refId: string;
-  requiredState: string;
+  requiredState: TaskStatus;
   dependencyType: TaskDependencyType;
   createdAt: string;
 }
-
-export interface TaskBlocker {
+  | {
   id: string;
-  blockedTaskId: string;
-  blockerType: TaskBlockerType;
-  issueType?: TaskBlockerIssueType;
-  blockerId: string | null;
-  description: string;
-  severity: TaskBlockerSeverity;
-  status: TaskBlockerStatus;
-  createdByMemberId: string | null;
+  taskId: string;
+  kind: "milestone";
+  refId: string;
+  requiredState: ReadinessStatus;
+  dependencyType: TaskDependencyType;
   createdAt: string;
-  resolvedAt: string | null;
 }
+  | {
+  id: string;
+  taskId: string;
+  kind: "part-instance";
+  refId: string;
+  requiredCondition:
+    | { kind: "physical-location"; value: PartInstanceLocation["kind"] }
+    | { kind: "derived-readiness"; value: ReadinessStatus };
+  dependencyType: TaskDependencyType;
+  createdAt: string;
+};
 
+export type AcquisitionMethod = "stock" | "purchase-cots" | "manufacture";
+export type PurchaseKind = "cots-goods" | "manufacturing-service";
+export type PurchaseApprovalStatus = "pending" | "approved" | "rejected";
+export type PurchaseOrderStatus = "not-ordered" | "ordered" | "shipped" | "delivered" | "cancelled";
+export interface Money { amount: number; currency: string | null }
+export interface PurchaseQuote {
+  id: string;
+  vendorId: string;
+  reference: string | null;
+  amount: Money | null;
+  url?: string;
+  expiresAt?: string | null;
+  quotedAt: string | null;
+}
 export interface PurchaseItem {
   id: string;
-  title: string;
-  subsystemId: string;
-  requestedById: string | null;
+  taskId: string;
+  kind: PurchaseKind;
   partDefinitionId: string | null;
+  materialId: string | null;
+  title: string;
   quantity: number;
-  vendor: string;
-  linkLabel: string;
-  estimatedCost: number;
-  finalCost?: number;
-  approvedByMentor: boolean;
-  approvedById?: string | null;
-  approvedAt?: string | null;
-  purchasedAt?: string | null;
-  deliveredAt?: string | null;
-  status: PurchaseStatus;
+  quotes: PurchaseQuote[];
+  selectedQuoteId: string | null;
+  approvalStatus: PurchaseApprovalStatus;
+  approvedById: string | null;
+  approvedAt: string | null;
+  purchaseOrderNumber: string | null;
+  orderStatus: PurchaseOrderStatus;
+  finalCost: Money | null;
+  expectedDeliveryDate: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  orderedAt: string | null;
+  deliveredAt: string | null;
 }
 
 export interface Season {
@@ -511,52 +539,29 @@ export interface Workstream {
   isArchived: boolean;
 }
 
-export interface QaReport {
-  evidenceNotes?: string;
-  qaRequestId?: string | null;
-  mentorId?: string | null;
-  requestedById?: string | null;
-  targetRiskId?: string | null;
-  proposedRiskSeverity?: RiskSeverity | null;
-  proposedRiskStatus?: "partial-mitigation" | "full-mitigation" | null;
-  id: string;
-  taskId: string;
-  participantIds: string[];
-  result: QaResult;
-  mentorApproved: boolean;
-  notes: string;
-  photoUrl?: string;
-  reviewedAt: string;
-}
-
 export interface QaRequest {
   id: string;
-  taskId: string | null;
+  projectId: string;
+  targetRefs: DomainReference[];
   subject: string;
-  mentorId: string;
+  mentorId: string | null;
   requestedById: string | null;
   createdAt: string;
-  status: "requested";
+  status: "requested" | "in-review" | "complete" | "cancelled";
 }
 
 export interface TestResult {
   id: string;
-  milestoneId: string;
+  projectId: string;
+  targetRefs: DomainReference[];
   title: string;
   status: TestResultStatus;
-  findings: string[];
-  photoUrl?: string;
 }
 
 interface FindingRecordBase {
   id: string;
-  taskId: string | null;
+  targetRefs: DomainReference[];
   projectId: string;
-  workstreamId: string | null;
-  subsystemId: string | null;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactId: string | null;
   title: string;
   detail: string;
   severity: RiskSeverity;
@@ -566,12 +571,12 @@ interface FindingRecordBase {
 }
 
 export interface QaFinding extends FindingRecordBase {
-  qaReportId: string | null;
+  reportId: string | null;
 }
 
 export interface TestFinding extends FindingRecordBase {
-  testResultId: string | null;
-  milestoneId: string | null;
+  reportId: string | null;
+  testResultId: string;
 }
 
 export interface DesignIteration {
@@ -579,40 +584,36 @@ export interface DesignIteration {
   sourceType: FindingSourceType;
   findingId: string;
   projectId: string;
-  workstreamId: string | null;
-  subsystemId: string | null;
-  mechanismId: string | null;
-  partInstanceId: string | null;
-  artifactId: string | null;
-  taskId: string | null;
+  targetRefs: DomainReference[];
   notes: string;
   status: IterationStatus;
   createdAt: string;
   updatedAt: string;
 }
 
+export type RiskStatus = "open" | "in-progress" | "blocked" | "resolved";
+export type RiskCategory = "dependency" | "design" | "manufacturing" | "supply" | "schedule" | "qa" | "inventory" | "other";
+export type DomainReference =
+  | { kind: "project" | "workstream" | "responsible-group" | "task" | "subsystem" | "mechanism" | "part-definition" | "part-instance" | "material" | "vendor" | "manufacturing-details" | "purchase-item" | "meeting" | "event" | "milestone" | "qa-request" | "test-result" | "report" | "artifact" | "qa-finding" | "test-finding" | "task-dependency" | "risk" | "design-iteration"; id: string };
+export type RiskSource = { kind: "manual" } | { kind: "task" | "task-dependency" | "qa-finding" | "test-finding" | "qa-request" | "test-result" | "report" | "event" | "milestone" | "manufacturing-details" | "part-instance" | "material"; id: string };
 export interface Risk {
   id: string;
+  projectId: string;
   title: string;
   detail: string;
   severity: RiskSeverity;
-  sourceType: "qa-report" | "test-result";
-  sourceId: string;
-  attachmentType: RiskAttachmentType;
-  attachmentId: string;
+  category: RiskCategory;
+  status: RiskStatus;
+  blocksWork: boolean;
+  source: RiskSource;
+  relatedTargets: DomainReference[];
   mitigationTaskId: string | null;
-}
-
-export interface QaReview {
-  id: string;
-  subjectId: string;
-  subjectType: "task" | "manufacturing";
-  subjectTitle: string;
-  participantIds: string[];
-  result: QaResult;
-  mentorApproved: boolean;
-  notes: string;
-  reviewedAt: string;
+  ownerGroupId: string | null;
+  ownerMemberId: string | null;
+  mitigationDueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
 }
 
 export interface Escalation {
@@ -697,12 +698,15 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
+  snapshotSchemaVersion: 1;
   seasons: Season[];
   projects: Project[];
+  workTypes: WorkType[];
+  responsibleGroups: ResponsibleGroup[];
   workstreams: Workstream[];
+  vendors: Vendor[];
   members: Member[];
   subsystems: Subsystem[];
-  disciplines: Discipline[];
   mechanisms: Mechanism[];
   materials: Material[];
   artifacts: Artifact[];
@@ -713,8 +717,8 @@ export interface PlatformSnapshot {
   // Optional for legacy snapshots; normalized in the store on load.
   milestoneRequirements?: MilestoneRequirement[];
   taskDependencies: TaskDependency[];
-  taskBlockers: TaskBlocker[];
   qaReports: QaReport[];
+  teamReports: TeamReport[];
   qaRequests?: QaRequest[];
   testResults: TestResult[];
   qaFindings: QaFinding[];
@@ -723,10 +727,10 @@ export interface PlatformSnapshot {
   risks: Risk[];
   workLogs: WorkLog[];
   meetings: Meeting[];
+  events: ScheduleEvent[];
   attendanceRecords: AttendanceRecord[];
-  manufacturingItems: ManufacturingItem[];
+  manufacturingProcesses: ManufacturingProcessRecord[];
   purchaseItems: PurchaseItem[];
-  qaReviews: QaReview[];
   escalations: Escalation[];
   actions?: AuditAction[];
 }

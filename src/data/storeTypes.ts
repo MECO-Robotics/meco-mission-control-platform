@@ -1,6 +1,5 @@
 import type {
   Artifact,
-  ManufacturingItem,
   Material,
   Mechanism,
   Meeting,
@@ -9,6 +8,7 @@ import type {
   PartDefinition,
   PartInstance,
   Project,
+  ResponsibleGroup,
   PurchaseItem,
   QaReport,
   QaRequest,
@@ -18,7 +18,6 @@ import type {
   Season,
   Subsystem,
   Task,
-  TaskBlocker,
   TaskDependency,
   TestResult,
   WorkLog,
@@ -35,12 +34,11 @@ export type TaskInput = OptionalFields<
     | "createdAt"
     | "serialNumber"
     | "serial"
-    | "blockers"
     | "isBlocked"
     | "isWaitingOnDependency"
     | "actualHours"
   >,
-  "checklistItems"
+  "checklistItems" | "responsibleGroupId" | "requestedById" | "scheduleRefs" | "manufacturingDetails"
 >;
 
 export type WorkLogInput = Omit<WorkLog, "id">;
@@ -50,16 +48,15 @@ export type MemberInput = OptionalFields<
   "email" | "elevated" | "seasonId"
 >;
 
+export type ResponsibleGroupInput = Omit<ResponsibleGroup, "id" | "isArchived" | "workTypeIds"> & Partial<Pick<ResponsibleGroup, "isArchived" | "workTypeIds">>;
+
 export type MeetingInput = Omit<
   Meeting,
   | "id"
-  | "date"
-  | "time"
   | "rsvpsYes"
   | "rsvpsMaybe"
   | "openSignIns"
-  | "startDateTime"
-> & { startDateTime: string };
+>;
 
 export type SeasonInput = Omit<Season, "id">;
 
@@ -70,14 +67,10 @@ export type ProjectInput = OptionalFields<
 
 export type PurchaseItemInput = Omit<PurchaseItem, "id">;
 
-export type ManufacturingItemInput = OptionalFields<
-  Omit<ManufacturingItem, "id">,
-  "materialId" | "partInstanceId" | "partInstanceIds" | "inHouse"
->;
 
 export type MaterialInput = Omit<Material, "id">;
 
-export type ArtifactInput = OptionalFields<Omit<Artifact, "id">, "isArchived">;
+export type ArtifactInput = Omit<Artifact, "id" | "targetRefs"> & { targetRefs?: Artifact["targetRefs"] };
 
 export type WorkstreamInput = OptionalFields<Omit<Workstream, "id">, "isArchived">;
 
@@ -102,35 +95,33 @@ export type MilestoneInput = Pick<
   Milestone,
   | "title"
   | "type"
-  | "status"
-  | "startDateTime"
-  | "endDateTime"
+  | "startAt"
+  | "endAt"
   | "isExternal"
   | "description"
   | "projectIds"
   | "photoUrl"
->;
+> & Partial<Pick<Milestone, "status">>;
 
-export type QaReportInput = Omit<QaReport, "id">;
+export type QaReportInput = Omit<QaReport, "id" | "projectId" | "createdByMemberId" | "summary" | "status" | "reviewedById" | "createdAt" | "reportType"> & { projectId: string; createdByMemberId?: string | null; summary?: string; status?: QaReport["status"]; reviewedById?: string | null; createdAt?: string };
 
 export type QaRequestInput = OptionalFields<
   Omit<QaRequest, "id" | "createdAt" | "status">,
-  "taskId" | "requestedById"
+  "requestedById" | "projectId" | "targetRefs" | "mentorId"
 >;
 
-export type TestResultInput = Omit<TestResult, "id">;
+export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId"> & { targetRefs: TestResult["targetRefs"]; projectId?: string };
 
-export type ReportInput = Omit<
-  Report,
-  "id" | "evidenceNotes" | "qaRequestId" | "mentorId" | "requestedById"
->;
+export type ReportInput = Report extends infer Value
+  ? Value extends Report
+    ? Omit<Value, "id">
+    : never
+  : never;
 
 export type ReportFindingInput = Pick<
   ReportFinding,
   | "reportId"
-  | "mechanismId"
-  | "partInstanceId"
-  | "artifactInstanceId"
+  | "targetRefs"
   | "issueType"
   | "severity"
   | "notes"
@@ -139,11 +130,15 @@ export type ReportFindingInput = Pick<
   | "spawnedRiskId"
 >;
 
-export type TaskDependencyInput = Omit<TaskDependency, "id" | "createdAt">;
+export type TaskDependencyInput = TaskDependency extends infer Dependency
+  ? Dependency extends TaskDependency
+    ? Omit<Dependency, "id" | "createdAt">
+    : never
+  : never;
 
-export type TaskBlockerInput = OptionalFields<
-  Omit<TaskBlocker, "id" | "createdAt" | "resolvedAt">,
-  "status" | "createdByMemberId"
->;
 
-export type RiskInput = Omit<Risk, "id">;
+export type RiskInput = Omit<Risk, "id" | "createdAt" | "updatedAt" | "resolvedAt" | "ownerMemberId" | "mitigationDueDate"> & {
+  resolvedAt?: string | null;
+  ownerMemberId?: string | null;
+  mitigationDueDate?: string | null;
+};
