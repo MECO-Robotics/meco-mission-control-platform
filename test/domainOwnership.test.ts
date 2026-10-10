@@ -1,8 +1,9 @@
+import { validateTaskLinks } from "../src/domain/taskLinks";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { getResponsibleGroups, getSnapshot } from "../src/data/store";
-import { validatePurchaseItemLinks, validateTaskLinks } from "../src/routes/helpers/linkValidation";
+import { validatePurchaseItemLinks } from "../src/routes/helpers/linkValidation";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("canonical projects are unique by type within a season", async () => {
@@ -27,7 +28,7 @@ test("canonical projects are unique by type within a season", async () => {
 test("responsible groups must match the task project and season", () => {
   const task = getSnapshot().tasks.find((candidate) => candidate.id === "swerve-sensor-bundle");
   assert.ok(task);
-  const invalid = validateTaskLinks({
+  const invalid = validateTaskLinks(getSnapshot(), {
     projectId: task.projectId,
     workTypeId: task.workTypeId,
     responsibleGroupId: "wrong-season-group",
@@ -121,8 +122,8 @@ test("teams enforce season, project and member integrity and can be archived", a
       workstreamIds: task.workstreamIds, subsystemIds: task.subsystemIds,
       mechanismIds: task.mechanismIds, partInstanceIds: task.partInstanceIds,
     };
-    assert.match(validateTaskLinks(assignment) ?? "", /responsible group/);
-    assert.equal(validateTaskLinks({ ...assignment, allowArchivedResponsibleGroup: true }), null);
+    assert.match(validateTaskLinks(getSnapshot(), assignment) ?? "", /responsible group/);
+    assert.equal(validateTaskLinks(getSnapshot(), { ...assignment, allowArchivedResponsibleGroup: true }), null);
     const missing = await app.inject({ method: "DELETE", url: `/api/responsible-groups/${secondaryId}-missing` });
     assert.equal(missing.statusCode, 404);
   });
@@ -141,11 +142,11 @@ test("seeded team divisions are the seven editable FRC disciplines", async () =>
   await withIntegrationApp(async ({ app }) => {
     const deleted = await app.inject({ method: "DELETE", url: `/api/responsible-groups/${mechanical.id}` });
     assert.equal(deleted.statusCode, 200, deleted.body);
+    assert.equal(getResponsibleGroups().some((group) => group.id === mechanical.id), false);
+    const capacityFallback = getResponsibleGroups().find((group) => group.primaryMemberIds.includes(studentId));
+    assert.ok(capacityFallback?.memberIds.includes(studentId), "capacity transfers to a remaining team membership");
+    for (const taskId of taskIds) assert.equal(getSnapshot().tasks.find((task) => task.id === taskId)?.responsibleGroupId, null);
   });
-  assert.equal(getResponsibleGroups().some((group) => group.id === mechanical.id), false);
-  const capacityFallback = getResponsibleGroups().find((group) => group.primaryMemberIds.includes(studentId));
-  assert.ok(capacityFallback?.memberIds.includes(studentId), "capacity transfers to a remaining team membership");
-  for (const taskId of taskIds) assert.equal(getSnapshot().tasks.find((task) => task.id === taskId)?.responsibleGroupId, null);
 });
 
 test("member records and bootstrap do not expose class year grouping data", async () => {

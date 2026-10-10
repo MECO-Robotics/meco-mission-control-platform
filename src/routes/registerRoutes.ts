@@ -136,7 +136,6 @@ import {
   validateRiskLinks,
   validateSubsystemPeople,
   validateTaskPeople,
-  validateTaskLinks,
   validateTestResultLinks,
   validateWorkLogLinks,
   wouldCreateSubsystemCycle,
@@ -1212,14 +1211,23 @@ export async function registerRoutes(
       });
     }
 
+    const taskTargeted = parsed.data.targetRefs.some((ref) => ref.kind === "task");
+    const actor = taskTargeted && isAuthEnabled() ? getTaskActionMember(request) : null;
+    if (taskTargeted && isAuthEnabled() && !actor) {
+      return reply.code(403).send({ message: "A roster member is required to request task QA." });
+    }
     const requestItem = createQaRequest({
       ...parsed.data,
       subject: parsed.data.subject.trim(),
-      requestedById: parsed.data.requestedById ?? null,
+      requestedById: taskTargeted && isAuthEnabled()
+        ? actor!.id
+        : parsed.data.requestedById ?? null,
     });
 
+    const taskId = requestItem.targetRefs.find((ref) => ref.kind === "task")?.id;
     return reply.code(201).send({
       item: requestItem,
+      task: taskId ? buildTaskActionItem(taskId) : null,
     });
   });
 
@@ -2002,13 +2010,6 @@ export async function registerRoutes(
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
     };
 
-    const taskValidationError = validateTaskLinks(taskInput);
-    if (taskValidationError) {
-      return reply.code(400).send({
-        message: taskValidationError,
-      });
-    }
-
     const createdTask = createTask(taskInput);
     return reply.code(201).send({
       item: {
@@ -2209,36 +2210,10 @@ export async function registerRoutes(
         projectId: parsed.data.projectId,
         subsystemId: targetIds.subsystemIds[0],
       }) ?? currentTask.projectId;
-      const nextTaskShape = {
-        projectId: nextProjectId,
-        workTypeId: parsed.data.workTypeId ?? currentTask.workTypeId,
-        responsibleGroupId: parsed.data.responsibleGroupId === undefined ? currentTask.responsibleGroupId : parsed.data.responsibleGroupId,
-        ownerId: parsed.data.ownerId === undefined ? currentTask.ownerId : parsed.data.ownerId,
-        mentorId: parsed.data.mentorId === undefined ? currentTask.mentorId : parsed.data.mentorId,
-        scheduleRefs: parsed.data.scheduleRefs === undefined ? currentTask.scheduleRefs : parsed.data.scheduleRefs,
-        manufacturingDetails: parsed.data.manufacturingDetails === undefined ? currentTask.manufacturingDetails : parsed.data.manufacturingDetails,
-        ...targetIds,
-        assigneeIds:
-          parsed.data.assigneeIds === undefined
-            ? currentTask.assigneeIds ?? []
-            : uniqueIds(parsed.data.assigneeIds),
-        allowArchivedResponsibleGroup: parsed.data.responsibleGroupId === undefined && currentTask.responsibleGroupId !== null,
-      };
-
-      const taskValidationError = validateTaskLinks(nextTaskShape);
-      if (taskValidationError) {
-        return reply.code(400).send({
-          message: taskValidationError,
-        });
-      }
-
       const updatedTask = updateTask(request.params.taskId, {
         ...parsed.data,
-        projectId: nextTaskShape.projectId,
-        workstreamIds: nextTaskShape.workstreamIds,
-        subsystemIds: nextTaskShape.subsystemIds,
-        mechanismIds: nextTaskShape.mechanismIds,
-        partInstanceIds: nextTaskShape.partInstanceIds,
+        projectId: nextProjectId,
+        ...targetIds,
       }, buildTaskAuditContext(request));
       return {
         item: updatedTask
@@ -2592,21 +2567,6 @@ export async function registerRoutes(
       if (!currentMember) {
         return reply.code(404).send({ message: "Member not found." });
       }
-      const nextRole = parsed.data.role ?? currentMember.role;
-
-      if (nextRole !== currentMember.role) {
-        const roleSensitiveTasks = getTasks().filter((task) =>
-          (task.ownerId === currentMember.id && nextRole !== "student" && nextRole !== "lead") ||
-          (task.mentorId === currentMember.id && nextRole !== "mentor") ||
-          ((task.assigneeIds ?? []).includes(currentMember.id) && nextRole !== "student" && nextRole !== "lead" && nextRole !== "mentor"),
-        );
-        if (roleSensitiveTasks.length > 0) {
-          return reply.code(409).send({
-            message: `Reassign ${roleSensitiveTasks.length} task${roleSensitiveTasks.length === 1 ? "" : "s"} before changing this person's role.`,
-          });
-        }
-      }
-
       if (
         currentMember.role === "admin" &&
         parsed.data.role !== undefined &&
@@ -2680,21 +2640,7 @@ export async function registerRoutes(
         });
       }
 
-      const soleAssignedTasks = getTasks().filter((task) => {
-        const contributorIds = uniqueIds([
-          task.ownerId,
-          ...(task.assigneeIds ?? []),
-          task.mentorId,
-        ].filter((id): id is string => Boolean(id)));
-        return contributorIds.includes(request.params.memberId) && contributorIds.every((id) => id === request.params.memberId);
-      });
-      if (soleAssignedTasks.length > 0) {
-        return reply.code(409).send({
-          message: `Reassign ${soleAssignedTasks.length} task${soleAssignedTasks.length === 1 ? "" : "s"} before removing this person.`,
-        });
-      }
-
-      const member = removeMember(request.params.memberId);
+      const member = removeMember(request.params.memberId, buildTaskAuditContext(request));
       if (!member) {
         return reply.code(404).send({
           message: "Member not found.",
@@ -2754,7 +2700,7 @@ export async function registerRoutes(
       parentSubsystemId: parsed.data.parentSubsystemId ?? null,
       mentorIds: parsed.data.mentorIds ?? [],
       responsibleEngineerId: parsed.data.responsibleEngineerId ?? null,
-    });
+    }, buildTaskAuditContext(request));
 
     return reply.code(201).send({
       item: subsystem,
@@ -2899,7 +2845,7 @@ export async function registerRoutes(
       });
     }
 
-    const mechanism = createMechanism(parsed.data);
+    const mechanism = createMechanism(parsed.data, buildTaskAuditContext(request));
     return reply.code(201).send({
       item: mechanism,
     });

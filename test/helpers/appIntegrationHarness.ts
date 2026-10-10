@@ -1,3 +1,5 @@
+import { createCadRuntimeStore, runWithCadRuntimeStore } from "../../src/cad/cadStore";
+import { createOnshapeRuntimeStore, runWithOnshapeRuntimeStore } from "../../src/onshape/cadStore";
 import { testMobileSessionStore } from "./sessionAuth";
 import { MemoryWebSessionStore } from "./webSessionMemoryStore";
 import { saveEnv, restoreEnv } from "./environment";
@@ -6,7 +8,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import type { MobileSessionStore } from "../../src/auth/mobileSessionStoreTypes";
 import type { WebSessionStore } from "../../src/auth/webSessionStore";
-import { createMember, getSnapshot, resetStore, type MemberInput } from "../../src/data/store";
+import { createPlatformStore, createMember, getSnapshot, resetStore, type MemberInput } from "../../src/data/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -199,26 +201,34 @@ export async function withIntegrationApp(
     configureEnv(options?.env);
     resetIntegrationEnvModuleCache();
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
-    const app = await buildApp({
-      userPreferencesPath: join(preferencesDirectory, "preferences.json"),
-      mobileSessionStore: options?.mobileSessionStore ?? testMobileSessionStore,
-      webSessionStore: options?.webSessionStore ?? new MemoryWebSessionStore(),
-      prisma: options?.prisma,
-    });
-    resetStore(options?.snapshot);
-    for (const member of options?.members ?? []) {
-      if (!getSnapshot().members.some((candidate) => candidate.email === member.email)) {
-        createMember(member);
+    const platformStore = createPlatformStore();
+    const cadStore = createCadRuntimeStore();
+    const onshapeStore = createOnshapeRuntimeStore();
+    await platformStore.run(() => runWithCadRuntimeStore(cadStore, () => runWithOnshapeRuntimeStore(onshapeStore, async () => {
+      const app = await buildApp({
+        platformStore,
+        cadStore,
+        onshapeStore,
+        userPreferencesPath: join(preferencesDirectory, "preferences.json"),
+        mobileSessionStore: options?.mobileSessionStore ?? testMobileSessionStore,
+        webSessionStore: options?.webSessionStore ?? new MemoryWebSessionStore(),
+        prisma: options?.prisma,
+      });
+      resetStore(options?.snapshot);
+      for (const member of options?.members ?? []) {
+        if (!getSnapshot().members.some((candidate) => candidate.email === member.email)) {
+          createMember(member);
+        }
       }
-    }
 
-    try {
-      resetRequestLimits();
-      await run({ app, resetLimits: resetRequestLimits });
-    } finally {
-      await app.close();
-      resetRequestLimits();
-    }
+      try {
+        resetRequestLimits();
+        await run({ app, resetLimits: resetRequestLimits });
+      } finally {
+        await app.close();
+        resetRequestLimits();
+      }
+    })));
   } finally {
     rmSync(preferencesDirectory, { recursive: true, force: true });
     restoreEnv(envSnapshot);

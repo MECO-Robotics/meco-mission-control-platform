@@ -251,7 +251,8 @@ test("QA workflow effects survive restart and roll back together when persistenc
     const before = JSON.stringify(store.getSnapshot());
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const source = store.getSnapshot(); const task = source.tasks[0];
-    const qaRequest = store.createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: source.members[0].id });
+    store.updateTask(task.id, { status: "in-progress" });
+    const qaRequest = store.createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: source.members.find(member => member.role === "mentor").id });
     const result = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: qaRequest.id }], createdByMemberId: source.members[0].id, participantIds: [source.members[0].id], mentorId: source.members[0].id, requestedById: null, result: "iteration-worthy", status: "submitted", reviewedById: null, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: new Date().toISOString() });
     if (result.error) throw new Error(result.error);
     if (!store.getSnapshot().qaReports.some(item => item.notes === "Durable QA")) throw new Error("QA report was not staged");
@@ -509,6 +510,98 @@ test("obsolete task snapshots are archived and startup restores canonical bootst
         Array.isArray(task[field]) && !(field.slice(0, -1) in task),
       ),
     ));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("production apps sharing a durable snapshot coordinate sequential and concurrent HTTP writes", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-shared-durable-owner-"));
+  const path = join(directory, "snapshot.json");
+  try {
+    const taskIds = JSON.parse(runProductionStoreScript(path, `
+      process.env.API_RATE_LIMIT_MAX_REQUESTS = "1000";
+      const appModule = await import("./src/app.ts"); const { buildApp } = appModule.default ?? appModule;
+      const mobileModule = await import("./test/helpers/mobileSessionMemoryStore.ts"); const { MobileSessionMemoryStore } = mobileModule.default ?? mobileModule;
+      const webModule = await import("./test/helpers/webSessionMemoryStore.ts"); const { MemoryWebSessionStore } = webModule.default ?? webModule;
+      const serviceModule = await import("./src/auth/mobileSessionService.ts"); const { MobileSessionService } = serviceModule.default ?? serviceModule;
+      const storeModule = await import("./src/data/store.ts"); const store = storeModule.default ?? storeModule;
+      const cadModule = await import("./src/cad/cadStore.ts"); const { createCadRuntimeStore } = cadModule.default ?? cadModule;
+      const mobileSessionStore = new MobileSessionMemoryStore();
+      const first = await buildApp({ mobileSessionStore, webSessionStore: new MemoryWebSessionStore(), cadStore: createCadRuntimeStore(), userPreferencesPath: ${JSON.stringify(join(directory, "first-preferences.json"))} });
+      const second = await buildApp({ mobileSessionStore, webSessionStore: new MemoryWebSessionStore(), cadStore: createCadRuntimeStore(), userPreferencesPath: ${JSON.stringify(join(directory, "second-preferences.json"))} });
+      first.log.level = "silent"; second.log.level = "silent";
+      try {
+        const snapshot = store.getSnapshot();
+        const mentor = snapshot.members.find(member => member.role === "mentor");
+        const session = await new MobileSessionService(mobileSessionStore).create({ accountId: mentor.id, authProvider: "email", email: mentor.email, name: mentor.name, picture: null, hostedDomain: "mecorobotics.org", role: "mentor", taskSubteamIds: [] }, "shared-owner-test", "Tests");
+        const headers = { authorization: "Bearer " + session.token };
+        const [a,b] = snapshot.tasks.slice(0, 2);
+        const patch = async (app, id, payload) => {
+          const response = await app.inject({ method: "PATCH", url: "/api/tasks/" + id, headers, payload });
+          if (response.statusCode !== 200) throw new Error(response.body);
+        };
+        await patch(first, a.id, { title: "Sequential first app" });
+        await patch(second, b.id, { title: "Sequential second app" });
+        await Promise.all([patch(first, a.id, { summary: "Concurrent first app" }), patch(second, b.id, { summary: "Concurrent second app" })]);
+        for (const app of [first, second]) {
+          const response = await app.inject({ method: "GET", url: "/api/bootstrap", headers });
+          const tasks = response.json().tasks;
+          if (tasks.find(task => task.id === a.id)?.title !== "Sequential first app" || tasks.find(task => task.id === b.id)?.title !== "Sequential second app") throw new Error("An app lost a committed write");
+        }
+        process.stdout.write(JSON.stringify([a.id,b.id]));
+      } finally { await first.close(); await second.close(); }
+    `));
+    const restored = JSON.parse(runProductionStoreScript(path, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      process.stdout.write(JSON.stringify(store.getSnapshot().tasks.filter(task => ${JSON.stringify(taskIds)}.includes(task.id))));
+    `));
+    assert.deepEqual(restored.map((task: { title: string }) => task.title), ["Sequential first app", "Sequential second app"]);
+    assert.deepEqual(restored.map((task: { summary: string }) => task.summary), ["Concurrent first app", "Concurrent second app"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("task QA requests and their task transition survive restart or roll back as one durable command", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-task-qa-request-"));
+  const path = join(directory, "snapshot.json");
+  const request = `
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const before = JSON.stringify(store.getSnapshot());
+    const transaction = await store.acquireSnapshotMutation(); transaction.enter();
+    const source = store.getSnapshot(); const task = source.tasks[0];
+    store.updateTask(task.id, { status: "in-progress" });
+    const input = { projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: "Durable task QA request", mentorId: source.members.find(member => member.role === "mentor").id };
+    const created = store.createQaRequest(input);
+    const staged = store.getSnapshot();
+    if (staged.tasks.find(record => record.id === task.id).status !== "waiting-for-qa") throw new Error("Task transition was not staged with request");
+    let failed = false;
+    try { await transaction.commit(); } catch { failed = true; } finally { transaction.release(); }
+    if (failed) {
+      if (JSON.stringify(store.getSnapshot()) !== before) throw new Error("Failed request published partial state");
+      process.stdout.write("rolled-back");
+    } else {
+      const published = store.getSnapshot();
+      const retry = await store.acquireSnapshotMutation(); retry.enter();
+      const same = store.createQaRequest(input);
+      if (same.id !== created.id || retry.hasChanges()) throw new Error("Retry created duplicate state");
+      await retry.commit(); retry.release();
+      if (store.getSnapshot() !== published) throw new Error("Retry republished state");
+      process.stdout.write(JSON.stringify({ id: created.id, taskId: task.id, mentorId: created.mentorId }));
+    }
+  `;
+  try {
+    const saved = JSON.parse(runProductionStoreScript(path, request));
+    const restored = JSON.parse(runProductionStoreScript(path, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const snapshot = store.getSnapshot();
+      process.stdout.write(JSON.stringify({ request: snapshot.qaRequests.find(record => record.id === ${JSON.stringify(saved.id)}), task: snapshot.tasks.find(record => record.id === ${JSON.stringify(saved.taskId)}) }));
+    `));
+    assert.equal(restored.request.mentorId, saved.mentorId);
+    assert.equal(restored.task.mentorId, saved.mentorId);
+    assert.equal(restored.task.status, "waiting-for-qa");
+    assert.equal(runProductionStoreScript("/dev/null/task-qa-request.json", request), "rolled-back");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  createPlatformStore,
+  startInteractiveTutorialSession,
+  runWithInteractiveTutorialSession,
+  createTask,
+  acquireSnapshotMutation,
   createMaterial,
   updateProject,
   updateWorkstream,
@@ -438,7 +443,7 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
 
 test("createSubsystem auto-generates a testing task for its parent subsystem", () => {
   const subsystem = createSubsystem({
-    projectId: "default-season-robot",
+    projectId: "project-robot-2026",
     name: "Test Subsystem",
     color: "#4F86C6",
     description: "Temporary subsystem for coverage.",
@@ -606,8 +611,8 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
     name: "QA cleanup root",
     description: "Scenario for QA request cascade behavior.",
     parentSubsystemId: null,
-    responsibleEngineerId: null,
-    mentorIds: [],
+    responsibleEngineerId: "ava",
+    mentorIds: ["marco"],
   });
   const childSubsystem = createSubsystem({
     projectId: "project-robot-2026",
@@ -621,6 +626,7 @@ test("removeSubsystem clears QA requests for removed tasks", () => {
     task.title === `Integrate ${childSubsystem.name}`,
   );
   assert.ok(generatedTask);
+  updateTask(generatedTask.id, { status: "in-progress", ownerId: "ava", assigneeIds: ["ava"], mentorId: "marco" });
   const taskRequest = createQaRequest({
     projectId: generatedTask.projectId,
     targetRefs: [{ kind: "task", id: generatedTask.id }],
@@ -841,8 +847,11 @@ test("getTasksForMilestone aggregates inferred and explicit schedule references"
     ],
   });
 
+  const auxiliary = createSubsystem({ projectId: "project-robot-2026", name: "Auxiliary", description: "Explicit milestone-only fixture", parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [] });
   const explicitTask = updateTask("wire-swerve-module", {
-    subsystemIds: ["outreach"],
+    subsystemIds: [auxiliary.id],
+    mechanismIds: [],
+    partInstanceIds: [],
     scheduleRefs: [{ kind: "milestone", id: milestone.id }],
   });
   assert.ok(explicitTask);
@@ -892,6 +901,14 @@ test("task targets preserve kind order, first-target context, and unique array l
     partInstanceIds: ["part"],
     scheduleRefs: [{ kind: "milestone" as const, id: "milestone" }],
   };
+  resetStore({
+    ...snapshot,
+    workstreams: [...snapshot.workstreams, ...["shared", "primary-workstream"].map((id) => ({ ...snapshot.workstreams[0], id, projectId: task.projectId }))],
+    subsystems: [...snapshot.subsystems, ...["shared", "primary-subsystem"].map((id) => ({ ...snapshot.subsystems[0], id, projectId: task.projectId }))],
+    mechanisms: [...snapshot.mechanisms, { ...snapshot.mechanisms[0], id: "mechanism", subsystemId: "shared" }],
+    partInstances: [...snapshot.partInstances, { ...snapshot.partInstances[0], id: "part", intendedSubsystemId: "shared", intendedMechanismId: "mechanism", location: { kind: "installed", subsystemId: "shared", mechanismId: "mechanism" } }],
+    milestones: [...snapshot.milestones, { ...snapshot.milestones[0], id: "milestone" }],
+  });
   updateTask(task.id, targets);
 
   const links = getTaskTargets().filter((link) => link.taskId === task.id);
@@ -952,4 +969,147 @@ test("prepared updates retain detached results, audit changes, and reject invali
   assert.equal(unchanged?.onHandQuantity, 3);
   assert.equal(getSnapshot().actions?.length, (published.actions?.length ?? 0) + 1);
   assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, []);
+});
+
+
+test("task commands reject invalid links and people without publishing data or audits", () => {
+  const before = getSnapshot();
+  const task = before.tasks[0];
+  for (const input of [{ projectId: "missing-project" }, { workTypeId: "missing-work-type" }, { ownerId: "missing-member" }, { scheduleRefs: [{ kind: "event" as const, id: "missing-event" }] }]) {
+    assert.throws(() => updateTask(task.id, input), /does not exist|do not exist|does not belong/);
+    assert.equal(getSnapshot(), before);
+    assert.throws(() => createTask({ ...JSON.parse(JSON.stringify(task)), ...input }), /does not exist|do not exist|does not belong/);
+    assert.equal(getSnapshot(), before);
+  }
+});
+
+test("snapshot owners isolate records, tutorial sessions and mutation queues", async () => {
+  const first = createPlatformStore();
+  const second = createPlatformStore();
+  await first.run(async () => {
+    const transaction = await acquireSnapshotMutation();
+    transaction.enter();
+    updateTask(getSnapshot().tasks[0].id, { title: "First owner edit" });
+    await second.run(async () => {
+      const otherTransaction = await acquireSnapshotMutation();
+      otherTransaction.enter();
+      assert.notEqual(getSnapshot().tasks[0].title, "First owner edit");
+      updateTask(getSnapshot().tasks[0].id, { title: "Second owner edit" });
+      await otherTransaction.commit();
+      otherTransaction.release();
+    });
+    assert.equal(getSnapshot().tasks[0].title, "First owner edit");
+    await transaction.commit();
+    transaction.release();
+  });
+  assert.equal(first.run(() => getSnapshot().tasks[0].title), "First owner edit");
+  assert.equal(second.run(() => getSnapshot().tasks[0].title), "Second owner edit");
+  first.run(() => startInteractiveTutorialSession("shared-user"));
+  first.run(() => runWithInteractiveTutorialSession("shared-user", () => {
+    updateTask(getSnapshot().tasks[0].id, { title: "First owner tutorial" });
+  }));
+  second.run(() => startInteractiveTutorialSession("shared-user"));
+  assert.equal(first.run(() => runWithInteractiveTutorialSession("shared-user", () => getSnapshot().tasks[0].title)), "First owner tutorial");
+  assert.notEqual(second.run(() => runWithInteractiveTutorialSession("shared-user", () => getSnapshot().tasks[0].title)), "First owner tutorial");
+});
+
+
+test("task commands infer ancestors for nested targets before validating links", () => {
+  const before = getSnapshot();
+  const part = before.partInstances.find((record) => record.intendedMechanismId)!;
+  assert.ok(part);
+  const task = before.tasks.find((record) => record.projectId === before.subsystems.find((subsystem) => subsystem.id === part.intendedSubsystemId)?.projectId)!;
+  const updated = updateTask(task.id, { subsystemIds: [], mechanismIds: [], partInstanceIds: [part.id] });
+  assert.ok(updated);
+  assert.ok(updated.subsystemIds.includes(part.intendedSubsystemId!));
+  assert.ok(updated.mechanismIds.includes(part.intendedMechanismId!));
+});
+
+
+test("generated tasks inherit eligible contributors or an explicit creator before atomic publication", () => {
+  const parent = createSubsystem({ projectId: "project-robot-2026", name: "Unassigned parent", description: "Creator ownership fixture", parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [] });
+  const initial = getSnapshot();
+  assert.throws(() => createMechanism({ subsystemId: "missing-parent", name: "Invalid parent", description: "Atomic fixture" }, { actorMemberId: "ava" }), /subsystem does not exist/);
+  assert.equal(getSnapshot(), initial);
+  const mechanismInput = { subsystemId: parent.id, name: "Creator wiring", description: "Generated task fixture" };
+  const childInput = { projectId: parent.projectId, name: "Creator integration", description: "Generated task fixture", parentSubsystemId: parent.id, responsibleEngineerId: null, mentorIds: [] };
+  for (const actorMemberId of [undefined, "maya", "missing-creator"]) {
+    const before = getSnapshot();
+    assert.throws(() => createMechanism(mechanismInput, { actorMemberId }), /Assign a student\/lead engineer or mentor/);
+    assert.equal(getSnapshot(), before);
+    assert.throws(() => createSubsystem(childInput, { actorMemberId }), /Assign a student\/lead engineer or mentor/);
+    assert.equal(getSnapshot(), before);
+  }
+  const mechanism = createMechanism(mechanismInput, { actorMemberId: "ava", requestId: "creator-wiring" });
+  const wiring = getSnapshot().tasks.find((task) => task.mechanismIds.includes(mechanism.id))!;
+  assert.equal(wiring.ownerId, "ava");
+  assert.equal(wiring.mentorId, null);
+  const child = createSubsystem(childInput, { actorMemberId: "jordan", requestId: "creator-integration" });
+  const integration = getSnapshot().tasks.find((task) => task.title === `Integrate ${child.name}`)!;
+  assert.equal(integration.ownerId, null);
+  assert.equal(integration.mentorId, "jordan");
+  for (const requestId of ["creator-wiring", "creator-integration"]) {
+    const audits = getSnapshot().actions!.filter((action) => action.requestId === requestId);
+    assert.equal(audits.length, 2);
+    assert.equal(new Set(audits.map((action) => action.id)).size, 2);
+    assert.ok(audits.every((action) => action.actorMemberId === (requestId === "creator-wiring" ? "ava" : "jordan")));
+  }
+  const inherited = createMechanism({ ...mechanismInput, subsystemId: "drive", name: "Inherited wiring" }, { actorMemberId: "maya" });
+  const inheritedTask = getSnapshot().tasks.find((task) => task.mechanismIds.includes(inherited.id))!;
+  assert.equal(inheritedTask.ownerId, "ava");
+  assert.equal(inheritedTask.mentorId, "marco");
+});
+
+
+test("generated tasks reject missing or inactive workflow work types without publishing", () => {
+  const seed = getSnapshot();
+  for (const remove of [false, true]) {
+    resetStore({ ...seed, workTypes: remove
+      ? seed.workTypes.filter((type) => !["robot:electrical-wiring", "robot:testing"].includes(type.id))
+      : seed.workTypes.map((type) => ["robot:electrical-wiring", "robot:testing"].includes(type.id) ? { ...type, isActive: false } : type),
+    });
+    const before = getSnapshot();
+    assert.throws(() => createMechanism({ subsystemId: "drive", name: "Missing wiring workflow", description: "No fallback" }), /active electrical-wiring work type/);
+    assert.equal(getSnapshot(), before);
+    assert.throws(() => createSubsystem({ projectId: "project-robot-2026", parentSubsystemId: "drive", name: "Missing integration workflow", description: "No fallback", responsibleEngineerId: null, mentorIds: [] }), /active testing work type/);
+    assert.equal(getSnapshot(), before);
+  }
+});
+
+
+test("member commands preserve task people across role changes and deletion", () => {
+  const task = getSnapshot().tasks.find((record) => record.ownerId && record.mentorId)!;
+  const before = getSnapshot();
+  assert.throws(() => updateMember(task.ownerId!, { role: "mentor" }), /Reassign.*before changing this person's role/);
+  assert.equal(getSnapshot(), before);
+  assert.throws(() => updateMember(task.mentorId!, { role: "student" }), /Reassign.*before changing this person's role/);
+  assert.equal(getSnapshot(), before);
+  const contributor = createMember({ name: "Only Task Contributor", role: "student" });
+  const sole = createTask({ ...JSON.parse(JSON.stringify(task)), title: "Sole contributor task", ownerId: contributor.id, assigneeIds: [contributor.id], mentorId: null });
+  const assigned = getSnapshot();
+  assert.throws(() => removeMember(contributor.id), /Reassign 1 task before removing this person/);
+  assert.equal(getSnapshot(), assigned);
+  updateTask(sole.id, { mentorId: task.mentorId });
+  assert.ok(removeMember(contributor.id));
+  const retained = getSnapshot().tasks.find((record) => record.id === sole.id)!;
+  assert.equal(retained.ownerId, null);
+  assert.deepEqual(retained.assigneeIds, []);
+  assert.equal(retained.mentorId, task.mentorId);
+});
+
+test("removing a QA mentor atomically cancels the request and reopens work for its remaining contributor", () => {
+  const snapshot = getSnapshot();
+  const task = snapshot.tasks.find((record) => record.status === "in-progress" && !record.isBlocked && !snapshot.taskDependencies.some((dependency) => dependency.taskId === record.id))!;
+  const mentor = createMember({ name: "Temporary QA Mentor", role: "mentor" });
+  const request = createQaRequest({ targetRefs: [{ kind: "task", id: task.id }], subject: "Mentor removal QA", mentorId: mentor.id, requestedById: task.ownerId });
+  const removed = removeMember(mentor.id, { actorMemberId: "maya", requestId: "cancel-mentor-qa" });
+  assert.ok(removed);
+  const after = getSnapshot();
+  assert.ok(!after.qaRequests!.some((record) => record.id === request.id));
+  const reopened = after.tasks.find((record) => record.id === task.id)!;
+  assert.equal(reopened.status, "in-progress");
+  assert.equal(reopened.mentorId, null);
+  assert.equal(reopened.ownerId, task.ownerId);
+  assert.equal(after.actions!.at(-1)!.actorMemberId, "maya");
+  assert.deepEqual(after.actions!.at(-1)!.detailsJson?.cancelledQaTaskIds, [task.id]);
 });

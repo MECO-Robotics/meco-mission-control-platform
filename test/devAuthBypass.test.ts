@@ -5,13 +5,15 @@ import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMember, resetStore } from "../src/data/store";
+import { createPlatformStore, createMember, resetStore } from "../src/data/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
-test("buildApp exposes a development-only sign-in bypass", async () => {
+const platformStore = createPlatformStore();
+
+test("buildApp exposes a development-only sign-in bypass", () => platformStore.run(async () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
   const saved = saveEnv([
     "NODE_ENV",
@@ -48,7 +50,7 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
 
     const { buildApp } = await import("../src/app");
 
-    const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json"), mobileSessionStore: testMobileSessionStore, webSessionStore: new MemoryWebSessionStore() });
+    const app = await buildApp({ platformStore, userPreferencesPath: join(directory, "preferences.json"), mobileSessionStore: testMobileSessionStore, webSessionStore: new MemoryWebSessionStore() });
 
     try {
       resetStore();
@@ -764,4 +766,4 @@ test("buildApp exposes a development-only sign-in bypass", async () => {
     rmSync(directory, { recursive: true, force: true });
     restoreEnv(saved);
   }
-});
+}));

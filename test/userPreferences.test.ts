@@ -1,3 +1,5 @@
+import { getSnapshot, updateTask } from "../src/data/store";
+import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -72,5 +74,33 @@ test("preference routes isolate app instances and reopen persisted updates", asy
     } finally {
       await reopened.close();
     }
+  });
+});
+
+
+test("constructing and closing another app preserves the first app's workspace and CAD owners", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-app-owners-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const task = getSnapshot().tasks[0];
+    updateTask(task.id, { title: "First application workspace" });
+    await app.cadStore.createImportRun({ projectId: task.projectId, seasonId: null, source: "STEP_UPLOAD", status: "FAILED", originalFilename: "first.step", uploadedFileId: null, uploadedFileHash: null, parserVersion: null, parseStartedAt: null, parseCompletedAt: null, requestedBy: null, errorMessage: "Owner fixture", rawSummaryJson: {} });
+    getOnshapeRuntimeStore().recordApiCall(17);
+    const { buildApp } = require("../src/app") as typeof import("../src/app");
+    const other = await buildApp({ userPreferencesPath: join(directory, "other.json") });
+    try {
+      const secondTasks = await other.inject({ method: "GET", url: "/api/tasks" });
+      assert.equal(secondTasks.statusCode, 200);
+      assert.notEqual(secondTasks.json().items.find((item: { id: string }) => item.id === task.id).title, "First application workspace");
+      assert.equal((await other.cadStore.listImportRuns()).length, 0);
+    } finally {
+      await other.close();
+    }
+    resetLimits();
+    const firstTasks = await app.inject({ method: "GET", url: "/api/tasks" });
+    assert.equal(firstTasks.statusCode, 200);
+    assert.equal(firstTasks.json().items.find((item: { id: string }) => item.id === task.id).title, "First application workspace");
+    assert.equal((await app.cadStore.listImportRuns()).length, 1);
+    assert.equal(getOnshapeRuntimeStore().getBudget().callsUsedToday, 17);
   });
 });

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   CadAssemblyNode,
   CadImportRun,
@@ -51,8 +52,6 @@ function buildInitialState(): CadRuntimeState {
   };
 }
 
-const state = buildInitialState();
-let finalizeSnapshotFailureForTest: Error | null = null;
 
 function filterProjectSeason<T extends { projectId: string | null; seasonId: string | null }>(
   items: T[],
@@ -66,8 +65,10 @@ function filterProjectSeason<T extends { projectId: string | null; seasonId: str
   );
 }
 
-export function getCadRuntimeStore(): CadStore & { reset(): void } {
-  return {
+export function createCadRuntimeStore(): CadStore & { reset(): void } {
+  const state = buildInitialState();
+  let finalizeSnapshotFailureForTest: Error | null = null;
+  const store: CadStore & { reset(): void } = {
     createImportRun(input: CadImportRunCreateInput) {
       const timestamp = nowIso();
       const item: CadImportRun = {
@@ -330,18 +331,31 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       );
     },
     reset() {
+      finalizeSnapshotFailureForTest = null;
       Object.assign(state, buildInitialState());
     },
   };
+  finalizeFailureSetters.set(store, (error) => { finalizeSnapshotFailureForTest = error; });
+  return store;
 }
 
-export type CadRuntimeStore = ReturnType<typeof getCadRuntimeStore>;
+export type CadRuntimeStore = ReturnType<typeof createCadRuntimeStore>;
+const finalizeFailureSetters = new WeakMap<CadRuntimeStore, (error: Error | null) => void>();
+const runtimeContext = new AsyncLocalStorage<CadRuntimeStore>();
+let defaultStore: CadRuntimeStore | undefined;
+
+export function getCadRuntimeStore(): CadRuntimeStore {
+  return runtimeContext.getStore() ?? (defaultStore ??= createCadRuntimeStore());
+}
+
+export function runWithCadRuntimeStore<T>(store: CadRuntimeStore, run: () => T): T {
+  return runtimeContext.run(store, run);
+}
 
 export function resetCadRuntimeStore() {
-  finalizeSnapshotFailureForTest = null;
   getCadRuntimeStore().reset();
 }
 
 export function setCadRuntimeStoreFinalizeFailureForTest(error: Error | null) {
-  finalizeSnapshotFailureForTest = error;
+  finalizeFailureSetters.get(getCadRuntimeStore())!(error);
 }

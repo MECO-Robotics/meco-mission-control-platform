@@ -134,7 +134,7 @@ Retention policy:
 - `POST /api/qa-reports`: create a QA report using project ownership and typed `targetRefs`; reports may target any supported domain entity.
 - `POST /api/qa-reports/submit`: submit QA evidence atomically. Task completion, follow-up, and dependency effects apply only when a Task is among the report's typed targets. Report creation does not duplicate Risk-owned state.
 - `GET /api/qa-requests`: list QA requests.
-- `POST /api/qa-requests`: create a QA request.
+- `POST /api/qa-requests`: create a QA request. A task-targeted request requires exactly one in-progress task without blocking risks or unfinished dependencies, an active mentor in its season, and an assigned requester or lead/mentor/admin. The authenticated requester overrides client identity. The command atomically persists the request, task mentor, `waiting-for-qa` status and audit entry; the response contains `{ item, task }`. Retrying a pending request for the same mentor returns the existing request without duplicate writes. Taskless requests retain their independent subject/target workflow and return `task: null`.
 - `GET /api/test-results`: list test results.
 - `POST /api/test-results`: create a test result.
 - `GET /api/risks`: list risks.
@@ -175,11 +175,11 @@ Workflow endpoints return `403` for insufficient role, `404` for a missing item,
 - `GET /api/members`: list members.
 - `POST /api/members`: create or invite a member. Mentors/leads may create ordinary accounts; only admins may create mentor/admin/elevated accounts.
 - `PATCH /api/members/:memberId`: update a member. Role, elevated state, and sign-in email changes require admin; the final admin cannot be demoted.
-- `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted.
-- `POST /api/subsystems`: create a subsystem.
+- `DELETE /api/members/:memberId`: delete a member. Requires admin, and the final admin cannot be deleted. Member commands reject task-invalidating role changes or sole-contributor deletion until tasks are reassigned. Deleting a QA mentor with legal remaining task contributors cancels their active requests and returns the affected waiting tasks to `in-progress` atomically, so another mentor can be requested.
+- `POST /api/subsystems`: create a subsystem. Child integration tasks inherit eligible active parent contributors or the authenticated student/lead/mentor creator. Creation fails atomically when no legal task contributor is available.
 - `PATCH /api/subsystems/:subsystemId`: update a subsystem.
 - `DELETE /api/subsystems/:subsystemId`: delete a subsystem.
-- `POST /api/mechanisms`: create a mechanism.
+- `POST /api/mechanisms`: create a mechanism and its wiring task. Task contributors inherit eligible active subsystem people or the authenticated student/lead/mentor creator; missing legal contributors reject the entire creation.
 - `PATCH /api/mechanisms/:mechanismId`: update a mechanism.
 - `DELETE /api/mechanisms/:mechanismId`: delete a mechanism.
 - `GET /api/part-definitions`: list part definitions.

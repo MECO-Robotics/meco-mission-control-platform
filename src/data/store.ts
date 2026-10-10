@@ -1,3 +1,6 @@
+import { isActiveInSeason } from "../domain/seasonMembership";
+import { normalizeTaskTargetIds } from "../domain/taskTargets";
+import { validateTaskLinks, validateTaskPeople } from "../domain/taskLinks";
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import { uniqueIds } from "../domain/ids";
 import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
@@ -611,22 +614,48 @@ interface SnapshotState {
   };
 }
 
-const platformSnapshotPath = resolve(
-  process.cwd(),
-  process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json",
-);
-const persistedProductionSnapshot = loadOrArchiveIncompatibleSnapshot(platformSnapshotPath);
-const globalSnapshotState: SnapshotState = {
-  current: ownSnapshot(canonicalizeSnapshot(persistedProductionSnapshot ?? createTutorialSnapshot())),
-  interactive: null,
-};
-const tutorialSnapshotStates = new Map<string, SnapshotState>();
-const snapshotContext = new AsyncLocalStorage<SnapshotState>();
+interface SnapshotOwner {
+  path: string;
+  global: SnapshotState;
+  tutorials: Map<string, SnapshotState>;
+  context: AsyncLocalStorage<SnapshotState>;
+  tails: Map<string | symbol, Promise<void>>;
+}
+const ownerContext = new AsyncLocalStorage<SnapshotOwner>();
 const globalMutationKey = Symbol("global snapshot");
-const mutationTails = new Map<string | symbol, Promise<void>>();
+let defaultOwner: SnapshotOwner | undefined;
+const durableOwners = new Map<string, SnapshotOwner>();
+
+function newSnapshotOwner(): SnapshotOwner {
+  const path = resolve(process.cwd(), process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json");
+  const durable = process.env.NODE_ENV === "production";
+  const existing = durable ? durableOwners.get(path) : undefined;
+  if (existing) return existing;
+  const owner: SnapshotOwner = {
+    path,
+    global: { current: ownSnapshot(canonicalizeSnapshot(loadOrArchiveIncompatibleSnapshot(path) ?? createTutorialSnapshot())), interactive: null },
+    tutorials: new Map(),
+    context: new AsyncLocalStorage<SnapshotState>(),
+    tails: new Map(),
+  };
+  if (durable) durableOwners.set(path, owner);
+  return owner;
+}
+function activeOwner() {
+  return ownerContext.getStore() ?? (defaultOwner ??= newSnapshotOwner());
+}
+
+export interface PlatformStore {
+  run<T>(operation: () => T): T;
+}
+
+export function createPlatformStore(): PlatformStore {
+  const owner = newSnapshotOwner();
+  return { run: (operation) => ownerContext.run(owner, operation) };
+}
 
 function activeSnapshotState() {
-  return snapshotContext.getStore() ?? globalSnapshotState;
+  return activeOwner().context.getStore() ?? activeOwner().global;
 }
 
 const currentSnapshot = new Proxy({} as PlatformSnapshot, {
@@ -643,7 +672,7 @@ const currentSnapshot = new Proxy({} as PlatformSnapshot, {
 
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   const state = activeSnapshotState();
-  if (state === globalSnapshotState && process.env.NODE_ENV === "production") {
+  if (state === activeOwner().global && process.env.NODE_ENV === "production") {
     throw new Error("Production platform mutations require a durable request transaction.");
   }
   state.current = ownSnapshot(deriveTaskSummaries(snapshot));
@@ -653,27 +682,29 @@ function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
 }
 
 async function acquireSnapshotLock(key: string | symbol) {
+  const owner = activeOwner();
   let releaseLock!: () => void;
-  const previous = mutationTails.get(key) ?? Promise.resolve();
+  const previous = owner.tails.get(key) ?? Promise.resolve();
   const tail = new Promise<void>((resolve) => {
     releaseLock = resolve;
   });
-  mutationTails.set(key, tail);
+  owner.tails.set(key, tail);
   await previous;
   return () => {
-    if (mutationTails.get(key) === tail) {
-      mutationTails.delete(key);
+    if (owner.tails.get(key) === tail) {
+      owner.tails.delete(key);
     }
     releaseLock();
   };
 }
 
 export async function acquireSnapshotMutation(userKey?: string) {
+  const owner = activeOwner();
   // Resolve the destination after the user queue, so a preceding reset/end wins.
   const releaseUser = userKey ? await acquireSnapshotLock(userKey) : undefined;
-  const tutorial = userKey ? tutorialSnapshotStates.get(userKey) : undefined;
+  const tutorial = userKey ? owner.tutorials.get(userKey) : undefined;
   const releaseGlobal = tutorial ? undefined : await acquireSnapshotLock(globalMutationKey);
-  const source = tutorial ?? globalSnapshotState;
+  const source = tutorial ?? owner.global;
   const mutation: NonNullable<SnapshotState["mutation"]> = {
     userKey,
     destination: tutorial ? "tutorial" : "global",
@@ -688,7 +719,7 @@ export async function acquireSnapshotMutation(userKey?: string) {
 
   return {
     enter() {
-      snapshotContext.enterWith(state);
+      owner.context.enterWith(state);
     },
     hasChanges() {
       return mutation.dirty;
@@ -703,15 +734,15 @@ export async function acquireSnapshotMutation(userKey?: string) {
       try {
         if (mutation.destination === "global") {
           if (process.env.NODE_ENV === "production") {
-            await savePlatformSnapshotFile(platformSnapshotPath, state.current);
+            await savePlatformSnapshotFile(owner.path, state.current);
           }
-          globalSnapshotState.current = state.current;
-          globalSnapshotState.interactive = state.interactive;
+          owner.global.current = state.current;
+          owner.global.interactive = state.interactive;
         } else if (userKey) {
           if (mutation.destination === "end-tutorial") {
-            tutorialSnapshotStates.delete(userKey);
+            owner.tutorials.delete(userKey);
           } else {
-            tutorialSnapshotStates.set(userKey, {
+            owner.tutorials.set(userKey, {
               current: state.current,
               interactive: state.interactive,
             });
@@ -724,9 +755,9 @@ export async function acquireSnapshotMutation(userKey?: string) {
     release() {
       if (!released) {
         released = true;
-        snapshotContext.enterWith(userKey
-          ? tutorialSnapshotStates.get(userKey) ?? globalSnapshotState
-          : globalSnapshotState);
+        owner.context.enterWith(userKey
+          ? owner.tutorials.get(userKey) ?? owner.global
+          : owner.global);
         releaseGlobal?.();
         releaseUser?.();
       }
@@ -746,11 +777,11 @@ function tutorialStateForMutation(userKey: string) {
   const state = activeSnapshotState();
   return state.mutation?.userKey === userKey
     ? state.mutation.destination === "tutorial" ? state : undefined
-    : tutorialSnapshotStates.get(userKey);
+    : activeOwner().tutorials.get(userKey);
 }
 
 export function runWithInteractiveTutorialSession<T>(userKey: string, run: () => T): T {
-  return snapshotContext.run(tutorialSnapshotStates.get(userKey) ?? globalSnapshotState, run);
+  return activeOwner().context.run(activeOwner().tutorials.get(userKey) ?? activeOwner().global, run);
 }
 
 function normalizeProjectTeamId(teamId: string | null | undefined) {
@@ -1029,45 +1060,37 @@ function buildRobotProjectDefaults(
   };
 }
 
-function resolveTaskOwnershipForSubsystem(subsystemId: string) {
-  const subsystem = currentSnapshot.subsystems.find(
-    (candidate) => candidate.id === subsystemId,
-  );
-  if (!subsystem) {
-    return null;
+function generatedTaskPeople(subsystem: Subsystem, auditContext: AuditMutationContext) {
+  const project = findProject(subsystem.projectId);
+  if (!project) throw Object.assign(new Error("The selected project does not exist."), { statusCode: 400 });
+  const eligible = (id: string | null | undefined, roles: readonly string[]) => {
+    const member = currentSnapshot.members.find((member) => member.id === id);
+    return member && roles.includes(member.role) && isActiveInSeason(member, project.seasonId) ? member.id : null;
+  };
+  let ownerId = eligible(subsystem.responsibleEngineerId, ["student", "lead"]);
+  let mentorId = subsystem.mentorIds.map((id) => eligible(id, ["mentor"])).find(Boolean) ?? null;
+  if (!ownerId && !mentorId) {
+    ownerId = eligible(auditContext.actorMemberId, ["student", "lead"]);
+    mentorId = eligible(auditContext.actorMemberId, ["mentor"]);
   }
-
-  const projectId = currentSnapshot.projects.some(
-    (project) => project.id === subsystem.projectId,
-  )
-    ? subsystem.projectId
-    : currentSnapshot.projects[0]?.id;
-  if (!projectId) {
-    return null;
+  if (!ownerId && !mentorId) {
+    throw Object.assign(new Error("Assign a student/lead engineer or mentor before creating an automatically generated task."), { statusCode: 400 });
   }
-
-  return { projectId };
+  return { ownerId, mentorId, assigneeIds: uniqueIds([ownerId]) };
 }
 
-function createMechanismWiringTask(mechanism: Mechanism): Task | null {
+function createMechanismWiringTask(mechanism: Mechanism, auditContext: AuditMutationContext): Task {
   const subsystem = currentSnapshot.subsystems.find(
     (candidate) => candidate.id === mechanism.subsystemId,
   );
-  if (!subsystem) {
-    return null;
-  }
-
-  const ownership = resolveTaskOwnershipForSubsystem(subsystem.id);
-  if (!ownership) {
-    return null;
-  }
+  if (!subsystem) throw Object.assign(new Error("The selected subsystem does not exist."), { statusCode: 400 });
 
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(`Wire ${mechanism.name}`) || "wire-task", taskIds),
     createdAt: new Date().toISOString(),
-    projectId: ownership.projectId,
-    workTypeId: workTypeIdForProject(ownership.projectId, "electrical-wiring"),
+    projectId: subsystem.projectId,
+    workTypeId: requireGeneratedTaskWorkTypeId(subsystem.projectId, "electrical-wiring"),
     responsibleGroupId: null,
     requestedById: null,
     scheduleRefs: [],
@@ -1078,9 +1101,7 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     subsystemIds: [subsystem.id],
     mechanismIds: [mechanism.id],
     partInstanceIds: [],
-    ownerId: subsystem.responsibleEngineerId,
-    assigneeIds: uniqueIds([subsystem.responsibleEngineerId]),
-    mentorId: subsystem.mentorIds[0] ?? null,
+    ...generatedTaskPeople(subsystem, auditContext),
     startDate: new Date().toISOString().slice(0, 10),
     dueDate: new Date().toISOString().slice(0, 10),
     priority: "medium",
@@ -1095,15 +1116,15 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
   return task;
 }
 
-function workTypeIdForProject(projectId: string, code: string) {
-  const project = currentSnapshot.projects.find((candidate) => candidate.id === projectId);
+function requireGeneratedTaskWorkTypeId(projectId: string, code: string) {
+  const project = findProject(projectId);
   const requestedId = project ? `${project.projectType}:${code}` : "";
-  return currentSnapshot.workTypes.some((workType) => workType.id === requestedId && workType.isActive)
-    ? requestedId
-    : currentSnapshot.workTypes.find((workType) => workType.projectType === project?.projectType && workType.isActive)?.id ?? "robot:planning";
+  const workType = currentSnapshot.workTypes.find((workType) => workType.id === requestedId && workType.code === code && workType.projectType === project?.projectType && workType.isActive);
+  if (!workType) throw Object.assign(new Error(`Automatically generated tasks require an active ${code} work type in the selected project.`), { statusCode: 400 });
+  return workType.id;
 }
 
-function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
+function createSubsystemIntegrationTask(subsystem: Subsystem, auditContext: AuditMutationContext): Task | null {
   if (!subsystem.parentSubsystemId) {
     return null;
   }
@@ -1111,21 +1132,16 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
   const parentSubsystem = currentSnapshot.subsystems.find(
     (candidate) => candidate.id === subsystem.parentSubsystemId,
   );
-  if (!parentSubsystem) {
-    return null;
-  }
-
-  const ownership = resolveTaskOwnershipForSubsystem(parentSubsystem.id);
-  if (!ownership) {
-    return null;
+  if (!parentSubsystem || parentSubsystem.projectId !== subsystem.projectId) {
+    throw Object.assign(new Error("The selected parent subsystem must exist in the selected project."), { statusCode: 400 });
   }
 
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(`Integrate ${subsystem.name}`) || "integration-task", taskIds),
     createdAt: new Date().toISOString(),
-    projectId: ownership.projectId,
-    workTypeId: workTypeIdForProject(ownership.projectId, "testing"),
+    projectId: parentSubsystem.projectId,
+    workTypeId: requireGeneratedTaskWorkTypeId(parentSubsystem.projectId, "testing"),
     responsibleGroupId: null,
     requestedById: null,
     scheduleRefs: [],
@@ -1136,9 +1152,7 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     subsystemIds: [parentSubsystem.id],
     mechanismIds: [],
     partInstanceIds: [],
-    ownerId: parentSubsystem.responsibleEngineerId,
-    assigneeIds: uniqueIds([parentSubsystem.responsibleEngineerId]),
-    mentorId: parentSubsystem.mentorIds[0] ?? null,
+    ...generatedTaskPeople(parentSubsystem, auditContext),
     startDate: new Date().toISOString().slice(0, 10),
     dueDate: new Date().toISOString().slice(0, 10),
     priority: "medium",
@@ -1166,7 +1180,7 @@ function nextWorkLogId() {
   return `log-${highestSequence + 1}`;
 }
 
-function nextActionId() {
+function nextActionIds(count: number) {
   const highestSequence = (currentSnapshot.actions ?? []).reduce((max, action) => {
     const match = /^action-(\d+)$/.exec(action.id);
     if (!match) {
@@ -1176,7 +1190,7 @@ function nextActionId() {
     return Math.max(max, Number(match[1]));
   }, 0);
 
-  return `action-${highestSequence + 1}`;
+  return Array.from({ length: count }, (_, index) => `action-${highestSequence + index + 1}`);
 }
 
 function resolveEntityLabel(value: string | null | undefined, fallbackId: string) {
@@ -1295,7 +1309,7 @@ function buildAuditSummary(
   );
 }
 
-export function recordAuditAction(args: {
+function buildAuditAction(args: {
   operation: AuditActionOperation;
   entityType: string;
   entityId: string;
@@ -1311,14 +1325,14 @@ export function recordAuditAction(args: {
   requestId?: string | null;
   memberIds?: Array<string | null | undefined>;
   detailsJson?: Record<string, unknown>;
-}) {
+}, id = nextActionIds(1)[0]) {
   const entityLabel = resolveEntityLabel(args.entityLabel, args.entityId);
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
     left.localeCompare(right),
   );
   const projectIds = uniqueIds([...(args.projectIds ?? []), args.projectId]);
   const action: AuditAction = {
-    id: nextActionId(),
+    id,
     timestamp: new Date().toISOString(),
     operation: args.operation,
     entityType: args.entityType,
@@ -1343,10 +1357,17 @@ export function recordAuditAction(args: {
     memberIds: uniqueIds(args.memberIds ?? []),
   };
 
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    actions: [...(currentSnapshot.actions ?? []), action],
-  });
+  return action;
+}
+
+function publishAuditedSnapshot(snapshot: PlatformSnapshot, ...args: Parameters<typeof buildAuditAction>[0][]) {
+  const ids = nextActionIds(args.length);
+  const actions = args.map((audit, index) => buildAuditAction(audit, ids[index]));
+  replaceCurrentSnapshot({ ...snapshot, actions: [...(snapshot.actions ?? []), ...actions] });
+}
+
+export function recordAuditAction(args: Parameters<typeof buildAuditAction>[0]) {
+  publishAuditedSnapshot(activeSnapshotState().current, args);
 }
 
 export function getSnapshot(): SnapshotView {
@@ -1406,9 +1427,9 @@ export function resetStore(snapshot?: SnapshotView) {
     return;
   }
 
-  globalSnapshotState.current = ownSnapshot(canonicalizeSnapshot(snapshot ?? createTutorialSnapshot()));
-  globalSnapshotState.interactive = null;
-  tutorialSnapshotStates.clear();
+  activeOwner().global.current = ownSnapshot(canonicalizeSnapshot(snapshot ?? createTutorialSnapshot()));
+  activeOwner().global.interactive = null;
+  activeOwner().tutorials.clear();
 }
 
 export function resetTutorialBaseline(userKey?: string) {
@@ -1441,7 +1462,7 @@ export function startInteractiveTutorialSession(userKey?: string) {
       state.mutation.destination = "tutorial";
       state.mutation.dirty = true;
     } else {
-      tutorialSnapshotStates.set(userKey, { current, interactive: current });
+      activeOwner().tutorials.set(userKey, { current, interactive: current });
     }
     return;
   }
@@ -1458,12 +1479,12 @@ export function resetInteractiveTutorialSession(userKey?: string) {
     }
 
     if (state.mutation) {
-      state.current = globalSnapshotState.current;
+      state.current = activeOwner().global.current;
       state.interactive = null;
       state.mutation.destination = "end-tutorial";
       state.mutation.dirty = true;
     } else {
-      tutorialSnapshotStates.delete(userKey);
+      activeOwner().tutorials.delete(userKey);
     }
     return true;
   }
@@ -2337,7 +2358,7 @@ export function removeArtifact(artifactId: string) {
   return artifact;
 }
 
-export function createSubsystem(input: SubsystemInput) {
+export function createSubsystem(input: SubsystemInput, auditContext: AuditMutationContext = {}) {
   const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
   const subsystem: Subsystem = {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
@@ -2361,15 +2382,16 @@ export function createSubsystem(input: SubsystemInput) {
     mentorIds: input.mentorIds,
   };
 
-  const integrationTask = createSubsystemIntegrationTask(subsystem);
+  const integrationTask = createSubsystemIntegrationTask(subsystem, auditContext);
 
-  replaceCurrentSnapshot(normalizeSnapshotTaskSerials({
+  const candidate = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     subsystems: [...currentSnapshot.subsystems, subsystem],
     tasks: integrationTask ? [...currentSnapshot.tasks, integrationTask] : currentSnapshot.tasks,
-  }));
+  });
+  if (integrationTask) assertTaskLinks(integrationTask, false, candidate);
 
-  recordAuditAction({
+  const audits: Parameters<typeof buildAuditAction>[0][] = [{
     operation: "create",
     entityType: "subsystem",
     entityId: subsystem.id,
@@ -2378,10 +2400,11 @@ export function createSubsystem(input: SubsystemInput) {
     subsystemId: subsystem.id,
     memberIds: [subsystem.responsibleEngineerId, ...subsystem.mentorIds],
     actorMemberId: subsystem.responsibleEngineerId,
-  });
+    ...auditContext,
+  }];
 
   if (integrationTask) {
-    recordAuditAction({
+    audits.push({
       operation: "create",
       entityType: "task",
       entityId: integrationTask.id,
@@ -2391,9 +2414,11 @@ export function createSubsystem(input: SubsystemInput) {
       taskId: integrationTask.id,
       memberIds: [integrationTask.ownerId, ...integrationTask.assigneeIds, integrationTask.mentorId],
       actorMemberId: integrationTask.ownerId,
+      ...auditContext,
     });
   }
 
+  publishAuditedSnapshot(candidate, ...audits);
   return subsystem;
 }
 
@@ -2624,7 +2649,7 @@ export function createPartDefinitionWithAcquisition(
   auditContext: AuditMutationContext,
 ) {
   const draft: SnapshotState = { current: activeSnapshotState().current, interactive: null };
-  const result = snapshotContext.run(draft, () => {
+  const result = activeOwner().context.run(draft, () => {
     const item = createPartDefinition(definition, auditContext);
     if (!plan) {
       return { item, purchaseItem: null, task: null };
@@ -2776,7 +2801,7 @@ export function removePartDefinition(partDefinitionId: string) {
   return partDefinition;
 }
 
-export function createMechanism(input: MechanismInput) {
+export function createMechanism(input: MechanismInput, auditContext: AuditMutationContext = {}) {
   const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
   const mechanism: Mechanism = {
     id: uniqueId(toSlug(input.name) || "mechanism", mechanismIds),
@@ -2790,25 +2815,26 @@ export function createMechanism(input: MechanismInput) {
     isArchived: input.isArchived ?? false,
   };
 
-  const wiringTask = createMechanismWiringTask(mechanism);
+  const wiringTask = createMechanismWiringTask(mechanism, auditContext);
 
-  replaceCurrentSnapshot(normalizeSnapshotTaskSerials({
+  const candidate = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     mechanisms: [...currentSnapshot.mechanisms, mechanism],
-    tasks: wiringTask ? [...currentSnapshot.tasks, wiringTask] : currentSnapshot.tasks,
-  }));
+    tasks: [...currentSnapshot.tasks, wiringTask],
+  });
+  assertTaskLinks(wiringTask, false, candidate);
 
-  recordAuditAction({
+  const audits: Parameters<typeof buildAuditAction>[0][] = [{
     operation: "create",
     entityType: "mechanism",
     entityId: mechanism.id,
     entityLabel: mechanism.name,
     projectId: getSubsystemProjectId(mechanism.subsystemId),
     subsystemId: mechanism.subsystemId,
-  });
+    ...auditContext,
+  }];
 
-  if (wiringTask) {
-    recordAuditAction({
+  audits.push({
       operation: "create",
       entityType: "task",
       entityId: wiringTask.id,
@@ -2818,9 +2844,10 @@ export function createMechanism(input: MechanismInput) {
       taskId: wiringTask.id,
       memberIds: [wiringTask.ownerId, ...wiringTask.assigneeIds, wiringTask.mentorId],
       actorMemberId: wiringTask.ownerId,
-    });
-  }
+      ...auditContext,
+  });
 
+  publishAuditedSnapshot(candidate, ...audits);
   return mechanism;
 }
 
@@ -3059,6 +3086,11 @@ export function removeMechanism(mechanismId: string) {
   return mechanism;
 }
 
+function assertTaskLinks(task: ReadonlyData<Task>, allowArchivedResponsibleGroup = false, snapshot: SnapshotView = getSnapshot()) {
+  const message = validateTaskLinks(snapshot, { ...task, allowArchivedResponsibleGroup });
+  if (message) throw Object.assign(new Error(message), { statusCode: 400 });
+}
+
 export function createTask(input: TaskInput, auditContext: AuditMutationContext = {}): ReadonlyData<Task> {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const nextSerialNumber =
@@ -3101,16 +3133,17 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     requiresDocumentation: input.requiresDocumentation,
   };
 
-  const normalizedTask = normalizeTaskTargets(task);
+  const normalizedTask = normalizeTaskTargets({ ...task, ...normalizeTaskTargetIds(getSnapshot(), task) });
+  assertTaskLinks(normalizedTask);
 
-  replaceCurrentSnapshot(normalizeSnapshotTaskSerials({
+  const nextSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     tasks: [...currentSnapshot.tasks, normalizedTask],
-  }));
+  });
 
-  const savedTask = currentSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
+  const savedTask = nextSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
 
-  recordAuditAction({
+  publishAuditedSnapshot(nextSnapshot, {
     operation: "create",
     entityType: "task",
     entityId: savedTask.id,
@@ -3123,7 +3156,7 @@ export function createTask(input: TaskInput, auditContext: AuditMutationContext 
     ...auditContext,
   });
 
-  return savedTask;
+  return activeSnapshotState().current.tasks.find((record) => record.id === savedTask.id)!;
 }
 
 function buildScopeRequirementsForMilestone(input: {
@@ -3285,40 +3318,61 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
 }
 
 export function createQaRequest(input: QaRequestInput) {
-  const taskId = input.targetRefs?.find((ref) => ref.kind === "task")?.id;
-  const task = taskId
-    ? currentSnapshot.tasks.find((candidate) => candidate.id === taskId)
-    : null;
-  const requestIds = new Set(getQaRequests().map((request) => request.id));
-  const subject = input.subject.trim();
+  const taskIds = uniqueIds((input.targetRefs ?? []).filter((ref) => ref.kind === "task").map((ref) => ref.id));
+  if (taskIds.length > 1) throw Object.assign(new Error("Request QA for one task at a time."), { statusCode: 400 });
+  const taskId = taskIds[0];
+  const task = taskId ? currentSnapshot.tasks.find((candidate) => candidate.id === taskId) : undefined;
+  if (taskId && !task) throw Object.assign(new Error("The selected task does not exist."), { statusCode: 404 });
+  const mentorId = input.mentorId ?? task?.mentorId ?? null;
+  const requestedById = input.requestedById ?? task?.ownerId ?? task?.assigneeIds[0] ?? null;
+  let nextTask: Task | undefined;
+  if (task) {
+    const project = findProject(task.projectId);
+    if (!project) throw Object.assign(new Error("The selected task project does not exist."), { statusCode: 400 });
+    const mentor = currentSnapshot.members.find((member) => member.id === mentorId);
+    if (!mentor || mentor.role !== "mentor" || !isActiveInSeason(mentor, project.seasonId)) {
+      throw Object.assign(new Error("Select an active mentor in the task's season."), { statusCode: 400 });
+    }
+    const actor = currentSnapshot.members.find((member) => member.id === requestedById);
+    if (!actor || !isActiveInSeason(actor, project.seasonId) ||
+      (!(["lead", "mentor", "admin"].includes(actor.role)) &&
+        !(actor.role === "student" && (task.ownerId === actor.id || task.assigneeIds.includes(actor.id))))) {
+      throw Object.assign(new Error("Only assigned people, leads, mentors or admins can request task QA."), { statusCode: 403 });
+    }
+    if (input.projectId !== undefined && input.projectId !== task.projectId) {
+      throw Object.assign(new Error("The QA request project must match its task."), { statusCode: 400 });
+    }
+    const pending = getQaRequests().find((request) => (request.status === "requested" || request.status === "in-review") && request.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id));
+    if (pending) {
+      if (task.status === "waiting-for-qa" && pending.mentorId === mentorId) return pending;
+      throw Object.assign(new Error("This task already has a pending QA request."), { statusCode: 409 });
+    }
+    if (task.status !== "in-progress" || task.isBlocked || isTaskWaitingOnDependencies(task, currentSnapshot)) {
+      throw Object.assign(new Error("QA requires an in-progress task with no blocking risks or unfinished dependencies."), { statusCode: 409 });
+    }
+    nextTask = { ...task, mentorId, status: "waiting-for-qa" };
+    assertTaskLinks(nextTask, true);
+  }
   const request: QaRequest = {
-    id: uniqueId(toSlug(`${subject} qa request`) || "qa-request", requestIds),
-    projectId: input.projectId ?? task?.projectId ?? "",
-    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? (taskId ? [{ kind: "task", id: taskId }] : []),
-    subject,
-    mentorId: input.mentorId ?? null,
-    requestedById: input.requestedById ?? null,
+    id: uniqueId(toSlug(`${input.subject.trim()} qa request`) || "qa-request", new Set(getQaRequests().map((request) => request.id))),
+    projectId: task?.projectId ?? input.projectId ?? "",
+    targetRefs: input.targetRefs?.map((ref) => ({ ...ref })) ?? [],
+    subject: input.subject.trim(),
+    mentorId,
+    requestedById,
     createdAt: new Date().toISOString(),
     status: "requested",
   };
-
-  replaceCurrentSnapshot({
+  publishAuditedSnapshot({
     ...currentSnapshot,
-    qaRequests: [request, ...getQaRequests().map((item) => ({ ...item, targetRefs: item.targetRefs.map((ref) => ({ ...ref })) }))],
+    tasks: nextTask ? currentSnapshot.tasks.map((record) => record.id === nextTask.id ? nextTask : record) : currentSnapshot.tasks,
+    qaRequests: [request, ...(currentSnapshot.qaRequests ?? [])],
+  }, {
+    operation: "create", entityType: "qa_request", entityId: request.id, entityLabel: request.subject,
+    projectId: request.projectId, subsystemId: task?.subsystemIds[0] ?? null, taskId,
+    actorMemberId: requestedById, memberIds: [requestedById, mentorId],
+    ...(task && nextTask ? { detailsJson: { taskTransition: { statusBefore: task.status, statusAfter: nextTask.status, mentorIdBefore: task.mentorId, mentorIdAfter: mentorId } } } : {}),
   });
-
-  recordAuditAction({
-    operation: "create",
-    entityType: "qa_request",
-    entityId: request.id,
-    entityLabel: request.subject,
-    projectId: task?.projectId ?? null,
-    subsystemId: task?.subsystemIds[0] ?? null,
-    taskId,
-    actorMemberId: request.requestedById,
-    memberIds: [request.requestedById, request.mentorId],
-  });
-
   return request;
 }
 
@@ -3874,6 +3928,7 @@ export function updateTask(
   let updatedTask = normalizeTaskTargets({
     ...currentTask,
     ...input,
+    ...normalizeTaskTargetIds(getSnapshot(), input, currentTask),
   });
 
   if (updatedTask.subsystemIds[0] !== currentTask.subsystemIds[0]) {
@@ -3884,15 +3939,13 @@ export function updateTask(
     };
   }
 
-  replaceCurrentSnapshot({
+  assertTaskLinks(updatedTask, input.responsibleGroupId === undefined && currentTask.responsibleGroupId !== null);
+  const nextSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     tasks: currentSnapshot.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
   });
-
-  replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));
-
-  const savedTask = currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask;
-  recordAuditAction({
+  const savedTask = nextSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask;
+  publishAuditedSnapshot(nextSnapshot, {
     operation: "update",
     entityType: "task",
     entityId: savedTask.id,
@@ -3911,7 +3964,7 @@ export function updateTask(
     afterJson: savedTask,
   });
 
-  return savedTask;
+  return activeSnapshotState().current.tasks.find((record) => record.id === savedTask.id)!;
 }
 
 export function removeTask(taskId: string) {
@@ -4089,6 +4142,15 @@ export function createMember(input: MemberInput) {
   return member;
 }
 
+function assertMemberTaskPeople(memberId: string, candidate: SnapshotView, operation: "changing this person's role" | "removing this person") {
+  const tasksById = new Map(candidate.tasks.map((task) => [task.id, task]));
+  const invalid = currentSnapshot.tasks.filter((task) =>
+    (task.ownerId === memberId || task.mentorId === memberId || task.assigneeIds.includes(memberId)) &&
+    validateTaskPeople(candidate, tasksById.get(task.id)!),
+  );
+  if (invalid.length) throw Object.assign(new Error(`Reassign ${invalid.length} task${invalid.length === 1 ? "" : "s"} before ${operation}.`), { statusCode: 409 });
+}
+
 export function updateMember(
   memberId: string,
   input: Partial<MemberInput>,
@@ -4135,14 +4197,12 @@ export function updateMember(
     plannedAttendanceNotes: nextPlannedAttendanceNotes,
   };
 
-  replaceCurrentSnapshot({
+  const candidate = {
     ...currentSnapshot,
-    members: currentSnapshot.members.map((member) =>
-      member.id === memberId ? updatedMember : member,
-    ),
-  });
-
-  recordAuditAction({
+    members: currentSnapshot.members.map((member) => member.id === memberId ? updatedMember : member),
+  };
+  if (nextRole !== previousMember.role) assertMemberTaskPeople(memberId, candidate, "changing this person's role");
+  publishAuditedSnapshot(candidate, {
     operation: "update",
     entityType: "member",
     entityId: updatedMember.id,
@@ -4160,13 +4220,16 @@ export function updateMember(
   return updatedMember;
 }
 
-export function removeMember(memberId: string) {
+export function removeMember(memberId: string, auditContext: AuditMutationContext = {}) {
   const member = currentSnapshot.members.find((candidate) => candidate.id === memberId);
   if (!member) {
     return null;
   }
 
-  replaceCurrentSnapshot({
+  const cancelledQaTaskIds = new Set(getQaRequests()
+    .filter((request) => request.mentorId === memberId && (request.status === "requested" || request.status === "in-review"))
+    .flatMap((request) => request.targetRefs.filter((ref) => ref.kind === "task").map((ref) => ref.id)));
+  const candidate = {
     ...currentSnapshot,
     members: currentSnapshot.members.filter((candidate) => candidate.id !== memberId),
     responsibleGroups: currentSnapshot.responsibleGroups.map((group) => ({
@@ -4189,6 +4252,7 @@ export function removeMember(memberId: string) {
         (assigneeId) => assigneeId !== memberId,
       ),
       mentorId: task.mentorId === memberId ? null : task.mentorId,
+      status: cancelledQaTaskIds.has(task.id) && task.status === "waiting-for-qa" ? "in-progress" as const : task.status,
     })),
     risks: currentSnapshot.risks.map((risk) => ({
       ...risk,
@@ -4230,16 +4294,17 @@ export function removeMember(memberId: string) {
         targetRefs: request.targetRefs.map((ref) => ({ ...ref })),
         requestedById: request.requestedById === memberId ? null : request.requestedById,
       })),
-  });
-
-  recordAuditAction({
+  };
+  assertMemberTaskPeople(memberId, candidate, "removing this person");
+  publishAuditedSnapshot(candidate, {
     operation: "delete",
     entityType: "member",
     entityId: member.id,
     entityLabel: member.name,
-    actorMemberId: member.id,
+    actorMemberId: auditContext.actorMemberId ?? member.id,
+    requestId: auditContext.requestId ?? null,
     memberIds: [member.id],
-    detailsJson: getSeasonAuditDetails(member),
+    detailsJson: { ...getSeasonAuditDetails(member), cancelledQaTaskIds: [...cancelledQaTaskIds] },
   });
 
   return member;

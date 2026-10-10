@@ -1,4 +1,5 @@
-﻿import { buildCadGraphStore } from "./cadStoreGraph";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { buildCadGraphStore } from "./cadStoreGraph";
 import { buildCadOAuthStore } from "./cadStoreOAuth";
 import { buildCadReferenceStore } from "./cadStoreRefs";
 import { buildCadRequestStore } from "./cadStoreRequests";
@@ -22,12 +23,17 @@ export function createOnshapeRuntimeStore(): OnshapeRuntimeStore {
   };
 }
 
-const globalStore = createOnshapeRuntimeStore();
+const runtimeContext = new AsyncLocalStorage<OnshapeRuntimeStore>();
+let defaultStore: OnshapeRuntimeStore | undefined;
+
+export function runWithOnshapeRuntimeStore<T>(store: OnshapeRuntimeStore, run: () => T): T {
+  return runtimeContext.run(store, run);
+}
 
 export function getOnshapeRuntimeStore() {
-  return globalStore;
+  return runtimeContext.getStore() ?? (defaultStore ??= createOnshapeRuntimeStore());
 }
 
 export function resetOnshapeRuntimeStore() {
-  globalStore.reset();
+  getOnshapeRuntimeStore().reset();
 }
