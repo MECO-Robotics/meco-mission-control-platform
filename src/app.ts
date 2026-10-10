@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { createPrismaCadStore } from "./cad/cadPrismaStore";
-import { getCadRuntimeStore, resetCadRuntimeStore } from "./cad/cadStore";
+import { createCadRuntimeStore } from "./cad/cadStore";
 import type { CadStore } from "./cad/cadStoreTypes";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
@@ -23,10 +23,11 @@ import {
 import { cadPersistenceConfig, cadStepUploadConfig, corsConfig, env } from "./config/env";
 import {
   acquireSnapshotMutation,
-  resetStore,
+  createPlatformStore,
+  type PlatformStore,
   runWithInteractiveTutorialSession,
 } from "./data/store";
-import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
+import { createOnshapeRuntimeStore, runWithOnshapeRuntimeStore, type OnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
 import { createUserPreferencesStore, type UserPreferencesStore } from "./data/userPreferencesStore";
@@ -42,6 +43,8 @@ declare module "fastify" {
 }
 
 export interface BuildAppOptions {
+  platformStore?: PlatformStore;
+  onshapeStore?: OnshapeRuntimeStore;
   userPreferencesPath?: string;
   prisma?: PrismaClient;
   cadStore?: CadStore;
@@ -50,12 +53,8 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
-  if (env.NODE_ENV !== "production") {
-    resetStore();
-    resetCadRuntimeStore();
-    resetOnshapeRuntimeStore();
-  }
-
+  const platformStore = options.platformStore ?? createPlatformStore();
+  const onshapeStore = options.onshapeStore ?? createOnshapeRuntimeStore();
   const ownsPrisma = options.prisma === undefined;
   const prisma = options.prisma ?? new PrismaClient();
   const app = Fastify({
@@ -64,7 +63,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
     trustProxy: env.TRUST_PROXY_IPS ? env.TRUST_PROXY_IPS.split(",").map((ip) => ip.trim()) : false,
   });
 
-  app.decorate("cadStore", options.cadStore ?? (cadPersistenceConfig.storeDriver === "runtime" ? getCadRuntimeStore() : createPrismaCadStore(prisma)));
+  app.addHook("onRequest", (_request, _reply, done) => platformStore.run(() => runWithOnshapeRuntimeStore(onshapeStore, done)));
+  app.decorate("cadStore", options.cadStore ?? (cadPersistenceConfig.storeDriver === "runtime" ? createCadRuntimeStore() : createPrismaCadStore(prisma)));
   app.decorate("userPreferences", createUserPreferencesStore(options.userPreferencesPath));
 
   await app.register(cors, {
