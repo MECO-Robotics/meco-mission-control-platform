@@ -53,6 +53,7 @@ import {
 } from "../domain/pmCadProvenance";
 import {
   normalizeMeetingSchedule,
+  assertCalendarInterval,
 } from "./store/meetingSchedule";
 import {
   buildFindings,
@@ -2067,6 +2068,7 @@ export function createRisk(input: RiskInput) {
     id: uniqueId(toSlug(input.title) || "risk", riskIds),
     ...input,
     ownerMemberId: input.ownerMemberId ?? null,
+    createdByMemberId: input.createdByMemberId ?? null,
     mitigationDueDate: input.mitigationDueDate ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -2090,7 +2092,7 @@ export function createRisk(input: RiskInput) {
   return risk;
 }
 
-export function updateRisk(riskId: string, input: Partial<RiskInput>) {
+export function updateRisk(riskId: string, input: Partial<Omit<RiskInput, "createdByMemberId">>) {
   const previousRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
   if (!previousRisk) {
     return null;
@@ -2099,6 +2101,7 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
   const updatedRisk: Risk = {
     ...previousRisk,
     ...input,
+    createdByMemberId: previousRisk.createdByMemberId,
     updatedAt: new Date().toISOString(),
     resolvedAt: input.status === "resolved" ? input.resolvedAt ?? new Date().toISOString() : input.status ? null : previousRisk.resolvedAt,
     mitigationTaskId:
@@ -2430,6 +2433,10 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
     return null;
   }
 
+  if (input.projectId !== undefined && input.projectId !== currentSubsystem.projectId) {
+    throw Object.assign(new Error("Subsystems cannot move between projects; create a subsystem in the destination project."), { statusCode: 409 });
+  }
+
   const nextParentSubsystemId = currentSubsystem.isCore
     ? null
     : input.parentSubsystemId === undefined
@@ -2526,7 +2533,7 @@ export function removeSubsystem(subsystemId: string) {
   );
   const purchaseItemIdsToRemove = new Set(
     currentSnapshot.purchaseItems
-      .filter((item) => subsystemIdsToRemove.has(currentSnapshot.tasks.find((task) => task.id === item.taskId)?.subsystemIds[0] ?? ""))
+      .filter((item) => currentSnapshot.tasks.find((task) => task.id === item.taskId)?.subsystemIds.some((id) => subsystemIdsToRemove.has(id)))
       .map((item) => item.id),
   );
   const taskIdsToRemove = new Set(
@@ -2552,6 +2559,7 @@ export function removeSubsystem(subsystemId: string) {
       (partInstance) => !partInstanceIdsToRemove.has(partInstance.id),
     ),
     tasks: currentSnapshot.tasks.filter((task) => !taskIdsToRemove.has(task.id)),
+    taskDependencies: currentSnapshot.taskDependencies.filter((dependency) => !taskIdsToRemove.has(dependency.taskId)),
     workLogs: currentSnapshot.workLogs.filter(
       (workLog) => !taskIdsToRemove.has(workLog.taskId),
     ),
@@ -2563,6 +2571,7 @@ export function removeSubsystem(subsystemId: string) {
       (request) => !request.targetRefs.some((ref) => ref.kind === "task" && taskIdsToRemove.has(ref.id)),
     ),
     risks: currentSnapshot.risks.filter((risk) => {
+      if ((risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && taskIdsToRemove.has(risk.source.id)) return false;
       if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
         return false;
       }
@@ -2749,6 +2758,10 @@ export function removePartDefinition(partDefinitionId: string) {
   );
   if (!partDefinition) {
     return null;
+  }
+
+  if (currentSnapshot.tasks.some((task) => task.manufacturingDetails?.part.kind === "part-definition" && task.manufacturingDetails.part.partDefinitionId === partDefinitionId)) {
+    throw Object.assign(new Error("This part definition is used by manufacturing work; remove or retarget that work before deletion."), { statusCode: 409 });
   }
 
   const removedPartInstanceIds = new Set(
@@ -2968,6 +2981,9 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
   }
 
   const nextSubsystemId = input.subsystemId ?? currentMechanism.subsystemId;
+  if (getSubsystemProjectId(nextSubsystemId) !== getSubsystemProjectId(currentMechanism.subsystemId)) {
+    throw Object.assign(new Error("Mechanisms cannot move between projects; create a mechanism in the destination project."), { statusCode: 409 });
+  }
 
   const updatedMechanism: Mechanism = {
     ...currentMechanism,
@@ -3002,7 +3018,9 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
         subsystemIds: uniqueIds([
           nextSubsystemId,
           ...task.subsystemIds.filter(
-            (subsystemId) => subsystemId !== currentMechanism.subsystemId,
+            (subsystemId) => subsystemId !== currentMechanism.subsystemId ||
+              task.mechanismIds.some((id) => id !== mechanismId && currentSnapshot.mechanisms.some((other) => other.id === id && other.subsystemId === subsystemId)) ||
+              task.partInstanceIds.some((id) => currentSnapshot.partInstances.some((part) => part.id === id && partInstanceMechanismId(part) !== mechanismId && partInstanceSubsystemId(part) === subsystemId)),
           ),
         ]),
       });
@@ -3183,6 +3201,7 @@ function buildScopeRequirementsForMilestone(input: {
 }
 
 export function createMilestone(input: MilestoneInput) {
+  assertCalendarInterval(input.startAt, input.endAt);
   const milestoneIds = new Set(currentSnapshot.milestones.map((milestone) => milestone.id));
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId =
@@ -3570,6 +3589,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
     return null;
   }
 
+  assertCalendarInterval(input.startAt ?? currentMilestone.startAt, input.endAt === undefined ? currentMilestone.endAt : input.endAt);
   let updatedMilestone: Milestone | null = null;
   const desiredProjectIds = input.projectIds === undefined ? undefined : uniqueIds(input.projectIds);
   const nextProjectIds = desiredProjectIds ?? (currentMilestone.projectIds ?? []);
@@ -3679,6 +3699,7 @@ export function removeMilestone(milestoneId: string) {
 }
 
 export function createMeeting(input: MeetingInput) {
+  assertCalendarInterval(input.startAt, input.endAt);
   const meetingIds = new Set(currentSnapshot.meetings.map((meeting) => meeting.id));
   const projectIds = uniqueIds(input.projectIds ?? []);
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
@@ -3739,6 +3760,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
     currentMeeting.seasonId ??
     fallbackSeasonId;
   const startAt = input.startAt ?? currentMeeting.startAt;
+  assertCalendarInterval(startAt, input.endAt === undefined ? currentMeeting.endAt : input.endAt);
   const updatedMeeting = normalizeMeetingSchedule(
     {
       ...currentMeeting,
@@ -3982,9 +4004,11 @@ export function removeTask(taskId: string) {
       (request) => !request.targetRefs.some((ref) => ref.kind === "task" && ref.id === taskId),
     ),
     taskDependencies: currentSnapshot.taskDependencies.filter(
-      (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
+      (dependency) => dependency.taskId !== taskId,
     ),
-    risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId),
+    risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId && !(
+      (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && risk.source.id === taskId
+    )).map((risk) => ({ ...risk, relatedTargets: risk.relatedTargets.filter((target) => !((target.kind === "task" || target.kind === "manufacturing-details") && target.id === taskId)) })),
   });
 
   replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));
@@ -4257,6 +4281,7 @@ export function removeMember(memberId: string, auditContext: AuditMutationContex
     risks: currentSnapshot.risks.map((risk) => ({
       ...risk,
       ownerMemberId: risk.ownerMemberId === memberId ? null : risk.ownerMemberId,
+      createdByMemberId: risk.createdByMemberId === memberId ? null : risk.createdByMemberId,
     })),
     workLogs: currentSnapshot.workLogs.map((workLog) => ({
       ...workLog,

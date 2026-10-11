@@ -1820,6 +1820,17 @@
       "items": {
         "type": "object",
         "properties": {
+          "createdByMemberId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "projectId": {
             "type": "string",
             "minLength": 1
@@ -1835,6 +1846,7 @@
           "category": {
             "type": "string",
             "enum": [
+              "help",
               "dependency",
               "design",
               "manufacturing",
@@ -4914,6 +4926,17 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "createdByMemberId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "projectId": {
           "type": "string",
           "minLength": 1
@@ -4929,6 +4952,7 @@
         "category": {
           "type": "string",
           "enum": [
+            "help",
             "dependency",
             "design",
             "manufacturing",

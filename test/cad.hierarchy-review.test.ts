@@ -552,7 +552,7 @@ test("finalize reports hierarchy validation issues and still honors allowUnresol
         assemblyDecisions: [
           { sourceId: root?.id, targetKind: "IGNORE", status: "CONFIRMED" },
           { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: "drive", status: "CONFIRMED" },
-          { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", targetId: "asm-bellypan", status: "CONFIRMED" },
+          { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", targetId: null, status: "CONFIRMED" },
         ],
         partMatchConfirmations: [
           { cadPartDefinitionSourceId: "part-rivet", targetPartDefinitionId: rivet.id, status: "CONFIRMED" },

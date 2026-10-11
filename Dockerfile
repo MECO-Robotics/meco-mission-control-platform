@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
+COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
 RUN npm ci
 
 FROM deps AS build
@@ -19,6 +20,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
+COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
 RUN npm ci
 COPY --chown=node:node --from=build /app/dist ./dist
 RUN mkdir -p /app/data && chown node:node /app/data

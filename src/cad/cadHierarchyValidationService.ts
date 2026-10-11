@@ -1,5 +1,6 @@
 import type { CadAssemblyNode, CadMappingTargetKind, CadPartDefinition, CadPartInstance, CadSnapshotMapping } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
+import { invalidMappingTarget } from "./cadMappingEngine";
 import { getMechanisms } from "../data/store";
 import { buildCadPartMatchProposals, type CadPartMatchProposal } from "./cadPartMatchingService";
 
@@ -84,6 +85,7 @@ function addIssue(issues: CadHierarchyIssue[], issue: CadHierarchyIssue) {
 }
 
 export function collectHierarchyIssues(args: {
+  projectId?: string | null;
   assemblies: CadAssemblyNode[];
   instances: CadPartInstance[];
   mappingsBySourceId: Map<string, CadSnapshotMapping>;
@@ -91,6 +93,10 @@ export function collectHierarchyIssues(args: {
   definitionsById: Map<string, CadPartDefinition>;
 }) {
   const issues: CadHierarchyIssue[] = [];
+  for (const mapping of args.mappingsBySourceId.values()) {
+    const message = invalidMappingTarget(mapping, args.projectId);
+    if (message) addIssue(issues, { code: "cad_mapping_target_missing", severity: "BLOCKING", sourceKind: mapping.sourceKind, sourceId: mapping.sourceId, message });
+  }
   const assembliesById = new Map(args.assemblies.map((assembly) => [assembly.id, assembly] as const));
   const mechanismIds = new Set(getMechanisms().map((mechanism) => mechanism.id));
   const unmatchedNames = new Map<string, CadPartMatchProposal[]>();
@@ -197,6 +203,7 @@ export function collectHierarchyIssues(args: {
 }
 
 export async function validateCadHierarchyForFinalize(args: { store: CadStore; snapshotId: string }) {
+  const snapshot = await args.store.findSnapshot(args.snapshotId);
   const [assemblies, cadParts, instances, mappings, proposals] = await Promise.all([
     args.store.listAssemblyNodes(args.snapshotId),
     args.store.listPartDefinitions(args.snapshotId),
@@ -205,6 +212,7 @@ export async function validateCadHierarchyForFinalize(args: { store: CadStore; s
     buildCadPartMatchProposals(args),
   ]);
   return collectHierarchyIssues({
+    projectId: snapshot?.projectId,
     assemblies,
     instances,
     mappingsBySourceId: new Map(mappings.map((mapping) => [mapping.sourceId, mapping] as const)),

@@ -71,6 +71,7 @@ function addAssemblyChildren(args: {
   partInstances: NormalizedCadPartInstance[];
   createPartDefinition: (productDefinitionId: string) => NormalizedCadPartDefinition;
   quantityMultiplier: number;
+  occurrenceIds: string[];
 }) {
   const childEdges = args.childrenByParent.get(args.productDefinitionId) ?? [];
   const siblingNameCounts = new Map<string, number>();
@@ -95,12 +96,12 @@ function addAssemblyChildren(args: {
     }
     const partDefinition = args.createPartDefinition(edge.childProductDefinitionId);
     args.partInstances.push({
-      sourceId: `step-part-inst:${edge.id}`,
+      sourceId: `step-part-inst:${[...args.occurrenceIds, edge.id].join("/")}`,
       partDefinitionSourceId: partDefinition.sourceId,
       parentAssemblySourceId: args.assemblySourceId,
       instancePath,
       quantity,
-      stableSignature: partInstanceSignature({ sourceId: `step-part-inst:${edge.id}`, instancePath }),
+      stableSignature: partInstanceSignature({ sourceId: `step-part-inst:${[...args.occurrenceIds, edge.id].join("/")}`, instancePath }),
       metadata: {
         nauoId: edge.id,
         parentProductDefinitionId: edge.parentProductDefinitionId,
@@ -120,7 +121,7 @@ function addNestedAssembly(args: Parameters<typeof addAssemblyChildren>[0] & {
   instancePath: string;
   quantity: number;
 }) {
-  const sourceId = `step-asm-occ:${args.edge.id}`;
+  const sourceId = `step-asm-occ:${[...args.occurrenceIds, args.edge.id].join("/")}`;
   args.assemblyNodes.push({
     sourceId,
     parentSourceId: args.assemblySourceId,
@@ -156,6 +157,7 @@ function addNestedAssembly(args: Parameters<typeof addAssemblyChildren>[0] & {
     depth: args.depth + 1,
     visitedProductDefinitionIds: new Set([...args.visitedProductDefinitionIds, args.edge.childProductDefinitionId]),
     quantityMultiplier: args.quantity,
+    occurrenceIds: [...args.occurrenceIds, args.edge.id],
   });
 }
 
@@ -209,11 +211,12 @@ export function createStructuredStepResult(args: {
       partInstances,
       createPartDefinition,
       quantityMultiplier: 1,
+      occurrenceIds: [rootProductDefinitionId],
     });
   }
 
   return finalizeResult({
-    parserVersion: "step-text-assembly-parser-1",
+    parserVersion: "step-text-assembly-parser-2",
     rootName: args.roots.length === 1 ? assemblyNodes[0]?.name ?? null : null,
     units: null,
     assemblyNodes,

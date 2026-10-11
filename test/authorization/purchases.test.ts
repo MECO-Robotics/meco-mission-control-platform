@@ -115,3 +115,30 @@ test("purchase creation cannot self-approve and missing workflow records return 
     assert.equal(missing.statusCode, 404);
   });
 });
+
+test("purchase workflow owns same-state cost and PO edits without rewriting transition dates", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const student = await createWorkflowAuthHeaders("student");
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const payload = { orderStatus: "not-ordered", finalCost: { amount: 41, currency: "USD" }, purchaseOrderNumber: "PO-41" };
+    const denied = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: student, payload });
+    assert.equal(denied.statusCode, 403);
+    resetLimits();
+    const changed = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentor, payload });
+    assert.equal(changed.statusCode, 200, changed.body);
+    assert.deepEqual(changed.json().item.finalCost, payload.finalCost);
+    assert.equal(changed.json().item.purchaseOrderNumber, "PO-41");
+    assert.equal(changed.json().item.orderedAt, null);
+    resetLimits();
+    const approved = await app.inject({ method: "PUT", url: "/api/purchases/ferrule-kit/approval", headers: mentor, payload: { approvalStatus: "approved" } });
+    assert.equal(approved.statusCode, 200, approved.body);
+    resetLimits();
+    const ordered = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentor, payload: { orderStatus: "ordered" } });
+    assert.equal(ordered.statusCode, 200, ordered.body);
+    resetLimits();
+    const replay = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/transition", headers: mentor, payload: { orderStatus: "ordered", finalCost: null } });
+    assert.equal(replay.statusCode, 200, replay.body);
+    assert.equal(replay.json().item.orderedAt, ordered.json().item.orderedAt);
+    assert.equal(replay.json().item.purchaseOrderNumber, "PO-41");
+  });
+});

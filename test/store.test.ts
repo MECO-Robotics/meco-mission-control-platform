@@ -38,6 +38,7 @@ import {
   removeMember,
   removePartDefinition,
   removeSubsystem,
+  removeTask,
   recordAuditAction,
   resetStore,
   updateSubsystem,
@@ -1112,4 +1113,63 @@ test("removing a QA mentor atomically cancels the request and reopens work for i
   assert.equal(reopened.ownerId, task.ownerId);
   assert.equal(after.actions!.at(-1)!.actorMemberId, "maya");
   assert.deepEqual(after.actions!.at(-1)!.detailsJson?.cancelledQaTaskIds, [task.id]);
+});
+
+test("hierarchy deletion removes dependency owners while retaining missing-target blockers", () => {
+  const snapshot = getSnapshot();
+  const removedTask = snapshot.tasks.find((task) => task.subsystemIds.includes("drive"))!;
+  const remainingTask = snapshot.tasks.find((task) => task.projectId !== removedTask.projectId)!;
+  assert.ok(removedTask && remainingTask);
+  resetStore({ ...snapshot, taskDependencies: [
+    { id: "removed-owner", dependencyType: "hard", taskId: removedTask.id, kind: "task", refId: remainingTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
+    { id: "remaining-owner", dependencyType: "hard", taskId: remainingTask.id, kind: "task", refId: removedTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
+  ] });
+  removeSubsystem("drive");
+  assert.deepEqual(getSnapshot().taskDependencies.map((dependency) => dependency.id), ["remaining-owner"]);
+});
+
+test("manufacturing part definitions require retargeting before deletion", () => {
+  const task = getSnapshot().tasks.find((task) => task.manufacturingDetails?.part.kind === "part-definition")!;
+  assert.ok(task.manufacturingDetails?.part.kind === "part-definition");
+  const partId = task.manufacturingDetails.part.partDefinitionId;
+  assert.throws(() => removePartDefinition(partId), /used by manufacturing/);
+  assert.ok(getSnapshot().partDefinitions.some((part) => part.id === partId));
+});
+
+test("mechanism cross-project moves reject without changing tasks or placements", () => {
+  const before = getSnapshot();
+  const mechanism = before.mechanisms[0]!;
+  const oldSubsystem = before.subsystems.find((subsystem) => subsystem.id === mechanism.subsystemId)!;
+  const destination = before.subsystems.find((subsystem) => subsystem.projectId !== oldSubsystem.projectId)!;
+  assert.ok(destination);
+  assert.throws(() => updateMechanism(mechanism.id, { subsystemId: destination.id }), /cannot move between projects/);
+  assert.deepEqual(getSnapshot(), before);
+});
+
+test("within-project mechanism moves retain ancestors required by other task targets", () => {
+  const before = getSnapshot();
+  const mechanism = before.mechanisms[0]!;
+  const source = before.subsystems.find((subsystem) => subsystem.id === mechanism.subsystemId)!;
+  const destination = before.subsystems.find((subsystem) => subsystem.projectId === source.projectId && subsystem.id !== source.id)!;
+  const otherMechanism = { ...mechanism, id: "unmoved-mechanism" };
+  const task = before.tasks.find((task) => task.projectId === source.projectId)!;
+  resetStore({ ...before, mechanisms: [...before.mechanisms, otherMechanism], tasks: before.tasks.map((item) => item.id === task.id ? { ...item, subsystemIds: [source.id], mechanismIds: [mechanism.id, otherMechanism.id], partInstanceIds: [] } : item) });
+  updateMechanism(mechanism.id, { subsystemId: destination.id });
+  const saved = getSnapshot().tasks.find((item) => item.id === task.id)!;
+  assert.deepEqual(new Set(saved.subsystemIds), new Set([destination.id, source.id]));
+  assert.equal(saved.projectId, task.projectId);
+  assert.deepEqual(saved.workstreamIds, task.workstreamIds);
+  assert.doesNotThrow(() => updateTask(task.id, { title: "Moved mechanism remains editable" }));
+});
+
+test("task removal removes attributed help and retains missing hard dependency targets", () => {
+  const snapshot = getSnapshot();
+  const task = snapshot.tasks[0]!;
+  const remaining = snapshot.tasks[1]!;
+  createRisk({ projectId: task.projectId, title: "Help requested", detail: "Need a mentor", category: "help", severity: "medium", status: "open", blocksWork: false, source: { kind: "task", id: task.id }, relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null, ownerGroupId: null });
+  const before = getSnapshot();
+  resetStore({ ...before, taskDependencies: [{ id: "missing-blocker", taskId: remaining.id, kind: "task", refId: task.id, requiredState: "complete", dependencyType: "hard", createdAt: new Date().toISOString() }] });
+  removeTask(task.id);
+  assert.ok(!getSnapshot().risks.some((risk) => risk.source.kind === "task" && risk.source.id === task.id));
+  assert.equal(getSnapshot().taskDependencies[0]?.refId, task.id);
 });

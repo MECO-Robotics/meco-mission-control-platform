@@ -145,7 +145,7 @@ export async function buildCadHierarchyReview(args: { store: CadStore; snapshotI
     componentAssemblyId: null,
   }));
   const root = roots[0] ?? null;
-  const issues = collectHierarchyIssues({ assemblies, instances, mappingsBySourceId, proposals: proposals.items, definitionsById });
+  const issues = collectHierarchyIssues({ projectId: snapshot.projectId, assemblies, instances, mappingsBySourceId, proposals: proposals.items, definitionsById });
   const unresolved = issues.filter((issue) => issue.severity === "BLOCKING");
   return {
     snapshotId: args.snapshotId,

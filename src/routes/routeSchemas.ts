@@ -144,6 +144,8 @@ export const taskReassignSchema = z.object({
   ownerId: z.string().trim().min(1).nullable(),
 });
 
+const calendarDateTimeSchema = z.string().trim().pipe(z.iso.datetime({ offset: true, local: true }));
+
 const milestoneFieldsSchema = z.object({
   title: z.string().trim().min(2),
   type: z.enum([
@@ -154,8 +156,8 @@ const milestoneFieldsSchema = z.object({
     "demo",
   ]),
   status: z.enum(["planned", "active", "complete"]),
-  startAt: z.string().trim().min(1),
-  endAt: z.string().trim().min(1).nullable(),
+  startAt: calendarDateTimeSchema,
+  endAt: calendarDateTimeSchema.nullable(),
   isExternal: z.boolean(),
   description: z.string().trim(),
   projectIds: z.array(z.string().trim().min(1)),
@@ -179,8 +181,8 @@ const meetingFieldsSchema = z.object({
   meetingType: meetingTypeSchema,
   seasonId: z.string().trim().min(1).optional(),
   projectIds: z.array(z.string().trim().min(1)),
-  startAt: z.string().trim().min(1),
-  endAt: z.string().trim().min(1).nullable().optional(),
+  startAt: calendarDateTimeSchema,
+  endAt: calendarDateTimeSchema.nullable().optional(),
   location: z.string().trim(),
   description: z.string().trim(),
 });
@@ -307,10 +309,11 @@ export const taskDependencyPatchSchema = z.object({
 }).strict().partial();
 
 export const riskSchema = z.object({
+  createdByMemberId: z.string().trim().min(1).nullable().optional(),
   projectId: z.string().trim().min(1),
   title: z.string().trim().min(2),
   detail: z.string().trim().min(2),
-  category: z.enum(["dependency", "design", "manufacturing", "supply", "schedule", "qa", "inventory", "other"]),
+  category: z.enum(["help", "dependency", "design", "manufacturing", "supply", "schedule", "qa", "inventory", "other"]),
   severity: z.enum(["critical", "high", "medium", "low"]),
   status: z.enum(["open", "in-progress", "blocked", "resolved"]).default("open"),
   blocksWork: z.boolean().default(false),
@@ -328,7 +331,7 @@ export const riskSchema = z.object({
   mitigationDueDate: z.string().date().nullable().optional(),
 }).strict();
 
-export const riskPatchSchema = riskSchema.partial().extend({
+export const riskPatchSchema = riskSchema.omit({ createdByMemberId: true }).partial().extend({
   status: z.enum(["open", "in-progress", "blocked", "resolved"]).optional(),
   blocksWork: z.boolean().optional(),
 });
@@ -527,7 +530,8 @@ export const purchaseApprovalSchema = z.object({
 }).strict();
 
 export const purchaseTransitionSchema = z.object({
-  orderStatus: z.enum(["ordered", "shipped", "delivered", "cancelled"]),
+  orderStatus: z.enum(["not-ordered", "ordered", "shipped", "delivered", "cancelled"]),
+  purchaseOrderNumber: z.string().trim().min(1).nullable().optional(),
   finalCost: z.object({ amount: z.number().nonnegative(), currency: z.string().nullable() }).nullable().optional(),
 }).strict();
 

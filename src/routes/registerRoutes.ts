@@ -1300,7 +1300,7 @@ export async function registerRoutes(
       });
     }
 
-    const risk = createRisk({ ...parsed.data, mitigationTaskId: parsed.data.mitigationTaskId ?? null, ownerGroupId: parsed.data.ownerGroupId ?? null, ownerMemberId: parsed.data.ownerMemberId ?? null, mitigationDueDate: parsed.data.mitigationDueDate ?? null });
+    const risk = createRisk({ ...parsed.data, createdByMemberId: isAuthEnabled() ? getTaskActionMember(request)?.id ?? null : parsed.data.createdByMemberId ?? null, mitigationTaskId: parsed.data.mitigationTaskId ?? null, ownerGroupId: parsed.data.ownerGroupId ?? null, ownerMemberId: parsed.data.ownerMemberId ?? null, mitigationDueDate: parsed.data.mitigationDueDate ?? null });
 
     return reply.code(201).send({
       item: risk,
@@ -3388,8 +3388,9 @@ export async function registerRoutes(
       const item = updatePurchaseItem(request.params.itemId, {
         orderStatus: parsed.data.orderStatus,
         finalCost: parsed.data.finalCost === undefined ? currentItem.finalCost : parsed.data.finalCost,
-        orderedAt: parsed.data.orderStatus === "ordered" ? now : currentItem.orderedAt,
-        deliveredAt: parsed.data.orderStatus === "delivered" ? now : currentItem.deliveredAt,
+        purchaseOrderNumber: parsed.data.purchaseOrderNumber === undefined ? currentItem.purchaseOrderNumber : parsed.data.purchaseOrderNumber,
+        orderedAt: parsed.data.orderStatus === "ordered" && currentItem.orderStatus !== "ordered" ? now : currentItem.orderedAt,
+        deliveredAt: parsed.data.orderStatus === "delivered" && currentItem.orderStatus !== "delivered" ? now : currentItem.deliveredAt,
       }, buildTaskAuditContext(request, actor.id));
 
       return { item };

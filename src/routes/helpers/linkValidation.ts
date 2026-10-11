@@ -101,6 +101,7 @@ export function validateTestResultLinks(input: { projectId: string; targetRefs: 
 }
 
 export function validateRiskLinks(input: {
+  createdByMemberId?: string | null;
   projectId: string;
   source: { kind: string; id?: string };
   relatedTargets: readonly { kind: string; id: string }[];
@@ -151,6 +152,7 @@ export function validateRiskLinks(input: {
   }
   if (input.mitigationTaskId && !snapshot.tasks.some((task) => task.id === input.mitigationTaskId && task.projectId === input.projectId)) return "The selected mitigation task does not exist in this project.";
   if (input.ownerGroupId && !snapshot.responsibleGroups.some((group) => group.id === input.ownerGroupId)) return "The selected responsible group does not exist.";
+  if (input.createdByMemberId && !snapshot.members.some((member) => member.id === input.createdByMemberId)) return "The risk creator does not exist.";
   if (input.ownerMemberId && !snapshot.members.some((member) => member.id === input.ownerMemberId)) return "The selected risk owner does not exist.";
   return null;
 }

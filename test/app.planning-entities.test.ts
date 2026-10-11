@@ -481,3 +481,45 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     assert.equal(updateRobotProjectResponse.json().item.description, "Updated Robot project details.");
   });
 });
+
+test("calendar commands reject malformed dates and merged reversed intervals", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const base = { title: "Calendar check", startAt: "2026-10-10T09:00:00Z", endAt: "2026-10-10T10:00:00Z", projectIds: [], location: "Lab", description: "" };
+    for (const startAt of ["tomorrow", "2026-02-30T09:00:00Z"]) {
+      const invalid = await app.inject({ method: "POST", url: "/api/meetings", payload: { ...base, startAt } });
+      assert.equal(invalid.statusCode, 400, invalid.body);
+      resetLimits();
+    }
+    const created = await app.inject({ method: "POST", url: "/api/meetings", payload: base });
+    assert.equal(created.statusCode, 201, created.body);
+    const id = created.json().item.id;
+    resetLimits();
+    const invalidPatch = await app.inject({ method: "PATCH", url: `/api/meetings/${id}`, payload: { startAt: "2026-10-10T11:00:00Z" } });
+    assert.equal(invalidPatch.statusCode, 400, invalidPatch.body);
+    assert.equal(getSnapshot().meetings.find((meeting) => meeting.id === id)?.startAt, base.startAt);
+    resetLimits();
+    const clearEnd = await app.inject({ method: "PATCH", url: `/api/meetings/${id}`, payload: { startAt: "2026-10-10T11:00:00Z", endAt: null } });
+    assert.equal(clearEnd.statusCode, 200, clearEnd.body);
+  });
+});
+
+test("help signals round-trip as attributed risks and creator cannot be rewritten", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const task = getSnapshot().tasks[0]!;
+    const member = getSnapshot().members[0]!;
+    const create = await app.inject({ method: "POST", url: "/api/risks", payload: {
+      projectId: task.projectId, title: `Help requested: ${task.title}`, detail: "Need mentor assistance",
+      category: "help", severity: "medium", source: { kind: "task", id: task.id },
+      relatedTargets: [{ kind: "task", id: task.id }], createdByMemberId: member.id, ownerMemberId: task.mentorId,
+    } });
+    assert.equal(create.statusCode, 201, create.body);
+    const risk = create.json().item;
+    assert.equal(risk.createdByMemberId, member.id);
+    resetLimits();
+    const patch = await app.inject({ method: "PATCH", url: `/api/risks/${risk.id}`, payload: { createdByMemberId: null } });
+    assert.equal(patch.statusCode, 400, patch.body);
+    resetLimits();
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap" });
+    assert.equal(bootstrap.json().risks.find((candidate: { id: string }) => candidate.id === risk.id)?.createdByMemberId, member.id);
+  });
+});

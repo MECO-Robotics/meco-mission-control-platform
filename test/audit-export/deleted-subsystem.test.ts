@@ -117,7 +117,8 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         name: "Audit Export Moved Mechanism",
         description: "Mechanism audit row should keep old and new project scope.",
       });
-      assert.ok(updateMechanism(movedMechanism.id, { subsystemId: operationsSubsystem.id }));
+      assert.throws(() => updateMechanism(movedMechanism.id, { subsystemId: operationsSubsystem.id }), /cannot move between projects/);
+      assert.ok(updateMechanism(movedMechanism.id, { description: "Rejected move retains original project ownership." }));
 
       resetLimits();
 
@@ -150,13 +151,14 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
       });
 
       assert.equal(newMechanismProjectResponse.statusCode, 200);
-      assert.ok(
+      assert.equal(
         newMechanismProjectResponse
           .json()
           .items.some(
             (item: { entityId: string; operation: string }) =>
               item.entityId === movedMechanism.id && item.operation === "update",
           ),
+        false,
       );
 
       const movedPartDefinition = createPartDefinition({

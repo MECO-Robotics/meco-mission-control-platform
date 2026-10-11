@@ -81,7 +81,7 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
       return reply.code(404).send({ message: "CAD snapshot was not found." });
     }
     const hierarchyIssues = await validateCadHierarchyForFinalize({ store, snapshotId: snapshot.id });
-    if (hierarchyIssues.length > 0 && !parsed.data.allowUnresolved) {
+    if (hierarchyIssues.some((issue) => issue.code === "cad_mapping_target_missing") || (hierarchyIssues.length > 0 && !parsed.data.allowUnresolved)) {
       return reply.code(409).send({
         message: "CAD snapshot still has hierarchy review issues.",
         unresolvedCount: hierarchyIssues.length,

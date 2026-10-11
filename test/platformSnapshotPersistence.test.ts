@@ -150,10 +150,10 @@ test("production platform state survives a fresh process", () => {
       store.createQaReport({ projectId: source.tasks[0].projectId, targetRefs: [{ kind: "task", id: source.tasks[0].id }], participantIds: [source.members[0].id], result: "pass", notes: "Persistent report", reviewedAt: "2026-09-08T00:00:00.000Z" });
       store.createRisk({
         projectId: store.getTasks()[0].projectId, title: "Durable issue category",
-        detail: "A blocking risk survives restart.", category: "dependency", severity: "high",
+        detail: "A blocking risk survives restart.", category: "help", severity: "high",
         status: "open", blocksWork: true, source: { kind: "manual" },
         relatedTargets: [{ kind: "task", id: store.getTasks()[0].id }],
-        mitigationTaskId: null, ownerGroupId: null,
+        mitigationTaskId: null, ownerGroupId: null, createdByMemberId: source.members[0].id,
       });
       await transaction.commit();
       transaction.release();
@@ -174,10 +174,10 @@ test("production platform state survives a fresh process", () => {
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
       const risk = store.getRisks().find((item) => item.title === "Durable issue category");
-      process.stdout.write(JSON.stringify([risk.category, risk.blocksWork, risk.source.kind]));
+      process.stdout.write(JSON.stringify([risk.category, risk.blocksWork, risk.source.kind, risk.createdByMemberId]));
       process.exit(0);
     `);
-    assert.deepEqual(JSON.parse(loadedIssue), ["dependency", true, "manual"]);
+    assert.deepEqual(JSON.parse(loadedIssue), ["help", true, "manual", snapshot.members[0].id]);
     const persisted = JSON.parse(readFileSync(snapshotPath, "utf8"));
     const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
