@@ -108,12 +108,12 @@ Retention policy:
 - `POST /api/tasks/:taskId/claim`: claim a task for the signed-in student or lead. Optional `{ "start": true }` starts eligible unblocked work. Returns `409 task_already_claimed` when another owner claimed first.
 - `POST /api/tasks/:taskId/release`: release a task. Students can release their own task; leads, mentors, and admins can release any task.
 - `POST /api/tasks/:taskId/reassign`: assign or unassign a task owner. Requires lead, mentor, or admin when auth is enabled.
-- `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled.
+- `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled. Setting status to `complete` returns `409` while blocking risks or unfinished hard dependencies remain.
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
 - `GET /api/task-dependencies`: list dependencies.
-- `POST /api/task-dependencies`: create a dependency.
-- `PATCH /api/task-dependencies/:dependencyId`: update a dependency.
+- `POST /api/task-dependencies`: create a dependency. Hard task dependencies cannot create cycles; self-dependencies are rejected.
+- `PATCH /api/task-dependencies/:dependencyId`: update a dependency. Hard task dependencies cannot create cycles; self-dependencies are rejected.
 - `DELETE /api/task-dependencies/:dependencyId`: delete a dependency.
 
 ## Work Logs And Meetings

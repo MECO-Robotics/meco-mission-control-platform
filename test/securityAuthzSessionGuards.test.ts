@@ -568,7 +568,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
   );
 });
 
-test("authenticated season bootstrap preserves escalations", async () => {
+test("authenticated season bootstrap omits escalations", async () => {
   await withIntegrationApp(
     async ({ app }) => {
       const { createMember } = await import("../src/data/store");
@@ -594,12 +594,11 @@ test("authenticated season bootstrap preserves escalations", async () => {
 
       assert.equal(response.statusCode, 200);
       const body = response.json() as {
-        escalations: unknown[];
         members: Array<Record<string, unknown>>;
         seasons: Array<{ id: string }>;
       };
       assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
-    assert.equal("escalations" in body, false);
+      assert.equal("escalations" in body, false);
       const authenticatedProbeRecord = body.members.find(
         (member) => member.id === authenticatedProbeMember.id,
       );

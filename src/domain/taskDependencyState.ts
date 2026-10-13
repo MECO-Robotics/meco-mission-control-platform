@@ -79,6 +79,46 @@ export function getTaskWaitingOnDependencyRecords(
   );
 }
 
+export function wouldCreateHardTaskDependencyCycle(
+  dependencies: readonly TaskDependency[],
+  taskId: string,
+  prerequisiteTaskId: string,
+  excludedDependencyId?: string,
+) {
+  const prerequisitesByTask = new Map<string, string[]>();
+  for (const dependency of dependencies) {
+    if (
+      dependency.id !== excludedDependencyId &&
+      dependency.kind === "task" &&
+      dependency.dependencyType === "hard"
+    ) {
+      const prerequisites = prerequisitesByTask.get(dependency.taskId) ?? [];
+      prerequisites.push(dependency.refId);
+      prerequisitesByTask.set(dependency.taskId, prerequisites);
+    }
+  }
+
+  const visited = new Set<string>();
+  const pending = [prerequisiteTaskId];
+
+  while (pending.length > 0) {
+    const currentTaskId = pending.pop();
+    if (!currentTaskId) {
+      continue;
+    }
+    if (currentTaskId === taskId) {
+      return true;
+    }
+    if (visited.has(currentTaskId)) {
+      continue;
+    }
+    visited.add(currentTaskId);
+    pending.push(...(prerequisitesByTask.get(currentTaskId) ?? []));
+  }
+
+  return false;
+}
+
 export function isTaskWaitingOnDependencies(
   task: Pick<ReadonlyData<Task>, "id" | "status">,
   snapshot: SnapshotView,

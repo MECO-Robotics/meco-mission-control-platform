@@ -110,7 +110,11 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
-import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
+import {
+  getTaskWaitingOnDependencyRecords,
+  isTaskWaitingOnDependencies,
+  wouldCreateHardTaskDependencyCycle,
+} from "../domain/taskDependencyState";
 import {
   filterPurchaseItemsForPerson,
   filterTasksForPerson,
@@ -2205,6 +2209,15 @@ export async function registerRoutes(
         });
       }
 
+      if (
+        parsed.data.status === "complete" &&
+        (currentTask.isBlocked || getTaskWaitingOnDependencyRecords(currentTask.id, getSnapshot()).length > 0)
+      ) {
+        return reply.code(409).send({
+          message: "A task cannot be completed while blocking risks or unfinished hard dependencies remain.",
+        });
+      }
+
       const targetIds = normalizeTaskTargets(parsed.data, currentTask);
       const nextProjectId = resolveProjectId({
         projectId: parsed.data.projectId,
@@ -2299,6 +2312,16 @@ export async function registerRoutes(
       });
     }
 
+    if (
+      parsed.data.kind === "task" &&
+      parsed.data.dependencyType === "hard" &&
+      wouldCreateHardTaskDependencyCycle(getTaskDependencies(), parsed.data.taskId, parsed.data.refId)
+    ) {
+      return reply.code(400).send({
+        message: "Hard task dependencies cannot create a cycle.",
+      });
+    }
+
     const dependency = createTaskDependency(parsed.data);
     return reply.code(201).send({
       item: dependency,
@@ -2350,11 +2373,27 @@ export async function registerRoutes(
         });
       }
 
+      const nextDependencyType = parsed.data.dependencyType ?? currentDependency.dependencyType;
+      if (
+        nextKind === "task" &&
+        nextDependencyType === "hard" &&
+        wouldCreateHardTaskDependencyCycle(
+          getTaskDependencies(),
+          nextTaskId,
+          nextRefId,
+          currentDependency.id,
+        )
+      ) {
+        return reply.code(400).send({
+          message: "Hard task dependencies cannot create a cycle.",
+        });
+      }
+
       const mergedPayload = {
         taskId: nextTaskId,
         kind: nextKind,
         refId: nextRefId,
-        dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,
+        dependencyType: nextDependencyType,
         ...(nextKind === "part-instance"
           ? { requiredCondition: parsed.data.requiredCondition ?? (currentDependency.kind === "part-instance" ? currentDependency.requiredCondition : undefined) }
           : { requiredState: parsed.data.requiredState ?? (currentDependency.kind !== "part-instance" ? currentDependency.requiredState : undefined) }),
