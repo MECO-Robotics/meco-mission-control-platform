@@ -3487,7 +3487,10 @@ export function createReportFinding(input: ReportFindingInput) {
   return reportFindingFromFinding(finding);
 }
 
-export function createTaskDependency(input: TaskDependencyInput) {
+export function createTaskDependency(
+  input: TaskDependencyInput,
+  auditContext: AuditMutationContext = {},
+) {
   const dependencyIds = new Set(currentSnapshot.taskDependencies.map((dependency) => dependency.id));
   const dependency: TaskDependency = {
     ...input,
@@ -3509,6 +3512,8 @@ export function createTaskDependency(input: TaskDependencyInput) {
     projectId: task?.projectId ?? null,
     taskId: dependency.taskId,
     subsystemId: task?.subsystemIds[0] ?? null,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
   });
 
   return dependency;
@@ -3517,6 +3522,7 @@ export function createTaskDependency(input: TaskDependencyInput) {
 export function updateTaskDependency(
   dependencyId: string,
   input: Partial<TaskDependencyInput>,
+  auditContext: AuditMutationContext = {},
 ) {
   const originalDependency = currentSnapshot.taskDependencies.find(
     (dependency) => dependency.id === dependencyId,
@@ -3545,6 +3551,8 @@ export function updateTaskDependency(
     projectId: task?.projectId ?? null,
     taskId: savedDependency.taskId,
     subsystemId: task?.subsystemIds[0] ?? null,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       originalDependency,
       savedDependency,
@@ -3554,7 +3562,10 @@ export function updateTaskDependency(
   return savedDependency;
 }
 
-export function removeTaskDependency(dependencyId: string) {
+export function removeTaskDependency(
+  dependencyId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const dependency = currentSnapshot.taskDependencies.find(
     (candidate) => candidate.id === dependencyId,
   );
@@ -3578,6 +3589,8 @@ export function removeTaskDependency(dependencyId: string) {
     projectId: task?.projectId ?? null,
     taskId: dependency.taskId,
     subsystemId: task?.subsystemIds[0] ?? null,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
   });
 
   return dependency;
@@ -3976,7 +3989,9 @@ export function updateTask(
     subsystemId: savedTask.subsystemIds[0] ?? "",
     taskId: savedTask.id,
     memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
-    actorMemberId: auditContext.actorMemberId ?? savedTask.ownerId,
+    actorMemberId: auditContext.actorMemberId === undefined
+      ? savedTask.ownerId
+      : auditContext.actorMemberId,
     requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       currentTask,

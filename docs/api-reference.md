@@ -112,9 +112,9 @@ Retention policy:
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
 - `GET /api/task-dependencies`: list dependencies.
-- `POST /api/task-dependencies`: create a dependency. Hard task dependencies cannot create cycles; self-dependencies are rejected.
-- `PATCH /api/task-dependencies/:dependencyId`: update a dependency. Hard task dependencies cannot create cycles; self-dependencies are rejected.
-- `DELETE /api/task-dependencies/:dependencyId`: delete a dependency.
+- `POST /api/task-dependencies`: create a dependency. Requires lead, mentor, or admin when auth is enabled. Hard task dependencies cannot create cycles; self-dependencies are rejected.
+- `PATCH /api/task-dependencies/:dependencyId`: update a dependency. Requires lead, mentor, or admin when auth is enabled. Hard task dependencies cannot create cycles; self-dependencies are rejected.
+- `DELETE /api/task-dependencies/:dependencyId`: delete a dependency. Requires lead, mentor, or admin when auth is enabled.
 
 ## Work Logs And Meetings
 

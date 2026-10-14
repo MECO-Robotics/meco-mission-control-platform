@@ -2288,6 +2288,9 @@ export async function registerRoutes(
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
+    if (!requireMentorPermission(request, reply, "Only leads, mentors, and admins can manage task dependencies.")) {
+      return;
+    }
 
     const parsed = parseRouteInput(taskDependencySchema, request.body, reply, "Task dependency payload is invalid.");
     if (!parsed) {
@@ -2322,7 +2325,7 @@ export async function registerRoutes(
       });
     }
 
-    const dependency = createTaskDependency(parsed.data);
+    const dependency = createTaskDependency(parsed.data, buildTaskAuditContext(request));
     return reply.code(201).send({
       item: dependency,
     });
@@ -2332,6 +2335,9 @@ export async function registerRoutes(
     "/api/task-dependencies/:dependencyId",
     { config: { snapshotMutation: true } }, async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+      if (!requireMentorPermission(request, reply, "Only leads, mentors, and admins can manage task dependencies.")) {
         return;
       }
 
@@ -2405,7 +2411,11 @@ export async function registerRoutes(
           issues: merged.error.flatten(),
         });
       }
-      const dependency = updateTaskDependency(request.params.dependencyId, merged.data);
+      const dependency = updateTaskDependency(
+        request.params.dependencyId,
+        merged.data,
+        buildTaskAuditContext(request),
+      );
       return {
         item: dependency,
       };
@@ -2417,8 +2427,14 @@ export async function registerRoutes(
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
+      if (!requireMentorPermission(request, reply, "Only leads, mentors, and admins can manage task dependencies.")) {
+        return;
+      }
 
-      const dependency = removeTaskDependency(request.params.dependencyId);
+      const dependency = removeTaskDependency(
+        request.params.dependencyId,
+        buildTaskAuditContext(request),
+      );
       if (!dependency) {
         return reply.code(404).send({
           message: "Task dependency not found.",
