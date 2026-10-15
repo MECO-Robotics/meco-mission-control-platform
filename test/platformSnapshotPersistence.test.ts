@@ -84,6 +84,22 @@ test("current schema snapshots load without rewriting and reset archives the con
     assert.ok(archive);
     assert.equal(readFileSync(archive, "utf8"), contents);
     assert.equal(existsSync(snapshotPath), false);
+
+    const legacySnapshot = structuredClone(snapshot);
+    legacySnapshot.purchaseItems[0]!.quantity = 1001.5;
+    writeFileSync(snapshotPath, JSON.stringify(legacySnapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.purchaseItems[0]?.quantity, 1001.5);
+
+    const receivedSnapshot = structuredClone(snapshot);
+    receivedSnapshot.purchaseItems[0]!.receipts = [{
+      id: "persisted-receipt",
+      quantity: 1,
+      location: "Durable rack",
+      receivedAt: "2026-10-15T00:00:00.000Z",
+      partInstanceIds: ["persisted-part-instance"],
+    }];
+    writeFileSync(snapshotPath, JSON.stringify(receivedSnapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.purchaseItems[0]?.receipts?.[0]?.location, "Durable rack");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -391,7 +407,6 @@ test("atomic acquisition persists all linked records or rolls back the entire du
     rmSync(directory, { recursive: true, force: true });
   }
 });
-
 
 test("QA and test findings preserve separate IDs, audits and durable transaction rollback", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-findings-persistence-"));

@@ -47,9 +47,91 @@ import {
   updatePartInstance,
   updateTask,
 } from "../src/data/store";
+import { deriveMilestoneReadiness, derivePartInstanceReadiness } from "../src/domain/readiness";
 
 beforeEach(() => {
   resetStore();
+});
+
+test("readiness ignores stale QA and test outcomes after a part revision changes", () => {
+  const seed = getSnapshot();
+  const part = seed.partInstances.find((item) => item.id === "pi-swerve-encoder-bracket-front-left")!;
+  const definition = seed.partDefinitions.find((item) => item.id === part.partDefinitionId)!;
+  const relatedTasks = seed.tasks.filter((item) => item.partInstanceIds.includes(part.id)).map((item) => ({ ...item, status: "complete" as const }));
+  const snapshot = {
+    ...seed,
+    tasks: relatedTasks,
+    risks: [],
+    qaFindings: [],
+    testFindings: [],
+    qaReports: [],
+    partDefinitions: seed.partDefinitions.map((item) => item.id === definition.id ? { ...item, revision: "C" } : item),
+  };
+  const staleFail = {
+    id: "stale-fail", projectId: "project-robot-2026", targetRefs: [{ kind: "part-instance" as const, id: part.id }],
+    title: "Old revision test", status: "fail" as const, createdAt: "2026-04-01T00:00:00.000Z", targetRevisions: { [definition.id]: definition.revision },
+  };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [staleFail] }), "not-ready");
+  const currentPass = { ...staleFail, status: "pass" as const, createdAt: "2026-04-02T00:00:00.000Z", targetRevisions: { [definition.id]: "C" } };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [staleFail, currentPass] }), "ready");
+  const currentFail = { ...currentPass, status: "fail" as const, createdAt: "2026-04-03T00:00:00.000Z" };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentPass, currentFail] }), "blocked");
+  const differentTestPass = { ...currentPass, title: "Independent inspection", createdAt: "2026-04-04T00:00:00.000Z" };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentFail, differentTestPass] }), "blocked");
+  const retestPass = { ...currentPass, createdAt: "2026-04-05T00:00:00.000Z" };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentFail, differentTestPass, retestPass] }), "ready");
+  const staleQa = {
+    ...seed.qaReports[0]!, id: "stale-qa", targetRefs: [{ kind: "part-instance" as const, id: part.id }],
+    status: "reviewed" as const, result: "iteration-worthy" as const,
+    targetRevisions: { [definition.id]: definition.revision },
+  };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [staleQa], testResults: [] }), "not-ready");
+  const currentQaPass = { ...staleQa, result: "pass" as const, createdAt: "2026-04-02T00:00:00.000Z", targetRevisions: { [definition.id]: "C" } };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [staleQa, currentQaPass], testResults: [] }), "ready");
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [currentQaPass], testResults: [currentFail] }), "blocked");
+});
+
+test("milestone readiness requires at least one required criterion", () => {
+  const snapshot = getSnapshot();
+  const milestone = snapshot.milestones[0]!;
+  assert.equal(deriveMilestoneReadiness(milestone, {
+    ...snapshot,
+    risks: [],
+    milestoneRequirements: (snapshot.milestoneRequirements ?? []).filter((item) => item.milestoneId !== milestone.id),
+  }), "not-ready");
+});
+
+test("project scope markers do not make a newly created milestone ready without verification criteria", () => {
+  const milestone = createMilestone({
+    title: "Robot Acceptance Checkpoint",
+    type: "deadline",
+    startAt: "2026-06-10T10:00:00-04:00",
+    endAt: null,
+    isExternal: false,
+    description: "Acceptance checkpoint with automatic project scope.",
+    projectIds: ["project-robot-2026"],
+  });
+  const scoped = getSnapshot();
+  const scopeMarkers = (scoped.milestoneRequirements ?? []).filter((item) => item.milestoneId === milestone.id);
+  assert.equal(scopeMarkers.length, 1);
+  assert.equal(scopeMarkers[0]?.conditionValue, "in_scope");
+  assert.equal(deriveMilestoneReadiness(milestone, scoped), "not-ready");
+
+  const criterion = {
+    id: "robot-acceptance-iteration",
+    milestoneId: milestone.id,
+    targetRefs: [{ kind: "subsystem" as const, id: "drive" }],
+    conditionType: "iteration" as const,
+    conditionValue: "iteration>=2",
+    required: true,
+    sortOrder: 2,
+    notes: "Drive subsystem must reach iteration 2.",
+  };
+  resetStore({ ...scoped, milestoneRequirements: [...(scoped.milestoneRequirements ?? []), criterion] });
+  assert.equal(deriveMilestoneReadiness(milestone, getSnapshot()), "not-ready");
+
+  updateSubsystem("drive", { iteration: 2 });
+  assert.equal(deriveMilestoneReadiness(milestone, getSnapshot()), "ready");
 });
 
 function nonRobotProjectNamesForSeason(seasonId: string) {

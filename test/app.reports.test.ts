@@ -291,14 +291,16 @@ test("web report and task planning contract endpoints persist records", async ()
         issueType: "Bracket needs edge cleanup",
         severity: "medium",
         notes: "Deburr the bracket before final install.",
-        spawnedTaskId: null,
+        spawnedTaskId: "swerve-sensor-bundle",
         spawnedIterationId: null,
-        spawnedRiskId: null,
+        spawnedRiskId: "risk-drive-evidence-delay",
       },
     });
 
-    assert.equal(findingCreateResponse.statusCode, 201);
+    assert.equal(findingCreateResponse.statusCode, 201, findingCreateResponse.body);
     assert.equal(findingCreateResponse.json().item.reportId, reportBody.item.id);
+    assert.equal(findingCreateResponse.json().item.spawnedTaskId, "swerve-sensor-bundle");
+    assert.equal(findingCreateResponse.json().item.spawnedRiskId, "risk-drive-evidence-delay");
 
     resetLimits();
 
@@ -379,7 +381,7 @@ test("web report and task planning contract endpoints persist records", async ()
       url: "/api/bootstrap",
     });
 
-    assert.equal(bootstrapResponse.statusCode, 200);
+    assert.equal(bootstrapResponse.statusCode, 200, bootstrapResponse.body);
     const bootstrapBody = bootstrapResponse.json() as {
       qaFindings: Array<{ reportId?: string | null; testResultId?: string | null }>;
       testFindings: Array<{ reportId?: string | null; testResultId?: string | null }>;

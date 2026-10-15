@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
-import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemSchema, reportSchema, riskSchema, taskSchema, testResultSchema, subsystemSchema, milestoneSchema, meetingSchema } from "../routes/routeSchemas";
+import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemRecordSchema, purchaseReceiptRecordSchema, reportSchema, riskSchema, taskSchema, testResultSchema, subsystemSchema, milestoneSchema, meetingSchema } from "../routes/routeSchemas";
 
 export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 
@@ -41,13 +41,13 @@ const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
   materials: materialSchema.extend({ id: z.string() }).strict(),
   partDefinitions: partDefinitionSchema.extend({ id: z.string() }).strict(),
   partInstances: partInstanceSchema.extend({ id: z.string() }).strict(),
-  purchaseItems: purchaseItemSchema.extend({ id: z.string() }).strict(),
+  purchaseItems: purchaseItemRecordSchema.extend({ id: z.string(), receipts: z.array(purchaseReceiptRecordSchema).optional() }).strict(),
   risks: riskSchema.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string(), resolvedAt: z.string().nullable() }).strict(),
   qaReports: reportSchema.options[0].extend({ id: z.string() }).strict(),
   teamReports: reportSchema.options[1].extend({ id: z.string() }).strict(),
   testResults: testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })) }).strict(),
-  qaFindings: z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
-  testFindings: z.object({ id: z.string(), reportId: z.string().nullable(), testResultId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
+  qaFindings: z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional() }).strict(),
+  testFindings: z.object({ id: z.string(), reportId: z.string().nullable(), testResultId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional() }).strict(),
   designIterations: z.object({ id: z.string(), sourceType: z.enum(["qa", "test"]), findingId: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), notes: z.string(), status: z.enum(["planned", "in-progress", "complete"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
 };
 

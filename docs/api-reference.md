@@ -242,3 +242,9 @@ Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and 
 
 
 Dependencies are stored as typed TaskDependency records. Unresolved problems are stored in Risks with typed related targets; Task blocked state and readiness are projections, not duplicate blocker fields.
+
+## Receiving and evidence revisions
+
+`POST /api/purchases/:itemId/receipts` accepts a positive whole-number `quantity` (up to 1,000 per command) and nonempty stock `location`. Mentor/admin actors may receive ordered, shipped or delivered purchases; cumulative receipts cannot exceed the purchase quantity. The returned purchase includes optional receipt history with quantity, location, timestamp and created part-instance IDs. Missing receipt history remains valid for existing records. COTS purchases linked to a part definition create stock instances even when a material reference also exists. Raw-material purchases add material quantity; a conflicting destination for existing material stock is rejected atomically. Outsourced fabrication receipts do not create duplicate stock. Receiving does not complete tasks or verify readiness. Receipt-bearing purchases cannot change their kind, linked task, part or material identity, or lower quantity below receipts.
+
+QA/test evidence records the applicable part-definition revision. Historical evidence remains stored; evidence without a matching revision cannot verify current readiness. Reviewed QA and the latest result for each test title are considered; failures from different tests remain independent. Generated corrective tasks and risks retain report/finding links. Milestones require meaningful required verification criteria; automatic project `in_scope` markers remain scope metadata and do not establish readiness.

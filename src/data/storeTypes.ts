@@ -110,7 +110,7 @@ export type QaRequestInput = OptionalFields<
   "requestedById" | "projectId" | "targetRefs" | "mentorId"
 >;
 
-export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId"> & { targetRefs: TestResult["targetRefs"]; projectId?: string };
+export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId" | "createdAt" | "targetRevisions"> & { targetRefs: TestResult["targetRefs"]; projectId?: string };
 
 export type ReportInput = Report extends infer Value
   ? Value extends Report

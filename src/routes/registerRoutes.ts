@@ -97,6 +97,7 @@ import {
   updateProject,
   updateSubsystem,
   updatePurchaseItem,
+  receivePurchaseItem,
   updateRisk,
   startInteractiveTutorialSession,
   updateTask,
@@ -189,6 +190,7 @@ import {
   manufacturingProcessArchiveSchema,
   purchaseApprovalSchema,
   purchaseTransitionSchema,
+  purchaseReceiptSchema,
   seasonSchema,
   subsystemPatchSchema,
   subsystemSchema,
@@ -1100,10 +1102,24 @@ export async function registerRoutes(
       return reply;
     }
 
-    if (!getReports().some((report) => report.id === parsed.data.reportId)) {
+    const parentReport = getReports().find((report) => report.id === parsed.data.reportId);
+    if (!parentReport) {
       return reply.code(400).send({
         message: "The selected report does not exist.",
       });
+    }
+    if (parentReport.reportType !== "qa") {
+      return reply.code(400).send({ message: "Findings can only be linked to QA reports." });
+    }
+
+    if (parsed.data.spawnedTaskId && !getTasks().some((task) => task.id === parsed.data.spawnedTaskId && task.projectId === parentReport.projectId)) {
+      return reply.code(400).send({ message: "The corrective task does not exist." });
+    }
+    if (parsed.data.spawnedRiskId && !getRisks().some((risk) => risk.id === parsed.data.spawnedRiskId && risk.projectId === parentReport.projectId)) {
+      return reply.code(400).send({ message: "The linked risk does not exist." });
+    }
+    if (parsed.data.spawnedIterationId && !getDesignIterations().some((iteration) => iteration.id === parsed.data.spawnedIterationId && iteration.projectId === parentReport.projectId)) {
+      return reply.code(400).send({ message: "The linked design iteration does not exist." });
     }
 
     const finding = createReportFinding(parsed.data);
@@ -3301,6 +3317,19 @@ export async function registerRoutes(
         });
       }
 
+      const receivedQuantity = (currentItem.receipts ?? []).reduce((total, receipt) => total + receipt.quantity, 0);
+      if (receivedQuantity > 0 && parsed.data.quantity !== undefined && parsed.data.quantity < receivedQuantity) {
+        return reply.code(409).send({ message: "Purchase quantity cannot be lower than the quantity already received." });
+      }
+      if (receivedQuantity > 0 && (
+        (parsed.data.partDefinitionId !== undefined && parsed.data.partDefinitionId !== currentItem.partDefinitionId) ||
+        (parsed.data.materialId !== undefined && parsed.data.materialId !== currentItem.materialId) ||
+        (parsed.data.kind !== undefined && parsed.data.kind !== currentItem.kind) ||
+        (parsed.data.taskId !== undefined && parsed.data.taskId !== currentItem.taskId)
+      )) {
+        return reply.code(409).send({ message: "Purchase identity cannot change after receipts have been recorded." });
+      }
+
 
       const policyFailure = assessGenericPatch({
         current: currentItem as unknown as Record<string, unknown>,
@@ -3449,6 +3478,28 @@ export async function registerRoutes(
       }, buildTaskAuditContext(request, actor.id));
 
       return { item };
+    },
+  );
+
+  app.post<{ Body: unknown; Params: { itemId: string } }>(
+    "/api/purchases/:itemId/receipts", { config: { snapshotMutation: true } }, async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) return;
+      if (!requireWorkflowApprovalPermission(request, reply, "Only mentors and admins can receive purchases.")) return;
+      const parsed = parseRouteInput(purchaseReceiptSchema, request.body, reply, "Purchase receipt payload is invalid.");
+      if (!parsed) return reply;
+      const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) return reply.code(404).send({ message: "Purchase item not found." });
+      if (currentItem.orderStatus !== "ordered" && currentItem.orderStatus !== "shipped" && currentItem.orderStatus !== "delivered") {
+        return reply.code(409).send({ message: "Only ordered purchases can be received." });
+      }
+      const result = receivePurchaseItem(request.params.itemId, parsed.data, buildTaskAuditContext(request));
+      if ("error" in result) {
+        if (result.error === "not-found") return reply.code(404).send({ message: "Purchase item or linked task not found." });
+        if (result.error === "over-receipt") return reply.code(409).send({ message: "Receipt quantity exceeds the remaining purchase quantity." });
+        if (result.error === "location-conflict") return reply.code(409).send({ message: "Material stock already exists at a different location; receive it at the existing stock location." });
+        return reply.code(400).send({ message: "Receipt quantity must be a positive whole number." });
+      }
+      return { item: result.item };
     },
   );
 

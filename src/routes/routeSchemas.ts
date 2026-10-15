@@ -213,6 +213,9 @@ export const qaReportSchema = z.object({
   status: z.enum(["draft", "submitted", "reviewed"]),
   reviewedById: z.string().trim().min(1).nullable(),
   reviewedAt: z.string().datetime({ offset: true }).nullable(),
+  targetRevisions: z.record(z.string(), z.string()).optional(),
+  followUpTaskId: z.string().nullable().optional(),
+  followUpRiskId: z.string().nullable().optional(),
 }).strict();
 
 export const qaSubmitSchema = qaReportSchema.extend({
@@ -232,6 +235,8 @@ export const testResultSchema = z.object({
   targetRefs: z.array(domainReferenceSchema),
   title: z.string().trim().min(2),
   status: z.enum(["pass", "fail", "blocked"]),
+  createdAt: z.string().datetime({ offset: true }).optional(),
+  targetRevisions: z.record(z.string(), z.string()).optional(),
 }).strict();
 
 export const userPreferencesPatchSchema = z.object({
@@ -271,7 +276,7 @@ const reportBaseSchema = z.object({
   status: z.enum(["draft", "submitted", "reviewed"]),
 });
 export const reportSchema = z.discriminatedUnion("reportType", [
-  reportBaseSchema.extend({ reportType: z.literal("qa"), result: z.enum(["pass", "minor-fix", "iteration-worthy"]), reviewedById: z.string().trim().min(1).nullable(), reviewedAt: z.string().datetime({ offset: true }).nullable() }).strict(),
+  reportBaseSchema.extend({ reportType: z.literal("qa"), result: z.enum(["pass", "minor-fix", "iteration-worthy"]), reviewedById: z.string().trim().min(1).nullable(), reviewedAt: z.string().datetime({ offset: true }).nullable(), targetRevisions: z.record(z.string(), z.string()).optional(), followUpTaskId: z.string().nullable().optional(), followUpRiskId: z.string().nullable().optional() }).strict(),
   reportBaseSchema.extend({ reportType: z.enum(["practice", "competition", "review"]), result: z.string().trim().nullable() }).strict(),
 ]);
 
@@ -493,6 +498,7 @@ export const partInstanceSchema = partInstanceFieldsSchema.extend({
 
 export const partInstancePatchSchema = partInstanceFieldsSchema.partial();
 
+const MAX_RECEIPT_QUANTITY = 1000;
 const purchaseItemFieldsSchema = z.object({
   taskId: z.string().trim().min(1),
   kind: z.enum(["cots-goods", "manufacturing-service"]),
@@ -517,13 +523,17 @@ const purchaseItemFieldsSchema = z.object({
 
 export const purchaseItemSchema = purchaseItemFieldsSchema;
 
+export const purchaseItemRecordSchema = purchaseItemFieldsSchema.extend({
+  quantity: z.number().min(1),
+});
+
 export const manufacturingProcessCreateSchema = z.object({
   code: z.string().trim().min(1).regex(/^[a-z0-9-]+$/),
   name: z.string().trim().min(1),
 }).strict();
 export const manufacturingProcessArchiveSchema = z.object({ isActive: z.literal(false) }).strict();
 
-export const purchaseItemPatchSchema = purchaseItemFieldsSchema.partial();
+export const purchaseItemPatchSchema = purchaseItemSchema.partial();
 
 export const purchaseApprovalSchema = z.object({
   approvalStatus: z.enum(["approved", "rejected"]),
@@ -533,6 +543,18 @@ export const purchaseTransitionSchema = z.object({
   orderStatus: z.enum(["not-ordered", "ordered", "shipped", "delivered", "cancelled"]),
   purchaseOrderNumber: z.string().trim().min(1).nullable().optional(),
   finalCost: z.object({ amount: z.number().nonnegative(), currency: z.string().nullable() }).nullable().optional(),
+}).strict();
+
+export const purchaseReceiptSchema = z.object({
+  quantity: z.number().int().positive().max(MAX_RECEIPT_QUANTITY),
+  location: z.string().trim().min(1).max(200),
+}).strict();
+export const purchaseReceiptRecordSchema = z.object({
+  id: z.string(),
+  quantity: z.number().int().positive().max(MAX_RECEIPT_QUANTITY),
+  location: z.string(),
+  receivedAt: z.string(),
+  partInstanceIds: z.array(z.string()),
 }).strict();
 
 const materialFieldsSchema = z.object({

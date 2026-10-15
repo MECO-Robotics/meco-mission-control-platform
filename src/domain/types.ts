@@ -417,6 +417,10 @@ export interface QaReport extends ReportBase {
   result: QaResult;
   reviewedById: string | null;
   reviewedAt: string | null;
+  /** Part definition revisions inspected by this report, keyed by definition ID. */
+  targetRevisions?: Record<string, string>;
+  followUpTaskId?: string | null;
+  followUpRiskId?: string | null;
 }
 
 export interface TeamReport extends ReportBase {
@@ -489,6 +493,13 @@ export interface PurchaseQuote {
   expiresAt?: string | null;
   quotedAt: string | null;
 }
+export interface PurchaseReceipt {
+  id: string;
+  quantity: number;
+  location: string;
+  receivedAt: string;
+  partInstanceIds: string[];
+}
 export interface PurchaseItem {
   id: string;
   taskId: string;
@@ -510,6 +521,7 @@ export interface PurchaseItem {
   trackingUrl: string | null;
   orderedAt: string | null;
   deliveredAt: string | null;
+  receipts?: PurchaseReceipt[];
 }
 
 export interface Season {
@@ -556,6 +568,10 @@ export interface TestResult {
   targetRefs: DomainReference[];
   title: string;
   status: TestResultStatus;
+  /** Missing only on records created before revision-aware retesting. */
+  createdAt?: string;
+  /** Part definition revisions inspected by this result, keyed by definition ID. */
+  targetRevisions?: Record<string, string>;
 }
 
 interface FindingRecordBase {
@@ -568,6 +584,8 @@ interface FindingRecordBase {
   status: FindingStatus;
   createdAt: string;
   updatedAt: string;
+  correctiveTaskId?: string | null;
+  riskId?: string | null;
 }
 
 export interface QaFinding extends FindingRecordBase {

@@ -40,10 +40,18 @@ test("failed QA produces persisted follow-up and only iteration results create b
       const after = getSnapshot();
       assert.equal(after.qaReports.length, before.qaReports.length + 1);
       assert.equal(after.tasks.length, before.tasks.length + 1);
+      const report = after.qaReports[after.qaReports.length - 1]!;
       const followUp = after.tasks.find((item) => item.title === `Repair ${result}`)!;
+      assert.equal(report.followUpTaskId, followUp.id);
       assert.match(followUp.summary, /Continuity failed/);
       assert.equal(followUp.status, "not-started");
       assert.equal(after.risks.length, before.risks.length + (result === "iteration-worthy" ? 1 : 0));
+      if (result === "iteration-worthy") {
+        assert.ok(report.followUpRiskId);
+        const followUpRisk = after.risks.find((risk) => risk.id === report.followUpRiskId);
+        assert.equal(followUpRisk?.source.kind, "report");
+        if (followUpRisk?.source.kind === "report") assert.equal(followUpRisk.source.id, report.id);
+      }
     }
   }, { env });
 });
