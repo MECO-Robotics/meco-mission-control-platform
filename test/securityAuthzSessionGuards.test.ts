@@ -216,8 +216,8 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
         headers: { authorization: `Bearer ${mentorToken}` },
         payload,
       });
-      assert.equal(allowed.statusCode, 201);
-      assert.equal(allowed.json().item.status, "reviewed");
+      assert.equal(allowed.statusCode, 400);
+      assert.match(allowed.json().message, /POST \/api\/qa-reports\/submit/);
     },
     { env: authEnv },
   );
@@ -227,7 +227,8 @@ test("QA workflow submission requires task mutation authority independently of a
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
     const task = getSnapshot().tasks.find((item) => !getSnapshot().risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
-    updateTask(task.id, { status: "waiting-for-qa" });
+    updateTask(task.id, { status: "in-progress" });
+    updateTask(task.id, { status: "waiting-for-qa", requiresDocumentation: true });
     const payload = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: "ava", participantIds: ["ava"], mentorId: null, requestedById: null, result: "pass", summary: "Authorization check", notes: "Authorization check", createdAt: new Date().toISOString(), status: "submitted", reviewedById: null, reviewedAt: new Date().toISOString() };
     const url = "/api/qa-reports/submit";
     assert.equal((await app.inject({ method: "POST", url, payload })).statusCode, 401);
@@ -246,11 +247,19 @@ test("QA workflow submission requires task mutation authority independently of a
     resetLimits();
     const allowed = await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${leadToken}` } });
     assert.equal(allowed.statusCode, 201, allowed.body);
-    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "waiting-for-qa", "a lead's submitted report is not an approval and cannot complete a task");
     resetLimits();
-    const mentorToken = await signTestToken({ email: "mentor@mecorobotics.org", role: "mentor" });
-    const approved = await app.inject({ method: "POST", url, payload: { ...payload, result: "minor-fix", status: "reviewed", reviewedById: "marco" }, headers: { authorization: `Bearer ${mentorToken}` } });
+    const mentorToken = await signTestToken({ email: "jordan.lee@mecorobotics.org", role: "mentor" });
+    const missingEvidenceApproval = await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: "marco" }, headers: { authorization: `Bearer ${mentorToken}` } });
+    assert.equal(missingEvidenceApproval.statusCode, 201, missingEvidenceApproval.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "waiting-for-qa", "reviewed pass remains waiting when required work evidence is missing");
+    resetLimits();
+    const { createArtifact, createWorkLog } = require("../src/data/store") as typeof import("../src/data/store");
+    createWorkLog({ taskId: task.id, date: "2026-10-15", hours: 1, participantIds: ["ava"], notes: "Required QA work" });
+    createArtifact({ projectId: task.projectId, kind: "document", title: "QA evidence", summary: "Synthetic required documentation.", status: "published", uri: "https://example.invalid/qa-evidence", updatedAt: new Date().toISOString(), targetRefs: [{ kind: "task", id: task.id }] });
+    const approved = await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: "marco" }, headers: { authorization: `Bearer ${mentorToken}` } });
     assert.equal(approved.statusCode, 201, approved.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
   }, { env: authEnv, members: [{ name: "QA Lead", email: "lead@mecorobotics.org", role: "lead" }] });
 });
 

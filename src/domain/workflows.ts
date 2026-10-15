@@ -20,7 +20,7 @@ export function evaluateTaskCompletion(task: ReadonlyData<Task>, snapshot: Snaps
     missing.push("notebook or documentation evidence");
   }
 
-  if (!hasMentorPass(qaReports)) {
+  if (!hasMentorPass(qaReports, task, snapshot)) {
     missing.push("mentor-backed QA approval");
   }
 
@@ -148,10 +148,20 @@ export function formatTaskStatus(status: TaskStatus) {
   return "Complete";
 }
 
-function hasMentorPass(qaReports: SnapshotView["qaReports"]) {
-  return qaReports.some((report) => {
-    return report.result === "pass" && report.status === "reviewed" && report.reviewedById !== null;
-  });
+function hasMentorPass(qaReports: SnapshotView["qaReports"], task: ReadonlyData<Task>, snapshot: SnapshotView) {
+  const applicable = qaReports.filter((report) => report.status === "reviewed" && report.reviewOrder !== undefined && report.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id));
+  const latest = applicable.reduce<(typeof applicable)[number] | undefined>((current, report) => !current || report.reviewOrder! > current.reviewOrder! ? report : current, undefined);
+  if (!latest || !(latest.result === "pass" && latest.reviewedById !== null && latest.reviewedAt !== null && latest.targetRevisions !== undefined && latest.inspectedPartInstanceIds !== undefined)) return false;
+  return (() => {
+    const report = latest;
+    const inspected = new Set(report.inspectedPartInstanceIds);
+    return task.partInstanceIds.every((id) => {
+      if (!inspected.has(id)) return false;
+      const part = snapshot.partInstances.find((item) => item.id === id);
+      const definition = part && snapshot.partDefinitions.find((item) => item.id === part.partDefinitionId);
+      return Boolean(definition && report.targetRevisions?.[definition.id] === definition.revision);
+    });
+  })();
 }
 
 function buildTaskMetrics(

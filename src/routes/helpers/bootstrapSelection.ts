@@ -343,7 +343,7 @@ export function buildBootstrapResponse(
     reports: scopedReports,
     qaRequests: scopedQaRequests,
     qaFindings: snapshot.qaFindings.filter((finding) => activeProjectIds.has(finding.projectId)),
-    testResults: scopedTestResults,
+    testResults: scopedTestResults.map((result) => ({ ...result, ...(result.verificationOrder === undefined || result.targetRevisions === undefined || result.inspectedPartInstanceIds === undefined ? { needsReverification: true } : {}) })),
     testFindings: snapshot.testFindings.filter((finding) => activeProjectIds.has(finding.projectId)),
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({

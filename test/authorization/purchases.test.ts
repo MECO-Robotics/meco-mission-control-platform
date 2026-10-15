@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { updateMaterial, updatePurchaseItem } from "../../src/data/store";
-import { purchaseItemSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
+import { createMaterial, getTasks, updateMaterial, updatePurchaseItem, updateTask } from "../../src/data/store";
+import { purchaseItemSchema, purchaseReceiptRecordSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
 import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
 test("purchase approval and transitions are mentor/admin-only adjacent operations", async () => {
@@ -119,10 +119,10 @@ test("purchase creation cannot self-approve and missing workflow records return 
   });
 });
 
-test("purchase quantities retain the original unbounded minimum while receipt quantities stay bounded integers", async () => {
+test("purchase quantities retain the original fractional minimum while receipt quantities remain bounded", async () => {
   assert.equal(purchaseItemSchema.shape.quantity.parse("1001.5"), 1001.5);
-  assert.equal(purchaseReceiptSchema.safeParse({ quantity: 1.5, location: "Shelf" }).success, false);
-  assert.equal(purchaseReceiptSchema.safeParse({ quantity: 1001, location: "Shelf" }).success, false);
+  assert.equal(purchaseReceiptSchema.safeParse({ operationId: "fractional", quantity: 1.5, location: "Shelf" }).success, true);
+  assert.equal(purchaseReceiptSchema.safeParse({ operationId: "too-large", quantity: 1001, location: "Shelf" }).success, false);
 
   await withWorkflowAuthApp(async ({ app }) => {
     const student = await createWorkflowAuthHeaders("student");
@@ -132,28 +132,167 @@ test("purchase quantities retain the original unbounded minimum while receipt qu
   });
 });
 
+test("receipt operation IDs return one durable effect on retry and conflict on changed payload", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const baseline = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    const baselinePartCount = baseline.partInstances.length;
+    const request = { method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "ambiguous-receipt-1", quantity: 1, location: "Receiving shelf A" } } as const;
+    const [first, concurrentRetry] = await Promise.all([
+      app.inject({ ...request, remoteAddress: "192.0.2.101" }),
+      app.inject({ ...request, remoteAddress: "192.0.2.102" }),
+    ]);
+    assert.equal(first.statusCode, 200, first.body);
+    assert.equal(concurrentRetry.statusCode, 200, concurrentRetry.body);
+    assert.equal(first.json().receipt.id, concurrentRetry.json().receipt.id);
+    assert.deepEqual(first.json(), concurrentRetry.json());
+    assert.equal(concurrentRetry.json().item.receipts.length, 1);
+    assert.equal(concurrentRetry.json().receipt.partInstanceIds.length, 1);
+
+    resetLimits();
+    const changedPayload = await app.inject({ ...request, payload: { ...request.payload, quantity: 2 } });
+    assert.equal(changedPayload.statusCode, 409);
+    resetLimits();
+    const changedLocation = await app.inject({ ...request, payload: { ...request.payload, location: "Other shelf" } });
+    assert.equal(changedLocation.statusCode, 409);
+
+    resetLimits();
+    const after = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    assert.equal(after.purchaseItems.find((item: { id: string }) => item.id === "polycarb-sheet").receipts.length, 1);
+    assert.equal(after.partInstances.length, baselinePartCount + 1);
+    resetLimits();
+    const shipped = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/transition", headers: mentor, payload: { orderStatus: "shipped" } });
+    assert.equal(shipped.statusCode, 200);
+    resetLimits();
+    const retryAfterStateChange = await app.inject(request);
+    assert.equal(retryAfterStateChange.statusCode, 200, retryAfterStateChange.body);
+    assert.equal(retryAfterStateChange.json().receipt.id, first.json().receipt.id);
+    resetLimits();
+    const afterStateChange = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    assert.equal(afterStateChange.purchaseItems.find((item: { id: string }) => item.id === "polycarb-sheet").receipts.length, 1);
+    assert.equal(afterStateChange.partInstances.length, baselinePartCount + 1);
+  });
+});
+
+test("fractional material receipts use decimal-safe cumulative bounds and old receipt records remain valid", async () => {
+  assert.equal(purchaseReceiptRecordSchema.safeParse({ id: "old", quantity: 1, location: "Shelf", receivedAt: "2026-01-01T00:00:00.000Z", partInstanceIds: [] }).success, true);
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const materialId = "mat-onyx-filament";
+    updateMaterial(materialId, { onHandQuantity: 0 });
+    updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId, quantity: 1.3, approvalStatus: "approved", orderStatus: "ordered" });
+    const first = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "decimal-0.1", quantity: 0.1, location: "Onyx shelf" } });
+    assert.equal(first.statusCode, 200, first.body);
+    resetLimits();
+    const second = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "decimal-0.2", quantity: 0.2, location: "Onyx shelf" } });
+    assert.equal(second.statusCode, 200, second.body);
+    assert.ok(Math.abs(second.json().item.receipts.reduce((sum: number, receipt: { quantity: number }) => sum + receipt.quantity, 0) - 0.3) < Number.EPSILON);
+    assert.equal(second.json().item.receipts.length, 2);
+    resetLimits();
+    const over = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "decimal-over", quantity: 1.0001, location: "Onyx shelf" } });
+    assert.equal(over.statusCode, 409);
+    resetLimits();
+    const state = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    assert.equal(state.materials.find((material: { id: string }) => material.id === materialId).onHandQuantity, 0.3);
+  });
+});
+
+test("postreceipt quantity floor is decimal-safe and allows unchanged quantity metadata edits atomically", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const metadataEdit = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: mentor, payload: { title: "Ferrule kit received", quantity: 1.2 } });
+    assert.equal(metadataEdit.statusCode, 200, metadataEdit.body);
+    assert.equal(metadataEdit.json().item.title, "Ferrule kit received");
+    assert.equal(metadataEdit.json().item.quantity, 1.2);
+    resetLimits();
+    updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
+    updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", approvalStatus: "approved", orderStatus: "ordered" });
+    const first = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "floor-1.1", quantity: 1.1, location: "Onyx shelf" } });
+    assert.equal(first.statusCode, 200, first.body);
+    resetLimits();
+    const second = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "floor-0.1", quantity: 0.1, location: "Onyx shelf" } });
+    assert.equal(second.statusCode, 200, second.body);
+    resetLimits();
+    const underfloor = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: mentor, payload: { title: "Must not apply", quantity: 1.19 } });
+    assert.equal(underfloor.statusCode, 409);
+    resetLimits();
+    const after = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    const saved = after.purchaseItems.find((item: { id: string }) => item.id === "ferrule-kit");
+    assert.equal(saved.title, "Ferrule kit received");
+    assert.equal(saved.quantity, 1.2);
+    assert.equal(saved.receipts.length, 2);
+  });
+});
+
+test("receipt-bearing purchases and referenced materials resist deletion while student stock edits stay allowed", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const student = await createWorkflowAuthHeaders("student");
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const stockEdit = await app.inject({ method: "PATCH", url: "/api/materials/mat-onyx-filament", headers: student, payload: { onHandQuantity: 77 } });
+    assert.equal(stockEdit.statusCode, 200);
+    assert.equal(stockEdit.json().item.onHandQuantity, 77);
+    resetLimits();
+    const materialDelete = await app.inject({ method: "DELETE", url: "/api/materials/mat-onyx-filament", headers: student });
+    assert.equal(materialDelete.statusCode, 409);
+
+    const referencedMaterial = createMaterial({ name: "Referenced manufacturing stock", category: "other", unit: "kg", onHandQuantity: 0, reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
+    const manufacturingTask = getTasks().find((task) => task.manufacturingDetails !== null);
+    assert.ok(manufacturingTask?.manufacturingDetails);
+    updateTask(manufacturingTask.id, {
+      manufacturingDetails: {
+        ...manufacturingTask.manufacturingDetails,
+        fileArtifactIds: [...manufacturingTask.manufacturingDetails.fileArtifactIds],
+        tolerances: [...manufacturingTask.manufacturingDetails.tolerances],
+        qaRequirements: [...manufacturingTask.manufacturingDetails.qaRequirements],
+        material: { kind: "inventory-material", materialId: referencedMaterial.id },
+      },
+    });
+    resetLimits();
+    const manufacturingMaterialDelete = await app.inject({ method: "DELETE", url: `/api/materials/${referencedMaterial.id}`, headers: student });
+    assert.equal(manufacturingMaterialDelete.statusCode, 409);
+    const unusedMaterial = createMaterial({ name: "Unused removable stock", category: "other", unit: "kg", onHandQuantity: 0, reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
+    resetLimits();
+    const unusedDelete = await app.inject({ method: "DELETE", url: `/api/materials/${unusedMaterial.id}`, headers: student });
+    assert.equal(unusedDelete.statusCode, 200);
+
+    resetLimits();
+    const receipt = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "ledger-delete-guard", quantity: 1, location: "Receiving shelf A" } });
+    assert.equal(receipt.statusCode, 200, receipt.body);
+    resetLimits();
+    const deleted = await app.inject({ method: "DELETE", url: "/api/purchases/polycarb-sheet", headers: mentor });
+    assert.equal(deleted.statusCode, 409);
+    resetLimits();
+    const partDefinitionDelete = await app.inject({ method: "DELETE", url: "/api/part-definitions/pd-polycarbonate-sheet", headers: mentor });
+    assert.equal(partDefinitionDelete.statusCode, 409);
+    resetLimits();
+    const after = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    assert.equal(after.purchaseItems.some((item: { id: string }) => item.id === "polycarb-sheet"), true);
+    assert.equal(after.partInstances.some((part: { id: string }) => receipt.json().receipt.partInstanceIds.includes(part.id)), true);
+  });
+});
+
 test("purchase receipts accumulate stock instances without completing the linked task", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const student = await createWorkflowAuthHeaders("student");
     const mentor = await createWorkflowAuthHeaders("mentor");
-    const denied = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: student, payload: { quantity: 1, location: "Receiving shelf A" } });
+    const denied = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: student, payload: { operationId: "role-denied", quantity: 1, location: "Receiving shelf A" } });
     assert.equal(denied.statusCode, 403);
 
     resetLimits();
-    const invalid = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 0.5, location: "Receiving shelf A" } });
+    const invalid = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "fractional-part", quantity: 0.5, location: "Receiving shelf A" } });
     assert.equal(invalid.statusCode, 400);
 
     resetLimits();
-    const excessive = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1001, location: "Receiving shelf A" } });
+    const excessive = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "excessive", quantity: 1001, location: "Receiving shelf A" } });
     assert.equal(excessive.statusCode, 400);
 
     resetLimits();
-    const first = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: "Receiving shelf A" } });
+    const first = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "first-partial", quantity: 1, location: "Receiving shelf A" } });
     assert.equal(first.statusCode, 200);
     assert.equal(first.json().item.receipts.length, 1);
 
     resetLimits();
-    const second = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: "Bin 4" } });
+    const second = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "second-partial", quantity: 1, location: "Bin 4" } });
     assert.equal(second.statusCode, 200);
     assert.equal(second.json().item.receipts.length, 2);
     assert.equal(second.json().item.orderStatus, "ordered");
@@ -177,6 +316,9 @@ test("purchase receipts accumulate stock instances without completing the linked
     resetLimits();
     const changedTask = await app.inject({ method: "PATCH", url: "/api/purchases/polycarb-sheet", headers: mentor, payload: { taskId: "different-task" } });
     assert.equal(changedTask.statusCode, 409);
+    resetLimits();
+    const changedMaterial = await app.inject({ method: "PATCH", url: "/api/purchases/polycarb-sheet", headers: mentor, payload: { materialId: "mat-onyx-filament" } });
+    assert.equal(changedMaterial.statusCode, 409);
 
     resetLimits();
     const afterIdentityRejections = await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor });
@@ -189,7 +331,7 @@ test("purchase receipts accumulate stock instances without completing the linked
     assert.deepEqual(identityState.partInstances, beforeIdentityPartInstances);
 
     resetLimits();
-    const excess = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: "Bin 4" } });
+    const excess = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "over-receipt", quantity: 1, location: "Bin 4" } });
     assert.equal(excess.statusCode, 409);
 
     resetLimits();
@@ -228,7 +370,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
     updatePurchaseItem("polycarb-sheet", { materialId: material.id, quantity: 4 });
     const originalPurchase = before.purchaseItems.find((entry: { id: string }) => entry.id === "polycarb-sheet");
     resetLimits();
-    const bothLinked = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: "New material shelf" } });
+    const bothLinked = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "part-takes-precedence", quantity: 1, location: "New material shelf" } });
     assert.equal(bothLinked.statusCode, 200, bothLinked.body);
     assert.deepEqual(bothLinked.json().item.receipts[0].partInstanceIds.length, 1);
     resetLimits();
@@ -238,7 +380,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
 
     updatePurchaseItem("polycarb-sheet", { partDefinitionId: null });
     resetLimits();
-    const conflicting = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: "New material shelf" } });
+    const conflicting = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "conflicting-location", quantity: 1, location: "New material shelf" } });
     assert.equal(conflicting.statusCode, 409);
     assert.match(conflicting.json().message, /different location/i);
     resetLimits();
@@ -248,7 +390,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
     assert.equal(afterConflict.partInstances.length, before.partInstances.length + 1);
 
     resetLimits();
-    const sameLocationMaterial = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: material.location } });
+    const sameLocationMaterial = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "same-location-material", quantity: 1, location: material.location } });
     assert.equal(sameLocationMaterial.statusCode, 200, sameLocationMaterial.body);
     resetLimits();
     const afterMaterialOnly = (await inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
@@ -259,7 +401,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
 
     updateMaterial(material.id, { onHandQuantity: 0 });
     resetLimits();
-    const emptyStockReceipt = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { quantity: 1, location: "New material shelf" } });
+    const emptyStockReceipt = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "empty-stock-material", quantity: 1, location: "New material shelf" } });
     assert.equal(emptyStockReceipt.statusCode, 200, emptyStockReceipt.body);
     resetLimits();
     const afterEmptyStock = (await inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
@@ -269,7 +411,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
 
     updatePurchaseItem("outsourced-swerve-bracket", { approvalStatus: "approved", orderStatus: "ordered" });
     resetLimits();
-    const serviceReceipt = await inject({ method: "POST", url: "/api/purchases/outsourced-swerve-bracket/receipts", headers: mentor, payload: { quantity: 1, location: "Fabrication receiving" } });
+    const serviceReceipt = await inject({ method: "POST", url: "/api/purchases/outsourced-swerve-bracket/receipts", headers: mentor, payload: { operationId: "service-receipt", quantity: 1, location: "Fabrication receiving" } });
     assert.equal(serviceReceipt.statusCode, 200);
     resetLimits();
     const afterService = (await inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();

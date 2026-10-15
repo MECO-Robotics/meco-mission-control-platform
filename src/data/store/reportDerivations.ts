@@ -21,6 +21,7 @@ export interface FindingListItem {
   projectId: string;
   createdAt: string;
   updatedAt: string;
+  retests?: ReadonlyData<QaFinding>["retests"];
 }
 
 function findingListItemFromFinding(
@@ -40,6 +41,7 @@ function findingListItemFromFinding(
     projectId: finding.projectId,
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
+    ...(finding.retests ? { retests: finding.retests } : {}),
   };
 }
 
@@ -51,6 +53,7 @@ export function reportFromQaReport(
   const { photoUrl, ...base } = report;
   return {
     ...base,
+    ...(report.status === "reviewed" && (report.reviewOrder === undefined || report.reviewedAt === null || report.reviewedById === null || report.targetRevisions === undefined || report.inspectedPartInstanceIds === undefined) ? { needsReverification: true } : {}),
     ...(options.includePhoto === false || !photoUrl ? {} : { photoUrl }),
     targetRefs: report.targetRefs.map((ref) => ({ ...ref })),
   };

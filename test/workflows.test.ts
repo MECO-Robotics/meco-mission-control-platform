@@ -169,6 +169,9 @@ function makeWorkflowSnapshot() {
     result: "pass",
     reviewedById: "marco",
     reviewedAt: "2026-04-03T00:00:00.000Z",
+    reviewOrder: 1,
+    targetRevisions: {},
+    inspectedPartInstanceIds: [],
   }];
 
   snapshot.materials = [
@@ -309,6 +312,7 @@ test("evaluateTaskCompletion reports missing gate conditions and a passing path"
   );
 
   assert.ok(passingTask);
+  assert.deepEqual(evaluateTaskCompletion(passingTask, passingSnapshot).missing, ["notebook or documentation evidence"]);
 
   passingSnapshot.artifacts.push({
     id: "task-a-doc",

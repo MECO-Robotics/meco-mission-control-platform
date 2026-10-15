@@ -297,10 +297,8 @@ test("web report and task planning contract endpoints persist records", async ()
       },
     });
 
-    assert.equal(findingCreateResponse.statusCode, 201, findingCreateResponse.body);
-    assert.equal(findingCreateResponse.json().item.reportId, reportBody.item.id);
-    assert.equal(findingCreateResponse.json().item.spawnedTaskId, "swerve-sensor-bundle");
-    assert.equal(findingCreateResponse.json().item.spawnedRiskId, "risk-drive-evidence-delay");
+    assert.equal(findingCreateResponse.statusCode, 409, findingCreateResponse.body);
+    assert.match(findingCreateResponse.json().message, /reviewed QA reports/);
 
     resetLimits();
 
@@ -395,8 +393,10 @@ test("web report and task planning contract endpoints persist records", async ()
       }>;
     };
     assert.ok(bootstrapBody.reports.some((report) => report.id === reportBody.item.id));
-    assert.ok(
+    assert.equal(
       [...bootstrapBody.qaFindings, ...bootstrapBody.testFindings].some((finding) => finding.reportId === reportBody.item.id || finding.testResultId === reportBody.item.id),
+      false,
+      "submitted QA evidence does not generate findings before mentor/admin review",
     );
     assert.ok(
       bootstrapBody.taskDependencies.some(

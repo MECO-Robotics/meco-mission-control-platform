@@ -87,6 +87,7 @@ test("first target owns serial and audit context while reparenting and deletion 
     parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
   });
   const task = getSnapshot().tasks[0];
+  updateTask(task.id, { status: "in-progress" });
   const updated = updateTask(task.id, { subsystemIds: [controls.id, "drive"], mechanismIds: ["swerve-module"], partInstanceIds: [] });
   assert.ok(updated);
   assert.match(updated.serial ?? "", /^T-CO/);

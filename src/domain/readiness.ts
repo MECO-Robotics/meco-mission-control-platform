@@ -24,39 +24,61 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
   ))) return "blocked";
 
   const currentRevision = snapshot.partDefinitions.find((definition) => definition.id === part.partDefinitionId)?.revision;
+  const hasCurrentPassingRetest = (findingId: string, sourceId: string, sourceOrder: number | undefined) => {
+    const finding = findings.find((item) => item.id === findingId);
+    return finding?.retests?.some((retest) => retest.result === "pass" && retest.supersedesId === sourceId &&
+      retest.verificationOrder !== undefined && (sourceOrder === undefined || retest.verificationOrder > sourceOrder) &&
+      retest.inspectedPartInstanceIds?.includes(part.id) === true && retest.targetRevisions?.[part.partDefinitionId] === currentRevision) === true;
+  };
   const matchesPartOrTask = (refs: readonly { kind: string; id: string }[]) =>
-    hasTarget(refs, "part-instance", part.id) || hasTarget(refs, "part-definition", part.partDefinitionId) ||
-    [...taskIds].some((id) => hasTarget(refs, "task", id));
-  const hasStaleOutcome = snapshot.qaReports.some((report) => report.status === "reviewed" && matchesPartOrTask(report.targetRefs) &&
-    report.targetRevisions?.[part.partDefinitionId] !== currentRevision) ||
-    snapshot.testResults.some((result) => matchesPartOrTask(result.targetRefs) &&
-      result.targetRevisions?.[part.partDefinitionId] !== currentRevision);
+    hasTarget(refs, "part-instance", part.id);
+  const reportCoversPart = (report: (typeof snapshot.qaReports)[number]) =>
+    (matchesPartOrTask(report.targetRefs) || [...taskIds].some((id) => hasTarget(report.targetRefs, "task", id)) || hasTarget(report.targetRefs, "part-definition", part.partDefinitionId)) && report.inspectedPartInstanceIds?.includes(part.id) === true;
+  const qaTaskTargeted = (report: (typeof snapshot.qaReports)[number]) => [...taskIds].some((id) => hasTarget(report.targetRefs, "task", id)) || hasTarget(report.targetRefs, "part-definition", part.partDefinitionId);
+  const hasStaleOutcome = snapshot.qaReports.some((report) => report.status === "reviewed" &&
+    (reportCoversPart(report) || qaTaskTargeted(report) || matchesPartOrTask(report.targetRefs)) &&
+    (report.reviewOrder === undefined || (qaTaskTargeted(report) && report.inspectedPartInstanceIds === undefined) || ((matchesPartOrTask(report.targetRefs) || qaTaskTargeted(report)) && report.inspectedPartInstanceIds?.includes(part.id) !== true) || report.targetRevisions?.[part.partDefinitionId] !== currentRevision)) ||
+    snapshot.testResults.some((result) => (matchesPartOrTask(result.targetRefs) || [...taskIds].some((id) => hasTarget(result.targetRefs, "task", id)) || hasTarget(result.targetRefs, "part-definition", part.partDefinitionId)) &&
+      (result.verificationOrder === undefined || result.inspectedPartInstanceIds?.includes(part.id) !== true || result.targetRevisions?.[part.partDefinitionId] !== currentRevision));
   const qa = snapshot.qaReports.filter((report) =>
     report.status === "reviewed" &&
-    matchesPartOrTask(report.targetRefs) &&
+    report.reviewOrder !== undefined &&
+    reportCoversPart(report) &&
     currentRevision !== undefined && report.targetRevisions?.[part.partDefinitionId] === currentRevision,
   );
-  const latestQa = qa.reduce<typeof qa[number] | undefined>((latest, report) =>
-    !latest || Date.parse(report.createdAt) >= Date.parse(latest.createdAt) ? report : latest, undefined);
+  const currentQa = qa.filter((report) => {
+    if (report.result === "pass") return true;
+    const linked = snapshot.qaFindings.filter((finding) => finding.reportId === report.id &&
+      (hasTarget(finding.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
+    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding.id, report.id, report.reviewOrder));
+  });
+  const latestQa = currentQa.reduce<typeof qa[number] | undefined>((latest, report) =>
+    !latest || (report.reviewOrder ?? -1) > (latest.reviewOrder ?? -1) ? report : latest, undefined);
   if (latestQa?.result === "iteration-worthy") return "blocked";
   if (latestQa?.result === "minor-fix") return "qa";
 
   const tests = snapshot.testResults.filter((result) =>
-    matchesPartOrTask(result.targetRefs) &&
-    currentRevision !== undefined && result.targetRevisions?.[part.partDefinitionId] === currentRevision && result.createdAt,
+    (matchesPartOrTask(result.targetRefs) || [...taskIds].some((id) => hasTarget(result.targetRefs, "task", id)) || hasTarget(result.targetRefs, "part-definition", part.partDefinitionId)) &&
+    result.inspectedPartInstanceIds?.includes(part.id) === true &&
+    currentRevision !== undefined && result.targetRevisions?.[part.partDefinitionId] === currentRevision && result.createdAt && result.verificationOrder !== undefined,
   );
   const latestTestsByTitle = new Map<string, typeof tests[number]>();
   for (const result of tests) {
     const latest = latestTestsByTitle.get(result.title);
-    if (!latest || Date.parse(result.createdAt!) >= Date.parse(latest.createdAt!)) latestTestsByTitle.set(result.title, result);
+    if (!latest || (result.verificationOrder ?? -1) > (latest.verificationOrder ?? -1)) latestTestsByTitle.set(result.title, result);
   }
   const latestTests = [...latestTestsByTitle.values()];
-  if (latestTests.some((result) => result.status === "fail" || result.status === "blocked")) return "blocked";
-  if (latestTests.some((result) => result.status === "pass")) return "ready";
+  const activeTestFailures = [...latestTestsByTitle.values()].filter((result) => {
+    if (result.status !== "fail" && result.status !== "blocked") return false;
+    const linked = snapshot.testFindings.filter((finding) => finding.testResultId === result.id &&
+      (hasTarget(finding.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
+    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding.id, result.id, result.verificationOrder));
+  });
+  if (activeTestFailures.length > 0) return "blocked";
+  if (latestTests.some((result) => result.status === "pass" && result.inspectedPartInstanceIds !== undefined)) return "ready";
   if (latestQa?.result === "pass") return "ready";
   if (relatedTasks.some((task) => task.status === "waiting-for-qa")) return "qa";
   if (hasStaleOutcome) return "not-ready";
-  if (relatedTasks.length > 0 && relatedTasks.every((task) => task.status === "complete")) return "ready";
   return "not-ready";
 }
 

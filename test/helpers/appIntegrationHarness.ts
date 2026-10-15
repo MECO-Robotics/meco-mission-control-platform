@@ -201,7 +201,7 @@ export async function withIntegrationApp(
     configureEnv(options?.env);
     resetIntegrationEnvModuleCache();
     const { buildApp } = require("../../src/app") as typeof import("../../src/app");
-    const platformStore = createPlatformStore();
+    const platformStore = createPlatformStore({ durability: "memory" });
     const cadStore = createCadRuntimeStore();
     const onshapeStore = createOnshapeRuntimeStore();
     await platformStore.run(() => runWithCadRuntimeStore(cadStore, () => runWithOnshapeRuntimeStore(onshapeStore, async () => {

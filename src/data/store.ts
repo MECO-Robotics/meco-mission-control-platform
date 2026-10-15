@@ -47,6 +47,7 @@ import type {
   Workstream,
   WorkLog,
 } from "../domain/types";
+import { evaluateTaskCompletion } from "../domain/workflows";
 import {
   isManualPmCadImportSource,
   markPmCadEditedAfterImport,
@@ -63,7 +64,7 @@ import {
   reportFromQaReport,
   type FindingListItem,
 } from "./store/reportDerivations";
-import { assertSnapshotTaskTargets, loadOrArchiveIncompatibleSnapshot, savePlatformSnapshotFile } from "./platformSnapshotFile";
+import { assertSnapshotTaskTargets, loadPlatformSnapshotFile, savePlatformSnapshotFile } from "./platformSnapshotFile";
 import type {
   ArtifactInput,
   MilestoneInput,
@@ -619,6 +620,7 @@ interface SnapshotState {
 
 interface SnapshotOwner {
   path: string;
+  durable: boolean;
   global: SnapshotState;
   tutorials: Map<string, SnapshotState>;
   context: AsyncLocalStorage<SnapshotState>;
@@ -629,14 +631,20 @@ const globalMutationKey = Symbol("global snapshot");
 let defaultOwner: SnapshotOwner | undefined;
 const durableOwners = new Map<string, SnapshotOwner>();
 
-function newSnapshotOwner(): SnapshotOwner {
-  const path = resolve(process.cwd(), process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json");
-  const durable = process.env.NODE_ENV === "production";
+export interface PlatformStoreOptions {
+  durability?: "durable" | "memory";
+  snapshotPath?: string;
+}
+
+function newSnapshotOwner(options: PlatformStoreOptions = {}): SnapshotOwner {
+  const path = resolve(process.cwd(), options.snapshotPath ?? process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json");
+  const durable = options.durability !== "memory";
   const existing = durable ? durableOwners.get(path) : undefined;
   if (existing) return existing;
   const owner: SnapshotOwner = {
     path,
-    global: { current: ownSnapshot(canonicalizeSnapshot(loadOrArchiveIncompatibleSnapshot(path) ?? createTutorialSnapshot())), interactive: null },
+    durable,
+    global: { current: ownSnapshot(canonicalizeSnapshot(durable ? loadPlatformSnapshotFile(path) ?? createTutorialSnapshot() : createTutorialSnapshot())), interactive: null },
     tutorials: new Map(),
     context: new AsyncLocalStorage<SnapshotState>(),
     tails: new Map(),
@@ -645,15 +653,15 @@ function newSnapshotOwner(): SnapshotOwner {
   return owner;
 }
 function activeOwner() {
-  return ownerContext.getStore() ?? (defaultOwner ??= newSnapshotOwner());
+  return ownerContext.getStore() ?? (defaultOwner ??= newSnapshotOwner({ durability: "memory" }));
 }
 
 export interface PlatformStore {
   run<T>(operation: () => T): T;
 }
 
-export function createPlatformStore(): PlatformStore {
-  const owner = newSnapshotOwner();
+export function createPlatformStore(options: PlatformStoreOptions = {}): PlatformStore {
+  const owner = newSnapshotOwner(options);
   return { run: (operation) => ownerContext.run(owner, operation) };
 }
 
@@ -675,8 +683,8 @@ const currentSnapshot = new Proxy({} as PlatformSnapshot, {
 
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   const state = activeSnapshotState();
-  if (state === activeOwner().global && process.env.NODE_ENV === "production") {
-    throw new Error("Production platform mutations require a durable request transaction.");
+  if (state === activeOwner().global && activeOwner().durable) {
+    throw new Error("Durable platform mutations require a request transaction.");
   }
   state.current = ownSnapshot(deriveTaskSummaries(snapshot));
   if (state.mutation) {
@@ -736,7 +744,7 @@ export async function acquireSnapshotMutation(userKey?: string) {
       }
       try {
         if (mutation.destination === "global") {
-          if (process.env.NODE_ENV === "production") {
+          if (owner.durable) {
             await savePlatformSnapshotFile(owner.path, state.current);
           }
           owner.global.current = state.current;
@@ -1426,7 +1434,7 @@ export function getTutorialBaselineState() {
 }
 
 export function resetStore(snapshot?: SnapshotView) {
-  if (process.env.NODE_ENV === "production") {
+  if (activeOwner().durable) {
     return;
   }
 
@@ -2256,6 +2264,17 @@ export function removeMaterial(materialId: string) {
     return null;
   }
 
+  if (
+    currentSnapshot.purchaseItems.some((item) => item.materialId === materialId) ||
+    currentSnapshot.partDefinitions.some((part) => part.materialId === materialId) ||
+    currentSnapshot.tasks.some((task) =>
+      task.manufacturingDetails?.material.kind === "inventory-material" &&
+      task.manufacturingDetails.material.materialId === materialId
+    )
+  ) {
+    return { error: "referenced" as const };
+  }
+
   replaceCurrentSnapshot({
     ...currentSnapshot,
     materials: currentSnapshot.materials.filter(
@@ -2765,6 +2784,9 @@ export function removePartDefinition(partDefinitionId: string) {
   if (currentSnapshot.tasks.some((task) => task.manufacturingDetails?.part.kind === "part-definition" && task.manufacturingDetails.part.partDefinitionId === partDefinitionId)) {
     throw Object.assign(new Error("This part definition is used by manufacturing work; remove or retarget that work before deletion."), { statusCode: 409 });
   }
+  if (currentSnapshot.purchaseItems.some((item) => item.partDefinitionId === partDefinitionId && (item.receipts ?? []).length > 0)) {
+    throw Object.assign(new Error("This part definition is referenced by receipt history and cannot be deleted."), { statusCode: 409 });
+  }
 
   const removedPartInstanceIds = new Set(
     currentSnapshot.partInstances
@@ -3112,6 +3134,7 @@ function assertTaskLinks(task: ReadonlyData<Task>, allowArchivedResponsibleGroup
 }
 
 export function createTask(input: TaskInput, auditContext: AuditMutationContext = {}): ReadonlyData<Task> {
+  if (input.status === "complete") throw Object.assign(new Error("A task cannot be created complete; completion requires existing work, documentation and reviewed QA evidence."), { statusCode: 409 });
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const nextSerialNumber =
     currentSnapshot.tasks.reduce((max, task) => {
@@ -3249,34 +3272,75 @@ export function createMilestone(input: MilestoneInput) {
   return milestone;
 }
 
-export function createQaReport(input: QaReportInput) {
+function nextQaReviewOrder() {
+  const retestOrders = [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].flatMap((finding) => finding.retests ?? []).map((retest) => retest.verificationOrder ?? 0);
+  return Math.max(currentSnapshot.qaReviewSequence ?? 0, ...currentSnapshot.qaReports.map((report) => report.reviewOrder ?? 0), ...currentSnapshot.testResults.map((result) => result.verificationOrder ?? 0), ...retestOrders) + 1;
+}
+
+function captureInspectedPartInstanceIds(targetRefs: readonly { kind: string; id: string }[]) {
+  const ids = new Set<string>();
+  const taskIds = new Set<string>();
+  const queue = [...targetRefs];
+  const visited = new Set<string>();
+  while (queue.length) {
+    const ref = queue.shift()!;
+    const key = `${ref.kind}:${ref.id}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (ref.kind === "part-definition") currentSnapshot.partInstances.filter((part) => part.partDefinitionId === ref.id).forEach((part) => ids.add(part.id));
+    if (ref.kind === "part-instance" && currentSnapshot.partInstances.some((part) => part.id === ref.id)) ids.add(ref.id);
+    if (ref.kind === "task") taskIds.add(ref.id);
+    if (ref.kind === "qa-request") currentSnapshot.qaRequests?.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "report") currentSnapshot.qaReports.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "test-result") currentSnapshot.testResults.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "qa-finding") currentSnapshot.qaFindings.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "test-finding") currentSnapshot.testFindings.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "artifact") currentSnapshot.artifacts.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "design-iteration") currentSnapshot.designIterations.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "responsible-group") currentSnapshot.tasks.filter((task) => task.responsibleGroupId === ref.id).forEach((task) => taskIds.add(task.id));
+    if (["project", "workstream", "subsystem", "mechanism", "part-instance", "milestone"].includes(ref.kind)) {
+      for (const task of currentSnapshot.tasks) {
+        if (flattenTaskTargets(task).some((target) => target.targetType === ref.kind && target.targetId === ref.id)) taskIds.add(task.id);
+      }
+    }
+  }
+  for (const task of currentSnapshot.tasks.filter((item) => taskIds.has(item.id))) task.partInstanceIds.forEach((id) => ids.add(id));
+  return [...ids].sort();
+}
+
+type QaApproval = { reviewerId: string; reviewedAt: string };
+
+function createQaReportRecord(input: QaReportInput, approval?: QaApproval) {
   const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
   const reportIds = new Set(currentSnapshot.qaReports.map((report) => report.id));
   const now = new Date().toISOString();
+  const reviewOrder = approval ? nextQaReviewOrder() : undefined;
   const report: QaReport = {
     id: uniqueId(toSlug(`${input.targetRefs[0]?.kind ?? "project"}-${input.targetRefs[0]?.id ?? input.projectId} qa`) || "qa-report", reportIds),
     reportType: "qa",
     projectId: input.projectId,
     createdByMemberId: input.createdByMemberId ?? input.requestedById ?? null,
     summary: input.notes,
-    status: input.status ?? "submitted",
-    reviewedById: input.reviewedById ?? null,
+    status: approval ? "reviewed" : (input.status === "draft" ? "draft" : "submitted"),
+    reviewedById: approval?.reviewerId ?? null,
     createdAt: input.createdAt ?? now,
     targetRefs: input.targetRefs.map((ref) => ({ ...ref })),
     participantIds: input.participantIds,
     result: input.result,
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
-    reviewedAt: input.reviewedAt ?? null,
+    reviewedAt: approval?.reviewedAt ?? null,
     evidenceNotes: input.evidenceNotes ?? "",
     mentorId: input.mentorId ?? null,
     requestedById: input.requestedById ?? null,
     targetRevisions: captureTargetRevisions(input.targetRefs),
+    ...(approval ? { inspectedPartInstanceIds: captureInspectedPartInstanceIds(input.targetRefs), reviewOrder } : {}),
   };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
+    ...(reviewOrder !== undefined ? { qaReviewSequence: reviewOrder } : {}),
     qaReports: [...currentSnapshot.qaReports, report],
   });
 
@@ -3295,9 +3359,13 @@ export function createQaReport(input: QaReportInput) {
   return report;
 }
 
+export function createQaReport(input: QaReportInput) {
+  return createQaReportRecord(input);
+}
+
 // Called inside the route's snapshot transaction: the report and its workflow
 // effects must become durable together, or none of them may be published.
-export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }) {
+export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }, approval?: QaApproval) {
   const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
   const task = currentSnapshot.tasks.find((item) => item.id === taskId);
   const requestedQaId = input.targetRefs.find((ref) => ref.kind === "qa-request")?.id;
@@ -3307,19 +3375,22 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
   if (requestedQaId && !request) {
     return { error: "The selected QA request is no longer available for these targets." };
   }
-    if (task && input.result === "pass" && (task.status !== "waiting-for-qa" ||
+  if (approval && task && input.result === "pass" && (task.status !== "waiting-for-qa" ||
       task.isBlocked || isTaskWaitingOnDependencies(task, currentSnapshot))) {
     return { error: "A pass requires a task waiting for QA with no blocking risks or unfinished dependencies." };
   }
-  let report = createQaReport({ ...input,
+  let report = createQaReportRecord({ ...input, status: approval ? "reviewed" : input.status,
     mentorId: request?.mentorId ?? task?.mentorId ?? input.mentorId,
-    requestedById: request?.requestedById ?? null });
+    requestedById: request?.requestedById ?? null }, approval);
   let followUpTaskId: string | null = null;
   let followUpRiskId: string | null = null;
   if (task && input.result === "pass") {
-    updateTask(task.id, { status: "complete" });
-  } else if (task) {
-    const reviewedDate = input.reviewedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+    if (approval) {
+      const approvedTask = currentSnapshot.tasks.find((item) => item.id === task.id);
+      if (approvedTask && evaluateTaskCompletion(approvedTask, currentSnapshot).canFinalize) updateTask(task.id, { status: "complete" });
+    }
+  } else if (task && approval) {
+    const reviewedDate = (approval?.reviewedAt ?? new Date().toISOString()).slice(0, 10);
     const followUpTask = createTask({ ...task,
       title: input.followUpTaskTitle?.trim() || `${input.result === "iteration-worthy" ? "Iterate after QA" : "Fix QA finding"}: ${task.title}`,
       summary: [`Created from QA on "${task.title}".`, `Result: ${input.result}.`, input.notes,
@@ -3337,6 +3408,10 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
       ownerGroupId: task.responsibleGroupId,
     });
     if (input.result === "iteration-worthy") {
+      const risk = currentSnapshot.risks.find((item) => item.source.kind === "report" && item.source.id === report.id);
+      if (risk && followUpTaskId) updateRisk(risk.id, { mitigationTaskId: followUpTaskId });
+    }
+    if (input.result === "iteration-worthy") {
       followUpRiskId = currentSnapshot.risks.find((risk) => risk.source.kind === "report" && risk.source.id === report.id)?.id ?? null;
     }
   }
@@ -3349,8 +3424,21 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
         : item),
     });
   }
-  replaceCurrentSnapshot({ ...currentSnapshot,
-    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.id !== request?.id) });
+  if (task && input.result !== "pass" && followUpTaskId) {
+    const linkedRisk = followUpRiskId ? currentSnapshot.risks.find((item) => item.id === followUpRiskId) : undefined;
+    createReportFinding({
+      reportId: report.id,
+      targetRefs: input.targetRefs.filter((ref) => ref.kind !== "qa-request").map((ref) => ({ ...ref })),
+      issueType: input.result === "iteration-worthy" ? "QA iteration required" : "QA corrective action required",
+      severity: input.result === "iteration-worthy" ? "medium" : "low",
+      notes: input.notes,
+      spawnedTaskId: followUpTaskId,
+      spawnedIterationId: null,
+      spawnedRiskId: linkedRisk?.id ?? null,
+    });
+  }
+  if (approval && request) replaceCurrentSnapshot({ ...currentSnapshot,
+    qaRequests: getQaRequests().map((item) => ({ ...item, targetRefs: item.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.id !== request.id) });
   return { item: report };
 }
 
@@ -3415,6 +3503,7 @@ export function createQaRequest(input: QaRequestInput) {
 
 export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
+  const verificationOrder = nextQaReviewOrder();
   const testResult: TestResult = {
     id: uniqueId(toSlug(input.title) || "test-result", resultIds),
     projectId: input.projectId ?? "",
@@ -3422,11 +3511,15 @@ export function createTestResult(input: TestResultInput) {
     title: input.title,
     status: input.status,
     createdAt: new Date().toISOString(),
+    ...(input.observedAt ? { observedAt: input.observedAt } : {}),
+    verificationOrder,
     targetRevisions: captureTargetRevisions(input.targetRefs),
+    inspectedPartInstanceIds: captureInspectedPartInstanceIds(input.targetRefs),
   };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
+    qaReviewSequence: verificationOrder,
     testResults: [...currentSnapshot.testResults, testResult],
   });
 
@@ -3450,10 +3543,8 @@ function captureTargetRevisions(targetRefs: readonly { kind: string; id: string 
       if (definition) revisions[definition.id] = definition.revision;
     }
     if (ref.kind === "part-instance") instanceIds.add(ref.id);
-    if (ref.kind === "task") {
-      currentSnapshot.tasks.find((task) => task.id === ref.id)?.partInstanceIds.forEach((id) => instanceIds.add(id));
-    }
   }
+  for (const id of captureInspectedPartInstanceIds(targetRefs)) instanceIds.add(id);
   for (const instanceId of instanceIds) {
     const instance = currentSnapshot.partInstances.find((item) => item.id === instanceId);
     const definition = instance && currentSnapshot.partDefinitions.find((item) => item.id === instance.partDefinitionId);
@@ -3496,7 +3587,18 @@ export function createReportFinding(input: ReportFindingInput) {
   }
 
   const now = new Date().toISOString();
-  if (report.reportType !== "qa") return null;
+  if (report.reportType !== "qa" || report.status !== "reviewed") return null;
+  const task = input.spawnedTaskId ? currentSnapshot.tasks.find((item) => item.id === input.spawnedTaskId) : undefined;
+  const targets = new Set(input.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
+  const sourceTasks = currentSnapshot.tasks.filter((item) => targets.has(`task:${item.id}`));
+  const spawnedTaskMatchesScope = task && (targets.has(`task:${task.id}`) || flattenTaskTargets(task).some((ref) => targets.has(`${ref.targetType}:${ref.targetId}`)) ||
+    sourceTasks.some((source) => {
+      const sourceTargets = new Set(flattenTaskTargets(source).map((ref) => `${ref.targetType}:${ref.targetId}`));
+      return flattenTaskTargets(task).some((ref) => sourceTargets.has(`${ref.targetType}:${ref.targetId}`));
+    }));
+  if (input.spawnedTaskId && (!task || task.projectId !== report.projectId || !spawnedTaskMatchesScope)) return null;
+  const spawnedRisk = input.spawnedRiskId ? currentSnapshot.risks.find((item) => item.id === input.spawnedRiskId) : undefined;
+  if (input.spawnedRiskId && (!spawnedRisk || report.followUpRiskId !== spawnedRisk.id || spawnedRisk.projectId !== report.projectId || spawnedRisk.category !== "qa" || spawnedRisk.source.kind !== "report" || spawnedRisk.source.id !== report.id || !spawnedRisk.relatedTargets.some((ref) => targets.has(`${ref.kind}:${ref.id}`)) || spawnedRisk.mitigationTaskId !== (input.spawnedTaskId ?? null))) return null;
   const existingFindings = currentSnapshot.qaFindings;
   const findingIds = new Set(existingFindings.map((finding) => finding.id));
   const fields = {
@@ -3518,7 +3620,6 @@ export function createReportFinding(input: ReportFindingInput) {
   };
   const finding: QaFinding = fields;
   replaceCurrentSnapshot({ ...currentSnapshot, qaFindings: [...currentSnapshot.qaFindings, finding] });
-
   recordAuditAction({
     operation: "create",
     entityType: "report-finding",
@@ -3528,6 +3629,61 @@ export function createReportFinding(input: ReportFindingInput) {
   });
 
   return reportFindingFromFinding(finding);
+}
+
+export function retestQaFinding(input: { findingId: string; sourceType?: "qa" | "test"; operationId?: string; result: "pass" | "fail"; notes: string; evidenceNotes?: string; observedAt?: string; reviewerId: string }) {
+  const qaFinding = currentSnapshot.qaFindings.find((item) => item.id === input.findingId);
+  const testFinding = currentSnapshot.testFindings.find((item) => item.id === input.findingId);
+  if (!input.sourceType && qaFinding && testFinding) return { conflict: "sourceType is required when QA and test findings share an ID." } as const;
+  const sourceType = input.sourceType ?? (qaFinding ? "qa" : "test");
+  const previous = sourceType === "qa" ? qaFinding : testFinding;
+  if (!previous || (sourceType === "qa" && !previous.reportId)) return null;
+  const history = previous.retests ?? [];
+  if (input.operationId) {
+    const prior = history.find((item) => item.operationId === input.operationId && item.reviewedById === input.reviewerId);
+    if (prior) {
+      const sameObservedAt = prior.observedAt === undefined && input.observedAt === undefined || prior.observedAt !== undefined && input.observedAt !== undefined && Date.parse(prior.observedAt) === Date.parse(input.observedAt);
+      const same = prior.result === input.result && prior.notes === input.notes && (prior.evidenceNotes ?? "") === (input.evidenceNotes ?? "") && sameObservedAt;
+      if (!same) return { conflict: "operationId was already used with a different retest payload." } as const;
+      const finding = reportFindingFromFinding(previous);
+      return { ...(finding ?? {}), id: previous.id, sourceType, sourceId: sourceType === "qa" ? previous.reportId : (previous as TestFinding).testResultId, projectId: previous.projectId, targetRefs: previous.targetRefs.map((ref) => ({ ...ref })), title: previous.title, detail: previous.detail, status: previous.status, updatedAt: previous.updatedAt, retests: history };
+    }
+  }
+  const reviewedAt = new Date().toISOString();
+  const order = Math.max(0, ...history.map((item) => item.order)) + 1;
+  const verificationOrder = nextQaReviewOrder();
+  const supersedesId = sourceType === "qa"
+    ? previous.reportId!
+    : (previous as TestFinding).testResultId;
+  const retest = { ...(input.operationId ? { operationId: input.operationId } : {}), sourceType, result: input.result, notes: input.notes,
+    ...(input.evidenceNotes ? { evidenceNotes: input.evidenceNotes } : {}),
+    ...(input.observedAt ? { observedAt: input.observedAt } : {}), reviewedAt,
+    reviewedById: input.reviewerId, order, verificationOrder,
+    targetRevisions: captureTargetRevisions(previous.targetRefs),
+    inspectedPartInstanceIds: captureInspectedPartInstanceIds(previous.targetRefs), supersedesId };
+  const updated = { ...previous, retests: [...history, retest], status: input.result === "pass" ? "resolved" as const : "open" as const, updatedAt: reviewedAt };
+  if (sourceType === "qa") replaceCurrentSnapshot({ ...currentSnapshot, qaReviewSequence: verificationOrder, qaFindings: currentSnapshot.qaFindings.map((item) => item.id === updated.id ? updated as QaFinding : item) });
+  else replaceCurrentSnapshot({ ...currentSnapshot, qaReviewSequence: verificationOrder, testFindings: currentSnapshot.testFindings.map((item) => item.id === updated.id ? updated as TestFinding : item) });
+  const risk = previous.riskId ? currentSnapshot.risks.find((item) => item.id === previous.riskId) : undefined;
+  const findingRefs = new Set(previous.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
+  const expectedRiskSourceId = sourceType === "qa" ? previous.reportId : (previous as TestFinding).testResultId;
+  const sourceReport = sourceType === "qa" ? currentSnapshot.qaReports.find((item) => item.id === previous.reportId) : undefined;
+  const riskBelongsToFinding = Boolean(risk && risk.category === "qa" &&
+    (sourceType !== "qa" || sourceReport?.followUpRiskId === risk.id) &&
+    ((sourceType === "qa" && risk.source.kind === "report") || (sourceType === "test" && risk.source.kind === "test-result")) && risk.source.id === expectedRiskSourceId &&
+    risk.mitigationTaskId === (previous.correctiveTaskId ?? null) && risk.relatedTargets.some((ref) => findingRefs.has(`${ref.kind}:${ref.id}`)) &&
+    ![...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((item) => item.id !== previous.id && item.riskId === risk.id));
+  if (riskBelongsToFinding && input.result === "pass" && risk!.status !== "resolved") updateRisk(risk!.id, { status: "resolved", resolvedAt: reviewedAt });
+  else if (riskBelongsToFinding && input.result === "fail" && risk!.status === "resolved") updateRisk(risk!.id, { status: "open", resolvedAt: null });
+  recordAuditAction({ operation: "update", entityType: `${sourceType}-finding-retest`, entityId: updated.id, entityLabel: updated.title, projectId: updated.projectId, actorMemberId: input.reviewerId, taskId: updated.correctiveTaskId ?? null, changedFields: ["status", "retests"], detailsJson: { result: input.result, order, verificationOrder, reviewedAt, sourceType } });
+  const finding = reportFindingFromFinding(updated);
+  return {
+    ...(finding ?? {}), id: updated.id, sourceType,
+    sourceId: sourceType === "qa" ? updated.reportId : (updated as TestFinding).testResultId,
+    projectId: updated.projectId, targetRefs: updated.targetRefs.map((ref) => ({ ...ref })),
+    title: updated.title, detail: updated.detail, status: updated.status,
+    updatedAt: updated.updatedAt, retests: updated.retests,
+  };
 }
 
 export function createTaskDependency(
@@ -4018,6 +4174,15 @@ export function updateTask(
   }
 
   assertTaskLinks(updatedTask, input.responsibleGroupId === undefined && currentTask.responsibleGroupId !== null);
+
+  const completionScopeChanged = ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds", "artifactIds"].some((field) =>
+    JSON.stringify(updatedTask[field as keyof Task]) !== JSON.stringify(currentTask[field as keyof Task])) || updatedTask.projectId !== currentTask.projectId || updatedTask.requiresDocumentation !== currentTask.requiresDocumentation;
+  if (updatedTask.status === "complete" && (currentTask.status !== "complete" || completionScopeChanged)) {
+    const hasBlockingRisk = currentSnapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === taskId));
+    if (hasBlockingRisk || isTaskWaitingOnDependencies(updatedTask, currentSnapshot) || !evaluateTaskCompletion(updatedTask, currentSnapshot).canFinalize) {
+      throw Object.assign(new Error("A task cannot be completed until its work log, documentation evidence, mentor-backed QA approval and dependency checks cover its resulting targets."), { statusCode: 409 });
+    }
+  }
   const nextSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     tasks: currentSnapshot.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
@@ -4165,14 +4330,24 @@ export function updatePurchaseItem(
 
 export function receivePurchaseItem(
   itemId: string,
-  input: { quantity: number; location: string },
+  input: { operationId: string; quantity: number; location: string },
   auditContext: AuditMutationContext = {},
 ) {
   const item = currentSnapshot.purchaseItems.find((candidate) => candidate.id === itemId);
   if (!item) return { error: "not-found" as const };
   const receipts = item.receipts ?? [];
-  if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0 || input.quantity > 1000) return { error: "invalid-quantity" as const };
-  if (receipts.reduce((total, receipt) => total + receipt.quantity, 0) + input.quantity > item.quantity) {
+  const priorOperation = receipts.find((receipt) => receipt.operationId === input.operationId);
+  if (priorOperation) {
+    if (priorOperation.quantity !== input.quantity || priorOperation.location !== input.location.trim()) return { error: "operation-conflict" as const };
+    return { item, receipt: priorOperation, replayed: true as const };
+  }
+  if (!Number.isFinite(input.quantity) || input.quantity <= 0 || input.quantity > 1000) return { error: "invalid-quantity" as const };
+  const createsPartInstances = item.kind !== "manufacturing-service" && !(item.partDefinitionId === null && item.materialId !== null) && item.partDefinitionId !== null;
+  if (createsPartInstances && !Number.isSafeInteger(input.quantity)) return { error: "invalid-quantity" as const };
+  if (item.orderStatus !== "ordered" && item.orderStatus !== "shipped" && item.orderStatus !== "delivered") return { error: "not-ordered" as const };
+  const received = Number(receipts.reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
+  const floatingPointTolerance = Number.EPSILON * Math.max(1, Math.abs(item.quantity), Math.abs(received), Math.abs(input.quantity)) * 8;
+  if (received + input.quantity - item.quantity > floatingPointTolerance) {
     return { error: "over-receipt" as const };
   }
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === item.taskId);
@@ -4194,7 +4369,7 @@ export function receivePurchaseItem(
     ? currentSnapshot.materials.map((candidate) => candidate.id === material.id
       ? {
           ...candidate,
-          onHandQuantity: candidate.onHandQuantity + input.quantity,
+          onHandQuantity: Number((candidate.onHandQuantity + input.quantity).toFixed(12)),
           // A material has one stock location. Keep the established location
           // when it already has stock rather than moving that stock on receipt.
           location: candidate.onHandQuantity === 0 ? input.location.trim() : candidate.location,
@@ -4220,6 +4395,7 @@ export function receivePurchaseItem(
     : [];
   const receipt: PurchaseReceipt = {
     id: receiptId,
+    operationId: input.operationId,
     quantity: input.quantity,
     location: input.location.trim(),
     receivedAt: new Date().toISOString(),
@@ -4242,7 +4418,7 @@ export function receivePurchaseItem(
     tasks: currentSnapshot.tasks.map((candidate) => candidate.id === task.id ? updatedTask : candidate),
   });
   recordProductionItemAudit("purchase-item", "update", updatedItem, auditContext, ["receipts"]);
-  return { item: updatedItem };
+  return { item: updatedItem, receipt, replayed: false as const };
 }
 
 export function removePurchaseItem(
@@ -4255,6 +4431,8 @@ export function removePurchaseItem(
   if (!item) {
     return null;
   }
+
+  if ((item.receipts ?? []).length > 0) return { error: "has-receipts" as const };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,

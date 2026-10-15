@@ -19,6 +19,7 @@ import {
   createMechanism,
   createReport,
   createReportFinding,
+  retestQaFinding,
   createQaReport,
   submitQaReport,
   createQaRequest,
@@ -112,7 +113,6 @@ import {
   formatTaskStatus,
 } from "../domain/workflows";
 import {
-  getTaskWaitingOnDependencyRecords,
   isTaskWaitingOnDependencies,
   wouldCreateHardTaskDependencyCycle,
 } from "../domain/taskDependencyState";
@@ -129,6 +129,7 @@ import {
   resolveProjectId,
 } from "./helpers/taskTargets";
 import { uniqueIds } from "../domain/ids";
+import { reportFromQaReport } from "../data/store/reportDerivations";
 
 import {
   validateArtifactLinks,
@@ -178,6 +179,7 @@ import {
   projectPatchSchema,
   projectSchema,
   qaReportSchema,
+  findingRetestSchema,
   qaSubmitSchema,
   qaRequestSchema,
   reportFindingSchema,
@@ -1040,16 +1042,9 @@ export async function registerRoutes(
       return reply;
     }
 
-    if (
-      parsed.data.reportType === "qa" &&
-      parsed.data.status === "reviewed" &&
-      !requireWorkflowApprovalPermission(
-        request,
-        reply,
-        "Only mentors or admins can approve QA.",
-      )
-    ) {
-      return;
+    if (parsed.data.reportType === "qa" && parsed.data.status === "reviewed") {
+      if (!requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
+      return reply.code(400).send({ message: "QA approval must use POST /api/qa-reports/submit as a reviewed transition." });
     }
 
     const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
@@ -1111,18 +1106,20 @@ export async function registerRoutes(
     if (parentReport.reportType !== "qa") {
       return reply.code(400).send({ message: "Findings can only be linked to QA reports." });
     }
+    if (parentReport.status !== "reviewed") return reply.code(409).send({ message: "Findings can only be created from mentor/admin reviewed QA reports." });
 
     if (parsed.data.spawnedTaskId && !getTasks().some((task) => task.id === parsed.data.spawnedTaskId && task.projectId === parentReport.projectId)) {
       return reply.code(400).send({ message: "The corrective task does not exist." });
     }
-    if (parsed.data.spawnedRiskId && !getRisks().some((risk) => risk.id === parsed.data.spawnedRiskId && risk.projectId === parentReport.projectId)) {
-      return reply.code(400).send({ message: "The linked risk does not exist." });
+    if (parsed.data.spawnedRiskId && !getRisks().some((risk) => risk.id === parsed.data.spawnedRiskId && parentReport.followUpRiskId === risk.id && risk.projectId === parentReport.projectId && risk.category === "qa" && risk.source.kind === "report" && risk.source.id === parentReport.id && risk.mitigationTaskId === (parsed.data.spawnedTaskId ?? null) && risk.relatedTargets.some((riskTarget) => parsed.data.targetRefs.some((target) => target.kind === riskTarget.kind && target.id === riskTarget.id)))) {
+      return reply.code(400).send({ message: "The linked QA risk must be generated for this report, target scope and corrective task." });
     }
     if (parsed.data.spawnedIterationId && !getDesignIterations().some((iteration) => iteration.id === parsed.data.spawnedIterationId && iteration.projectId === parentReport.projectId)) {
       return reply.code(400).send({ message: "The linked design iteration does not exist." });
     }
 
     const finding = createReportFinding(parsed.data);
+    if (!finding) return reply.code(400).send({ message: "The corrective task or risk does not match the reviewed report's target scope." });
 
     return reply.code(201).send({
       item: finding,
@@ -1134,7 +1131,7 @@ export async function registerRoutes(
       return;
     }
 
-    const paginated = paginateItems(getQaReports(), request.query);
+    const paginated = paginateItems(getQaReports().map((report) => reportFromQaReport(undefined, report)).filter((report) => report !== null), request.query);
 
     return {
       items: paginated.items,
@@ -1152,15 +1149,9 @@ export async function registerRoutes(
       return reply;
     }
 
-    if (
-      parsed.data.status === "reviewed" &&
-      !requireWorkflowApprovalPermission(
-        request,
-        reply,
-        "Only mentors or admins can approve QA.",
-      )
-    ) {
-      return;
+    if (parsed.data.status === "reviewed") {
+      if (!requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
+      return reply.code(400).send({ message: "QA approval must use POST /api/qa-reports/submit as a reviewed transition." });
     }
 
     const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
@@ -1190,15 +1181,32 @@ export async function registerRoutes(
     if (!parsed) {
       return reply;
     }
+    if (parsed.data.status === "reviewed" && !isAuthEnabled()) return reply.code(403).send({ message: "Authenticated mentor or admin review is required for QA approval." });
     if (parsed.data.status === "reviewed" && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
     const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
     const validationError = taskId
       ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
       : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) return reply.code(400).send({ message: validationError });
-    const result = submitQaReport({ ...parsed.data, participantIds: Array.from(new Set(parsed.data.participantIds)) });
+    const approvalMember = parsed.data.status === "reviewed" && isAuthEnabled() ? getWorkflowApprovalMember(request) : null;
+    if (parsed.data.status === "reviewed" && isAuthEnabled() && !approvalMember) return reply.code(403).send({ message: "A roster-linked mentor or admin reviewer is required." });
+    const approval = approvalMember ? { reviewerId: approvalMember.id, reviewedAt: new Date().toISOString() } : undefined;
+    const result = submitQaReport({ ...parsed.data, participantIds: Array.from(new Set(parsed.data.participantIds)) }, approval);
     if (result.error) return reply.code(409).send({ message: result.error });
     return reply.code(201).send({ item: result.item });
+  });
+
+  app.post<{ Params: { findingId: string }; Body: unknown }>("/api/report-findings/:findingId/retest", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can review QA retests.")) return;
+    const parsed = parseRouteInput(findingRetestSchema, request.body, reply, "QA retest payload is invalid.");
+    if (!parsed) return;
+    const actor = getWorkflowApprovalMember(request);
+    if (!actor) return reply.code(403).send({ message: "An authenticated mentor or admin reviewer is required." });
+    const item = retestQaFinding({ ...parsed.data, findingId: request.params.findingId, reviewerId: actor.id });
+    if (!item) return reply.code(404).send({ message: "QA or test finding not found." });
+    if ("conflict" in item) return reply.code(409).send({ message: item.conflict });
+    return { item };
   });
 
   app.get("/api/qa-requests", async (request, reply) => {
@@ -1256,7 +1264,7 @@ export async function registerRoutes(
       return;
     }
 
-    const paginated = paginateItems(getTestResults(), request.query);
+    const paginated = paginateItems(getTestResults().map((result) => ({ ...result, ...(result.verificationOrder === undefined || result.targetRevisions === undefined || result.inspectedPartInstanceIds === undefined ? { needsReverification: true } : {}) })), request.query);
 
     return {
       items: paginated.items,
@@ -1800,6 +1808,7 @@ export async function registerRoutes(
           message: "Material not found.",
         });
       }
+      if ("error" in material) return reply.code(409).send({ message: "This material is referenced by a part definition or purchase and cannot be deleted." });
 
       return {
         item: material,
@@ -2030,6 +2039,8 @@ export async function registerRoutes(
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
     };
 
+    if (taskInput.status === "complete") return reply.code(409).send({ message: "A task cannot be created complete; completion requires existing work, documentation and reviewed QA evidence." });
+
     const createdTask = createTask(taskInput);
     return reply.code(201).send({
       item: {
@@ -2222,15 +2233,6 @@ export async function registerRoutes(
       if (!currentTask) {
         return reply.code(404).send({
           message: "Task not found.",
-        });
-      }
-
-      if (
-        parsed.data.status === "complete" &&
-        (currentTask.isBlocked || getTaskWaitingOnDependencyRecords(currentTask.id, getSnapshot()).length > 0)
-      ) {
-        return reply.code(409).send({
-          message: "A task cannot be completed while blocking risks or unfinished hard dependencies remain.",
         });
       }
 
@@ -3317,7 +3319,7 @@ export async function registerRoutes(
         });
       }
 
-      const receivedQuantity = (currentItem.receipts ?? []).reduce((total, receipt) => total + receipt.quantity, 0);
+      const receivedQuantity = Number((currentItem.receipts ?? []).reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
       if (receivedQuantity > 0 && parsed.data.quantity !== undefined && parsed.data.quantity < receivedQuantity) {
         return reply.code(409).send({ message: "Purchase quantity cannot be lower than the quantity already received." });
       }
@@ -3489,17 +3491,16 @@ export async function registerRoutes(
       if (!parsed) return reply;
       const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
       if (!currentItem) return reply.code(404).send({ message: "Purchase item not found." });
-      if (currentItem.orderStatus !== "ordered" && currentItem.orderStatus !== "shipped" && currentItem.orderStatus !== "delivered") {
-        return reply.code(409).send({ message: "Only ordered purchases can be received." });
-      }
       const result = receivePurchaseItem(request.params.itemId, parsed.data, buildTaskAuditContext(request));
       if ("error" in result) {
         if (result.error === "not-found") return reply.code(404).send({ message: "Purchase item or linked task not found." });
         if (result.error === "over-receipt") return reply.code(409).send({ message: "Receipt quantity exceeds the remaining purchase quantity." });
+        if (result.error === "operation-conflict") return reply.code(409).send({ message: "This operationId was already used with a different receipt payload." });
+        if (result.error === "not-ordered") return reply.code(409).send({ message: "Only ordered purchases can be received." });
         if (result.error === "location-conflict") return reply.code(409).send({ message: "Material stock already exists at a different location; receive it at the existing stock location." });
-        return reply.code(400).send({ message: "Receipt quantity must be a positive whole number." });
+        return reply.code(400).send({ message: "Receipt quantity must be positive and finite; part-instance receipts require a whole number." });
       }
-      return { item: result.item };
+      return { item: result.item, receipt: result.receipt };
     },
   );
 
@@ -3521,6 +3522,7 @@ export async function registerRoutes(
         request.params.itemId,
         buildTaskAuditContext(request),
       );
+      if (item && "error" in item) return reply.code(409).send({ message: "A purchase with receipt history cannot be deleted." });
       if (!item) {
         return reply.code(404).send({
           message: "Purchase item not found.",

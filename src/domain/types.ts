@@ -410,6 +410,8 @@ export interface ReportBase {
   photoUrl?: string;
   createdAt: string;
   status: "draft" | "submitted" | "reviewed";
+  /** Derived response hint for legacy reviewed evidence missing server verification stamps. */
+  needsReverification?: boolean;
 }
 
 export interface QaReport extends ReportBase {
@@ -419,6 +421,10 @@ export interface QaReport extends ReportBase {
   reviewedAt: string | null;
   /** Part definition revisions inspected by this report, keyed by definition ID. */
   targetRevisions?: Record<string, string>;
+  /** Instance IDs actually inspected at approval time; absent on legacy evidence. */
+  inspectedPartInstanceIds?: string[];
+  /** Monotonic server-owned approval order, independent of observation date. */
+  reviewOrder?: number;
   followUpTaskId?: string | null;
   followUpRiskId?: string | null;
 }
@@ -446,6 +452,7 @@ export interface ReportFinding {
   status?: "open" | "resolved";
   createdAt?: string;
   updatedAt?: string;
+  retests?: QaRetest[];
 }
 
 export type TaskDependency =
@@ -495,6 +502,7 @@ export interface PurchaseQuote {
 }
 export interface PurchaseReceipt {
   id: string;
+  operationId?: string;
   quantity: number;
   location: string;
   receivedAt: string;
@@ -570,8 +578,31 @@ export interface TestResult {
   status: TestResultStatus;
   /** Missing only on records created before revision-aware retesting. */
   createdAt?: string;
+  observedAt?: string;
+  /** Server-owned verification ordering; createdAt is display/observation time only. */
+  verificationOrder?: number;
   /** Part definition revisions inspected by this result, keyed by definition ID. */
   targetRevisions?: Record<string, string>;
+  /** Frozen part instance scope; absent on legacy records that require re-verification. */
+  inspectedPartInstanceIds?: string[];
+  /** Derived response hint for legacy evidence without server-owned coverage/order stamps. */
+  needsReverification?: boolean;
+}
+
+export interface QaRetest {
+  operationId?: string;
+  sourceType?: "qa" | "test";
+  result: "pass" | "fail";
+  notes: string;
+  evidenceNotes?: string;
+  observedAt?: string;
+  reviewedAt: string;
+  reviewedById: string;
+  order: number;
+  verificationOrder?: number;
+  targetRevisions?: Record<string, string>;
+  inspectedPartInstanceIds?: string[];
+  supersedesId?: string;
 }
 
 interface FindingRecordBase {
@@ -586,6 +617,7 @@ interface FindingRecordBase {
   updatedAt: string;
   correctiveTaskId?: string | null;
   riskId?: string | null;
+  retests?: QaRetest[];
 }
 
 export interface QaFinding extends FindingRecordBase {
@@ -718,6 +750,8 @@ export interface SlackHomeResponse {
 
 export interface PlatformSnapshot {
   snapshotSchemaVersion: 1;
+  /** Optional migration-free, server-owned monotonic QA review counter. */
+  qaReviewSequence?: number;
   seasons: Season[];
   projects: Project[];
   workTypes: WorkType[];

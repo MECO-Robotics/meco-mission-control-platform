@@ -16,7 +16,7 @@ const snapshotCollectionKeys = [
   "testResults", "qaFindings", "testFindings", "teamReports", "designIterations", "risks", "workLogs", "meetings",
   "attendanceRecords", "events", "manufacturingProcesses", "purchaseItems", "escalations", "actions",
 ] as const satisfies readonly (keyof PlatformSnapshot)[];
-type UnvalidatedSnapshotKeys = Exclude<keyof PlatformSnapshot, (typeof snapshotCollectionKeys)[number] | "snapshotSchemaVersion">;
+type UnvalidatedSnapshotKeys = Exclude<keyof PlatformSnapshot, (typeof snapshotCollectionKeys)[number] | "snapshotSchemaVersion" | "qaReviewSequence">;
 type AssertNever<T extends never> = T;
 type _AssertAllSnapshotCollectionsAreListed = AssertNever<UnvalidatedSnapshotKeys>;
 
@@ -45,9 +45,9 @@ const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
   risks: riskSchema.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string(), resolvedAt: z.string().nullable() }).strict(),
   qaReports: reportSchema.options[0].extend({ id: z.string() }).strict(),
   teamReports: reportSchema.options[1].extend({ id: z.string() }).strict(),
-  testResults: testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })) }).strict(),
-  qaFindings: z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional() }).strict(),
-  testFindings: z.object({ id: z.string(), reportId: z.string().nullable(), testResultId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional() }).strict(),
+  testResults: testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), verificationOrder: z.number().int().positive().optional() }).strict(),
+  qaFindings: z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional(), retests: z.array(z.object({ operationId: z.string().optional(), sourceType: z.enum(["qa", "test"]).optional(), result: z.enum(["pass", "fail"]), notes: z.string(), evidenceNotes: z.string().optional(), observedAt: z.string().optional(), reviewedAt: z.string(), reviewedById: z.string(), order: z.number().int().positive(), verificationOrder: z.number().int().positive().optional(), targetRevisions: z.record(z.string(), z.string()).optional(), inspectedPartInstanceIds: z.array(z.string()).optional(), supersedesId: z.string().optional() })).optional() }).strict(),
+  testFindings: z.object({ id: z.string(), reportId: z.string().nullable(), testResultId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional(), retests: z.array(z.object({ operationId: z.string().optional(), sourceType: z.enum(["qa", "test"]).optional(), result: z.enum(["pass", "fail"]), notes: z.string(), evidenceNotes: z.string().optional(), observedAt: z.string().optional(), reviewedAt: z.string(), reviewedById: z.string(), order: z.number().int().positive(), verificationOrder: z.number().int().positive().optional(), targetRevisions: z.record(z.string(), z.string()).optional(), inspectedPartInstanceIds: z.array(z.string()).optional(), supersedesId: z.string().optional() })).optional() }).strict(),
   designIterations: z.object({ id: z.string(), sourceType: z.enum(["qa", "test"]), findingId: z.string(), projectId: z.string(), targetRefs: z.array(z.object({ kind: z.string(), id: z.string() })), notes: z.string(), status: z.enum(["planned", "in-progress", "complete"]), createdAt: z.string(), updatedAt: z.string() }).strict(),
 };
 
@@ -79,7 +79,7 @@ function looksLikePlatformSnapshot(value: unknown): value is PlatformSnapshot {
     projectKeys.add(key);
   }
   const seasons = snapshot.seasons as PlatformSnapshot["seasons"];
-  return seasons.every((season) => (["robot", "media", "outreach", "operations", "strategy", "training"] as const).every((type) => projectKeys.has(`${season.id}:${type}`)));
+  return (snapshot.qaReviewSequence === undefined || (Number.isInteger(snapshot.qaReviewSequence) && Number(snapshot.qaReviewSequence) >= 0)) && seasons.every((season) => (["robot", "media", "outreach", "operations", "strategy", "training"] as const).every((type) => projectKeys.has(`${season.id}:${type}`)));
 }
 
 export function loadPlatformSnapshotFile(path: string): PlatformSnapshot | null {

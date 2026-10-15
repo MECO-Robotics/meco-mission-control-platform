@@ -1,4 +1,4 @@
-import { getSnapshot, updateTask } from "../src/data/store";
+import { createPlatformStore, getSnapshot, updateTask } from "../src/data/store";
 import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
@@ -44,7 +44,7 @@ test("preference routes isolate app instances and reopen persisted updates", asy
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const { buildApp } = require("../src/app") as typeof import("../src/app");
     const path = join(directory, "preferences.json");
-    const other = await buildApp({ userPreferencesPath: path });
+    const other = await buildApp({ platformStore: createPlatformStore({ durability: "memory" }), userPreferencesPath: path });
     try {
       const saved = await other.inject({
         method: "PATCH", url: "/api/users/me/preferences", payload: { themeMode: "dark" },
@@ -57,7 +57,7 @@ test("preference routes isolate app instances and reopen persisted updates", asy
     } finally {
       await other.close();
     }
-    const reopened = await buildApp({ userPreferencesPath: path });
+    const reopened = await buildApp({ platformStore: createPlatformStore({ durability: "memory" }), userPreferencesPath: path });
     try {
       resetLimits();
       const saved = await reopened.inject({ method: "GET", url: "/api/users/me/preferences" });
@@ -87,7 +87,7 @@ test("constructing and closing another app preserves the first app's workspace a
     await app.cadStore.createImportRun({ projectId: task.projectId, seasonId: null, source: "STEP_UPLOAD", status: "FAILED", originalFilename: "first.step", uploadedFileId: null, uploadedFileHash: null, parserVersion: null, parseStartedAt: null, parseCompletedAt: null, requestedBy: null, errorMessage: "Owner fixture", rawSummaryJson: {} });
     getOnshapeRuntimeStore().recordApiCall(17);
     const { buildApp } = require("../src/app") as typeof import("../src/app");
-    const other = await buildApp({ userPreferencesPath: join(directory, "other.json") });
+    const other = await buildApp({ platformStore: createPlatformStore({ durability: "memory" }), userPreferencesPath: join(directory, "other.json") });
     try {
       const secondTasks = await other.inject({ method: "GET", url: "/api/tasks" });
       assert.equal(secondTasks.statusCode, 200);

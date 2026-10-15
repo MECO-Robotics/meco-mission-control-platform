@@ -69,24 +69,24 @@ test("readiness ignores stale QA and test outcomes after a part revision changes
   };
   const staleFail = {
     id: "stale-fail", projectId: "project-robot-2026", targetRefs: [{ kind: "part-instance" as const, id: part.id }],
-    title: "Old revision test", status: "fail" as const, createdAt: "2026-04-01T00:00:00.000Z", targetRevisions: { [definition.id]: definition.revision },
+    title: "Old revision test", status: "fail" as const, createdAt: "2026-04-01T00:00:00.000Z", verificationOrder: 1, targetRevisions: { [definition.id]: definition.revision }, inspectedPartInstanceIds: [part.id],
   };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [staleFail] }), "not-ready");
-  const currentPass = { ...staleFail, status: "pass" as const, createdAt: "2026-04-02T00:00:00.000Z", targetRevisions: { [definition.id]: "C" } };
+  const currentPass = { ...staleFail, status: "pass" as const, createdAt: "2026-04-02T00:00:00.000Z", verificationOrder: 2, targetRevisions: { [definition.id]: "C" } };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [staleFail, currentPass] }), "ready");
-  const currentFail = { ...currentPass, status: "fail" as const, createdAt: "2026-04-03T00:00:00.000Z" };
+  const currentFail = { ...currentPass, status: "fail" as const, createdAt: "2026-04-03T00:00:00.000Z", verificationOrder: 3 };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentPass, currentFail] }), "blocked");
-  const differentTestPass = { ...currentPass, title: "Independent inspection", createdAt: "2026-04-04T00:00:00.000Z" };
+  const differentTestPass = { ...currentPass, title: "Independent inspection", createdAt: "2026-04-04T00:00:00.000Z", verificationOrder: 4 };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentFail, differentTestPass] }), "blocked");
-  const retestPass = { ...currentPass, createdAt: "2026-04-05T00:00:00.000Z" };
+  const retestPass = { ...currentPass, createdAt: "2026-04-05T00:00:00.000Z", verificationOrder: 5 };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentFail, differentTestPass, retestPass] }), "ready");
   const staleQa = {
     ...seed.qaReports[0]!, id: "stale-qa", targetRefs: [{ kind: "part-instance" as const, id: part.id }],
     status: "reviewed" as const, result: "iteration-worthy" as const,
-    targetRevisions: { [definition.id]: definition.revision },
+    targetRevisions: { [definition.id]: definition.revision }, reviewOrder: 1, inspectedPartInstanceIds: [part.id],
   };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [staleQa], testResults: [] }), "not-ready");
-  const currentQaPass = { ...staleQa, result: "pass" as const, createdAt: "2026-04-02T00:00:00.000Z", targetRevisions: { [definition.id]: "C" } };
+  const currentQaPass = { ...staleQa, result: "pass" as const, reviewOrder: 2, createdAt: "2026-04-02T00:00:00.000Z", targetRevisions: { [definition.id]: "C" } };
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [staleQa, currentQaPass], testResults: [] }), "ready");
   assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [currentQaPass], testResults: [currentFail] }), "blocked");
 });
@@ -550,14 +550,12 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
 });
 
 test("updateTask patches an existing task in place", () => {
-  updateTask("wire-swerve-module", {
-    status: "complete",
-    assigneeIds: ["ava", "ethan"],
-  });
+  assert.throws(() => updateTask("wire-swerve-module", { status: "complete" }), /cannot be completed/);
+  updateTask("wire-swerve-module", { status: "in-progress", assigneeIds: ["ava", "ethan"] });
 
   const updatedTask = getSnapshot().tasks.find((task) => task.id === "wire-swerve-module");
   assert.ok(updatedTask);
-  assert.equal(updatedTask.status, "complete");
+  assert.equal(updatedTask.status, "in-progress");
   assert.equal(updatedTask.actualHours, getSnapshot().workLogs.filter((log) => log.taskId === updatedTask.id).reduce((sum, log) => sum + log.hours, 0));
   assert.deepEqual(updatedTask.assigneeIds, ["ava", "ethan"]);
 });
@@ -568,7 +566,7 @@ test("task updates append an audit action entry", () => {
   assert.ok(originalTask);
 
   const updatedTask = updateTask("wire-swerve-module", {
-    status: "complete",
+    status: "waiting-for-qa",
     estimatedHours: 7,
   }, {
     actorMemberId: "marco",
@@ -592,7 +590,7 @@ test("task updates append an audit action entry", () => {
   assert.ok(lastAction.changedFields.includes("estimatedHours"));
   assert.ok(lastAction.changedFields.includes("status"));
   assert.equal(lastAction.beforeJson?.status, "in-progress");
-  assert.equal(lastAction.afterJson?.status, "complete");
+  assert.equal(lastAction.afterJson?.status, "waiting-for-qa");
   assert.equal(lastAction.beforeJson?.estimatedHours, originalTask.estimatedHours);
   assert.equal(lastAction.afterJson?.estimatedHours, 7);
 });
@@ -666,6 +664,8 @@ test("removePartDefinition clears linked part instances and task references", ()
     location: { kind: "stock", location: "Test bin" },
   });
 
+  const taskBeforeRetarget = getSnapshot().tasks.find((task) => task.id === "swerve-sensor-bundle")!;
+  if (taskBeforeRetarget.status === "complete") resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((task) => task.id === taskBeforeRetarget.id ? { ...task, status: "in-progress" as const } : task) });
   updateTask("swerve-sensor-bundle", {
     partInstanceIds: [createdPartInstance.id],
   });
@@ -986,6 +986,7 @@ test("task targets preserve kind order, first-target context, and unique array l
   };
   resetStore({
     ...snapshot,
+    tasks: snapshot.tasks.map((item) => item.id === task.id ? { ...item, status: "in-progress" as const } : item),
     workstreams: [...snapshot.workstreams, ...["shared", "primary-workstream"].map((id) => ({ ...snapshot.workstreams[0], id, projectId: task.projectId }))],
     subsystems: [...snapshot.subsystems, ...["shared", "primary-subsystem"].map((id) => ({ ...snapshot.subsystems[0], id, projectId: task.projectId }))],
     mechanisms: [...snapshot.mechanisms, { ...snapshot.mechanisms[0], id: "mechanism", subsystemId: "shared" }],
@@ -1061,14 +1062,14 @@ test("task commands reject invalid links and people without publishing data or a
   for (const input of [{ projectId: "missing-project" }, { workTypeId: "missing-work-type" }, { ownerId: "missing-member" }, { scheduleRefs: [{ kind: "event" as const, id: "missing-event" }] }]) {
     assert.throws(() => updateTask(task.id, input), /does not exist|do not exist|does not belong/);
     assert.equal(getSnapshot(), before);
-    assert.throws(() => createTask({ ...JSON.parse(JSON.stringify(task)), ...input }), /does not exist|do not exist|does not belong/);
+    assert.throws(() => createTask({ ...JSON.parse(JSON.stringify(task)), ...input, status: "not-started" }), /does not exist|do not exist|does not belong/);
     assert.equal(getSnapshot(), before);
   }
 });
 
 test("snapshot owners isolate records, tutorial sessions and mutation queues", async () => {
-  const first = createPlatformStore();
-  const second = createPlatformStore();
+  const first = createPlatformStore({ durability: "memory" });
+  const second = createPlatformStore({ durability: "memory" });
   await first.run(async () => {
     const transaction = await acquireSnapshotMutation();
     transaction.enter();
@@ -1168,7 +1169,7 @@ test("member commands preserve task people across role changes and deletion", ()
   assert.throws(() => updateMember(task.mentorId!, { role: "student" }), /Reassign.*before changing this person's role/);
   assert.equal(getSnapshot(), before);
   const contributor = createMember({ name: "Only Task Contributor", role: "student" });
-  const sole = createTask({ ...JSON.parse(JSON.stringify(task)), title: "Sole contributor task", ownerId: contributor.id, assigneeIds: [contributor.id], mentorId: null });
+  const sole = createTask({ ...JSON.parse(JSON.stringify(task)), status: "not-started", title: "Sole contributor task", ownerId: contributor.id, assigneeIds: [contributor.id], mentorId: null });
   const assigned = getSnapshot();
   assert.throws(() => removeMember(contributor.id), /Reassign 1 task before removing this person/);
   assert.equal(getSnapshot(), assigned);

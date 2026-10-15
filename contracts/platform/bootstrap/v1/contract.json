@@ -1180,6 +1180,9 @@
                   "reviewed"
                 ]
               },
+              "needsReverification": {
+                "type": "boolean"
+              },
               "reportType": {
                 "type": "string",
                 "const": "qa"
@@ -1223,6 +1226,17 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "inspectedPartInstanceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reviewOrder": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
               },
               "followUpTaskId": {
                 "anyOf": [
@@ -1384,6 +1398,9 @@
                   "submitted",
                   "reviewed"
                 ]
+              },
+              "needsReverification": {
+                "type": "boolean"
               },
               "reportType": {
                 "type": "string",
@@ -1651,6 +1668,82 @@
                 "type": "null"
               }
             ]
+          },
+          "retests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operationId": {
+                  "type": "string"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "enum": [
+                    "qa",
+                    "test"
+                  ]
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "fail"
+                  ]
+                },
+                "notes": {
+                  "type": "string"
+                },
+                "evidenceNotes": {
+                  "type": "string"
+                },
+                "observedAt": {
+                  "type": "string"
+                },
+                "reviewedAt": {
+                  "type": "string"
+                },
+                "reviewedById": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "verificationOrder": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "targetRevisions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "inspectedPartInstanceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "supersedesId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result",
+                "notes",
+                "reviewedAt",
+                "reviewedById",
+                "order"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1739,6 +1832,11 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
           "targetRevisions": {
             "type": "object",
             "propertyNames": {
@@ -1748,8 +1846,22 @@
               "type": "string"
             }
           },
+          "inspectedPartInstanceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "id": {
             "type": "string"
+          },
+          "verificationOrder": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "needsReverification": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1877,6 +1989,82 @@
                 "type": "null"
               }
             ]
+          },
+          "retests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operationId": {
+                  "type": "string"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "enum": [
+                    "qa",
+                    "test"
+                  ]
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "fail"
+                  ]
+                },
+                "notes": {
+                  "type": "string"
+                },
+                "evidenceNotes": {
+                  "type": "string"
+                },
+                "observedAt": {
+                  "type": "string"
+                },
+                "reviewedAt": {
+                  "type": "string"
+                },
+                "reviewedById": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "verificationOrder": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "targetRevisions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "inspectedPartInstanceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "supersedesId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result",
+                "notes",
+                "reviewedAt",
+                "reviewedById",
+                "order"
+              ],
+              "additionalProperties": false
+            }
           },
           "testResultId": {
             "type": "string"
@@ -3164,8 +3352,13 @@
                 "id": {
                   "type": "string"
                 },
+                "operationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
                 "quantity": {
-                  "type": "integer",
+                  "type": "number",
                   "exclusiveMinimum": 0,
                   "maximum": 1000
                 },
@@ -4483,6 +4676,9 @@
                 "reviewed"
               ]
             },
+            "needsReverification": {
+              "type": "boolean"
+            },
             "reportType": {
               "type": "string",
               "const": "qa"
@@ -4526,6 +4722,17 @@
               "additionalProperties": {
                 "type": "string"
               }
+            },
+            "inspectedPartInstanceIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reviewOrder": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "followUpTaskId": {
               "anyOf": [
@@ -4683,6 +4890,9 @@
                 "submitted",
                 "reviewed"
               ]
+            },
+            "needsReverification": {
+              "type": "boolean"
             },
             "reportType": {
               "type": "string",
@@ -4883,6 +5093,17 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "inspectedPartInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reviewOrder": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         },
         "followUpTaskId": {
           "anyOf": [
@@ -5085,6 +5306,17 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "inspectedPartInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reviewOrder": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         },
         "followUpTaskId": {
           "anyOf": [

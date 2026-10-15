@@ -214,8 +214,19 @@ export const qaReportSchema = z.object({
   reviewedById: z.string().trim().min(1).nullable(),
   reviewedAt: z.string().datetime({ offset: true }).nullable(),
   targetRevisions: z.record(z.string(), z.string()).optional(),
+  inspectedPartInstanceIds: z.array(z.string()).optional(),
+  reviewOrder: z.number().int().positive().optional(),
   followUpTaskId: z.string().nullable().optional(),
   followUpRiskId: z.string().nullable().optional(),
+}).strict();
+
+export const findingRetestSchema = z.object({
+  operationId: z.string().trim().min(1).optional(),
+  sourceType: z.enum(["qa", "test"]).optional(),
+  result: z.enum(["pass", "fail"]),
+  notes: z.string().trim().min(1),
+  evidenceNotes: z.string().trim().optional(),
+  observedAt: z.string().datetime({ offset: true }).optional(),
 }).strict();
 
 export const qaSubmitSchema = qaReportSchema.extend({
@@ -236,7 +247,9 @@ export const testResultSchema = z.object({
   title: z.string().trim().min(2),
   status: z.enum(["pass", "fail", "blocked"]),
   createdAt: z.string().datetime({ offset: true }).optional(),
+  observedAt: z.string().datetime({ offset: true }).optional(),
   targetRevisions: z.record(z.string(), z.string()).optional(),
+  inspectedPartInstanceIds: z.array(z.string()).optional(),
 }).strict();
 
 export const userPreferencesPatchSchema = z.object({
@@ -274,9 +287,10 @@ const reportBaseSchema = z.object({
   photoUrl: z.string().trim().optional(),
   createdAt: z.string().datetime({ offset: true }),
   status: z.enum(["draft", "submitted", "reviewed"]),
+  needsReverification: z.boolean().optional(),
 });
 export const reportSchema = z.discriminatedUnion("reportType", [
-  reportBaseSchema.extend({ reportType: z.literal("qa"), result: z.enum(["pass", "minor-fix", "iteration-worthy"]), reviewedById: z.string().trim().min(1).nullable(), reviewedAt: z.string().datetime({ offset: true }).nullable(), targetRevisions: z.record(z.string(), z.string()).optional(), followUpTaskId: z.string().nullable().optional(), followUpRiskId: z.string().nullable().optional() }).strict(),
+  reportBaseSchema.extend({ reportType: z.literal("qa"), result: z.enum(["pass", "minor-fix", "iteration-worthy"]), reviewedById: z.string().trim().min(1).nullable(), reviewedAt: z.string().datetime({ offset: true }).nullable(), targetRevisions: z.record(z.string(), z.string()).optional(), inspectedPartInstanceIds: z.array(z.string()).optional(), reviewOrder: z.number().int().positive().optional(), followUpTaskId: z.string().nullable().optional(), followUpRiskId: z.string().nullable().optional() }).strict(),
   reportBaseSchema.extend({ reportType: z.enum(["practice", "competition", "review"]), result: z.string().trim().nullable() }).strict(),
 ]);
 
@@ -546,12 +560,14 @@ export const purchaseTransitionSchema = z.object({
 }).strict();
 
 export const purchaseReceiptSchema = z.object({
-  quantity: z.number().int().positive().max(MAX_RECEIPT_QUANTITY),
+  operationId: z.string().trim().min(1).max(200),
+  quantity: z.number().finite().positive().max(MAX_RECEIPT_QUANTITY),
   location: z.string().trim().min(1).max(200),
 }).strict();
 export const purchaseReceiptRecordSchema = z.object({
   id: z.string(),
-  quantity: z.number().int().positive().max(MAX_RECEIPT_QUANTITY),
+  operationId: z.string().min(1).max(200).optional(),
+  quantity: z.number().finite().positive().max(MAX_RECEIPT_QUANTITY),
   location: z.string(),
   receivedAt: z.string(),
   partInstanceIds: z.array(z.string()),
