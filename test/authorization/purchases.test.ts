@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMaterial, getTasks, updateMaterial, updatePurchaseItem, updateTask } from "../../src/data/store";
+import { createMaterial, getSnapshot, getTasks, resetStore, updateMaterial, updatePurchaseItem, updateTask } from "../../src/data/store";
 import { purchaseItemSchema, purchaseReceiptRecordSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
 import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
@@ -126,9 +126,71 @@ test("purchase quantities retain the original fractional minimum while receipt q
 
   await withWorkflowAuthApp(async ({ app }) => {
     const student = await createWorkflowAuthHeaders("student");
+    updatePurchaseItem("ferrule-kit", { partDefinitionId: null, materialId: "mat-onyx-filament" });
     const updated = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: student, payload: { quantity: 1001.5 } });
     assert.equal(updated.statusCode, 200);
     assert.equal(updated.json().item.quantity, 1001.5);
+  });
+});
+
+test("discrete part purchase orders require whole quantities while material and service orders stay fractional", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const student = await createWorkflowAuthHeaders("student");
+    const taskId = getTasks().find((task) => task.manufacturingDetails === null)!.id;
+    const serviceTemplate = getSnapshot().purchaseItems.find((item) => item.kind === "manufacturing-service")!;
+    const makePayload = (overrides: Record<string, unknown> = {}) => ({
+      taskId, kind: "cots-goods", title: "Quantity rule purchase", partDefinitionId: "pd-polycarbonate-sheet",
+      materialId: "mat-onyx-filament", quantity: 1, quotes: [], selectedQuoteId: null,
+      approvalStatus: "pending", approvedById: null, approvedAt: null, purchaseOrderNumber: null,
+      orderStatus: "not-ordered", finalCost: null, expectedDeliveryDate: null, trackingNumber: null,
+      trackingUrl: null, orderedAt: null, deliveredAt: null, ...overrides,
+    });
+    const before = getSnapshot();
+    const fractionalPart = await app.inject({ method: "POST", url: "/api/purchases", headers: student, payload: makePayload({ quantity: 1.5 }) });
+    assert.equal(fractionalPart.statusCode, 400, fractionalPart.body);
+    assert.match(fractionalPart.json().message, /positive whole number/i);
+    assert.equal(getSnapshot().purchaseItems.length, before.purchaseItems.length);
+
+    resetLimits();
+    const fractionalMaterial = await app.inject({ method: "POST", url: "/api/purchases", headers: student, payload: makePayload({ title: "Fractional material", partDefinitionId: null, quantity: 1.5 }) });
+    assert.equal(fractionalMaterial.statusCode, 201, fractionalMaterial.body);
+    resetLimits();
+    const fractionalPartIdentity = await app.inject({ method: "PATCH", url: `/api/purchases/${fractionalMaterial.json().item.id}`, headers: student, payload: { partDefinitionId: "pd-polycarbonate-sheet" } });
+    assert.equal(fractionalPartIdentity.statusCode, 400, fractionalPartIdentity.body);
+    assert.equal(getSnapshot().purchaseItems.find((item) => item.id === fractionalMaterial.json().item.id)?.partDefinitionId, null);
+    resetLimits();
+    const fractionalService = await app.inject({ method: "POST", url: "/api/purchases", headers: student, payload: makePayload({ title: "Fractional service", taskId: serviceTemplate.taskId, kind: "manufacturing-service", partDefinitionId: serviceTemplate.partDefinitionId, materialId: null, quantity: 1.5 }) });
+    assert.equal(fractionalService.statusCode, 201, fractionalService.body);
+    resetLimits();
+    const largeWhole = await app.inject({ method: "POST", url: "/api/purchases", headers: student, payload: makePayload({ title: "Large whole order", quantity: 10001 }) });
+    assert.equal(largeWhole.statusCode, 201, largeWhole.body);
+
+    const created = largeWhole.json().item;
+    resetLimits();
+    const fractionalPatch = await app.inject({ method: "PATCH", url: `/api/purchases/${created.id}`, headers: student, payload: { quantity: 2.5 } });
+    assert.equal(fractionalPatch.statusCode, 400, fractionalPatch.body);
+    assert.equal(getSnapshot().purchaseItems.find((item) => item.id === created.id)?.quantity, 10001);
+  });
+});
+
+test("metadata edits preserve legacy fractional discrete purchase quantities but quantity changes are rejected", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const current = getSnapshot();
+    const item = current.purchaseItems.find((purchase) => purchase.id === "ferrule-kit")!;
+    resetStore({ ...current, purchaseItems: current.purchaseItems.map((purchase) => purchase.id === item.id ? { ...purchase, quantity: 1.5 } : purchase) });
+
+    const metadata = await app.inject({ method: "PATCH", url: `/api/purchases/${item.id}`, headers: mentor, payload: { title: "Legacy fractional part order" } });
+    assert.equal(metadata.statusCode, 200, metadata.body);
+    assert.equal(metadata.json().item.quantity, 1.5);
+    resetLimits();
+    const explicitUnchangedQuantity = await app.inject({ method: "PATCH", url: `/api/purchases/${item.id}`, headers: mentor, payload: { quantity: 1.5 } });
+    assert.equal(explicitUnchangedQuantity.statusCode, 200, explicitUnchangedQuantity.body);
+
+    resetLimits();
+    const changedQuantity = await app.inject({ method: "PATCH", url: `/api/purchases/${item.id}`, headers: mentor, payload: { quantity: 2.5 } });
+    assert.equal(changedQuantity.statusCode, 400, changedQuantity.body);
+    assert.equal(getSnapshot().purchaseItems.find((purchase) => purchase.id === item.id)?.quantity, 1.5);
   });
 });
 
@@ -200,6 +262,7 @@ test("fractional material receipts use decimal-safe cumulative bounds and old re
 test("postreceipt quantity floor is decimal-safe and allows unchanged quantity metadata edits atomically", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
+    updatePurchaseItem("ferrule-kit", { partDefinitionId: null, materialId: "mat-onyx-filament", quantity: 1.2 });
     const metadataEdit = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: mentor, payload: { title: "Ferrule kit received", quantity: 1.2 } });
     assert.equal(metadataEdit.statusCode, 200, metadataEdit.body);
     assert.equal(metadataEdit.json().item.title, "Ferrule kit received");

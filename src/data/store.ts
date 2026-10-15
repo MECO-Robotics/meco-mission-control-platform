@@ -3366,6 +3366,8 @@ export function createQaReport(input: QaReportInput) {
 // Called inside the route's snapshot transaction: the report and its workflow
 // effects must become durable together, or none of them may be published.
 export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }, approval?: QaApproval) {
+  const taskIds = uniqueIds(input.targetRefs.filter((ref) => ref.kind === "task").map((ref) => ref.id));
+  if (taskIds.length > 1) return { error: "Submit QA for one task at a time." };
   const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
   const task = currentSnapshot.tasks.find((item) => item.id === taskId);
   const requestedQaId = input.targetRefs.find((ref) => ref.kind === "qa-request")?.id;
@@ -4279,6 +4281,7 @@ export function createPurchaseItem(
   input: PurchaseItemInput,
   auditContext: AuditMutationContext = {},
 ) {
+  assertValidDiscretePurchaseQuantity(input);
   const itemIds = new Set(currentSnapshot.purchaseItems.map((item) => item.id));
   const item: PurchaseItem = {
     id: uniqueId(toSlug(input.title) || "purchase-item", itemIds),
@@ -4310,6 +4313,11 @@ export function updatePurchaseItem(
     ...previousItem,
     ...input,
   };
+  if ((input.quantity !== undefined && input.quantity !== previousItem.quantity) ||
+      (input.kind !== undefined && input.kind !== previousItem.kind) ||
+      (input.partDefinitionId !== undefined && input.partDefinitionId !== previousItem.partDefinitionId)) {
+    assertValidDiscretePurchaseQuantity(updatedItem);
+  }
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -4327,6 +4335,13 @@ export function updatePurchaseItem(
   );
 
   return updatedItem;
+}
+
+function assertValidDiscretePurchaseQuantity(item: Pick<PurchaseItem, "kind" | "partDefinitionId" | "quantity">) {
+  if (item.kind !== "manufacturing-service" && item.partDefinitionId !== null &&
+      (!Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
+    throw Object.assign(new Error("Discrete part purchase quantity must be a positive whole number."), { statusCode: 400 });
+  }
 }
 
 export function receivePurchaseItem(

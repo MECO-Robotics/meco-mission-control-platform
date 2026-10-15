@@ -109,6 +109,40 @@ test("reviewed nonpass closes only its request and creates genuinely linked corr
   }, { env });
 });
 
+test("QA submission rejects multiple task targets atomically while retaining multi-part targets", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const snapshot = getSnapshot();
+    const tasks = snapshot.tasks.filter((item) => item.projectId === snapshot.tasks[0]?.projectId).slice(0, 2);
+    assert.equal(tasks.length, 2);
+    const task = tasks[0]!;
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const payload = {
+      reportType: "qa", projectId: task.projectId,
+      targetRefs: [
+        { kind: "task", id: tasks[0]!.id }, { kind: "task", id: tasks[1]!.id },
+        ...snapshot.partInstances.slice(0, 2).map((part) => ({ kind: "part-instance", id: part.id })),
+      ],
+      createdByMemberId: task.ownerId, participantIds: task.ownerId ? [task.ownerId] : [],
+      mentorId: null, requestedById: null, result: "minor-fix", summary: "Check two tasks",
+      notes: "Atomic scope check", status: "reviewed", createdAt: new Date().toISOString(),
+      reviewedById: null, reviewedAt: null,
+    };
+    const before = getSnapshot();
+    const rejected = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload });
+    assert.equal(rejected.statusCode, 400, rejected.body);
+    assert.match(rejected.json().message, /one task at a time/i);
+    assert.deepEqual(getSnapshot(), before, "rejected submission publishes no report, finding, follow-up, risk, or request change");
+
+    resetLimits();
+    const single = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
+      ...payload, targetRefs: [payload.targetRefs[0]!, ...payload.targetRefs.slice(2)],
+    } });
+    assert.equal(single.statusCode, 201, single.body);
+    assert.equal(single.json().item.targetRefs.filter((ref: { kind: string }) => ref.kind === "task").length, 1);
+    assert.equal(single.json().item.targetRefs.filter((ref: { kind: string }) => ref.kind === "part-instance").length, 2);
+  });
+});
+
 test("only roster-linked mentor review applies QA approval and completion gate", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
     const snapshot = getSnapshot();

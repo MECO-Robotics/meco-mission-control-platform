@@ -1183,6 +1183,9 @@ export async function registerRoutes(
     }
     if (parsed.data.status === "reviewed" && !isAuthEnabled()) return reply.code(403).send({ message: "Authenticated mentor or admin review is required for QA approval." });
     if (parsed.data.status === "reviewed" && !requireWorkflowApprovalPermission(request, reply, "Only mentors or admins can approve QA.")) return;
+    if (new Set(parsed.data.targetRefs.filter((ref) => ref.kind === "task").map((ref) => ref.id)).size > 1) {
+      return reply.code(400).send({ message: "Submit QA for one task at a time." });
+    }
     const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
     const validationError = taskId
       ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
@@ -3275,6 +3278,11 @@ export async function registerRoutes(
       return reply;
     }
 
+    if (parsed.data.kind !== "manufacturing-service" && parsed.data.partDefinitionId !== null &&
+        (!Number.isSafeInteger(parsed.data.quantity) || parsed.data.quantity <= 0)) {
+      return reply.code(400).send({ message: "Discrete part purchase quantity must be a positive whole number." });
+    }
+
     if (
       parsed.data.approvalStatus !== "pending" || parsed.data.approvedById !== null ||
       parsed.data.approvedAt !== null || parsed.data.orderStatus !== "not-ordered" ||
@@ -3319,6 +3327,15 @@ export async function registerRoutes(
         });
       }
 
+      const nextItemShape = { ...currentItem, ...parsed.data };
+      if (((parsed.data.quantity !== undefined && parsed.data.quantity !== currentItem.quantity) ||
+          (parsed.data.kind !== undefined && parsed.data.kind !== currentItem.kind) ||
+          (parsed.data.partDefinitionId !== undefined && parsed.data.partDefinitionId !== currentItem.partDefinitionId)) &&
+          nextItemShape.kind !== "manufacturing-service" && nextItemShape.partDefinitionId !== null &&
+          (!Number.isSafeInteger(nextItemShape.quantity) || nextItemShape.quantity <= 0)) {
+        return reply.code(400).send({ message: "Discrete part purchase quantity must be a positive whole number." });
+      }
+
       const receivedQuantity = Number((currentItem.receipts ?? []).reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
       if (receivedQuantity > 0 && parsed.data.quantity !== undefined && parsed.data.quantity < receivedQuantity) {
         return reply.code(409).send({ message: "Purchase quantity cannot be lower than the quantity already received." });
@@ -3361,8 +3378,6 @@ export async function registerRoutes(
       )) {
         return { item: currentItem };
       }
-
-      const nextItemShape = { ...currentItem, ...parsed.data };
 
       const validationError = validatePurchaseItemLinks(nextItemShape);
       if (validationError) {
