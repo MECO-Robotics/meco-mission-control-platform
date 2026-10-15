@@ -5,6 +5,8 @@ import type {
   ReadinessStatus,
   SnapshotView,
   ReadonlyData,
+  QaFinding,
+  TestFinding,
 } from "./types";
 
 function hasTarget(targets: readonly { kind: string; id: string }[], kind: string, id: string) {
@@ -24,8 +26,7 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
   ))) return "blocked";
 
   const currentRevision = snapshot.partDefinitions.find((definition) => definition.id === part.partDefinitionId)?.revision;
-  const hasCurrentPassingRetest = (findingId: string, sourceId: string, sourceOrder: number | undefined) => {
-    const finding = findings.find((item) => item.id === findingId);
+  const hasCurrentPassingRetest = (finding: ReadonlyData<QaFinding> | ReadonlyData<TestFinding>, sourceId: string, sourceOrder: number | undefined) => {
     return finding?.retests?.some((retest) => retest.result === "pass" && retest.supersedesId === sourceId &&
       retest.verificationOrder !== undefined && (sourceOrder === undefined || retest.verificationOrder > sourceOrder) &&
       retest.inspectedPartInstanceIds?.includes(part.id) === true && retest.targetRevisions?.[part.partDefinitionId] === currentRevision) === true;
@@ -50,7 +51,7 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
     if (report.result === "pass") return true;
     const linked = snapshot.qaFindings.filter((finding) => finding.reportId === report.id &&
       (hasTarget(finding.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
-    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding.id, report.id, report.reviewOrder));
+    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, report.id, report.reviewOrder));
   });
   const latestQa = currentQa.reduce<typeof qa[number] | undefined>((latest, report) =>
     !latest || (report.reviewOrder ?? -1) > (latest.reviewOrder ?? -1) ? report : latest, undefined);
@@ -72,7 +73,7 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
     if (result.status !== "fail" && result.status !== "blocked") return false;
     const linked = snapshot.testFindings.filter((finding) => finding.testResultId === result.id &&
       (hasTarget(finding.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
-    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding.id, result.id, result.verificationOrder));
+    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, result.id, result.verificationOrder));
   });
   if (activeTestFailures.length > 0) return "blocked";
   if (latestTests.some((result) => result.status === "pass" && result.inspectedPartInstanceIds !== undefined)) return "ready";

@@ -3672,7 +3672,8 @@ export function retestQaFinding(input: { findingId: string; sourceType?: "qa" | 
     (sourceType !== "qa" || sourceReport?.followUpRiskId === risk.id) &&
     ((sourceType === "qa" && risk.source.kind === "report") || (sourceType === "test" && risk.source.kind === "test-result")) && risk.source.id === expectedRiskSourceId &&
     risk.mitigationTaskId === (previous.correctiveTaskId ?? null) && risk.relatedTargets.some((ref) => findingRefs.has(`${ref.kind}:${ref.id}`)) &&
-    ![...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((item) => item.id !== previous.id && item.riskId === risk.id));
+    !currentSnapshot.qaFindings.some((item) => item.riskId === risk.id && !(sourceType === "qa" && item.id === previous.id)) &&
+    !currentSnapshot.testFindings.some((item) => item.riskId === risk.id && !(sourceType === "test" && item.id === previous.id)));
   if (riskBelongsToFinding && input.result === "pass" && risk!.status !== "resolved") updateRisk(risk!.id, { status: "resolved", resolvedAt: reviewedAt });
   else if (riskBelongsToFinding && input.result === "fail" && risk!.status === "resolved") updateRisk(risk!.id, { status: "open", resolvedAt: null });
   recordAuditAction({ operation: "update", entityType: `${sourceType}-finding-retest`, entityId: updated.id, entityLabel: updated.title, projectId: updated.projectId, actorMemberId: input.reviewerId, taskId: updated.correctiveTaskId ?? null, changedFields: ["status", "retests"], detailsJson: { result: input.result, order, verificationOrder, reviewedAt, sourceType } });
