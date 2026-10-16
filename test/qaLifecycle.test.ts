@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withWorkflowAuthApp, createWorkflowAuthHeaders } from "./helpers/workflowAuth";
-import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createTask, createTaskDependency, createTestResult, createWorkLog, getSnapshot, resetStore, updateTask, updateTaskDependency } from "../src/data/store";
+import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createSubsystem, createTask, createTaskDependency, createTestResult, createWorkLog, getSnapshot, resetStore, updateRisk, updateTask, updateTaskDependency } from "../src/data/store";
 import { derivePartInstanceReadiness } from "../src/domain/readiness";
 import { evaluateTaskCompletion } from "../src/domain/workflows";
 import { reportFromQaReport } from "../src/data/store/reportDerivations";
@@ -107,6 +107,114 @@ test("reviewed nonpass closes only its request and creates genuinely linked corr
     assert.equal(risk.source.kind === "report" ? risk.source.id : null, report.id);
     assert.equal(risk.mitigationTaskId, followUp.id);
     assert.ok(followUp.partInstanceIds.every((id) => task.partInstanceIds.includes(id)));
+  }, { env });
+});
+
+test("QA and test corrective links block task, hierarchy, and risk deletion without blocking retest", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const subsystem = createSubsystem({
+      projectId: "project-robot-2026", name: "Corrective deletion fixture",
+      description: "Corrective QA links must survive deletion attempts.",
+      parentSubsystemId: null, responsibleEngineerId: "ava", mentorIds: ["marco"],
+    });
+    const childSubsystem = createSubsystem({
+      projectId: "project-robot-2026", name: "Corrective deletion fixture child",
+      description: "Creates an integration task under the deletable hierarchy.",
+      parentSubsystemId: subsystem.id, responsibleEngineerId: null, mentorIds: [],
+    });
+    const sourceTask = getSnapshot().tasks.find((item) => item.title === `Integrate ${childSubsystem.name}`)!;
+    assert.ok(sourceTask);
+    const reportResponse = await app.inject({
+      method: "POST", url: "/api/qa-reports/submit", headers: mentor,
+      payload: {
+        reportType: "qa", projectId: sourceTask.projectId, targetRefs: [{ kind: "task", id: sourceTask.id }],
+        createdByMemberId: sourceTask.ownerId, participantIds: sourceTask.ownerId ? [sourceTask.ownerId] : [],
+        mentorId: sourceTask.mentorId, requestedById: sourceTask.ownerId,
+        result: "iteration-worthy", summary: "Corrective deletion guard", notes: "Synthetic reviewed failure",
+        status: "reviewed", createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null,
+      },
+    });
+    assert.equal(reportResponse.statusCode, 201, reportResponse.body);
+    const report = reportResponse.json().item;
+    const snapshot = getSnapshot();
+    const followUpTask = snapshot.tasks.find((item) => item.id === report.followUpTaskId)!;
+    const risk = snapshot.risks.find((item) => item.id === report.followUpRiskId)!;
+    const finding = snapshot.qaFindings.find((item) => item.reportId === report.id)!;
+    assert.ok(followUpTask && risk && finding);
+    assert.equal(risk.mitigationTaskId, followUpTask.id);
+    assert.equal(finding.correctiveTaskId, followUpTask.id);
+    assert.equal(finding.riskId, risk.id);
+    const testResult = createTestResult({ projectId: sourceTask.projectId, targetRefs: [{ kind: "task", id: sourceTask.id }], title: "Corrective link test control", status: "fail" });
+    const testFinding = {
+      id: "corrective-link-test-finding", reportId: null, testResultId: testResult.id,
+      targetRefs: [{ kind: "task" as const, id: sourceTask.id }], projectId: sourceTask.projectId,
+      title: "Corrective test finding", detail: "Exercise the test-finding deletion reference.",
+      severity: "medium" as const, status: "open" as const, createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(), correctiveTaskId: followUpTask.id, riskId: risk.id,
+    };
+    resetStore({ ...getSnapshot(), testFindings: [...getSnapshot().testFindings, testFinding] });
+
+    const beforeTaskDelete = getSnapshot();
+    const taskDelete = await app.inject({ method: "DELETE", url: `/api/tasks/${followUpTask.id}`, headers: mentor });
+    assert.equal(taskDelete.statusCode, 409, taskDelete.body);
+    assert.match(taskDelete.json().message, /corrective QA.*risk-mitigation/i);
+    assert.deepEqual(getSnapshot(), beforeTaskDelete, "rejected task deletion preserves links and audit history");
+
+    const destination = createSubsystem({
+      projectId: sourceTask.projectId, name: "Corrective retarget destination",
+      description: "Keeps the corrective task outside the reviewed source scope.",
+      parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
+    });
+    assert.ok(updateTask(followUpTask.id, { workstreamIds: [], subsystemIds: [destination.id], mechanismIds: [], partInstanceIds: [] }));
+    const beforeSourceTaskDelete = getSnapshot();
+    const sourceTaskDelete = await app.inject({ method: "DELETE", url: `/api/tasks/${sourceTask.id}`, headers: mentor });
+    assert.equal(sourceTaskDelete.statusCode, 409, sourceTaskDelete.body);
+    assert.deepEqual(getSnapshot(), beforeSourceTaskDelete, "source task deletion retains its corrective report and finding history");
+
+    const beforeHierarchyDelete = getSnapshot();
+    const hierarchyDelete = await app.inject({ method: "DELETE", url: `/api/subsystems/${subsystem.id}`, headers: mentor });
+    assert.equal(hierarchyDelete.statusCode, 409, hierarchyDelete.body);
+    assert.deepEqual(getSnapshot(), beforeHierarchyDelete, "rejected hierarchy cascade preserves the corrective workflow");
+
+    const beforeRiskDelete = getSnapshot();
+    const riskDelete = await app.inject({ method: "DELETE", url: `/api/risks/${risk.id}`, headers: mentor });
+    assert.equal(riskDelete.statusCode, 409, riskDelete.body);
+    assert.match(riskDelete.json().message, /referenced by corrective QA/i);
+    assert.deepEqual(getSnapshot(), beforeRiskDelete, "rejected risk deletion preserves report/finding IDs and audit history");
+
+    const retest = await app.inject({
+      method: "POST", url: `/api/report-findings/${finding.id}/retest`, headers: mentor,
+      payload: { sourceType: "qa", result: "pass", notes: "Synthetic corrective retest passed" },
+    });
+    assert.equal(retest.statusCode, 200, retest.body);
+    assert.equal(getSnapshot().qaFindings.find((item) => item.id === finding.id)?.status, "resolved");
+
+    const riskTargetSubsystem = createSubsystem({
+      projectId: sourceTask.projectId, name: "Corrective risk target cleanup",
+      description: "Deletion target for a linked risk with an external mitigation task.",
+      parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
+    });
+    const riskTargetPart = createPartInstance({
+      partDefinitionId: getSnapshot().partDefinitions[0]!.id,
+      intendedSubsystemId: riskTargetSubsystem.id, intendedMechanismId: null,
+      location: { kind: "stock", location: "Corrective risk deletion test stock" },
+    });
+    updateRisk(risk.id, { relatedTargets: [{ kind: "part-instance", id: riskTargetPart.id }] });
+    assert.equal(getSnapshot().risks.find((item) => item.id === risk.id)?.mitigationTaskId, followUpTask.id);
+    const beforeRiskTargetDelete = getSnapshot();
+    const riskTargetDelete = await app.inject({ method: "DELETE", url: `/api/subsystems/${riskTargetSubsystem.id}`, headers: mentor });
+    assert.equal(riskTargetDelete.statusCode, 409, riskTargetDelete.body);
+    assert.deepEqual(getSnapshot(), beforeRiskTargetDelete, "linked risk deletion through a related physical target is atomic");
+
+    const unreferencedRisk = createRisk({
+      projectId: sourceTask.projectId, title: "Unreferenced deletion control", detail: "Manual control.",
+      category: "other", severity: "low", status: "open", blocksWork: false,
+      source: { kind: "manual" }, relatedTargets: [], mitigationTaskId: null,
+      ownerGroupId: null,
+    });
+    const allowedRiskDelete = await app.inject({ method: "DELETE", url: `/api/risks/${unreferencedRisk.id}`, headers: mentor });
+    assert.equal(allowedRiskDelete.statusCode, 200, allowedRiskDelete.body);
   }, { env });
 });
 

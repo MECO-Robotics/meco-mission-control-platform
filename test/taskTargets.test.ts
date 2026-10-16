@@ -86,13 +86,29 @@ test("first target owns serial and audit context while reparenting and deletion 
     projectId: "project-robot-2026", name: "Manipulator", description: "Test-local subsystem.",
     parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
   });
-  const task = getSnapshot().tasks[0];
+  const snapshot = getSnapshot();
+  const task = snapshot.tasks.find((candidate) => {
+    const targetedReports = snapshot.qaReports.filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && ref.id === candidate.id));
+    const targetedReportIds = new Set(targetedReports.map((report) => report.id));
+    return !snapshot.qaReports.some((report) => report.followUpTaskId === candidate.id) &&
+      ![...snapshot.qaFindings, ...snapshot.testFindings].some((finding) => finding.correctiveTaskId === candidate.id) &&
+      !snapshot.risks.some((risk) => risk.mitigationTaskId === candidate.id) &&
+      !targetedReports.some((report) => report.followUpTaskId != null || report.followUpRiskId != null) &&
+      ![...snapshot.qaFindings, ...snapshot.testFindings].some((finding) => finding.reportId != null && targetedReportIds.has(finding.reportId));
+  });
+  assert.ok(task, "fixture uses a task without corrective QA history");
   updateTask(task.id, { status: "in-progress" });
   const updated = updateTask(task.id, { subsystemIds: [controls.id, "drive"], mechanismIds: ["swerve-module"], partInstanceIds: [] });
   assert.ok(updated);
   assert.match(updated.serial ?? "", /^T-CO/);
   assert.equal(getSnapshot().actions?.at(-1)?.subsystemId, controls.id);
   resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
+  resetStore({
+    ...getSnapshot(),
+    tasks: getSnapshot().tasks.map((item) => item.mechanismIds.includes("swerve-module") && item.status === "complete"
+      ? { ...item, status: "in-progress" }
+      : item),
+  });
   updateMechanism("swerve-module", { subsystemId: manipulator.id });
   const reparented = getSnapshot().tasks.find((item) => item.id === task.id)!;
   assert.deepEqual(reparented.subsystemIds, [manipulator.id, controls.id]);

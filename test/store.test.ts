@@ -53,6 +53,17 @@ beforeEach(() => {
   resetStore();
 });
 
+function hasCorrectiveHistory(snapshot: ReturnType<typeof getSnapshot>, taskId: string) {
+  const linkedReports = snapshot.qaReports.filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && ref.id === taskId));
+  return snapshot.qaReports.some((report) => report.followUpTaskId === taskId) ||
+    snapshot.qaFindings.some((finding) => finding.correctiveTaskId === taskId) ||
+    snapshot.testFindings.some((finding) => finding.correctiveTaskId === taskId) ||
+    snapshot.risks.some((risk) => risk.mitigationTaskId === taskId) ||
+    linkedReports.some((report) => report.followUpTaskId != null || report.followUpRiskId != null ||
+      snapshot.qaFindings.some((finding) => finding.reportId === report.id) ||
+      snapshot.testFindings.some((finding) => finding.reportId === report.id));
+}
+
 test("readiness ignores stale QA and test outcomes after a part revision changes", () => {
   const seed = getSnapshot();
   const part = seed.partInstances.find((item) => item.id === "pi-swerve-encoder-bracket-front-left")!;
@@ -1202,14 +1213,18 @@ test("removing a QA mentor atomically cancels the request and reopens work for i
 
 test("hierarchy deletion removes dependency owners while retaining missing-target blockers", () => {
   const snapshot = getSnapshot();
-  const removedTask = snapshot.tasks.find((task) => task.subsystemIds.includes("drive"))!;
-  const remainingTask = snapshot.tasks.find((task) => task.projectId !== removedTask.projectId)!;
+  const removableSubsystem = snapshot.subsystems.find((subsystem) => {
+    const scopedTasks = snapshot.tasks.filter((task) => task.subsystemIds.includes(subsystem.id));
+    return scopedTasks.length > 0 && scopedTasks.every((task) => !hasCorrectiveHistory(snapshot, task.id));
+  })!;
+  const removedTask = snapshot.tasks.find((task) => task.subsystemIds.includes(removableSubsystem.id))!;
+  const remainingTask = snapshot.tasks.find((task) => task.projectId !== removedTask.projectId && task.id !== removedTask.id)!;
   assert.ok(removedTask && remainingTask);
   resetStore({ ...snapshot, purchaseItems: snapshot.purchaseItems.map((item) => ({ ...item, taskId: remainingTask.id })), taskDependencies: [
     { id: "removed-owner", dependencyType: "hard", taskId: removedTask.id, kind: "task", refId: remainingTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
     { id: "remaining-owner", dependencyType: "hard", taskId: remainingTask.id, kind: "task", refId: removedTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
   ] });
-  removeSubsystem("drive");
+  removeSubsystem(removableSubsystem.id);
   assert.deepEqual(getSnapshot().taskDependencies.map((dependency) => dependency.id), ["remaining-owner"]);
 });
 
@@ -1258,8 +1273,8 @@ test("within-project mechanism moves retain ancestors required by other task tar
 
 test("task removal removes attributed help and retains missing hard dependency targets", () => {
   const snapshot = getSnapshot();
-  const task = snapshot.tasks[0]!;
-  const remaining = snapshot.tasks[1]!;
+  const task = snapshot.tasks.find((item) => !hasCorrectiveHistory(snapshot, item.id))!;
+  const remaining = snapshot.tasks.find((item) => item.id !== task.id)!;
   createRisk({ projectId: task.projectId, title: "Help requested", detail: "Need a mentor", category: "help", severity: "medium", status: "open", blocksWork: false, source: { kind: "task", id: task.id }, relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null, ownerGroupId: null });
   const before = getSnapshot();
   resetStore({ ...before,

@@ -2156,6 +2156,7 @@ export function removeRisk(riskId: string) {
   if (!risk) {
     return null;
   }
+  assertRisksHaveNoCorrectiveFindingLinks(new Set([riskId]));
   const projectIds = getRiskProjectIds(risk);
 
   replaceCurrentSnapshot({
@@ -2576,6 +2577,14 @@ export function removeSubsystem(subsystemId: string) {
       .map((task) => task.id),
   );
   assertTasksHaveNoLinkedPurchaseItems(taskIdsToRemove);
+  assertTasksHaveNoCorrectiveLinks(taskIdsToRemove);
+  const risksToRemove = currentSnapshot.risks.filter((risk) =>
+    ((risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && taskIdsToRemove.has(risk.source.id)) ||
+    (risk.mitigationTaskId !== null && taskIdsToRemove.has(risk.mitigationTaskId)) ||
+    risk.relatedTargets.some((target) => (target.kind === "mechanism" && mechanismIdsToRemove.has(target.id)) || (target.kind === "part-instance" && partInstanceIdsToRemove.has(target.id))),
+  );
+  const riskIdsToRemove = new Set(risksToRemove.map((risk) => risk.id));
+  assertRisksHaveNoCorrectiveFindingLinks(riskIdsToRemove);
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -2600,15 +2609,7 @@ export function removeSubsystem(subsystemId: string) {
     qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter(
       (request) => !request.targetRefs.some((ref) => ref.kind === "task" && taskIdsToRemove.has(ref.id)),
     ),
-    risks: currentSnapshot.risks.filter((risk) => {
-      if ((risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && taskIdsToRemove.has(risk.source.id)) return false;
-      if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
-        return false;
-      }
-      if (risk.relatedTargets.some((target) => (target.kind === "mechanism" && mechanismIdsToRemove.has(target.id)) || (target.kind === "part-instance" && partInstanceIdsToRemove.has(target.id)))) return false;
-
-      return true;
-    }),
+    risks: currentSnapshot.risks.filter((risk) => !riskIdsToRemove.has(risk.id)),
   });
 
   recordAuditAction({
@@ -2635,13 +2636,54 @@ function assertTasksHaveNoLinkedPurchaseItems(taskIds: ReadonlySet<string>) {
   }
 }
 
-function assertPartInstancesHaveNoReceiptHistory(partInstanceIds: ReadonlySet<string>) {
-  const referenced = currentSnapshot.purchaseItems.some((item) =>
-    (item.receipts ?? []).some((receipt) => receipt.partInstanceIds.some((id) => partInstanceIds.has(id))),
-  );
+function assertTasksHaveNoCorrectiveLinks(taskIds: ReadonlySet<string>) {
+  const reportIdsToRemove = new Set(currentSnapshot.qaReports
+    .filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && taskIds.has(ref.id)))
+    .map((report) => report.id));
+  const reportDeletionLosesCorrectiveHistory = currentSnapshot.qaReports.some((report) => reportIdsToRemove.has(report.id) && (report.followUpTaskId != null || report.followUpRiskId != null)) ||
+    [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((finding) => finding.reportId != null && reportIdsToRemove.has(finding.reportId));
+  const referenced = reportDeletionLosesCorrectiveHistory ||
+    currentSnapshot.qaReports.some((report) => report.followUpTaskId != null && taskIds.has(report.followUpTaskId)) ||
+    [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((finding) => finding.correctiveTaskId != null && taskIds.has(finding.correctiveTaskId)) ||
+    currentSnapshot.risks.some((risk) => risk.mitigationTaskId != null && taskIds.has(risk.mitigationTaskId));
   if (referenced) {
     throw Object.assign(
+      new Error("Retarget or remove linked corrective QA and risk-mitigation references before deleting these tasks."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function assertRisksHaveNoCorrectiveFindingLinks(riskIds: ReadonlySet<string>) {
+  const referenced = currentSnapshot.qaReports.some((report) => report.followUpRiskId != null && riskIds.has(report.followUpRiskId)) ||
+    [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((finding) => finding.riskId != null && riskIds.has(finding.riskId));
+  if (referenced) {
+    throw Object.assign(
+      new Error("This risk is referenced by corrective QA report or finding history and cannot be deleted."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function assertPartInstancesHaveNoReceiptHistory(partInstanceIds: ReadonlySet<string>) {
+  if (partInstancesHaveReceiptHistory(partInstanceIds)) {
+    throw Object.assign(
       new Error("Part instances recorded in purchase receipt history cannot be deleted."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function partInstancesHaveReceiptHistory(partInstanceIds: ReadonlySet<string>) {
+  return currentSnapshot.purchaseItems.some((item) =>
+    (item.receipts ?? []).some((receipt) => receipt.partInstanceIds.some((id) => partInstanceIds.has(id))),
+  );
+}
+
+function assertPartInstanceDefinitionHasNoReceiptHistory(partInstanceId: string) {
+  if (partInstancesHaveReceiptHistory(new Set([partInstanceId]))) {
+    throw Object.assign(
+      new Error("Part instances recorded in purchase receipt history cannot be reassigned to another part definition."),
       { statusCode: 409 },
     );
   }
@@ -2969,6 +3011,9 @@ export function updatePartInstance(
     ...normalizePmCadProvenance({ ...currentPartInstance, ...input,
       cadEditedAfterImport: markPmCadEditedAfterImport(currentPartInstance, input) }),
   };
+  if (currentPartInstance.partDefinitionId !== updatedPartInstance.partDefinitionId) {
+    assertPartInstanceDefinitionHasNoReceiptHistory(partInstanceId);
+  }
   const nextSnapshot = {
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.map((part) => part.id === partInstanceId ? updatedPartInstance : part),
@@ -4341,6 +4386,13 @@ export function removeTask(taskId: string) {
     return null;
   }
   assertTasksHaveNoLinkedPurchaseItems(new Set([taskId]));
+  assertTasksHaveNoCorrectiveLinks(new Set([taskId]));
+  const riskIdsToRemove = new Set(currentSnapshot.risks
+    .filter((risk) => risk.mitigationTaskId === taskId || (
+      (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && risk.source.id === taskId
+    ))
+    .map((risk) => risk.id));
+  assertRisksHaveNoCorrectiveFindingLinks(riskIdsToRemove);
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -4353,9 +4405,7 @@ export function removeTask(taskId: string) {
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId,
     ),
-    risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId && !(
-      (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && risk.source.id === taskId
-    )).map((risk) => ({ ...risk, relatedTargets: risk.relatedTargets.filter((target) => !((target.kind === "task" || target.kind === "manufacturing-details") && target.id === taskId)) })),
+    risks: currentSnapshot.risks.filter((risk) => !riskIdsToRemove.has(risk.id)).map((risk) => ({ ...risk, relatedTargets: risk.relatedTargets.filter((target) => !((target.kind === "task" || target.kind === "manufacturing-details") && target.id === taskId)) })),
   });
 
   replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));

@@ -697,6 +697,43 @@ test("purchase receipts accumulate stock instances without completing the linked
   });
 });
 
+test("receipt history prevents part identity reassignment but allows no-op identity and location updates", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const bootstrap = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    const originalDefinitionId = bootstrap.purchaseItems.find((item: { id: string }) => item.id === "polycarb-sheet").partDefinitionId;
+    const otherDefinitionId = bootstrap.partDefinitions.find((item: { id: string }) => item.id !== originalDefinitionId)?.id;
+    assert.ok(otherDefinitionId);
+
+    resetLimits();
+    const received = await app.inject({
+      method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor,
+      payload: { operationId: "identity-reassignment-guard", quantity: 1, location: "Receiving shelf C" },
+    });
+    assert.equal(received.statusCode, 200, received.body);
+    const instanceId = received.json().receipt.partInstanceIds[0];
+    const beforeReassignment = getSnapshot();
+
+    resetLimits();
+    const reassignment = await app.inject({
+      method: "PATCH", url: `/api/part-instances/${instanceId}`, headers: mentor,
+      payload: { partDefinitionId: otherDefinitionId },
+    });
+    assert.equal(reassignment.statusCode, 409, reassignment.body);
+    assert.match(reassignment.json().message, /receipt history.*reassigned/i);
+    assert.deepEqual(getSnapshot(), beforeReassignment, "rejected reassignment publishes no instance or audit mutation");
+
+    resetLimits();
+    const locationChange = await app.inject({
+      method: "PATCH", url: `/api/part-instances/${instanceId}`, headers: mentor,
+      payload: { partDefinitionId: originalDefinitionId, location: { kind: "repair", location: "Inspection bench" } },
+    });
+    assert.equal(locationChange.statusCode, 200, locationChange.body);
+    assert.equal(locationChange.json().item.partDefinitionId, originalDefinitionId);
+    assert.deepEqual(locationChange.json().item.location, { kind: "repair", location: "Inspection bench" });
+  });
+});
+
 test("partial receipt leaves completed task targets unchanged", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
