@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMaterial, getSnapshot, getTasks, resetStore, updateMaterial, updatePurchaseItem, updateTask } from "../../src/data/store";
+import { createMaterial, createPartInstance, createSubsystem, getSnapshot, getTasks, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
 import { purchaseItemSchema, purchaseReceiptRecordSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
 import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
@@ -319,6 +319,80 @@ test("material purchases block material deletion and still receive stock", async
     assert.equal(received.statusCode, 200, received.body);
     assert.equal(getSnapshot().materials.find((material) => material.id === materialId)?.onHandQuantity, 1);
     assert.equal(received.json().receipt.partInstanceIds.length, 0);
+  });
+});
+
+test("receipt part instances cannot be deleted but can change location", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    updatePurchaseItem("polycarb-sheet", { quantity: 1, orderStatus: "ordered" });
+    const received = await app.inject({
+      method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor,
+      payload: { operationId: "instance-history-guard", quantity: 1, location: "Receiving shelf A" },
+    });
+    assert.equal(received.statusCode, 200, received.body);
+    const partInstanceId = received.json().receipt.partInstanceIds[0];
+    assert.ok(partInstanceId);
+
+    for (const location of [
+      { kind: "repair", location: "Repair cart" },
+      { kind: "retired", location: "Retired bin" },
+      { kind: "lost" },
+    ]) {
+      resetLimits();
+      const updated = await app.inject({
+        method: "PATCH", url: `/api/part-instances/${partInstanceId}`, headers: mentor,
+        payload: { location },
+      });
+      assert.equal(updated.statusCode, 200, updated.body);
+      assert.deepEqual(updated.json().item.location, location);
+    }
+
+    const beforeDelete = getSnapshot();
+    resetLimits();
+    const rejected = await app.inject({ method: "DELETE", url: `/api/part-instances/${partInstanceId}`, headers: mentor });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.match(rejected.json().message, /recorded in purchase receipt history/i);
+    assert.deepEqual(getSnapshot(), beforeDelete, "rejected deletion leaves part, receipt provenance, and audit history unchanged");
+
+    const unreferencedPart = createPartInstance({
+      partDefinitionId: "pd-polycarbonate-sheet", intendedSubsystemId: null,
+      intendedMechanismId: null, location: { kind: "stock", location: "Unreferenced bin" },
+    });
+    resetLimits();
+    const deleted = await app.inject({ method: "DELETE", url: `/api/part-instances/${unreferencedPart.id}`, headers: mentor });
+    assert.equal(deleted.statusCode, 200, deleted.body);
+    assert.equal(getSnapshot().partInstances.some((part) => part.id === unreferencedPart.id), false);
+  });
+});
+
+test("subsystem deletion preserves receipt instances assigned outside its task scope", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const task = getTasks().find((candidate) => candidate.status === "complete" && candidate.projectId === "project-robot-2026");
+    assert.ok(task, "fixture needs a completed purchase task outside the new subsystem");
+    const subsystem = createSubsystem({
+      projectId: task.projectId, name: "Receipt history cleanup fixture",
+      description: "Subsystem deletion must retain receipt instance identifiers.",
+      parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
+    });
+    updatePurchaseItem("polycarb-sheet", { taskId: task.id, quantity: 1, orderStatus: "ordered" });
+    const received = await app.inject({
+      method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor,
+      payload: { operationId: "hierarchy-instance-history-guard", quantity: 1, location: "Receiving shelf A" },
+    });
+    assert.equal(received.statusCode, 200, received.body);
+    const partInstanceId = received.json().receipt.partInstanceIds[0];
+    assert.ok(partInstanceId);
+    assert.deepEqual(getSnapshot().tasks.find((candidate) => candidate.id === task.id)?.partInstanceIds.includes(partInstanceId), false);
+    updatePartInstance(partInstanceId, { intendedSubsystemId: subsystem.id });
+    const beforeDelete = getSnapshot();
+
+    resetLimits();
+    const rejected = await app.inject({ method: "DELETE", url: `/api/subsystems/${subsystem.id}`, headers: mentor });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.match(rejected.json().message, /recorded in purchase receipt history/i);
+    assert.deepEqual(getSnapshot(), beforeDelete, "rejected hierarchy deletion preserves receipt instance and audit history");
   });
 });
 

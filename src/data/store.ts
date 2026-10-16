@@ -2564,6 +2564,7 @@ export function removeSubsystem(subsystemId: string) {
       )
       .map((partInstance) => partInstance.id),
   );
+  assertPartInstancesHaveNoReceiptHistory(partInstanceIdsToRemove);
   const taskIdsToRemove = new Set(
     currentSnapshot.tasks
       .filter(
@@ -2629,6 +2630,18 @@ function assertTasksHaveNoLinkedPurchaseItems(taskIds: ReadonlySet<string>) {
   if (linkedItems.length > 0) {
     throw Object.assign(
       new Error("Retarget or remove linked purchase items before deleting these tasks."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function assertPartInstancesHaveNoReceiptHistory(partInstanceIds: ReadonlySet<string>) {
+  const referenced = currentSnapshot.purchaseItems.some((item) =>
+    (item.receipts ?? []).some((receipt) => receipt.partInstanceIds.some((id) => partInstanceIds.has(id))),
+  );
+  if (referenced) {
+    throw Object.assign(
+      new Error("Part instances recorded in purchase receipt history cannot be deleted."),
       { statusCode: 409 },
     );
   }
@@ -2823,6 +2836,7 @@ export function removePartDefinition(partDefinitionId: string) {
       .filter((partInstance) => partInstance.partDefinitionId === partDefinitionId)
       .map((partInstance) => partInstance.id),
   );
+  assertPartInstancesHaveNoReceiptHistory(removedPartInstanceIds);
 
   const nextSnapshot = {
     ...currentSnapshot,
@@ -2995,6 +3009,7 @@ export function removePartInstance(partInstanceId: string) {
   if (!partInstance) {
     return null;
   }
+  assertPartInstancesHaveNoReceiptHistory(new Set([partInstanceId]));
 
   const nextSnapshot = {
     ...currentSnapshot,
