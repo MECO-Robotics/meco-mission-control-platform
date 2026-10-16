@@ -66,7 +66,7 @@ export type ProjectInput = OptionalFields<
   "teamId" | "description" | "status"
 >;
 
-export type PurchaseItemInput = Omit<PurchaseItem, "id">;
+export type PurchaseItemInput = Omit<PurchaseItem, "id" | "receipts">;
 
 
 export type MaterialInput = Omit<Material, "id">;

@@ -6,6 +6,7 @@ import {
   startInteractiveTutorialSession,
   runWithInteractiveTutorialSession,
   createTask,
+  createPurchaseItem,
   acquireSnapshotMutation,
   createMaterial,
   updateProject,
@@ -15,6 +16,7 @@ import {
   updateArtifact,
   updateMechanism,
   updatePurchaseItem,
+  receivePurchaseItem,
   createWorkLog,
   updateWorkLog,
   removeWorkLog,
@@ -63,6 +65,43 @@ function hasCorrectiveHistory(snapshot: ReturnType<typeof getSnapshot>, taskId: 
       snapshot.qaFindings.some((finding) => finding.reportId === report.id) ||
       snapshot.testFindings.some((finding) => finding.reportId === report.id));
 }
+
+test("purchase commands keep receipt history owned by receiving", () => {
+  const source = getSnapshot().purchaseItems[0]!;
+  const { id: _id, receipts: _receipts, ...createInput } = source;
+  const beforeCreate = getSnapshot();
+  const forgedReceipt = { id: "forged-receipt", quantity: 99, location: "Forged shelf", receivedAt: new Date().toISOString(), partInstanceIds: ["forged-instance"] };
+  const created = createPurchaseItem({ ...createInput, title: "Receipt ownership test", receipts: [forgedReceipt] } as unknown as Parameters<typeof createPurchaseItem>[0]);
+  assert.deepEqual(created.receipts, []);
+  assert.equal(getSnapshot().partInstances.length, beforeCreate.partInstances.length);
+  assert.equal(getSnapshot().actions?.length, (beforeCreate.actions?.length ?? 0) + 1);
+
+  updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId: null, quantity: 1, orderStatus: "ordered" });
+  const received = receivePurchaseItem("ferrule-kit", { operationId: "domain-receipt", quantity: 1, location: "Receiving shelf" });
+  assert.ok("receipt" in received);
+  const afterReceive = getSnapshot();
+  const beforeReplayActions = afterReceive.actions?.length ?? 0;
+  const replay = receivePurchaseItem("ferrule-kit", { operationId: "domain-receipt", quantity: 1, location: "Receiving shelf" });
+  assert.ok("replayed" in replay && replay.replayed);
+  assert.equal(getSnapshot().actions?.length, beforeReplayActions, "idempotent replay does not add stock or audit actions");
+
+  const storedReceipt = getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts;
+  const beforeUnsafeUpdate = getSnapshot();
+  const unsafeReceiptValues = [undefined, [], [{ ...forgedReceipt, id: "replacement-receipt" }]];
+  unsafeReceiptValues.forEach((receipts, index) => {
+    updatePurchaseItem("ferrule-kit", { title: `Legitimate purchase edit ${index + 1}`, receipts } as unknown as Parameters<typeof updatePurchaseItem>[1]);
+    assert.deepEqual(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts, storedReceipt);
+    assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, ["title"]);
+  });
+  const afterUnsafeUpdate = getSnapshot();
+  const updated = afterUnsafeUpdate.purchaseItems.find((item) => item.id === "ferrule-kit")!;
+  assert.equal(updated.title, "Legitimate purchase edit 3");
+  assert.deepEqual(updated.receipts, storedReceipt);
+  assert.equal(updated.quantity, beforeUnsafeUpdate.purchaseItems.find((item) => item.id === "ferrule-kit")!.quantity);
+  assert.equal(afterUnsafeUpdate.partInstances.length, beforeUnsafeUpdate.partInstances.length);
+  assert.deepEqual(afterUnsafeUpdate.partInstances, beforeUnsafeUpdate.partInstances);
+  assert.deepEqual(afterUnsafeUpdate.actions?.at(-1)?.changedFields, ["title"]);
+});
 
 test("readiness ignores stale QA and test outcomes after a part revision changes", () => {
   const seed = getSnapshot();

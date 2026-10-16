@@ -4457,7 +4457,7 @@ export function createPurchaseItem(
   const item: PurchaseItem = {
     id: uniqueId(toSlug(input.title) || "purchase-item", itemIds),
     ...input,
-    receipts: input.receipts ?? [],
+    receipts: [],
   };
 
   replaceCurrentSnapshot({
@@ -4483,6 +4483,7 @@ export function updatePurchaseItem(
   const updatedItem: PurchaseItem = {
     ...previousItem,
     ...input,
+    receipts: previousItem.receipts,
   };
   if ((input.quantity !== undefined && input.quantity !== previousItem.quantity) ||
       (input.kind !== undefined && input.kind !== previousItem.kind) ||
