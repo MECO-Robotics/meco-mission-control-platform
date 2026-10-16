@@ -250,6 +250,78 @@ test("receiving a part purchase with a missing definition is atomic", async () =
   });
 });
 
+test("unreceived COTS purchases retain part identity until their receipts create the correct stock", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const materialId = "mat-onyx-filament";
+    updateMaterial(materialId, { onHandQuantity: 0 });
+    updatePurchaseItem("ferrule-kit", {
+      kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId,
+      quantity: 1, orderStatus: "ordered",
+    });
+    updatePurchaseItem("polycarb-sheet", {
+      kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId: null,
+      quantity: 1, orderStatus: "ordered",
+    });
+    const beforeDelete = getSnapshot();
+
+    const rejected = await app.inject({ method: "DELETE", url: "/api/part-definitions/pd-polycarbonate-sheet", headers: mentor });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.match(rejected.json().message, /retarget or remove linked purchases/i);
+    assert.deepEqual(getSnapshot(), beforeDelete, "rejected deletion preserves both orders, part identity, and audit history");
+
+    resetLimits();
+    const withMaterial = await app.inject({
+      method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor,
+      payload: { operationId: "part-identity-with-material", quantity: 1, location: "Receiving shelf A" },
+    });
+    assert.equal(withMaterial.statusCode, 200, withMaterial.body);
+    assert.equal(withMaterial.json().receipt.partInstanceIds.length, 1);
+    resetLimits();
+    const withoutMaterial = await app.inject({
+      method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor,
+      payload: { operationId: "part-identity-no-material", quantity: 1, location: "Receiving shelf B" },
+    });
+    assert.equal(withoutMaterial.statusCode, 200, withoutMaterial.body);
+    assert.equal(withoutMaterial.json().receipt.partInstanceIds.length, 1);
+
+    const afterReceipts = getSnapshot();
+    const receivedPartIds = [
+      ...withMaterial.json().receipt.partInstanceIds,
+      ...withoutMaterial.json().receipt.partInstanceIds,
+    ];
+    assert.ok(afterReceipts.partDefinitions.some((definition) => definition.id === "pd-polycarbonate-sheet"));
+    assert.ok(receivedPartIds.every((id) => afterReceipts.partInstances.find((part) => part.id === id)?.partDefinitionId === "pd-polycarbonate-sheet"));
+    assert.equal(afterReceipts.materials.find((material) => material.id === materialId)?.onHandQuantity, 0);
+  });
+});
+
+test("material purchases block material deletion and still receive stock", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const materialId = "mat-onyx-filament";
+    updateMaterial(materialId, { onHandQuantity: 0 });
+    updatePurchaseItem("ferrule-kit", {
+      kind: "cots-goods", partDefinitionId: null, materialId,
+      quantity: 1, orderStatus: "ordered",
+    });
+    const beforeDelete = getSnapshot();
+
+    const rejected = await app.inject({ method: "DELETE", url: `/api/materials/${materialId}`, headers: mentor });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.deepEqual(getSnapshot(), beforeDelete, "rejected deletion leaves the material purchase and audit history untouched");
+
+    resetLimits();
+    const received = await app.inject({
+      method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor,
+      payload: { operationId: "material-identity-receipt", quantity: 1, location: "Onyx shelf" },
+    });
+    assert.equal(received.statusCode, 200, received.body);
+    assert.equal(getSnapshot().materials.find((material) => material.id === materialId)?.onHandQuantity, 1);
+    assert.equal(received.json().receipt.partInstanceIds.length, 0);
+  });
+});
+
 test("task deletion preserves linked orders and receipt history until the purchase is resolved", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
@@ -392,6 +464,7 @@ test("receipt-bearing purchases and referenced materials resist deletion while s
     resetLimits();
     const partDefinitionDelete = await app.inject({ method: "DELETE", url: "/api/part-definitions/pd-polycarbonate-sheet", headers: mentor });
     assert.equal(partDefinitionDelete.statusCode, 409);
+    assert.match(partDefinitionDelete.json().message, /referenced by receipt history/i);
     resetLimits();
     const after = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
     assert.equal(after.purchaseItems.some((item: { id: string }) => item.id === "polycarb-sheet"), true);

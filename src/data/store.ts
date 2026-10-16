@@ -2810,8 +2810,12 @@ export function removePartDefinition(partDefinitionId: string) {
   if (currentSnapshot.tasks.some((task) => task.manufacturingDetails?.part.kind === "part-definition" && task.manufacturingDetails.part.partDefinitionId === partDefinitionId)) {
     throw Object.assign(new Error("This part definition is used by manufacturing work; remove or retarget that work before deletion."), { statusCode: 409 });
   }
-  if (currentSnapshot.purchaseItems.some((item) => item.partDefinitionId === partDefinitionId && (item.receipts ?? []).length > 0)) {
+  const linkedPurchaseItems = currentSnapshot.purchaseItems.filter((item) => item.partDefinitionId === partDefinitionId);
+  if (linkedPurchaseItems.some((item) => (item.receipts ?? []).length > 0)) {
     throw Object.assign(new Error("This part definition is referenced by receipt history and cannot be deleted."), { statusCode: 409 });
+  }
+  if (linkedPurchaseItems.length > 0) {
+    throw Object.assign(new Error("Retarget or remove linked purchases before deleting this part definition."), { statusCode: 409 });
   }
 
   const removedPartInstanceIds = new Set(
