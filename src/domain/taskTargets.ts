@@ -12,7 +12,9 @@ export const taskTargetsSchema = z.object({
 
 export type TaskTargets = z.infer<typeof taskTargetsSchema>;
 
-export const taskRecordTargetsSchema = taskTargetsSchema.loose().refine(
+export const taskRecordTargetsSchema = taskTargetsSchema.loose().extend({
+  completionScopeReviewOrder: z.number().int().nonnegative().optional(),
+}).refine(
   (task) => taskTargetsSchema.keyof().options.every((field) =>
     !(field.slice(0, -1) in task) && new Set(task[field]).size === task[field].length,
   ),

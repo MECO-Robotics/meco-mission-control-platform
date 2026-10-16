@@ -1517,7 +1517,8 @@ test("unauthenticated STEP JSON uploads are rejected before large body parsing",
     import assert from "node:assert/strict";
 
     const { buildApp } = (await import("./src/app.ts")).default;
-    const app = await buildApp({ userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
+    const { createPlatformStore } = (await import("./src/data/store.ts")).default;
+    const app = await buildApp({ platformStore: createPlatformStore({ durability: "memory" }), userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
     try {
       const response = await app.inject({
         method: "POST",
@@ -1557,8 +1558,9 @@ test("authenticated STEP uploads still accept JSON payloads", async (t) => {
     import assert from "node:assert/strict";
 
     const { buildApp } = (await import("./src/app.ts")).default;
+    const { createPlatformStore } = (await import("./src/data/store.ts")).default;
     const { MemoryWebSessionStore } = (await import("./test/helpers/webSessionMemoryStore.ts")).default;
-    const app = await buildApp({ webSessionStore: new MemoryWebSessionStore(), userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
+    const app = await buildApp({ platformStore: createPlatformStore({ durability: "memory" }), webSessionStore: new MemoryWebSessionStore(), userPreferencesPath: ${JSON.stringify(join(directory, "preferences.json"))} });
     try {
       const signInResponse = await app.inject({
         method: "POST",

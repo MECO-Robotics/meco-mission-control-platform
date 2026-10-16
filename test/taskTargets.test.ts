@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { taskRecordTargetsSchema } from "../src/domain/taskTargets";
-import { getSnapshot, resetStore, createPartInstance, createSubsystem, updateTask, updateMechanism, removeMechanism, removeSubsystem } from "../src/data/store";
+import { getSnapshot, resetStore, createPartInstance, createSubsystem, createWorkstream, updateTask, updateMechanism, removeMechanism, removeSubsystem, updateWorkstream } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const targetFields = ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds"] as const;
@@ -86,19 +86,57 @@ test("first target owns serial and audit context while reparenting and deletion 
     projectId: "project-robot-2026", name: "Manipulator", description: "Test-local subsystem.",
     parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [],
   });
-  const task = getSnapshot().tasks[0];
+  const snapshot = getSnapshot();
+  const task = snapshot.tasks.find((candidate) => {
+    const targetedReports = snapshot.qaReports.filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && ref.id === candidate.id));
+    const targetedReportIds = new Set(targetedReports.map((report) => report.id));
+    return !snapshot.qaReports.some((report) => report.followUpTaskId === candidate.id) &&
+      ![...snapshot.qaFindings, ...snapshot.testFindings].some((finding) => finding.correctiveTaskId === candidate.id) &&
+      !snapshot.risks.some((risk) => risk.mitigationTaskId === candidate.id) &&
+      !targetedReports.some((report) => report.followUpTaskId != null || report.followUpRiskId != null) &&
+      ![...snapshot.qaFindings, ...snapshot.testFindings].some((finding) => finding.reportId != null && targetedReportIds.has(finding.reportId));
+  });
+  assert.ok(task, "fixture uses a task without corrective QA history");
+  updateTask(task.id, { status: "in-progress" });
   const updated = updateTask(task.id, { subsystemIds: [controls.id, "drive"], mechanismIds: ["swerve-module"], partInstanceIds: [] });
   assert.ok(updated);
   assert.match(updated.serial ?? "", /^T-CO/);
   assert.equal(getSnapshot().actions?.at(-1)?.subsystemId, controls.id);
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
+  resetStore({
+    ...getSnapshot(),
+    tasks: getSnapshot().tasks.map((item) => item.mechanismIds.includes("swerve-module") && item.status === "complete"
+      ? { ...item, status: "in-progress" }
+      : item),
+  });
   updateMechanism("swerve-module", { subsystemId: manipulator.id });
   const reparented = getSnapshot().tasks.find((item) => item.id === task.id)!;
   assert.deepEqual(reparented.subsystemIds, [manipulator.id, controls.id]);
+  assert.equal(typeof reparented.completionScopeReviewOrder, "number", "mechanism reparenting updates surviving task subsystem scope watermark");
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
   removeMechanism("swerve-module");
-  assert.deepEqual(getSnapshot().tasks.find((item) => item.id === task.id)?.mechanismIds, []);
+  const afterMechanismRemoval = getSnapshot().tasks.find((item) => item.id === task.id)!;
+  assert.deepEqual(afterMechanismRemoval.mechanismIds, []);
+  assert.equal(typeof afterMechanismRemoval.completionScopeReviewOrder, "number", "mechanism deletion updates surviving task target watermark");
+  const workstream = createWorkstream({ projectId: task.projectId, name: "Scoped workstream", description: "Task target scope move fixture." });
+  updateTask(task.id, { workstreamIds: [workstream.id] });
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
+  updateWorkstream(workstream.id, { projectId: "project-media-2026" });
+  assert.equal(typeof getSnapshot().tasks.find((item) => item.id === task.id)?.completionScopeReviewOrder, "number", "moving a linked workstream project invalidates task scope approval");
   const loosePart = createPartInstance({
     intendedSubsystemId: controls.id, intendedMechanismId: null,
     partDefinitionId: getSnapshot().partDefinitions[0].id, location: { kind: "stock", location: "Controls" },
+  });
+  const snapshotBeforeSubsystemRemoval = getSnapshot();
+  const retainedTask = snapshotBeforeSubsystemRemoval.tasks.find((item) =>
+    item.id !== task.id && item.projectId === task.projectId && !item.subsystemIds.includes(controls.id),
+  );
+  assert.ok(retainedTask);
+  resetStore({
+    ...snapshotBeforeSubsystemRemoval,
+    purchaseItems: snapshotBeforeSubsystemRemoval.purchaseItems.map((item) =>
+      item.taskId === task.id ? { ...item, taskId: retainedTask.id } : item,
+    ),
   });
   removeSubsystem(controls.id);
   assert.equal(getSnapshot().partInstances.some((item) => item.id === loosePart.id), false);

@@ -3,7 +3,7 @@ import { normalizeTaskTargetIds } from "../domain/taskTargets";
 import { validateTaskLinks, validateTaskPeople } from "../domain/taskLinks";
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import { uniqueIds } from "../domain/ids";
-import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
+import { getTaskWaitingOnDependencyRecords, isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { derivePartInstanceReadiness } from "../domain/readiness";
 import { partInstanceSubsystemId, partInstanceMechanismId } from "../domain/partInstanceLocation";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -31,6 +31,7 @@ import type {
   Project,
   ResponsibleGroup,
   PurchaseItem,
+  PurchaseReceipt,
   Report,
   Risk,
   QaReport,
@@ -46,6 +47,7 @@ import type {
   Workstream,
   WorkLog,
 } from "../domain/types";
+import { evaluateTaskCompletion } from "../domain/workflows";
 import {
   isManualPmCadImportSource,
   markPmCadEditedAfterImport,
@@ -62,7 +64,7 @@ import {
   reportFromQaReport,
   type FindingListItem,
 } from "./store/reportDerivations";
-import { assertSnapshotTaskTargets, loadOrArchiveIncompatibleSnapshot, savePlatformSnapshotFile } from "./platformSnapshotFile";
+import { assertSnapshotTaskTargets, loadPlatformSnapshotFile, savePlatformSnapshotFile } from "./platformSnapshotFile";
 import type {
   ArtifactInput,
   MilestoneInput,
@@ -562,6 +564,7 @@ function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
       approvedById: item.approvedById ?? null,
       approvedAt: item.approvedAt ?? null,
       deliveredAt: item.deliveredAt ?? null,
+      receipts: item.receipts ?? [],
     })),
     meetings: clonedSnapshot.meetings.map((meeting) =>
       normalizeMeetingSchedule(meeting, fallbackSeasonId),
@@ -617,6 +620,7 @@ interface SnapshotState {
 
 interface SnapshotOwner {
   path: string;
+  durable: boolean;
   global: SnapshotState;
   tutorials: Map<string, SnapshotState>;
   context: AsyncLocalStorage<SnapshotState>;
@@ -627,14 +631,20 @@ const globalMutationKey = Symbol("global snapshot");
 let defaultOwner: SnapshotOwner | undefined;
 const durableOwners = new Map<string, SnapshotOwner>();
 
-function newSnapshotOwner(): SnapshotOwner {
-  const path = resolve(process.cwd(), process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json");
-  const durable = process.env.NODE_ENV === "production";
+export interface PlatformStoreOptions {
+  durability?: "durable" | "memory";
+  snapshotPath?: string;
+}
+
+function newSnapshotOwner(options: PlatformStoreOptions = {}): SnapshotOwner {
+  const path = resolve(process.cwd(), options.snapshotPath ?? process.env.PLATFORM_SNAPSHOT_PATH ?? "data/platform-snapshot.json");
+  const durable = options.durability !== "memory";
   const existing = durable ? durableOwners.get(path) : undefined;
   if (existing) return existing;
   const owner: SnapshotOwner = {
     path,
-    global: { current: ownSnapshot(canonicalizeSnapshot(loadOrArchiveIncompatibleSnapshot(path) ?? createTutorialSnapshot())), interactive: null },
+    durable,
+    global: { current: ownSnapshot(canonicalizeSnapshot(durable ? loadPlatformSnapshotFile(path) ?? createTutorialSnapshot() : createTutorialSnapshot())), interactive: null },
     tutorials: new Map(),
     context: new AsyncLocalStorage<SnapshotState>(),
     tails: new Map(),
@@ -643,15 +653,15 @@ function newSnapshotOwner(): SnapshotOwner {
   return owner;
 }
 function activeOwner() {
-  return ownerContext.getStore() ?? (defaultOwner ??= newSnapshotOwner());
+  return ownerContext.getStore() ?? (defaultOwner ??= newSnapshotOwner({ durability: "memory" }));
 }
 
 export interface PlatformStore {
   run<T>(operation: () => T): T;
 }
 
-export function createPlatformStore(): PlatformStore {
-  const owner = newSnapshotOwner();
+export function createPlatformStore(options: PlatformStoreOptions = {}): PlatformStore {
+  const owner = newSnapshotOwner(options);
   return { run: (operation) => ownerContext.run(owner, operation) };
 }
 
@@ -673,12 +683,25 @@ const currentSnapshot = new Proxy({} as PlatformSnapshot, {
 
 function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   const state = activeSnapshotState();
-  if (state === activeOwner().global && process.env.NODE_ENV === "production") {
-    throw new Error("Production platform mutations require a durable request transaction.");
+  if (state === activeOwner().global && activeOwner().durable) {
+    throw new Error("Durable platform mutations require a request transaction.");
   }
+  assertCompletedTaskDependenciesDoNotBecomeUnresolved(state.current, snapshot);
   state.current = ownSnapshot(deriveTaskSummaries(snapshot));
   if (state.mutation) {
     state.mutation.dirty = true;
+  }
+}
+
+function assertCompletedTaskDependenciesDoNotBecomeUnresolved(previous: SnapshotView, next: SnapshotView) {
+  const previousTasks = new Map(previous.tasks.map((task) => [task.id, task]));
+  for (const task of next.tasks) {
+    if (task.status !== "complete" || previousTasks.get(task.id)?.status !== "complete") continue;
+    const previouslyWaiting = new Set(getTaskWaitingOnDependencyRecords(task.id, previous).map((dependency) => dependency.id));
+    const newlyWaiting = getTaskWaitingOnDependencyRecords(task.id, next).find((dependency) => !previouslyWaiting.has(dependency.id));
+    if (newlyWaiting) {
+      throw Object.assign(new Error("A completed task cannot become blocked by a dependency."), { statusCode: 409 });
+    }
   }
 }
 
@@ -734,7 +757,7 @@ export async function acquireSnapshotMutation(userKey?: string) {
       }
       try {
         if (mutation.destination === "global") {
-          if (process.env.NODE_ENV === "production") {
+          if (owner.durable) {
             await savePlatformSnapshotFile(owner.path, state.current);
           }
           owner.global.current = state.current;
@@ -1424,7 +1447,7 @@ export function getTutorialBaselineState() {
 }
 
 export function resetStore(snapshot?: SnapshotView) {
-  if (process.env.NODE_ENV === "production") {
+  if (activeOwner().durable) {
     return;
   }
 
@@ -1693,12 +1716,16 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
     color: input.color === undefined ? previousWorkstream.color : nextColor,
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     workstreams: currentSnapshot.workstreams.map((workstream) =>
       workstream.id === workstreamId ? updatedWorkstream : workstream,
     ),
-  });
+  };
+  const changedTaskIds = previousWorkstream.projectId === updatedWorkstream.projectId
+    ? new Set<string>()
+    : new Set(currentSnapshot.tasks.filter((task) => task.workstreamIds.includes(workstreamId)).map((task) => task.id));
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, changedTaskIds));
 
   recordAuditAction({
     operation: "update",
@@ -2142,6 +2169,7 @@ export function removeRisk(riskId: string) {
   if (!risk) {
     return null;
   }
+  assertRisksHaveNoCorrectiveFindingLinks(new Set([riskId]));
   const projectIds = getRiskProjectIds(risk);
 
   replaceCurrentSnapshot({
@@ -2254,6 +2282,17 @@ export function removeMaterial(materialId: string) {
     return null;
   }
 
+  if (
+    currentSnapshot.purchaseItems.some((item) => item.materialId === materialId) ||
+    currentSnapshot.partDefinitions.some((part) => part.materialId === materialId) ||
+    currentSnapshot.tasks.some((task) =>
+      task.manufacturingDetails?.material.kind === "inventory-material" &&
+      task.manufacturingDetails.material.materialId === materialId
+    )
+  ) {
+    return { error: "referenced" as const };
+  }
+
   replaceCurrentSnapshot({
     ...currentSnapshot,
     materials: currentSnapshot.materials.filter(
@@ -2285,10 +2324,11 @@ export function createArtifact(input: ArtifactInput) {
     updatedAt: input.updatedAt,
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     artifacts: [...currentSnapshot.artifacts, artifact],
-  });
+  };
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, tasksAffectedByArtifact(artifact, currentSnapshot)));
 
   recordAuditAction({
     operation: "create",
@@ -2312,12 +2352,18 @@ export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>
     ...input,
   };
 
-  replaceCurrentSnapshot({
+  const previousTargets = previousArtifact.targetRefs.map((ref) => `${ref.kind}:${ref.id}`);
+  const updatedTargets = updatedArtifact.targetRefs.map((ref) => `${ref.kind}:${ref.id}`);
+  const changedTaskIds = sameTargetSet(previousTargets, updatedTargets)
+    ? new Set<string>()
+    : new Set([...tasksAffectedByArtifact(previousArtifact, currentSnapshot), ...tasksAffectedByArtifact(updatedArtifact, currentSnapshot)]);
+  const nextSnapshot = {
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.map((artifact) =>
       artifact.id === artifactId ? updatedArtifact : artifact,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, changedTaskIds));
 
   recordAuditAction({
     operation: "update",
@@ -2342,13 +2388,14 @@ export function removeArtifact(artifactId: string) {
     return null;
   }
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.filter(
       (candidate) => candidate.id !== artifactId,
     ),
     designIterations: currentSnapshot.designIterations,
-  });
+  };
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, tasksAffectedByArtifact(artifact, currentSnapshot)));
 
   recordAuditAction({
     operation: "delete",
@@ -2531,11 +2578,7 @@ export function removeSubsystem(subsystemId: string) {
       )
       .map((partInstance) => partInstance.id),
   );
-  const purchaseItemIdsToRemove = new Set(
-    currentSnapshot.purchaseItems
-      .filter((item) => currentSnapshot.tasks.find((task) => task.id === item.taskId)?.subsystemIds.some((id) => subsystemIdsToRemove.has(id)))
-      .map((item) => item.id),
-  );
+  assertPartInstancesHaveNoReceiptHistory(partInstanceIdsToRemove);
   const taskIdsToRemove = new Set(
     currentSnapshot.tasks
       .filter(
@@ -2546,6 +2589,15 @@ export function removeSubsystem(subsystemId: string) {
       )
       .map((task) => task.id),
   );
+  assertTasksHaveNoLinkedPurchaseItems(taskIdsToRemove);
+  assertTasksHaveNoCorrectiveLinks(taskIdsToRemove);
+  const risksToRemove = currentSnapshot.risks.filter((risk) =>
+    ((risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && taskIdsToRemove.has(risk.source.id)) ||
+    (risk.mitigationTaskId !== null && taskIdsToRemove.has(risk.mitigationTaskId)) ||
+    risk.relatedTargets.some((target) => (target.kind === "mechanism" && mechanismIdsToRemove.has(target.id)) || (target.kind === "part-instance" && partInstanceIdsToRemove.has(target.id))),
+  );
+  const riskIdsToRemove = new Set(risksToRemove.map((risk) => risk.id));
+  assertRisksHaveNoCorrectiveFindingLinks(riskIdsToRemove);
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -2570,18 +2622,7 @@ export function removeSubsystem(subsystemId: string) {
     qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter(
       (request) => !request.targetRefs.some((ref) => ref.kind === "task" && taskIdsToRemove.has(ref.id)),
     ),
-    risks: currentSnapshot.risks.filter((risk) => {
-      if ((risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && taskIdsToRemove.has(risk.source.id)) return false;
-      if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
-        return false;
-      }
-      if (risk.relatedTargets.some((target) => (target.kind === "mechanism" && mechanismIdsToRemove.has(target.id)) || (target.kind === "part-instance" && partInstanceIdsToRemove.has(target.id)))) return false;
-
-      return true;
-    }),
-    purchaseItems: currentSnapshot.purchaseItems.filter(
-      (item) => !purchaseItemIdsToRemove.has(item.id),
-    ),
+    risks: currentSnapshot.risks.filter((risk) => !riskIdsToRemove.has(risk.id)),
   });
 
   recordAuditAction({
@@ -2596,6 +2637,69 @@ export function removeSubsystem(subsystemId: string) {
   });
 
   return subsystem;
+}
+
+function assertTasksHaveNoLinkedPurchaseItems(taskIds: ReadonlySet<string>) {
+  const linkedItems = currentSnapshot.purchaseItems.filter((item) => taskIds.has(item.taskId));
+  if (linkedItems.length > 0) {
+    throw Object.assign(
+      new Error("Retarget or remove linked purchase items before deleting these tasks."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function assertTasksHaveNoCorrectiveLinks(taskIds: ReadonlySet<string>) {
+  const reportIdsToRemove = new Set(currentSnapshot.qaReports
+    .filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && taskIds.has(ref.id)))
+    .map((report) => report.id));
+  const reportDeletionLosesCorrectiveHistory = currentSnapshot.qaReports.some((report) => reportIdsToRemove.has(report.id) && (report.followUpTaskId != null || report.followUpRiskId != null)) ||
+    [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((finding) => finding.reportId != null && reportIdsToRemove.has(finding.reportId));
+  const referenced = reportDeletionLosesCorrectiveHistory ||
+    currentSnapshot.qaReports.some((report) => report.followUpTaskId != null && taskIds.has(report.followUpTaskId)) ||
+    [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((finding) => finding.correctiveTaskId != null && taskIds.has(finding.correctiveTaskId)) ||
+    currentSnapshot.risks.some((risk) => risk.mitigationTaskId != null && taskIds.has(risk.mitigationTaskId));
+  if (referenced) {
+    throw Object.assign(
+      new Error("Retarget or remove linked corrective QA and risk-mitigation references before deleting these tasks."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function assertRisksHaveNoCorrectiveFindingLinks(riskIds: ReadonlySet<string>) {
+  const referenced = currentSnapshot.qaReports.some((report) => report.followUpRiskId != null && riskIds.has(report.followUpRiskId)) ||
+    [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].some((finding) => finding.riskId != null && riskIds.has(finding.riskId));
+  if (referenced) {
+    throw Object.assign(
+      new Error("This risk is referenced by corrective QA report or finding history and cannot be deleted."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function assertPartInstancesHaveNoReceiptHistory(partInstanceIds: ReadonlySet<string>) {
+  if (partInstancesHaveReceiptHistory(partInstanceIds)) {
+    throw Object.assign(
+      new Error("Part instances recorded in purchase receipt history cannot be deleted."),
+      { statusCode: 409 },
+    );
+  }
+}
+
+function partInstancesHaveReceiptHistory(partInstanceIds: ReadonlySet<string>) {
+  return currentSnapshot.purchaseItems.some((item) =>
+    (item.receipts ?? []).some((receipt) => receipt.partInstanceIds.some((id) => partInstanceIds.has(id))),
+  );
+}
+
+function assertPartInstanceDefinitionHasNoReceiptHistory(partInstanceId: string) {
+  if (partInstancesHaveReceiptHistory(new Set([partInstanceId]))) {
+    throw Object.assign(
+      new Error("Part instances recorded in purchase receipt history cannot be reassigned to another part definition."),
+      { statusCode: 409 },
+    );
+  }
 }
 
 export function createPartDefinition(input: PartDefinitionInput, auditContext: AuditMutationContext = {}) {
@@ -2730,12 +2834,23 @@ export function updatePartDefinition(
         : normalizeIteration(input.iteration),
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partDefinitions: currentSnapshot.partDefinitions.map((partDefinition) =>
       partDefinition.id === partDefinitionId ? updatedPartDefinition : partDefinition,
     ),
-  });
+  };
+  if (updatedPartDefinition.revision !== previousPartDefinition.revision) {
+    const inspectedPartInstanceIds = new Set(currentSnapshot.partInstances
+      .filter((partInstance) => partInstance.partDefinitionId === partDefinitionId)
+      .map((partInstance) => partInstance.id));
+    const taskIds = new Set(currentSnapshot.tasks
+      .filter((task) => task.partInstanceIds.some((id) => inspectedPartInstanceIds.has(id)))
+      .map((task) => task.id));
+    replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, taskIds));
+  } else {
+    replaceCurrentSnapshot(nextSnapshot);
+  }
 
   recordAuditAction({
     operation: "update",
@@ -2763,14 +2878,22 @@ export function removePartDefinition(partDefinitionId: string) {
   if (currentSnapshot.tasks.some((task) => task.manufacturingDetails?.part.kind === "part-definition" && task.manufacturingDetails.part.partDefinitionId === partDefinitionId)) {
     throw Object.assign(new Error("This part definition is used by manufacturing work; remove or retarget that work before deletion."), { statusCode: 409 });
   }
+  const linkedPurchaseItems = currentSnapshot.purchaseItems.filter((item) => item.partDefinitionId === partDefinitionId);
+  if (linkedPurchaseItems.some((item) => (item.receipts ?? []).length > 0)) {
+    throw Object.assign(new Error("This part definition is referenced by receipt history and cannot be deleted."), { statusCode: 409 });
+  }
+  if (linkedPurchaseItems.length > 0) {
+    throw Object.assign(new Error("Retarget or remove linked purchases before deleting this part definition."), { statusCode: 409 });
+  }
 
   const removedPartInstanceIds = new Set(
     currentSnapshot.partInstances
       .filter((partInstance) => partInstance.partDefinitionId === partDefinitionId)
       .map((partInstance) => partInstance.id),
   );
+  assertPartInstancesHaveNoReceiptHistory(removedPartInstanceIds);
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partDefinitions: currentSnapshot.partDefinitions.filter(
       (candidate) => candidate.id !== partDefinitionId,
@@ -2801,7 +2924,8 @@ export function removePartDefinition(partDefinitionId: string) {
           }
         : item,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -2900,10 +3024,17 @@ export function updatePartInstance(
     ...normalizePmCadProvenance({ ...currentPartInstance, ...input,
       cadEditedAfterImport: markPmCadEditedAfterImport(currentPartInstance, input) }),
   };
-  replaceCurrentSnapshot({
+  if (currentPartInstance.partDefinitionId !== updatedPartInstance.partDefinitionId) {
+    assertPartInstanceDefinitionHasNoReceiptHistory(partInstanceId);
+  }
+  const nextSnapshot = {
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.map((part) => part.id === partInstanceId ? updatedPartInstance : part),
-  });
+  };
+  const taskIds = currentPartInstance.partDefinitionId === updatedPartInstance.partDefinitionId
+    ? new Set<string>()
+    : new Set(currentSnapshot.tasks.filter((task) => task.partInstanceIds.includes(partInstanceId)).map((task) => task.id));
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, taskIds));
   const savedPartInstance = updatedPartInstance;
   {
     const subsystemId = savedPartInstance.location.kind === "installed" ? savedPartInstance.location.subsystemId : savedPartInstance.intendedSubsystemId;
@@ -2936,8 +3067,9 @@ export function removePartInstance(partInstanceId: string) {
   if (!partInstance) {
     return null;
   }
+  assertPartInstancesHaveNoReceiptHistory(new Set([partInstanceId]));
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.filter(
       (candidate) => candidate.id !== partInstanceId,
@@ -2957,7 +3089,8 @@ export function removePartInstance(partInstanceId: string) {
         partInstanceIds,
       });
     }),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -3003,7 +3136,7 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
         : normalizeIteration(input.iteration),
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     mechanisms: currentSnapshot.mechanisms.map((mechanism) =>
       mechanism.id === mechanismId ? updatedMechanism : mechanism,
@@ -3034,7 +3167,8 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
           }
         : partInstance,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "update",
@@ -3063,7 +3197,7 @@ export function removeMechanism(mechanismId: string) {
     return null;
   }
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     mechanisms: currentSnapshot.mechanisms.filter(
       (candidate) => candidate.id !== mechanismId,
@@ -3090,7 +3224,8 @@ export function removeMechanism(mechanismId: string) {
           }
         : partInstance,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -3110,6 +3245,7 @@ function assertTaskLinks(task: ReadonlyData<Task>, allowArchivedResponsibleGroup
 }
 
 export function createTask(input: TaskInput, auditContext: AuditMutationContext = {}): ReadonlyData<Task> {
+  if (input.status === "complete") throw Object.assign(new Error("A task cannot be created complete; completion requires existing work, documentation and reviewed QA evidence."), { statusCode: 409 });
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const nextSerialNumber =
     currentSnapshot.tasks.reduce((max, task) => {
@@ -3247,33 +3383,130 @@ export function createMilestone(input: MilestoneInput) {
   return milestone;
 }
 
-export function createQaReport(input: QaReportInput) {
+function nextQaReviewOrder() {
+  const retestOrders = [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].flatMap((finding) => finding.retests ?? []).map((retest) => retest.verificationOrder ?? 0);
+  return Math.max(currentSnapshot.qaReviewSequence ?? 0, ...currentSnapshot.tasks.map((task) => task.completionScopeReviewOrder ?? 0), ...currentSnapshot.qaReports.map((report) => report.reviewOrder ?? 0), ...currentSnapshot.testResults.map((result) => result.verificationOrder ?? 0), ...retestOrders) + 1;
+}
+
+function currentQaReviewOrder() {
+  return nextQaReviewOrder() - 1;
+}
+
+function sameTargetSet(left: readonly string[], right: readonly string[]) {
+  if (left.length !== right.length) return false;
+  const sortedRight = [...right].sort();
+  return [...left].sort().every((id, index) => id === sortedRight[index]);
+}
+
+function taskCompletionScopeChanged(previous: ReadonlyData<Task>, next: ReadonlyData<Task>) {
+  return previous.projectId !== next.projectId || previous.requiresDocumentation !== next.requiresDocumentation ||
+    !sameTargetSet(previous.workstreamIds, next.workstreamIds) ||
+    !sameTargetSet(previous.subsystemIds, next.subsystemIds) ||
+    !sameTargetSet(previous.mechanismIds, next.mechanismIds) ||
+    !sameTargetSet(previous.partInstanceIds, next.partInstanceIds);
+}
+
+function tasksAffectedByArtifact(artifact: Pick<Artifact, "targetRefs">, snapshot: SnapshotView) {
+  return new Set(snapshot.tasks.filter((task) => artifact.targetRefs.some((ref) =>
+    ref.kind === "task" ? ref.id === task.id
+      : ref.kind === "workstream" ? task.workstreamIds.includes(ref.id)
+        : ref.kind === "subsystem" ? task.subsystemIds.includes(ref.id)
+          : ref.kind === "mechanism" ? task.mechanismIds.includes(ref.id)
+            : ref.kind === "part-instance" ? task.partInstanceIds.includes(ref.id)
+              : false,
+  )).map((task) => task.id));
+}
+
+function markTaskCompletionScopeChanged(snapshot: PlatformSnapshot, taskIds: ReadonlySet<string>): PlatformSnapshot {
+  if (taskIds.size === 0) return snapshot;
+  const reviewOrder = currentQaReviewOrder();
+  const nextSnapshot = {
+    ...snapshot,
+    tasks: snapshot.tasks.map((task) => taskIds.has(task.id) ? { ...task, completionScopeReviewOrder: reviewOrder } : task),
+  };
+  for (const task of nextSnapshot.tasks) {
+    if (!taskIds.has(task.id) || task.status !== "complete") continue;
+    const hasBlockingRisk = snapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === task.id));
+    if (hasBlockingRisk || getTaskWaitingOnDependencyRecords(task.id, nextSnapshot).length > 0 || !evaluateTaskCompletion(task, nextSnapshot).canFinalize) {
+      throw Object.assign(new Error("A completed task cannot retain completion after its evidence scope changes; reopen it and obtain reviewed QA for the updated scope."), { statusCode: 409 });
+    }
+  }
+  return nextSnapshot;
+}
+
+function markChangedTaskCompletionScopes(previousSnapshot: SnapshotView, nextSnapshot: PlatformSnapshot): PlatformSnapshot {
+  const previousTasks = new Map(previousSnapshot.tasks.map((task) => [task.id, task]));
+  const changedTaskIds = new Set(nextSnapshot.tasks.filter((task) => {
+    const previous = previousTasks.get(task.id);
+    return previous !== undefined && taskCompletionScopeChanged(previous, task);
+  }).map((task) => task.id));
+  return markTaskCompletionScopeChanged(nextSnapshot, changedTaskIds);
+}
+
+function captureInspectedPartInstanceIds(targetRefs: readonly { kind: string; id: string }[]) {
+  const ids = new Set<string>();
+  const taskIds = new Set<string>();
+  const queue = [...targetRefs];
+  const visited = new Set<string>();
+  while (queue.length) {
+    const ref = queue.shift()!;
+    const key = `${ref.kind}:${ref.id}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (ref.kind === "part-definition") currentSnapshot.partInstances.filter((part) => part.partDefinitionId === ref.id).forEach((part) => ids.add(part.id));
+    if (ref.kind === "part-instance" && currentSnapshot.partInstances.some((part) => part.id === ref.id)) ids.add(ref.id);
+    if (ref.kind === "task") taskIds.add(ref.id);
+    if (ref.kind === "qa-request") currentSnapshot.qaRequests?.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "report") currentSnapshot.qaReports.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "test-result") currentSnapshot.testResults.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "qa-finding") currentSnapshot.qaFindings.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "test-finding") currentSnapshot.testFindings.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "artifact") currentSnapshot.artifacts.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "design-iteration") currentSnapshot.designIterations.find((item) => item.id === ref.id)?.targetRefs.forEach((target) => queue.push(target));
+    if (ref.kind === "responsible-group") currentSnapshot.tasks.filter((task) => task.responsibleGroupId === ref.id).forEach((task) => taskIds.add(task.id));
+    if (["project", "workstream", "subsystem", "mechanism", "part-instance", "milestone"].includes(ref.kind)) {
+      for (const task of currentSnapshot.tasks) {
+        if (flattenTaskTargets(task).some((target) => target.targetType === ref.kind && target.targetId === ref.id)) taskIds.add(task.id);
+      }
+    }
+  }
+  for (const task of currentSnapshot.tasks.filter((item) => taskIds.has(item.id))) task.partInstanceIds.forEach((id) => ids.add(id));
+  return [...ids].sort();
+}
+
+type QaApproval = { reviewerId: string; reviewedAt: string };
+
+function createQaReportRecord(input: QaReportInput, approval?: QaApproval) {
   const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
   const reportIds = new Set(currentSnapshot.qaReports.map((report) => report.id));
   const now = new Date().toISOString();
+  const reviewOrder = approval ? nextQaReviewOrder() : undefined;
   const report: QaReport = {
     id: uniqueId(toSlug(`${input.targetRefs[0]?.kind ?? "project"}-${input.targetRefs[0]?.id ?? input.projectId} qa`) || "qa-report", reportIds),
     reportType: "qa",
     projectId: input.projectId,
     createdByMemberId: input.createdByMemberId ?? input.requestedById ?? null,
     summary: input.notes,
-    status: input.status ?? "submitted",
-    reviewedById: input.reviewedById ?? null,
+    status: approval ? "reviewed" : (input.status === "draft" ? "draft" : "submitted"),
+    reviewedById: approval?.reviewerId ?? null,
     createdAt: input.createdAt ?? now,
     targetRefs: input.targetRefs.map((ref) => ({ ...ref })),
     participantIds: input.participantIds,
     result: input.result,
     notes: input.notes,
     photoUrl: input.photoUrl ?? "",
-    reviewedAt: input.reviewedAt ?? null,
+    reviewedAt: approval?.reviewedAt ?? null,
     evidenceNotes: input.evidenceNotes ?? "",
     mentorId: input.mentorId ?? null,
     requestedById: input.requestedById ?? null,
+    targetRevisions: captureTargetRevisions(input.targetRefs),
+    ...(approval ? { inspectedPartInstanceIds: captureInspectedPartInstanceIds(input.targetRefs), reviewOrder } : {}),
   };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
+    ...(reviewOrder !== undefined ? { qaReviewSequence: reviewOrder } : {}),
     qaReports: [...currentSnapshot.qaReports, report],
   });
 
@@ -3292,9 +3525,15 @@ export function createQaReport(input: QaReportInput) {
   return report;
 }
 
+export function createQaReport(input: QaReportInput) {
+  return createQaReportRecord(input);
+}
+
 // Called inside the route's snapshot transaction: the report and its workflow
 // effects must become durable together, or none of them may be published.
-export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }) {
+export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: string }, approval?: QaApproval) {
+  const taskIds = uniqueIds(input.targetRefs.filter((ref) => ref.kind === "task").map((ref) => ref.id));
+  if (taskIds.length > 1) return { error: "Submit QA for one task at a time." };
   const taskId = input.targetRefs.find((ref) => ref.kind === "task")?.id;
   const task = currentSnapshot.tasks.find((item) => item.id === taskId);
   const requestedQaId = input.targetRefs.find((ref) => ref.kind === "qa-request")?.id;
@@ -3304,18 +3543,23 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
   if (requestedQaId && !request) {
     return { error: "The selected QA request is no longer available for these targets." };
   }
-    if (task && input.result === "pass" && (task.status !== "waiting-for-qa" ||
+  if (approval && task && input.result === "pass" && (task.status !== "waiting-for-qa" ||
       task.isBlocked || isTaskWaitingOnDependencies(task, currentSnapshot))) {
     return { error: "A pass requires a task waiting for QA with no blocking risks or unfinished dependencies." };
   }
-  const report = createQaReport({ ...input,
+  let report = createQaReportRecord({ ...input, status: approval ? "reviewed" : input.status,
     mentorId: request?.mentorId ?? task?.mentorId ?? input.mentorId,
-    requestedById: request?.requestedById ?? null });
+    requestedById: request?.requestedById ?? null }, approval);
+  let followUpTaskId: string | null = null;
+  let followUpRiskId: string | null = null;
   if (task && input.result === "pass") {
-    updateTask(task.id, { status: "complete" });
-  } else if (task) {
-    const reviewedDate = input.reviewedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
-    createTask({ ...task,
+    if (approval) {
+      const approvedTask = currentSnapshot.tasks.find((item) => item.id === task.id);
+      if (approvedTask && evaluateTaskCompletion(approvedTask, currentSnapshot).canFinalize) updateTask(task.id, { status: "complete" });
+    }
+  } else if (task && approval) {
+    const reviewedDate = (approval?.reviewedAt ?? new Date().toISOString()).slice(0, 10);
+    const followUpTask = createTask({ ...task,
       title: input.followUpTaskTitle?.trim() || `${input.result === "iteration-worthy" ? "Iterate after QA" : "Fix QA finding"}: ${task.title}`,
       summary: [`Created from QA on "${task.title}".`, `Result: ${input.result}.`, input.notes,
         input.evidenceNotes ? `Evidence: ${input.evidenceNotes}` : ""].filter(Boolean).join("\n"),
@@ -3323,6 +3567,7 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
       status: "not-started", priority: input.result === "iteration-worthy" ? "high" : "medium",
       checklistItems: [], estimatedHours: 0,
     });
+    followUpTaskId = followUpTask.id;
     if (input.result === "iteration-worthy") createRisk({
       projectId: task.projectId, title: `QA iteration: ${task.title}`,
       detail: "QA identified iteration-worthy follow-up.", severity: "medium", category: "qa",
@@ -3330,9 +3575,38 @@ export function submitQaReport(input: QaReportInput & { followUpTaskTitle?: stri
       relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null,
       ownerGroupId: task.responsibleGroupId,
     });
+    if (input.result === "iteration-worthy") {
+      const risk = currentSnapshot.risks.find((item) => item.source.kind === "report" && item.source.id === report.id);
+      if (risk && followUpTaskId) updateRisk(risk.id, { mitigationTaskId: followUpTaskId });
+    }
+    if (input.result === "iteration-worthy") {
+      followUpRiskId = currentSnapshot.risks.find((risk) => risk.source.kind === "report" && risk.source.id === report.id)?.id ?? null;
+    }
   }
-  replaceCurrentSnapshot({ ...currentSnapshot,
-    qaRequests: getQaRequests().map((request) => ({ ...request, targetRefs: request.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.id !== request?.id) });
+  if (followUpTaskId || followUpRiskId) {
+    report = { ...report, followUpTaskId, followUpRiskId };
+    replaceCurrentSnapshot({
+      ...currentSnapshot,
+      qaReports: currentSnapshot.qaReports.map((item) => item.id === report.id
+        ? report
+        : item),
+    });
+  }
+  if (task && input.result !== "pass" && followUpTaskId) {
+    const linkedRisk = followUpRiskId ? currentSnapshot.risks.find((item) => item.id === followUpRiskId) : undefined;
+    createReportFinding({
+      reportId: report.id,
+      targetRefs: input.targetRefs.filter((ref) => ref.kind !== "qa-request").map((ref) => ({ ...ref })),
+      issueType: input.result === "iteration-worthy" ? "QA iteration required" : "QA corrective action required",
+      severity: input.result === "iteration-worthy" ? "medium" : "low",
+      notes: input.notes,
+      spawnedTaskId: followUpTaskId,
+      spawnedIterationId: null,
+      spawnedRiskId: linkedRisk?.id ?? null,
+    });
+  }
+  if (approval && request) replaceCurrentSnapshot({ ...currentSnapshot,
+    qaRequests: getQaRequests().map((item) => ({ ...item, targetRefs: item.targetRefs.map((ref) => ({ ...ref })) })).filter((item) => item.id !== request.id) });
   return { item: report };
 }
 
@@ -3397,16 +3671,23 @@ export function createQaRequest(input: QaRequestInput) {
 
 export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
+  const verificationOrder = nextQaReviewOrder();
   const testResult: TestResult = {
     id: uniqueId(toSlug(input.title) || "test-result", resultIds),
     projectId: input.projectId ?? "",
     targetRefs: input.targetRefs.map((ref) => ({ ...ref })),
     title: input.title,
     status: input.status,
+    createdAt: new Date().toISOString(),
+    ...(input.observedAt ? { observedAt: input.observedAt } : {}),
+    verificationOrder,
+    targetRevisions: captureTargetRevisions(input.targetRefs),
+    inspectedPartInstanceIds: captureInspectedPartInstanceIds(input.targetRefs),
   };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
+    qaReviewSequence: verificationOrder,
     testResults: [...currentSnapshot.testResults, testResult],
   });
 
@@ -3419,6 +3700,25 @@ export function createTestResult(input: TestResultInput) {
   });
 
   return testResult;
+}
+
+function captureTargetRevisions(targetRefs: readonly { kind: string; id: string }[]): Record<string, string> {
+  const instanceIds = new Set<string>();
+  const revisions: Record<string, string> = {};
+  for (const ref of targetRefs) {
+    if (ref.kind === "part-definition") {
+      const definition = currentSnapshot.partDefinitions.find((item) => item.id === ref.id);
+      if (definition) revisions[definition.id] = definition.revision;
+    }
+    if (ref.kind === "part-instance") instanceIds.add(ref.id);
+  }
+  for (const id of captureInspectedPartInstanceIds(targetRefs)) instanceIds.add(id);
+  for (const instanceId of instanceIds) {
+    const instance = currentSnapshot.partInstances.find((item) => item.id === instanceId);
+    const definition = instance && currentSnapshot.partDefinitions.find((item) => item.id === instance.partDefinitionId);
+    if (definition) revisions[definition.id] = definition.revision;
+  }
+  return revisions;
 }
 
 export function createReport(input: ReportInput) {
@@ -3455,7 +3755,29 @@ export function createReportFinding(input: ReportFindingInput) {
   }
 
   const now = new Date().toISOString();
-  if (report.reportType !== "qa") return null;
+  if (report.reportType !== "qa" || report.status !== "reviewed") return null;
+  const task = input.spawnedTaskId ? currentSnapshot.tasks.find((item) => item.id === input.spawnedTaskId) : undefined;
+  const targets = new Set(input.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
+  const reportTargets = new Set(report.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
+  const reportTaskIds = new Set(report.targetRefs.filter((ref) => ref.kind === "task").map((ref) => ref.id));
+  const taskScopeTargets = new Set(report.targetRefs.filter((ref) => ref.kind !== "task").map((ref) => `${ref.kind}:${ref.id}`));
+  for (const reportTaskId of reportTaskIds) {
+    const reportTask = currentSnapshot.tasks.find((item) => item.id === reportTaskId);
+    if (reportTask) {
+      for (const ref of flattenTaskTargets(reportTask)) {
+        if (ref.targetType !== "project") taskScopeTargets.add(`${ref.targetType}:${ref.targetId}`);
+      }
+    }
+  }
+  const taskMatchesReportScope = (candidate: Task) => reportTaskIds.has(candidate.id) || flattenTaskTargets(candidate).some((ref) =>
+    ref.targetType !== "project" && taskScopeTargets.has(`${ref.targetType}:${ref.targetId}`));
+  const findingTargetsMatchReport = input.targetRefs.every((ref) => reportTargets.has(`${ref.kind}:${ref.id}`) || taskScopeTargets.has(`${ref.kind}:${ref.id}`) ||
+    ref.kind === "task" && currentSnapshot.tasks.some((candidate) => candidate.id === ref.id && candidate.projectId === report.projectId && taskMatchesReportScope(candidate)));
+  const spawnedTaskMatchesScope = task && taskMatchesReportScope(task);
+  if (!findingTargetsMatchReport) return null;
+  if (input.spawnedTaskId && (!task || task.projectId !== report.projectId || !spawnedTaskMatchesScope)) return null;
+  const spawnedRisk = input.spawnedRiskId ? currentSnapshot.risks.find((item) => item.id === input.spawnedRiskId) : undefined;
+  if (input.spawnedRiskId && (!spawnedRisk || report.followUpRiskId !== spawnedRisk.id || spawnedRisk.projectId !== report.projectId || spawnedRisk.category !== "qa" || spawnedRisk.source.kind !== "report" || spawnedRisk.source.id !== report.id || !spawnedRisk.relatedTargets.some((ref) => targets.has(`${ref.kind}:${ref.id}`)) || spawnedRisk.mitigationTaskId !== (input.spawnedTaskId ?? null))) return null;
   const existingFindings = currentSnapshot.qaFindings;
   const findingIds = new Set(existingFindings.map((finding) => finding.id));
   const fields = {
@@ -3472,10 +3794,11 @@ export function createReportFinding(input: ReportFindingInput) {
     createdAt: now,
     updatedAt: now,
     reportId: input.reportId,
+    correctiveTaskId: input.spawnedTaskId,
+    riskId: input.spawnedRiskId,
   };
   const finding: QaFinding = fields;
   replaceCurrentSnapshot({ ...currentSnapshot, qaFindings: [...currentSnapshot.qaFindings, finding] });
-
   recordAuditAction({
     operation: "create",
     entityType: "report-finding",
@@ -3487,7 +3810,66 @@ export function createReportFinding(input: ReportFindingInput) {
   return reportFindingFromFinding(finding);
 }
 
-export function createTaskDependency(input: TaskDependencyInput) {
+export function retestQaFinding(input: { findingId: string; sourceType?: "qa" | "test"; operationId?: string; result: "pass" | "fail"; notes: string; evidenceNotes?: string; observedAt?: string; reviewerId: string }) {
+  const qaFinding = currentSnapshot.qaFindings.find((item) => item.id === input.findingId);
+  const testFinding = currentSnapshot.testFindings.find((item) => item.id === input.findingId);
+  if (!input.sourceType && qaFinding && testFinding) return { conflict: "sourceType is required when QA and test findings share an ID." } as const;
+  const sourceType = input.sourceType ?? (qaFinding ? "qa" : "test");
+  const previous = sourceType === "qa" ? qaFinding : testFinding;
+  if (!previous || (sourceType === "qa" && !previous.reportId)) return null;
+  const history = previous.retests ?? [];
+  if (input.operationId) {
+    const prior = history.find((item) => item.operationId === input.operationId && item.reviewedById === input.reviewerId);
+    if (prior) {
+      const sameObservedAt = prior.observedAt === undefined && input.observedAt === undefined || prior.observedAt !== undefined && input.observedAt !== undefined && Date.parse(prior.observedAt) === Date.parse(input.observedAt);
+      const same = prior.result === input.result && prior.notes === input.notes && (prior.evidenceNotes ?? "") === (input.evidenceNotes ?? "") && sameObservedAt;
+      if (!same) return { conflict: "operationId was already used with a different retest payload." } as const;
+      const finding = reportFindingFromFinding(previous);
+      return { ...(finding ?? {}), id: previous.id, sourceType, sourceId: sourceType === "qa" ? previous.reportId : (previous as TestFinding).testResultId, projectId: previous.projectId, targetRefs: previous.targetRefs.map((ref) => ({ ...ref })), title: previous.title, detail: previous.detail, status: previous.status, updatedAt: previous.updatedAt, retests: history };
+    }
+  }
+  const reviewedAt = new Date().toISOString();
+  const order = Math.max(0, ...history.map((item) => item.order)) + 1;
+  const verificationOrder = nextQaReviewOrder();
+  const supersedesId = sourceType === "qa"
+    ? previous.reportId!
+    : (previous as TestFinding).testResultId;
+  const retest = { ...(input.operationId ? { operationId: input.operationId } : {}), sourceType, result: input.result, notes: input.notes,
+    ...(input.evidenceNotes ? { evidenceNotes: input.evidenceNotes } : {}),
+    ...(input.observedAt ? { observedAt: input.observedAt } : {}), reviewedAt,
+    reviewedById: input.reviewerId, order, verificationOrder,
+    targetRevisions: captureTargetRevisions(previous.targetRefs),
+    inspectedPartInstanceIds: captureInspectedPartInstanceIds(previous.targetRefs), supersedesId };
+  const updated = { ...previous, retests: [...history, retest], status: input.result === "pass" ? "resolved" as const : "open" as const, updatedAt: reviewedAt };
+  if (sourceType === "qa") replaceCurrentSnapshot({ ...currentSnapshot, qaReviewSequence: verificationOrder, qaFindings: currentSnapshot.qaFindings.map((item) => item.id === updated.id ? updated as QaFinding : item) });
+  else replaceCurrentSnapshot({ ...currentSnapshot, qaReviewSequence: verificationOrder, testFindings: currentSnapshot.testFindings.map((item) => item.id === updated.id ? updated as TestFinding : item) });
+  const risk = previous.riskId ? currentSnapshot.risks.find((item) => item.id === previous.riskId) : undefined;
+  const findingRefs = new Set(previous.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
+  const expectedRiskSourceId = sourceType === "qa" ? previous.reportId : (previous as TestFinding).testResultId;
+  const sourceReport = sourceType === "qa" ? currentSnapshot.qaReports.find((item) => item.id === previous.reportId) : undefined;
+  const riskBelongsToFinding = Boolean(risk && risk.category === "qa" &&
+    (sourceType !== "qa" || sourceReport?.followUpRiskId === risk.id) &&
+    ((sourceType === "qa" && risk.source.kind === "report") || (sourceType === "test" && risk.source.kind === "test-result")) && risk.source.id === expectedRiskSourceId &&
+    risk.mitigationTaskId === (previous.correctiveTaskId ?? null) && risk.relatedTargets.some((ref) => findingRefs.has(`${ref.kind}:${ref.id}`)) &&
+    !currentSnapshot.qaFindings.some((item) => item.riskId === risk.id && !(sourceType === "qa" && item.id === previous.id)) &&
+    !currentSnapshot.testFindings.some((item) => item.riskId === risk.id && !(sourceType === "test" && item.id === previous.id)));
+  if (riskBelongsToFinding && input.result === "pass" && risk!.status !== "resolved") updateRisk(risk!.id, { status: "resolved", resolvedAt: reviewedAt });
+  else if (riskBelongsToFinding && input.result === "fail" && risk!.status === "resolved") updateRisk(risk!.id, { status: "open", resolvedAt: null });
+  recordAuditAction({ operation: "update", entityType: `${sourceType}-finding-retest`, entityId: updated.id, entityLabel: updated.title, projectId: updated.projectId, actorMemberId: input.reviewerId, taskId: updated.correctiveTaskId ?? null, changedFields: ["status", "retests"], detailsJson: { result: input.result, order, verificationOrder, reviewedAt, sourceType } });
+  const finding = reportFindingFromFinding(updated);
+  return {
+    ...(finding ?? {}), id: updated.id, sourceType,
+    sourceId: sourceType === "qa" ? updated.reportId : (updated as TestFinding).testResultId,
+    projectId: updated.projectId, targetRefs: updated.targetRefs.map((ref) => ({ ...ref })),
+    title: updated.title, detail: updated.detail, status: updated.status,
+    updatedAt: updated.updatedAt, retests: updated.retests,
+  };
+}
+
+export function createTaskDependency(
+  input: TaskDependencyInput,
+  auditContext: AuditMutationContext = {},
+) {
   const dependencyIds = new Set(currentSnapshot.taskDependencies.map((dependency) => dependency.id));
   const dependency: TaskDependency = {
     ...input,
@@ -3495,10 +3877,10 @@ export function createTaskDependency(input: TaskDependencyInput) {
     createdAt: new Date().toISOString(),
   };
 
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    taskDependencies: [...currentSnapshot.taskDependencies, dependency],
-  });
+  const nextSnapshot = { ...currentSnapshot, taskDependencies: [...currentSnapshot.taskDependencies, dependency] };
+  assertCompletedTaskDependencyIsSatisfied(dependency, nextSnapshot);
+
+  replaceCurrentSnapshot(nextSnapshot);
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
   recordAuditAction({
@@ -3509,6 +3891,8 @@ export function createTaskDependency(input: TaskDependencyInput) {
     projectId: task?.projectId ?? null,
     taskId: dependency.taskId,
     subsystemId: task?.subsystemIds[0] ?? null,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
   });
 
   return dependency;
@@ -3517,6 +3901,7 @@ export function createTaskDependency(input: TaskDependencyInput) {
 export function updateTaskDependency(
   dependencyId: string,
   input: Partial<TaskDependencyInput>,
+  auditContext: AuditMutationContext = {},
 ) {
   const originalDependency = currentSnapshot.taskDependencies.find(
     (dependency) => dependency.id === dependencyId,
@@ -3529,12 +3914,15 @@ export function updateTaskDependency(
     ...input,
   } as TaskDependency;
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     taskDependencies: currentSnapshot.taskDependencies.map((dependency) =>
       dependency.id === dependencyId ? savedDependency : dependency,
     ),
-  });
+  };
+  assertCompletedTaskDependencyIsSatisfied(savedDependency, nextSnapshot);
+
+  replaceCurrentSnapshot(nextSnapshot);
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.taskId);
   recordAuditAction({
@@ -3545,6 +3933,8 @@ export function updateTaskDependency(
     projectId: task?.projectId ?? null,
     taskId: savedDependency.taskId,
     subsystemId: task?.subsystemIds[0] ?? null,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       originalDependency,
       savedDependency,
@@ -3554,7 +3944,10 @@ export function updateTaskDependency(
   return savedDependency;
 }
 
-export function removeTaskDependency(dependencyId: string) {
+export function removeTaskDependency(
+  dependencyId: string,
+  auditContext: AuditMutationContext = {},
+) {
   const dependency = currentSnapshot.taskDependencies.find(
     (candidate) => candidate.id === dependencyId,
   );
@@ -3578,9 +3971,18 @@ export function removeTaskDependency(dependencyId: string) {
     projectId: task?.projectId ?? null,
     taskId: dependency.taskId,
     subsystemId: task?.subsystemIds[0] ?? null,
+    actorMemberId: auditContext.actorMemberId ?? null,
+    requestId: auditContext.requestId ?? null,
   });
 
   return dependency;
+}
+
+function assertCompletedTaskDependencyIsSatisfied(dependency: ReadonlyData<TaskDependency>, snapshot: SnapshotView) {
+  const task = snapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
+  if (task?.status === "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot).some((waiting) => waiting.id === dependency.id)) {
+    throw Object.assign(new Error("A completed task cannot receive an unresolved hard dependency."), { statusCode: 409 });
+  }
 }
 
 export function updateMilestone(milestoneId: string, input: Partial<MilestoneInput>) {
@@ -3874,11 +4276,17 @@ export function updateWorkLog(
     ...input,
   };
 
+  const nextWorkLogs = currentSnapshot.workLogs.map((workLog) =>
+    workLog.id === workLogId ? updatedWorkLog : workLog,
+  );
+  if (updatedWorkLog.taskId !== previousWorkLog.taskId) {
+    assertCompletedTaskRetainsWorkLog(previousWorkLog.taskId, nextWorkLogs);
+    assertCompletedTaskRetainsWorkLog(updatedWorkLog.taskId, nextWorkLogs);
+  }
+
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    workLogs: currentSnapshot.workLogs.map((workLog) =>
-      workLog.id === workLogId ? updatedWorkLog : workLog,
-    ),
+    workLogs: nextWorkLogs,
   });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === updatedWorkLog.taskId);
@@ -3913,11 +4321,12 @@ export function removeWorkLog(
     return null;
   }
 
+  const nextWorkLogs = currentSnapshot.workLogs.filter((candidate) => candidate.id !== workLogId);
+  assertCompletedTaskRetainsWorkLog(workLog.taskId, nextWorkLogs);
+
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    workLogs: currentSnapshot.workLogs.filter(
-      (candidate) => candidate.id !== workLogId,
-    ),
+    workLogs: nextWorkLogs,
   });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === workLog.taskId);
@@ -3937,6 +4346,13 @@ export function removeWorkLog(
   return workLog;
 }
 
+function assertCompletedTaskRetainsWorkLog(taskId: string, workLogs: readonly WorkLog[]) {
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (task?.status === "complete" && evaluateTaskCompletion(task, { ...currentSnapshot, workLogs }).workLogCount === 0) {
+    throw Object.assign(new Error("A completed task must retain at least one work log."), { statusCode: 409 });
+  }
+}
+
 export function updateTask(
   taskId: string,
   input: Partial<TaskInput>,
@@ -3950,6 +4366,7 @@ export function updateTask(
   let updatedTask = normalizeTaskTargets({
     ...currentTask,
     ...input,
+    completionScopeReviewOrder: currentTask.completionScopeReviewOrder,
     ...normalizeTaskTargetIds(getSnapshot(), input, currentTask),
   });
 
@@ -3962,6 +4379,15 @@ export function updateTask(
   }
 
   assertTaskLinks(updatedTask, input.responsibleGroupId === undefined && currentTask.responsibleGroupId !== null);
+
+  const completionScopeChanged = taskCompletionScopeChanged(currentTask, updatedTask);
+  if (completionScopeChanged) updatedTask = { ...updatedTask, completionScopeReviewOrder: currentQaReviewOrder() };
+  if (updatedTask.status === "complete" && (currentTask.status !== "complete" || completionScopeChanged)) {
+    const hasBlockingRisk = currentSnapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === taskId));
+    if (hasBlockingRisk || getTaskWaitingOnDependencyRecords(updatedTask.id, currentSnapshot).length > 0 || !evaluateTaskCompletion(updatedTask, currentSnapshot).canFinalize) {
+      throw Object.assign(new Error("A task cannot be completed until its work log, documentation evidence, mentor-backed QA approval and dependency checks cover its resulting targets."), { statusCode: 409 });
+    }
+  }
   const nextSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     tasks: currentSnapshot.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
@@ -3976,7 +4402,9 @@ export function updateTask(
     subsystemId: savedTask.subsystemIds[0] ?? "",
     taskId: savedTask.id,
     memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
-    actorMemberId: auditContext.actorMemberId ?? savedTask.ownerId,
+    actorMemberId: auditContext.actorMemberId === undefined
+      ? savedTask.ownerId
+      : auditContext.actorMemberId,
     requestId: auditContext.requestId ?? null,
     changedFields: collectChangedFields(
       currentTask,
@@ -3994,6 +4422,14 @@ export function removeTask(taskId: string) {
   if (!task) {
     return null;
   }
+  assertTasksHaveNoLinkedPurchaseItems(new Set([taskId]));
+  assertTasksHaveNoCorrectiveLinks(new Set([taskId]));
+  const riskIdsToRemove = new Set(currentSnapshot.risks
+    .filter((risk) => risk.mitigationTaskId === taskId || (
+      (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && risk.source.id === taskId
+    ))
+    .map((risk) => risk.id));
+  assertRisksHaveNoCorrectiveFindingLinks(riskIdsToRemove);
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -4006,9 +4442,7 @@ export function removeTask(taskId: string) {
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId,
     ),
-    risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId && !(
-      (risk.source.kind === "task" || risk.source.kind === "manufacturing-details") && risk.source.id === taskId
-    )).map((risk) => ({ ...risk, relatedTargets: risk.relatedTargets.filter((target) => !((target.kind === "task" || target.kind === "manufacturing-details") && target.id === taskId)) })),
+    risks: currentSnapshot.risks.filter((risk) => !riskIdsToRemove.has(risk.id)).map((risk) => ({ ...risk, relatedTargets: risk.relatedTargets.filter((target) => !((target.kind === "task" || target.kind === "manufacturing-details") && target.id === taskId)) })),
   });
 
   replaceCurrentSnapshot(normalizeSnapshotTaskSerials(currentSnapshot));
@@ -4055,10 +4489,12 @@ export function createPurchaseItem(
   input: PurchaseItemInput,
   auditContext: AuditMutationContext = {},
 ) {
+  assertValidDiscretePurchaseQuantity(input);
   const itemIds = new Set(currentSnapshot.purchaseItems.map((item) => item.id));
   const item: PurchaseItem = {
     id: uniqueId(toSlug(input.title) || "purchase-item", itemIds),
     ...input,
+    receipts: [],
   };
 
   replaceCurrentSnapshot({
@@ -4084,7 +4520,17 @@ export function updatePurchaseItem(
   const updatedItem: PurchaseItem = {
     ...previousItem,
     ...input,
+    receipts: previousItem.receipts,
   };
+  const receiptValidationError = validateReceivedPurchaseItemUpdate(previousItem, updatedItem);
+  if (receiptValidationError) {
+    throw Object.assign(new Error(receiptValidationError), { statusCode: 409 });
+  }
+  if ((input.quantity !== undefined && input.quantity !== previousItem.quantity) ||
+      (input.kind !== undefined && input.kind !== previousItem.kind) ||
+      (input.partDefinitionId !== undefined && input.partDefinitionId !== previousItem.partDefinitionId)) {
+    assertValidDiscretePurchaseQuantity(updatedItem);
+  }
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -4104,6 +4550,128 @@ export function updatePurchaseItem(
   return updatedItem;
 }
 
+type PurchaseReceiptInvariantState = Pick<PurchaseItem, "taskId" | "kind" | "partDefinitionId" | "materialId" | "quantity"> & {
+  receipts?: readonly Pick<PurchaseReceipt, "quantity">[];
+};
+
+export function validateReceivedPurchaseItemUpdate(previousItem: PurchaseReceiptInvariantState, updatedItem: PurchaseReceiptInvariantState) {
+  const receipts = previousItem.receipts ?? [];
+  if (receipts.length === 0) return null;
+
+  const receivedQuantity = Number(receipts.reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
+  const floatingPointTolerance = typeof updatedItem.quantity === "number" && Number.isFinite(updatedItem.quantity)
+    ? Number.EPSILON * Math.max(1, Math.abs(updatedItem.quantity), Math.abs(receivedQuantity)) * 8
+    : 0;
+  if (typeof updatedItem.quantity !== "number" || !Number.isFinite(updatedItem.quantity) ||
+      receivedQuantity - updatedItem.quantity > floatingPointTolerance) {
+    return "Purchase quantity cannot be lower than the quantity already received.";
+  }
+  if (updatedItem.taskId !== previousItem.taskId || updatedItem.kind !== previousItem.kind ||
+      updatedItem.partDefinitionId !== previousItem.partDefinitionId || updatedItem.materialId !== previousItem.materialId) {
+    return "Purchase identity cannot change after receipts have been recorded.";
+  }
+  return null;
+}
+
+function assertValidDiscretePurchaseQuantity(item: Pick<PurchaseItem, "kind" | "partDefinitionId" | "quantity">) {
+  if (item.kind !== "manufacturing-service" && item.partDefinitionId !== null &&
+      (!Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
+    throw Object.assign(new Error("Discrete part purchase quantity must be a positive whole number."), { statusCode: 400 });
+  }
+}
+
+export function receivePurchaseItem(
+  itemId: string,
+  input: { operationId: string; quantity: number; location: string },
+  auditContext: AuditMutationContext = {},
+) {
+  const item = currentSnapshot.purchaseItems.find((candidate) => candidate.id === itemId);
+  if (!item) return { error: "not-found" as const };
+  const receipts = item.receipts ?? [];
+  const validInputQuantity = Number.isFinite(input.quantity) && input.quantity > 0 && input.quantity <= 1000;
+  const quantity = validInputQuantity ? Number(input.quantity.toFixed(12)) : Number.NaN;
+  const normalizedQuantityIsValid = validInputQuantity && quantity > 0;
+  const location = input.location.trim();
+  const priorOperation = receipts.find((receipt) => receipt.operationId === input.operationId);
+  if (priorOperation) {
+    if (!normalizedQuantityIsValid || priorOperation.quantity !== quantity || priorOperation.location !== location) return { error: "operation-conflict" as const };
+    return { item, receipt: priorOperation, replayed: true as const };
+  }
+  if (!normalizedQuantityIsValid) return { error: "invalid-quantity" as const };
+  const createsPartInstances = item.kind !== "manufacturing-service" && !(item.partDefinitionId === null && item.materialId !== null) && item.partDefinitionId !== null;
+  if (createsPartInstances && !currentSnapshot.partDefinitions.some((definition) => definition.id === item.partDefinitionId)) {
+    return { error: "missing-part-definition" as const };
+  }
+  if (createsPartInstances && !Number.isSafeInteger(input.quantity)) return { error: "invalid-quantity" as const };
+  if (item.orderStatus !== "ordered" && item.orderStatus !== "shipped" && item.orderStatus !== "delivered") return { error: "not-ordered" as const };
+  const received = Number(receipts.reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
+  const floatingPointTolerance = Number.EPSILON * Math.max(1, Math.abs(item.quantity), Math.abs(received), Math.abs(quantity)) * 8;
+  if (received + quantity - item.quantity > floatingPointTolerance) {
+    return { error: "over-receipt" as const };
+  }
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === item.taskId);
+  if (!task) return { error: "not-found" as const };
+
+  const receiptIds = new Set(receipts.map((receipt) => receipt.id));
+  const receiptId = uniqueId(`${item.id}-receipt`, receiptIds);
+  // Part identity wins for COTS items created from a part definition, which
+  // may also carry that definition's source material ID.
+  const isMaterialPurchase = item.kind !== "manufacturing-service" && item.partDefinitionId === null && item.materialId !== null;
+  const material = isMaterialPurchase && item.materialId
+    ? currentSnapshot.materials.find((candidate) => candidate.id === item.materialId)
+    : undefined;
+  if (isMaterialPurchase && !material) return { error: "not-found" as const };
+  if (material && material.onHandQuantity > 0 && material.location.trim() !== input.location.trim()) {
+    return { error: "location-conflict" as const };
+  }
+  const nextMaterials = material
+    ? currentSnapshot.materials.map((candidate) => candidate.id === material.id
+      ? {
+          ...candidate,
+          onHandQuantity: Number((candidate.onHandQuantity + quantity).toFixed(12)),
+          // A material has one stock location. Keep the established location
+          // when it already has stock rather than moving that stock on receipt.
+          location: candidate.onHandQuantity === 0 ? input.location.trim() : candidate.location,
+        }
+      : candidate)
+    : currentSnapshot.materials;
+  const partIds = new Set(currentSnapshot.partInstances.map((part) => part.id));
+  const partInstances = item.kind !== "manufacturing-service" && !isMaterialPurchase && item.partDefinitionId !== null
+    ? Array.from({ length: input.quantity }, () => {
+      const id = uniqueId(`part-instance-${item.partDefinitionId}`, partIds);
+      partIds.add(id);
+      const part: PartInstance = {
+        id,
+        ...normalizePmCadProvenance({}),
+        partDefinitionId: item.partDefinitionId!,
+        intendedSubsystemId: task.subsystemIds[0] ?? null,
+        intendedMechanismId: null,
+        location: { kind: "stock", location: input.location },
+        photoUrl: "",
+      };
+      return part;
+    })
+    : [];
+  const receipt: PurchaseReceipt = {
+    id: receiptId,
+    operationId: input.operationId,
+    quantity,
+    location,
+    receivedAt: new Date().toISOString(),
+    partInstanceIds: partInstances.map((part) => part.id),
+  };
+  const updatedItem: PurchaseItem = { ...item, receipts: [...receipts, receipt] };
+  const nextSnapshot = {
+    ...currentSnapshot,
+    purchaseItems: currentSnapshot.purchaseItems.map((candidate) => candidate.id === itemId ? updatedItem : candidate),
+    materials: nextMaterials,
+    partInstances: [...currentSnapshot.partInstances, ...partInstances],
+  };
+  replaceCurrentSnapshot(nextSnapshot);
+  recordProductionItemAudit("purchase-item", "update", updatedItem, auditContext, ["receipts"]);
+  return { item: updatedItem, receipt, replayed: false as const };
+}
+
 export function removePurchaseItem(
   itemId: string,
   auditContext: AuditMutationContext = {},
@@ -4114,6 +4682,8 @@ export function removePurchaseItem(
   if (!item) {
     return null;
   }
+
+  if ((item.receipts ?? []).length > 0) return { error: "has-receipts" as const };
 
   replaceCurrentSnapshot({
     ...currentSnapshot,

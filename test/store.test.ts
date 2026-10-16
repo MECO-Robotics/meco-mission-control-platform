@@ -6,6 +6,7 @@ import {
   startInteractiveTutorialSession,
   runWithInteractiveTutorialSession,
   createTask,
+  createPurchaseItem,
   acquireSnapshotMutation,
   createMaterial,
   updateProject,
@@ -15,6 +16,7 @@ import {
   updateArtifact,
   updateMechanism,
   updatePurchaseItem,
+  receivePurchaseItem,
   createWorkLog,
   updateWorkLog,
   removeWorkLog,
@@ -47,9 +49,139 @@ import {
   updatePartInstance,
   updateTask,
 } from "../src/data/store";
+import { deriveMilestoneReadiness, derivePartInstanceReadiness } from "../src/domain/readiness";
 
 beforeEach(() => {
   resetStore();
+});
+
+function hasCorrectiveHistory(snapshot: ReturnType<typeof getSnapshot>, taskId: string) {
+  const linkedReports = snapshot.qaReports.filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && ref.id === taskId));
+  return snapshot.qaReports.some((report) => report.followUpTaskId === taskId) ||
+    snapshot.qaFindings.some((finding) => finding.correctiveTaskId === taskId) ||
+    snapshot.testFindings.some((finding) => finding.correctiveTaskId === taskId) ||
+    snapshot.risks.some((risk) => risk.mitigationTaskId === taskId) ||
+    linkedReports.some((report) => report.followUpTaskId != null || report.followUpRiskId != null ||
+      snapshot.qaFindings.some((finding) => finding.reportId === report.id) ||
+      snapshot.testFindings.some((finding) => finding.reportId === report.id));
+}
+
+test("purchase commands keep receipt history owned by receiving", () => {
+  const source = getSnapshot().purchaseItems[0]!;
+  const { id: _id, receipts: _receipts, ...createInput } = source;
+  const beforeCreate = getSnapshot();
+  const forgedReceipt = { id: "forged-receipt", quantity: 99, location: "Forged shelf", receivedAt: new Date().toISOString(), partInstanceIds: ["forged-instance"] };
+  const created = createPurchaseItem({ ...createInput, title: "Receipt ownership test", receipts: [forgedReceipt] } as unknown as Parameters<typeof createPurchaseItem>[0]);
+  assert.deepEqual(created.receipts, []);
+  assert.equal(getSnapshot().partInstances.length, beforeCreate.partInstances.length);
+  assert.equal(getSnapshot().actions?.length, (beforeCreate.actions?.length ?? 0) + 1);
+
+  updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId: null, quantity: 1, orderStatus: "ordered" });
+  const received = receivePurchaseItem("ferrule-kit", { operationId: "domain-receipt", quantity: 1, location: "Receiving shelf" });
+  assert.ok("receipt" in received);
+  const afterReceive = getSnapshot();
+  const beforeReplayActions = afterReceive.actions?.length ?? 0;
+  const replay = receivePurchaseItem("ferrule-kit", { operationId: "domain-receipt", quantity: 1, location: "Receiving shelf" });
+  assert.ok("replayed" in replay && replay.replayed);
+  assert.equal(getSnapshot().actions?.length, beforeReplayActions, "idempotent replay does not add stock or audit actions");
+
+  const storedReceipt = getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts;
+  const beforeUnsafeUpdate = getSnapshot();
+  const unsafeReceiptValues = [undefined, [], [{ ...forgedReceipt, id: "replacement-receipt" }]];
+  unsafeReceiptValues.forEach((receipts, index) => {
+    updatePurchaseItem("ferrule-kit", { title: `Legitimate purchase edit ${index + 1}`, receipts } as unknown as Parameters<typeof updatePurchaseItem>[1]);
+    assert.deepEqual(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts, storedReceipt);
+    assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, ["title"]);
+  });
+  const afterUnsafeUpdate = getSnapshot();
+  const updated = afterUnsafeUpdate.purchaseItems.find((item) => item.id === "ferrule-kit")!;
+  assert.equal(updated.title, "Legitimate purchase edit 3");
+  assert.deepEqual(updated.receipts, storedReceipt);
+  assert.equal(updated.quantity, beforeUnsafeUpdate.purchaseItems.find((item) => item.id === "ferrule-kit")!.quantity);
+  assert.equal(afterUnsafeUpdate.partInstances.length, beforeUnsafeUpdate.partInstances.length);
+  assert.deepEqual(afterUnsafeUpdate.partInstances, beforeUnsafeUpdate.partInstances);
+  assert.deepEqual(afterUnsafeUpdate.actions?.at(-1)?.changedFields, ["title"]);
+});
+
+test("readiness ignores stale QA and test outcomes after a part revision changes", () => {
+  const seed = getSnapshot();
+  const part = seed.partInstances.find((item) => item.id === "pi-swerve-encoder-bracket-front-left")!;
+  const definition = seed.partDefinitions.find((item) => item.id === part.partDefinitionId)!;
+  const relatedTasks = seed.tasks.filter((item) => item.partInstanceIds.includes(part.id)).map((item) => ({ ...item, status: "complete" as const }));
+  const snapshot = {
+    ...seed,
+    tasks: relatedTasks,
+    risks: [],
+    qaFindings: [],
+    testFindings: [],
+    qaReports: [],
+    partDefinitions: seed.partDefinitions.map((item) => item.id === definition.id ? { ...item, revision: "C" } : item),
+  };
+  const staleFail = {
+    id: "stale-fail", projectId: "project-robot-2026", targetRefs: [{ kind: "part-instance" as const, id: part.id }],
+    title: "Old revision test", status: "fail" as const, createdAt: "2026-04-01T00:00:00.000Z", verificationOrder: 1, targetRevisions: { [definition.id]: definition.revision }, inspectedPartInstanceIds: [part.id],
+  };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [staleFail] }), "not-ready");
+  const currentPass = { ...staleFail, status: "pass" as const, createdAt: "2026-04-02T00:00:00.000Z", verificationOrder: 2, targetRevisions: { [definition.id]: "C" } };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [staleFail, currentPass] }), "ready");
+  const currentFail = { ...currentPass, status: "fail" as const, createdAt: "2026-04-03T00:00:00.000Z", verificationOrder: 3 };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentPass, currentFail] }), "blocked");
+  const differentTestPass = { ...currentPass, title: "Independent inspection", createdAt: "2026-04-04T00:00:00.000Z", verificationOrder: 4 };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentFail, differentTestPass] }), "blocked");
+  const retestPass = { ...currentPass, createdAt: "2026-04-05T00:00:00.000Z", verificationOrder: 5 };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, testResults: [currentFail, differentTestPass, retestPass] }), "ready");
+  const staleQa = {
+    ...seed.qaReports[0]!, id: "stale-qa", targetRefs: [{ kind: "part-instance" as const, id: part.id }],
+    status: "reviewed" as const, result: "iteration-worthy" as const,
+    targetRevisions: { [definition.id]: definition.revision }, reviewOrder: 1, inspectedPartInstanceIds: [part.id],
+  };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [staleQa], testResults: [] }), "not-ready");
+  const currentQaPass = { ...staleQa, result: "pass" as const, reviewOrder: 2, createdAt: "2026-04-02T00:00:00.000Z", targetRevisions: { [definition.id]: "C" } };
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [staleQa, currentQaPass], testResults: [] }), "ready");
+  assert.equal(derivePartInstanceReadiness(part, { ...snapshot, qaReports: [currentQaPass], testResults: [currentFail] }), "blocked");
+});
+
+test("milestone readiness requires at least one required criterion", () => {
+  const snapshot = getSnapshot();
+  const milestone = snapshot.milestones[0]!;
+  assert.equal(deriveMilestoneReadiness(milestone, {
+    ...snapshot,
+    risks: [],
+    milestoneRequirements: (snapshot.milestoneRequirements ?? []).filter((item) => item.milestoneId !== milestone.id),
+  }), "not-ready");
+});
+
+test("project scope markers do not make a newly created milestone ready without verification criteria", () => {
+  const milestone = createMilestone({
+    title: "Robot Acceptance Checkpoint",
+    type: "deadline",
+    startAt: "2026-06-10T10:00:00-04:00",
+    endAt: null,
+    isExternal: false,
+    description: "Acceptance checkpoint with automatic project scope.",
+    projectIds: ["project-robot-2026"],
+  });
+  const scoped = getSnapshot();
+  const scopeMarkers = (scoped.milestoneRequirements ?? []).filter((item) => item.milestoneId === milestone.id);
+  assert.equal(scopeMarkers.length, 1);
+  assert.equal(scopeMarkers[0]?.conditionValue, "in_scope");
+  assert.equal(deriveMilestoneReadiness(milestone, scoped), "not-ready");
+
+  const criterion = {
+    id: "robot-acceptance-iteration",
+    milestoneId: milestone.id,
+    targetRefs: [{ kind: "subsystem" as const, id: "drive" }],
+    conditionType: "iteration" as const,
+    conditionValue: "iteration>=2",
+    required: true,
+    sortOrder: 2,
+    notes: "Drive subsystem must reach iteration 2.",
+  };
+  resetStore({ ...scoped, milestoneRequirements: [...(scoped.milestoneRequirements ?? []), criterion] });
+  assert.equal(deriveMilestoneReadiness(milestone, getSnapshot()), "not-ready");
+
+  updateSubsystem("drive", { iteration: 2 });
+  assert.equal(deriveMilestoneReadiness(milestone, getSnapshot()), "ready");
 });
 
 function nonRobotProjectNamesForSeason(seasonId: string) {
@@ -468,14 +600,12 @@ test("createSubsystem auto-generates a testing task for its parent subsystem", (
 });
 
 test("updateTask patches an existing task in place", () => {
-  updateTask("wire-swerve-module", {
-    status: "complete",
-    assigneeIds: ["ava", "ethan"],
-  });
+  assert.throws(() => updateTask("wire-swerve-module", { status: "complete" }), /cannot be completed/);
+  updateTask("wire-swerve-module", { status: "in-progress", assigneeIds: ["ava", "ethan"] });
 
   const updatedTask = getSnapshot().tasks.find((task) => task.id === "wire-swerve-module");
   assert.ok(updatedTask);
-  assert.equal(updatedTask.status, "complete");
+  assert.equal(updatedTask.status, "in-progress");
   assert.equal(updatedTask.actualHours, getSnapshot().workLogs.filter((log) => log.taskId === updatedTask.id).reduce((sum, log) => sum + log.hours, 0));
   assert.deepEqual(updatedTask.assigneeIds, ["ava", "ethan"]);
 });
@@ -486,7 +616,7 @@ test("task updates append an audit action entry", () => {
   assert.ok(originalTask);
 
   const updatedTask = updateTask("wire-swerve-module", {
-    status: "complete",
+    status: "waiting-for-qa",
     estimatedHours: 7,
   }, {
     actorMemberId: "marco",
@@ -510,7 +640,7 @@ test("task updates append an audit action entry", () => {
   assert.ok(lastAction.changedFields.includes("estimatedHours"));
   assert.ok(lastAction.changedFields.includes("status"));
   assert.equal(lastAction.beforeJson?.status, "in-progress");
-  assert.equal(lastAction.afterJson?.status, "complete");
+  assert.equal(lastAction.afterJson?.status, "waiting-for-qa");
   assert.equal(lastAction.beforeJson?.estimatedHours, originalTask.estimatedHours);
   assert.equal(lastAction.afterJson?.estimatedHours, 7);
 });
@@ -584,9 +714,12 @@ test("removePartDefinition clears linked part instances and task references", ()
     location: { kind: "stock", location: "Test bin" },
   });
 
+  const taskBeforeRetarget = getSnapshot().tasks.find((task) => task.id === "swerve-sensor-bundle")!;
+  if (taskBeforeRetarget.status === "complete") resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((task) => task.id === taskBeforeRetarget.id ? { ...task, status: "in-progress" as const } : task) });
   updateTask("swerve-sensor-bundle", {
     partInstanceIds: [createdPartInstance.id],
   });
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((task) => task.id === "swerve-sensor-bundle" ? { ...task, completionScopeReviewOrder: undefined } : task) });
 
   const removed = removePartDefinition(createdPartDefinition.id);
   const snapshot = getSnapshot();
@@ -604,6 +737,7 @@ test("removePartDefinition clears linked part instances and task references", ()
     snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.partInstanceIds,
     [],
   );
+  assert.equal(typeof snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.completionScopeReviewOrder, "number", "part-definition cleanup invalidates the surviving task target scope");
 });
 
 test("removeSubsystem clears QA requests for removed tasks", () => {
@@ -904,6 +1038,7 @@ test("task targets preserve kind order, first-target context, and unique array l
   };
   resetStore({
     ...snapshot,
+    tasks: snapshot.tasks.map((item) => item.id === task.id ? { ...item, status: "in-progress" as const } : item),
     workstreams: [...snapshot.workstreams, ...["shared", "primary-workstream"].map((id) => ({ ...snapshot.workstreams[0], id, projectId: task.projectId }))],
     subsystems: [...snapshot.subsystems, ...["shared", "primary-subsystem"].map((id) => ({ ...snapshot.subsystems[0], id, projectId: task.projectId }))],
     mechanisms: [...snapshot.mechanisms, { ...snapshot.mechanisms[0], id: "mechanism", subsystemId: "shared" }],
@@ -979,14 +1114,14 @@ test("task commands reject invalid links and people without publishing data or a
   for (const input of [{ projectId: "missing-project" }, { workTypeId: "missing-work-type" }, { ownerId: "missing-member" }, { scheduleRefs: [{ kind: "event" as const, id: "missing-event" }] }]) {
     assert.throws(() => updateTask(task.id, input), /does not exist|do not exist|does not belong/);
     assert.equal(getSnapshot(), before);
-    assert.throws(() => createTask({ ...JSON.parse(JSON.stringify(task)), ...input }), /does not exist|do not exist|does not belong/);
+    assert.throws(() => createTask({ ...JSON.parse(JSON.stringify(task)), ...input, status: "not-started" }), /does not exist|do not exist|does not belong/);
     assert.equal(getSnapshot(), before);
   }
 });
 
 test("snapshot owners isolate records, tutorial sessions and mutation queues", async () => {
-  const first = createPlatformStore();
-  const second = createPlatformStore();
+  const first = createPlatformStore({ durability: "memory" });
+  const second = createPlatformStore({ durability: "memory" });
   await first.run(async () => {
     const transaction = await acquireSnapshotMutation();
     transaction.enter();
@@ -1086,7 +1221,7 @@ test("member commands preserve task people across role changes and deletion", ()
   assert.throws(() => updateMember(task.mentorId!, { role: "student" }), /Reassign.*before changing this person's role/);
   assert.equal(getSnapshot(), before);
   const contributor = createMember({ name: "Only Task Contributor", role: "student" });
-  const sole = createTask({ ...JSON.parse(JSON.stringify(task)), title: "Sole contributor task", ownerId: contributor.id, assigneeIds: [contributor.id], mentorId: null });
+  const sole = createTask({ ...JSON.parse(JSON.stringify(task)), status: "not-started", title: "Sole contributor task", ownerId: contributor.id, assigneeIds: [contributor.id], mentorId: null });
   const assigned = getSnapshot();
   assert.throws(() => removeMember(contributor.id), /Reassign 1 task before removing this person/);
   assert.equal(getSnapshot(), assigned);
@@ -1117,14 +1252,18 @@ test("removing a QA mentor atomically cancels the request and reopens work for i
 
 test("hierarchy deletion removes dependency owners while retaining missing-target blockers", () => {
   const snapshot = getSnapshot();
-  const removedTask = snapshot.tasks.find((task) => task.subsystemIds.includes("drive"))!;
-  const remainingTask = snapshot.tasks.find((task) => task.projectId !== removedTask.projectId)!;
+  const removableSubsystem = snapshot.subsystems.find((subsystem) => {
+    const scopedTasks = snapshot.tasks.filter((task) => task.subsystemIds.includes(subsystem.id));
+    return scopedTasks.length > 0 && scopedTasks.every((task) => !hasCorrectiveHistory(snapshot, task.id));
+  })!;
+  const removedTask = snapshot.tasks.find((task) => task.subsystemIds.includes(removableSubsystem.id))!;
+  const remainingTask = snapshot.tasks.find((task) => task.projectId !== removedTask.projectId && task.id !== removedTask.id)!;
   assert.ok(removedTask && remainingTask);
-  resetStore({ ...snapshot, taskDependencies: [
+  resetStore({ ...snapshot, purchaseItems: snapshot.purchaseItems.map((item) => ({ ...item, taskId: remainingTask.id })), taskDependencies: [
     { id: "removed-owner", dependencyType: "hard", taskId: removedTask.id, kind: "task", refId: remainingTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
     { id: "remaining-owner", dependencyType: "hard", taskId: remainingTask.id, kind: "task", refId: removedTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
   ] });
-  removeSubsystem("drive");
+  removeSubsystem(removableSubsystem.id);
   assert.deepEqual(getSnapshot().taskDependencies.map((dependency) => dependency.id), ["remaining-owner"]);
 });
 
@@ -1153,7 +1292,16 @@ test("within-project mechanism moves retain ancestors required by other task tar
   const destination = before.subsystems.find((subsystem) => subsystem.projectId === source.projectId && subsystem.id !== source.id)!;
   const otherMechanism = { ...mechanism, id: "unmoved-mechanism" };
   const task = before.tasks.find((task) => task.projectId === source.projectId)!;
-  resetStore({ ...before, mechanisms: [...before.mechanisms, otherMechanism], tasks: before.tasks.map((item) => item.id === task.id ? { ...item, subsystemIds: [source.id], mechanismIds: [mechanism.id, otherMechanism.id], partInstanceIds: [] } : item) });
+  resetStore({
+    ...before,
+    mechanisms: [...before.mechanisms, otherMechanism],
+    tasks: before.tasks.map((item) => {
+      const affected = item.id === task.id
+        ? { ...item, subsystemIds: [source.id], mechanismIds: [mechanism.id, otherMechanism.id], partInstanceIds: [] }
+        : item;
+      return affected.mechanismIds.includes(mechanism.id) ? { ...affected, status: "in-progress" as const } : affected;
+    }),
+  });
   updateMechanism(mechanism.id, { subsystemId: destination.id });
   const saved = getSnapshot().tasks.find((item) => item.id === task.id)!;
   assert.deepEqual(new Set(saved.subsystemIds), new Set([destination.id, source.id]));
@@ -1164,11 +1312,14 @@ test("within-project mechanism moves retain ancestors required by other task tar
 
 test("task removal removes attributed help and retains missing hard dependency targets", () => {
   const snapshot = getSnapshot();
-  const task = snapshot.tasks[0]!;
-  const remaining = snapshot.tasks[1]!;
+  const task = snapshot.tasks.find((item) => !hasCorrectiveHistory(snapshot, item.id))!;
+  const remaining = snapshot.tasks.find((item) => item.id !== task.id)!;
   createRisk({ projectId: task.projectId, title: "Help requested", detail: "Need a mentor", category: "help", severity: "medium", status: "open", blocksWork: false, source: { kind: "task", id: task.id }, relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null, ownerGroupId: null });
   const before = getSnapshot();
-  resetStore({ ...before, taskDependencies: [{ id: "missing-blocker", taskId: remaining.id, kind: "task", refId: task.id, requiredState: "complete", dependencyType: "hard", createdAt: new Date().toISOString() }] });
+  resetStore({ ...before,
+    purchaseItems: before.purchaseItems.map((item) => item.taskId === task.id ? { ...item, taskId: remaining.id } : item),
+    taskDependencies: [{ id: "missing-blocker", taskId: remaining.id, kind: "task", refId: task.id, requiredState: "complete", dependencyType: "hard", createdAt: new Date().toISOString() }],
+  });
   removeTask(task.id);
   assert.ok(!getSnapshot().risks.some((risk) => risk.source.kind === "task" && risk.source.id === task.id));
   assert.equal(getSnapshot().taskDependencies[0]?.refId, task.id);

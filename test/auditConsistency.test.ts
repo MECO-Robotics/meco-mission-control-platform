@@ -42,7 +42,10 @@ test("canonical dependency required state round-trips without a contradictory co
 test("dependency commands reject impossible states and validate the full merged patch", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const [task, upstream] = snapshot.tasks;
+    const task = snapshot.tasks.find((candidate) => candidate.id === "wire-swerve-module")!;
+    const upstream = snapshot.tasks.find((candidate) => candidate.id === "intake-guard")!;
+    assert.notEqual(task.status, "complete");
+    assert.notEqual(upstream.status, "complete");
     const milestone = snapshot.milestones[0];
     const payload = { taskId: task.id, kind: "task", refId: upstream.id, requiredState: "complete", dependencyType: "hard" };
     for (const invalid of [
@@ -55,6 +58,8 @@ test("dependency commands reject impossible states and validate the full merged 
     }
     const created = await app.inject({ method: "POST", url: "/api/task-dependencies", payload });
     assert.equal(created.statusCode, 201, created.body);
+    const currentSnapshot = getSnapshot();
+    assert.equal(isTaskWaitingOnDependencies(currentSnapshot.tasks.find((item) => item.id === task.id)!, currentSnapshot), true);
     const id = created.json().item.id;
     const url = `/api/task-dependencies/${id}`;
     const invalid = await app.inject({ method: "PATCH", url, payload: { kind: "milestone", refId: milestone.id } });

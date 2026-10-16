@@ -10,7 +10,7 @@ test("bootstrap exposes canonical task, manufacturing and evidence ownership", a
     const response = await app.inject({ method: "GET", url: "/api/bootstrap" });
     assert.equal(response.statusCode, 200);
     const body = response.json() as Record<string, unknown> & {
-      tasks: Array<{ id: string; manufacturingDetails: unknown }>;
+      tasks: Array<{ id: string; projectId: string; status: string; manufacturingDetails: unknown }>;
       purchaseItems: Array<{ id: string; taskId: string; kind: string }>;
       artifacts: Array<{ id: string; targetRefs: Array<{ kind: string; id: string }> }>;
     };
@@ -18,6 +18,8 @@ test("bootstrap exposes canonical task, manufacturing and evidence ownership", a
     assert.equal("manufacturingItems" in body, false);
     assert.equal("taskBlockers" in body, false);
     assert.equal(body.tasks.find((task) => task.id === "swerve-sensor-bundle")?.manufacturingDetails !== null, true);
+    const evidenceTask = body.tasks.find((task) => task.status !== "complete");
+    assert.ok(evidenceTask, "seed includes an unfinished task for artifact ownership coverage");
     const purchase = body.purchaseItems.find((item) => item.id === "ferrule-kit");
     assert.equal(purchase?.kind, "cots-goods");
     assert.equal(body.tasks.find((task) => task.id === purchase?.taskId)?.manufacturingDetails, null);
@@ -28,8 +30,8 @@ test("bootstrap exposes canonical task, manufacturing and evidence ownership", a
       method: "POST",
       url: "/api/artifacts",
       payload: {
-        projectId: "project-robot-2026",
-        targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
+        projectId: evidenceTask.projectId,
+        targetRefs: [{ kind: "task", id: evidenceTask.id }],
         kind: "document",
         title: "Robot build evidence",
         summary: "Build verification evidence.",
@@ -38,7 +40,7 @@ test("bootstrap exposes canonical task, manufacturing and evidence ownership", a
       },
     });
     assert.equal(artifactResponse.statusCode, 201);
-    assert.deepEqual(artifactResponse.json().item.targetRefs, [{ kind: "task", id: "swerve-sensor-bundle" }]);
+    assert.deepEqual(artifactResponse.json().item.targetRefs, [{ kind: "task", id: evidenceTask.id }]);
 
     const manufacturingResponse = await app.inject({ method: "GET", url: "/api/manufacturing" });
     const blockerResponse = await app.inject({ method: "GET", url: "/api/task-blockers" });

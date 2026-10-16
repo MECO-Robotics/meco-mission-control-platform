@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { saveEnv, restoreEnv } from "./helpers/environment";
+import { createPlatformStore } from "../src/data/store";
 
 test("buildApp advertises email sign-in when localhost SMTP is configured", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
@@ -22,7 +23,7 @@ test("buildApp advertises email sign-in when localhost SMTP is configured", asyn
   process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
 
   const { buildApp } = await import("../src/app");
-  const app = await buildApp({ userPreferencesPath: join(directory, "preferences.json") });
+  const app = await buildApp({ platformStore: createPlatformStore({ durability: "memory" }), userPreferencesPath: join(directory, "preferences.json") });
 
   try {
     const authConfigResponse = await app.inject({
