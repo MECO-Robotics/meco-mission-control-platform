@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withWorkflowAuthApp, createWorkflowAuthHeaders } from "./helpers/workflowAuth";
-import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createTask, createTestResult, createWorkLog, getSnapshot, resetStore, updateTask } from "../src/data/store";
+import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createTask, createTaskDependency, createTestResult, createWorkLog, getSnapshot, resetStore, updateTask, updateTaskDependency } from "../src/data/store";
 import { derivePartInstanceReadiness } from "../src/domain/readiness";
 import { evaluateTaskCompletion } from "../src/domain/workflows";
 import { reportFromQaReport } from "../src/data/store/reportDerivations";
@@ -322,6 +322,114 @@ test("part deletion invalidates task completion scope atomically until reviewed 
     assert.equal(freshPass.statusCode, 201, freshPass.body);
     assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete", "fresh reviewed QA can complete the updated scope");
     assert.ok(freshPass.json().item.reviewOrder > changedTask.completionScopeReviewOrder!);
+  }, { env });
+});
+
+test("authenticated completion rejects unresolved hard dependencies on the candidate task", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const initial = getSnapshot();
+    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const prerequisite = initial.tasks.find((item) => item.id !== task.id && item.status === "complete")!;
+    const memberId = task.ownerId ?? initial.members[0]!.id;
+    const mentor = await createWorkflowAuthHeaders("mentor");
+
+    const reopened = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "in-progress", requiresDocumentation: false } });
+    assert.equal(reopened.statusCode, 200, reopened.body);
+    updateTask(task.id, { status: "waiting-for-qa" });
+    const freshPass = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
+      reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
+      createdByMemberId: memberId, participantIds: [memberId], mentorId: null, requestedById: null,
+      result: "pass", summary: "Prerequisite guard", notes: "Synthetic passing review", status: "reviewed",
+      createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null,
+    } });
+    assert.equal(freshPass.statusCode, 201, freshPass.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
+
+    const reopenedAgain = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "in-progress" } });
+    assert.equal(reopenedAgain.statusCode, 200, reopenedAgain.body);
+    const dependency = createTaskDependency({ taskId: task.id, kind: "task", refId: prerequisite.id, requiredState: "in-progress", dependencyType: "hard" });
+    const beforeRejectedCompletion = getSnapshot();
+    const rejected = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "complete" } });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.deepEqual(getSnapshot(), beforeRejectedCompletion, "unresolved hard dependency rejection publishes no task or audit changes");
+
+    updateTaskDependency(dependency.id, { requiredState: "complete" });
+    const accepted = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "complete" } });
+    assert.equal(accepted.statusCode, 200, accepted.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete", "completion succeeds after the prerequisite condition is satisfied");
+  }, { env });
+});
+
+test("part revision and definition reassignment require fresh QA on completed task targets", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const initial = getSnapshot();
+    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const partInstance = initial.partInstances.find((item) => item.id === task.partInstanceIds[0])!;
+    const originalDefinition = initial.partDefinitions.find((item) => item.id === partInstance.partDefinitionId)!;
+    const replacementDefinition = initial.partDefinitions.find((item) => item.id !== originalDefinition.id && !initial.partInstances.some((part) => part.partDefinitionId === item.id))!;
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const evidence = { ...initial.artifacts[0]!, id: "synthetic-task-documentation", projectId: task.projectId, targetRefs: [{ kind: "task" as const, id: task.id }], title: "Synthetic task documentation" };
+    resetStore({ ...initial, artifacts: [...initial.artifacts, evidence] });
+
+    const beforeRevisionRejection = getSnapshot();
+    const rejectedRevision = await app.inject({ method: "PATCH", url: `/api/part-definitions/${originalDefinition.id}`, headers: mentor, payload: { revision: "REV-C" } });
+    assert.equal(rejectedRevision.statusCode, 409, rejectedRevision.body);
+    assert.deepEqual(getSnapshot(), beforeRevisionRejection, "revision change rejected for completed inspection task is atomic");
+
+    const beforeReassignmentRejection = getSnapshot();
+    const rejectedReassignment = await app.inject({ method: "PATCH", url: `/api/part-instances/${partInstance.id}`, headers: mentor, payload: { partDefinitionId: replacementDefinition.id } });
+    assert.equal(rejectedReassignment.statusCode, 409, rejectedReassignment.body);
+    assert.deepEqual(getSnapshot(), beforeReassignmentRejection, "definition reassignment rejected for completed task is atomic");
+
+    const reopen = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "in-progress" } });
+    assert.equal(reopen.statusCode, 200, reopen.body);
+    const revisionChange = await app.inject({ method: "PATCH", url: `/api/part-definitions/${originalDefinition.id}`, headers: mentor, payload: { revision: "REV-C" } });
+    assert.equal(revisionChange.statusCode, 200, revisionChange.body);
+    const revisionWatermark = getSnapshot().tasks.find((item) => item.id === task.id)!.completionScopeReviewOrder;
+    assert.equal(typeof revisionWatermark, "number", "reopened task is marked when its inspected definition revision changes");
+    const beforeOldRevisionCompletion = getSnapshot();
+    const oldRevisionCompletion = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "complete" } });
+    assert.equal(oldRevisionCompletion.statusCode, 409, oldRevisionCompletion.body);
+    assert.deepEqual(getSnapshot(), beforeOldRevisionCompletion);
+
+    const submitPass = async () => {
+      updateTask(task.id, { status: "waiting-for-qa" });
+      return app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
+        reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
+        createdByMemberId: task.ownerId, participantIds: task.ownerId ? [task.ownerId] : [initial.members[0]!.id],
+        mentorId: null, requestedById: null, result: "pass", summary: "Revision matched review", notes: "Synthetic passing review",
+        status: "reviewed", createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null,
+      } });
+    };
+    const revisionPass = await submitPass();
+    assert.equal(revisionPass.statusCode, 201, revisionPass.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
+
+    const beforeCompletedReassignment = getSnapshot();
+    const staleReassignment = await app.inject({ method: "PATCH", url: `/api/part-instances/${partInstance.id}`, headers: mentor, payload: { partDefinitionId: replacementDefinition.id } });
+    assert.equal(staleReassignment.statusCode, 409, staleReassignment.body);
+    assert.deepEqual(getSnapshot(), beforeCompletedReassignment, "reassignment cannot leave reviewed task complete with stale definition coverage");
+
+    const reopenForReassignment = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "in-progress" } });
+    assert.equal(reopenForReassignment.statusCode, 200, reopenForReassignment.body);
+    const reassigned = await app.inject({ method: "PATCH", url: `/api/part-instances/${partInstance.id}`, headers: mentor, payload: { partDefinitionId: replacementDefinition.id } });
+    assert.equal(reassigned.statusCode, 200, reassigned.body);
+    const reassignmentWatermark = getSnapshot().tasks.find((item) => item.id === task.id)!.completionScopeReviewOrder;
+    assert.equal(typeof reassignmentWatermark, "number", "reopened task is marked when its part instance changes definition");
+    const beforeOldDefinitionCompletion = getSnapshot();
+    const oldDefinitionCompletion = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "complete" } });
+    assert.equal(oldDefinitionCompletion.statusCode, 409, oldDefinitionCompletion.body);
+    assert.deepEqual(getSnapshot(), beforeOldDefinitionCompletion);
+
+    const reassignmentPass = await submitPass();
+    assert.equal(reassignmentPass.statusCode, 201, reassignmentPass.body);
+    assert.equal(reassignmentPass.json().item.targetRevisions[replacementDefinition.id], replacementDefinition.revision);
+    const completed = getSnapshot().tasks.find((item) => item.id === task.id)!;
+    assert.equal(completed.status, "complete");
+    const metadataUpdate = await app.inject({ method: "PATCH", url: `/api/part-definitions/${replacementDefinition.id}`, headers: mentor, payload: { name: "Harmless metadata rename" } });
+    assert.equal(metadataUpdate.statusCode, 200, metadataUpdate.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.completionScopeReviewOrder, completed.completionScopeReviewOrder, "metadata-only definition edit does not invalidate completion approval");
   }, { env });
 });
 

@@ -3,7 +3,7 @@ import { normalizeTaskTargetIds } from "../domain/taskTargets";
 import { validateTaskLinks, validateTaskPeople } from "../domain/taskLinks";
 import { DEFAULT_PROJECT_TEAM_ID } from "../domain/types";
 import { uniqueIds } from "../domain/ids";
-import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
+import { getTaskWaitingOnDependencyRecords, isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { derivePartInstanceReadiness } from "../domain/readiness";
 import { partInstanceSubsystemId, partInstanceMechanismId } from "../domain/partInstanceLocation";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -2763,12 +2763,23 @@ export function updatePartDefinition(
         : normalizeIteration(input.iteration),
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partDefinitions: currentSnapshot.partDefinitions.map((partDefinition) =>
       partDefinition.id === partDefinitionId ? updatedPartDefinition : partDefinition,
     ),
-  });
+  };
+  if (updatedPartDefinition.revision !== previousPartDefinition.revision) {
+    const inspectedPartInstanceIds = new Set(currentSnapshot.partInstances
+      .filter((partInstance) => partInstance.partDefinitionId === partDefinitionId)
+      .map((partInstance) => partInstance.id));
+    const taskIds = new Set(currentSnapshot.tasks
+      .filter((task) => task.partInstanceIds.some((id) => inspectedPartInstanceIds.has(id)))
+      .map((task) => task.id));
+    replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, taskIds));
+  } else {
+    replaceCurrentSnapshot(nextSnapshot);
+  }
 
   recordAuditAction({
     operation: "update",
@@ -2937,10 +2948,14 @@ export function updatePartInstance(
     ...normalizePmCadProvenance({ ...currentPartInstance, ...input,
       cadEditedAfterImport: markPmCadEditedAfterImport(currentPartInstance, input) }),
   };
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.map((part) => part.id === partInstanceId ? updatedPartInstance : part),
-  });
+  };
+  const taskIds = currentPartInstance.partDefinitionId === updatedPartInstance.partDefinitionId
+    ? new Set<string>()
+    : new Set(currentSnapshot.tasks.filter((task) => task.partInstanceIds.includes(partInstanceId)).map((task) => task.id));
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, taskIds));
   const savedPartInstance = updatedPartInstance;
   {
     const subsystemId = savedPartInstance.location.kind === "installed" ? savedPartInstance.location.subsystemId : savedPartInstance.intendedSubsystemId;
@@ -3332,7 +3347,7 @@ function markTaskCompletionScopeChanged(snapshot: PlatformSnapshot, taskIds: Rea
   for (const task of nextSnapshot.tasks) {
     if (!taskIds.has(task.id) || task.status !== "complete") continue;
     const hasBlockingRisk = snapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === task.id));
-    if (hasBlockingRisk || isTaskWaitingOnDependencies(task, nextSnapshot) || !evaluateTaskCompletion(task, nextSnapshot).canFinalize) {
+    if (hasBlockingRisk || getTaskWaitingOnDependencyRecords(task.id, nextSnapshot).length > 0 || !evaluateTaskCompletion(task, nextSnapshot).canFinalize) {
       throw Object.assign(new Error("A completed task cannot retain completion after its evidence scope changes; reopen it and obtain reviewed QA for the updated scope."), { statusCode: 409 });
     }
   }
@@ -4265,7 +4280,7 @@ export function updateTask(
   if (completionScopeChanged) updatedTask = { ...updatedTask, completionScopeReviewOrder: currentQaReviewOrder() };
   if (updatedTask.status === "complete" && (currentTask.status !== "complete" || completionScopeChanged)) {
     const hasBlockingRisk = currentSnapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === taskId));
-    if (hasBlockingRisk || isTaskWaitingOnDependencies(updatedTask, currentSnapshot) || !evaluateTaskCompletion(updatedTask, currentSnapshot).canFinalize) {
+    if (hasBlockingRisk || getTaskWaitingOnDependencyRecords(updatedTask.id, currentSnapshot).length > 0 || !evaluateTaskCompletion(updatedTask, currentSnapshot).canFinalize) {
       throw Object.assign(new Error("A task cannot be completed until its work log, documentation evidence, mentor-backed QA approval and dependency checks cover its resulting targets."), { statusCode: 409 });
     }
   }
