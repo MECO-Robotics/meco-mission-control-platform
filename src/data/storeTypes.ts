@@ -37,6 +37,7 @@ export type TaskInput = OptionalFields<
     | "isBlocked"
     | "isWaitingOnDependency"
     | "actualHours"
+    | "completionScopeReviewOrder"
   >,
   "checklistItems" | "responsibleGroupId" | "requestedById" | "scheduleRefs" | "manufacturingDetails"
 >;
@@ -65,7 +66,7 @@ export type ProjectInput = OptionalFields<
   "teamId" | "description" | "status"
 >;
 
-export type PurchaseItemInput = Omit<PurchaseItem, "id">;
+export type PurchaseItemInput = Omit<PurchaseItem, "id" | "receipts">;
 
 
 export type MaterialInput = Omit<Material, "id">;
@@ -103,14 +104,14 @@ export type MilestoneInput = Pick<
   | "photoUrl"
 > & Partial<Pick<Milestone, "status">>;
 
-export type QaReportInput = Omit<QaReport, "id" | "projectId" | "createdByMemberId" | "summary" | "status" | "reviewedById" | "createdAt" | "reportType"> & { projectId: string; createdByMemberId?: string | null; summary?: string; status?: QaReport["status"]; reviewedById?: string | null; createdAt?: string };
+export type QaReportInput = Omit<QaReport, "id" | "projectId" | "createdByMemberId" | "summary" | "status" | "reviewedById" | "createdAt" | "reviewedAt" | "reviewOrder" | "inspectedPartInstanceIds" | "targetRevisions" | "reportType"> & { projectId: string; createdByMemberId?: string | null; summary?: string; status?: QaReport["status"]; reviewedById?: string | null; reviewedAt?: string | null; createdAt?: string; targetRevisions?: Record<string, string>; inspectedPartInstanceIds?: string[]; reviewOrder?: number };
 
 export type QaRequestInput = OptionalFields<
   Omit<QaRequest, "id" | "createdAt" | "status">,
   "requestedById" | "projectId" | "targetRefs" | "mentorId"
 >;
 
-export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId"> & { targetRefs: TestResult["targetRefs"]; projectId?: string };
+export type TestResultInput = Omit<TestResult, "id" | "targetRefs" | "projectId" | "createdAt" | "targetRevisions" | "inspectedPartInstanceIds"> & { targetRefs: TestResult["targetRefs"]; projectId?: string };
 
 export type ReportInput = Report extends infer Value
   ? Value extends Report

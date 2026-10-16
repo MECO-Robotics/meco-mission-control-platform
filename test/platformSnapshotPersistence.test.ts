@@ -8,16 +8,24 @@ import { test } from "node:test";
 import { loadOrArchiveIncompatibleSnapshot, loadPlatformSnapshotFile } from "../src/data/platformSnapshotFile";
 import { snapshot } from "../src/data/mockData";
 
-function runProductionStoreScript(snapshotPath: string, source: string) {
+function runProductionStoreScript(snapshotPath: string, source: string, nodeEnv = "production", expectedStatus = 0) {
+  const isolatedSource = `
+    const __testStoreImport = await import("./src/data/store.ts");
+    const __testStoreModule = __testStoreImport.default ?? __testStoreImport;
+    const __testStoreOwner = __testStoreModule.createPlatformStore({ durability: "durable", snapshotPath: process.env.PLATFORM_SNAPSHOT_PATH });
+    await __testStoreOwner.run(async () => {
+      ${source}
+    });
+  `;
   const result = spawnSync(
     process.execPath,
-    ["--import", "tsx", "--input-type=module", "--eval", source],
+    ["--import", "tsx", "--input-type=module", "--eval", isolatedSource],
     {
       cwd: process.cwd(),
       encoding: "utf8",
       env: {
         ...process.env,
-        NODE_ENV: "production",
+        NODE_ENV: nodeEnv,
         DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public",
         CORS_ORIGIN: "https://mission-control.example.test",
         AUTH_EMAIL_SMTP_HOST: "smtp.example.test",
@@ -26,9 +34,75 @@ function runProductionStoreScript(snapshotPath: string, source: string) {
       },
     },
   );
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, expectedStatus, result.stderr || result.stdout);
   return result.stdout.trim();
 }
+
+test("default development platform stores acknowledge only durable commits and survive forced process exit", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-development-durable-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  try {
+    runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const owner = store.createPlatformStore();
+      process.env.NODE_ENV = "test";
+      await owner.run(async () => {
+        const tx = await store.acquireSnapshotMutation(); tx.enter();
+        const task = store.getSnapshot().tasks[0];
+        store.updateTask(task.id, { title: "Development durable command" });
+        await tx.commit(); tx.release();
+        if (store.getSnapshot().tasks[0].title !== "Development durable command") throw new Error("Committed state was not published");
+        process.exit(0);
+      });
+    `, "development");
+    assert.equal(JSON.parse(readFileSync(snapshotPath, "utf8")).tasks[0].title, "Development durable command");
+    runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      if (store.createPlatformStore().run(() => store.getSnapshot().tasks[0].title) !== "Development durable command") throw new Error("Development commit did not survive restart");
+    `, "development");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("development persistence failure rejects commit without publishing the staged snapshot", () => {
+  runProductionStoreScript("/dev/null/blocked-snapshot.json", `
+    const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+    const owner = store.createPlatformStore();
+    await owner.run(async () => {
+      const original = store.getSnapshot().tasks[0].title;
+      const tx = await store.acquireSnapshotMutation(); tx.enter();
+      store.updateTask(store.getSnapshot().tasks[0].id, { title: "Must not publish" });
+      let failed = false;
+      try { await tx.commit(); } catch { failed = true; }
+      tx.release();
+      if (!failed || store.getSnapshot().tasks[0].title !== original) throw new Error("Failed commit was acknowledged or published");
+    });
+  `, "development");
+});
+
+test("memory fixture owners neither load nor replace the configured snapshot file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-memory-owner-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  const sentinel = "fixture-only-existing-file";
+  writeFileSync(snapshotPath, sentinel, "utf8");
+  try {
+    const imported = await import("../src/data/store");
+    const store = imported;
+    const owner = store.createPlatformStore({ durability: "memory", snapshotPath });
+    await owner.run(async () => {
+      const transaction = await store.acquireSnapshotMutation();
+      transaction.enter();
+      store.updateTask(store.getSnapshot().tasks[0]!.id, { title: "Memory fixture change" });
+      await transaction.commit();
+      transaction.release();
+      assert.equal(store.getSnapshot().tasks[0]!.title, "Memory fixture change");
+    });
+    assert.equal(readFileSync(snapshotPath, "utf8"), sentinel);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("snapshot loading rejects parseable JSON missing a required collection", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-incomplete-snapshot-"));
@@ -45,7 +119,7 @@ test("snapshot loading rejects parseable JSON missing a required collection", ()
   }
 });
 
-test("incompatible snapshots are archived unchanged and startup can reseed", () => {
+test("explicit archive helper preserves incompatible snapshot bytes", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-incompatible-snapshot-"));
   const snapshotPath = join(directory, "platform-snapshot.json");
   const original = JSON.stringify({
@@ -84,6 +158,54 @@ test("current schema snapshots load without rewriting and reset archives the con
     assert.ok(archive);
     assert.equal(readFileSync(archive, "utf8"), contents);
     assert.equal(existsSync(snapshotPath), false);
+
+    const legacySnapshot = structuredClone(snapshot);
+    legacySnapshot.purchaseItems[0]!.quantity = 1001.5;
+    writeFileSync(snapshotPath, JSON.stringify(legacySnapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.purchaseItems[0]?.quantity, 1001.5);
+
+    const receivedSnapshot = structuredClone(snapshot);
+    receivedSnapshot.purchaseItems[0]!.receipts = [{
+      id: "persisted-receipt",
+      quantity: 1,
+      location: "Durable rack",
+      receivedAt: "2026-10-15T00:00:00.000Z",
+      partInstanceIds: ["persisted-part-instance"],
+    }];
+    writeFileSync(snapshotPath, JSON.stringify(receivedSnapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.purchaseItems[0]?.receipts?.[0]?.location, "Durable rack");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("optional task completion review watermarks load while legacy tasks remain valid", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-task-scope-watermark-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  try {
+    writeFileSync(snapshotPath, JSON.stringify(snapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.tasks[0]?.completionScopeReviewOrder, undefined);
+    const marked = structuredClone(snapshot);
+    marked.tasks[0]!.completionScopeReviewOrder = 17;
+    writeFileSync(snapshotPath, JSON.stringify(marked), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.tasks[0]?.completionScopeReviewOrder, 17);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("durable store construction loads a valid snapshot without rewriting it", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-constructor-load-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  const contents = `${JSON.stringify(snapshot)}\n`;
+  writeFileSync(snapshotPath, contents, "utf8");
+  try {
+    runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const current = store.getSnapshot();
+      if (current.projects.length !== ${snapshot.projects.length}) throw new Error("Existing snapshot was not loaded");
+    `);
+    assert.equal(readFileSync(snapshotPath, "utf8"), contents);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -122,7 +244,6 @@ test("snapshot:reset archives the configured snapshot and is safe when it is abs
     assert.equal(readFileSync(join(directory, archive), "utf8"), original);
     const second = runReset();
     assert.equal(second.status, 0, second.stderr);
-    assert.match(second.stdout, /No platform snapshot exists/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -225,18 +346,20 @@ test("failed production persistence does not publish staged state", () => {
   assert.equal(result, "not-published");
 });
 
-test("production startup archives a corrupt durable snapshot and reseeds", () => {
-  const directory = mkdtempSync(join(tmpdir(), "meco-platform-corrupt-snapshot-"));
+test("durable startup rejects malformed and incompatible snapshots without changing or archiving them", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-invalid-snapshot-"));
   const snapshotPath = join(directory, "platform-snapshot.json");
-
+  const invalidSnapshots = [
+    "{not-json}\n",
+    JSON.stringify({ snapshotSchemaVersion: 0, tasks: [{ id: "legacy-task" }] }),
+  ];
   try {
-    writeFileSync(snapshotPath, "{not-json}\n", "utf8");
-    const seeded = JSON.parse(runProductionStoreScript(snapshotPath, `const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported; process.stdout.write(JSON.stringify(store.getSnapshot()));`));
-    assert.equal(seeded.projects.length, 6);
-    assert.equal(existsSync(snapshotPath), false);
-    const archives = readdirSync(directory).filter((name) => name.includes("incompatible-vunknown"));
-    assert.equal(archives.length, 1);
-    assert.equal(readFileSync(join(directory, archives[0]!), "utf8"), "{not-json}\n");
+    for (const original of invalidSnapshots) {
+      writeFileSync(snapshotPath, original, "utf8");
+      runProductionStoreScript(snapshotPath, "", "development", 1);
+      assert.equal(readFileSync(snapshotPath, "utf8"), original);
+      assert.deepEqual(readdirSync(directory), ["platform-snapshot.json"]);
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -253,7 +376,8 @@ test("QA workflow effects survive restart and roll back together when persistenc
     const source = store.getSnapshot(); const task = source.tasks[0];
     store.updateTask(task.id, { status: "in-progress" });
     const qaRequest = store.createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: source.members.find(member => member.role === "mentor").id });
-    const result = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: qaRequest.id }], createdByMemberId: source.members[0].id, participantIds: [source.members[0].id], mentorId: source.members[0].id, requestedById: null, result: "iteration-worthy", status: "submitted", reviewedById: null, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair", reviewedAt: new Date().toISOString() });
+    const reviewer = source.members.find(member => member.role === "mentor");
+    const result = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: qaRequest.id }], createdByMemberId: source.members[0].id, participantIds: [source.members[0].id], mentorId: source.members[0].id, requestedById: null, result: "iteration-worthy", status: "reviewed", reviewedById: null, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair" }, { reviewerId: reviewer.id, reviewedAt: new Date().toISOString() });
     if (result.error) throw new Error(result.error);
     if (!store.getSnapshot().qaReports.some(item => item.notes === "Durable QA")) throw new Error("QA report was not staged");
     let failed = false;
@@ -392,7 +516,6 @@ test("atomic acquisition persists all linked records or rolls back the entire du
   }
 });
 
-
 test("QA and test findings preserve separate IDs, audits and durable transaction rollback", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-findings-persistence-"));
   const snapshotPath = join(directory, "snapshot.json");
@@ -486,40 +609,37 @@ test("production tutorial commits and lifecycle changes stay off disk while glob
 });
 
 
-test("obsolete task snapshots are archived and startup restores canonical bootstrap", () => {
+test("obsolete task snapshots fail closed and remain unchanged", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-array-target-reset-"));
   const path = join(directory, "snapshot.json");
+  const seedPath = join(directory, "seed.json");
   const readSnapshot = `
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
-    process.stdout.write(JSON.stringify(store.getSnapshot()));
+    const fs = await import("node:fs");
+    fs.writeFileSync(${JSON.stringify(seedPath)}, JSON.stringify(store.getSnapshot()));
   `;
   try {
-    const snapshot = JSON.parse(runProductionStoreScript(path, readSnapshot));
+    runProductionStoreScript(path, readSnapshot);
+    const snapshot = JSON.parse(readFileSync(seedPath, "utf8"));
     for (const obsolete of [
       { ...snapshot.tasks[0], subsystemId: snapshot.tasks[0].subsystemIds[0] },
     ]) {
-      writeFileSync(path, JSON.stringify({ ...snapshot, tasks: [obsolete] }));
-      const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
-      assert.equal(restored.projects.length, 6);
-      assert.equal(existsSync(path), false);
+      const contents = JSON.stringify({ ...snapshot, tasks: [obsolete] });
+      writeFileSync(path, contents);
+      runProductionStoreScript(path, readSnapshot, "production", 1);
+      assert.equal(readFileSync(path, "utf8"), contents);
+      assert.deepEqual(readdirSync(directory).sort(), ["seed.json", "snapshot.json"]);
     }
-    const restored = JSON.parse(runProductionStoreScript(path, readSnapshot));
-    assert.deepEqual(restored.tasks.map((task: { id: string }) => task.id), snapshot.tasks.map((task: { id: string }) => task.id));
-    assert.ok(restored.tasks.every((task: Record<string, unknown>) =>
-      ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds"].every((field) =>
-        Array.isArray(task[field]) && !(field.slice(0, -1) in task),
-      ),
-    ));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("production apps sharing a durable snapshot coordinate sequential and concurrent HTTP writes", () => {
+test("development apps sharing a durable snapshot coordinate sequential and concurrent HTTP writes", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-shared-durable-owner-"));
   const path = join(directory, "snapshot.json");
   try {
-    const taskIds = JSON.parse(runProductionStoreScript(path, `
+    runProductionStoreScript(path, `
       process.env.API_RATE_LIMIT_MAX_REQUESTS = "1000";
       const appModule = await import("./src/app.ts"); const { buildApp } = appModule.default ?? appModule;
       const mobileModule = await import("./test/helpers/mobileSessionMemoryStore.ts"); const { MobileSessionMemoryStore } = mobileModule.default ?? mobileModule;
@@ -549,13 +669,18 @@ test("production apps sharing a durable snapshot coordinate sequential and concu
           const tasks = response.json().tasks;
           if (tasks.find(task => task.id === a.id)?.title !== "Sequential first app" || tasks.find(task => task.id === b.id)?.title !== "Sequential second app") throw new Error("An app lost a committed write");
         }
-        process.stdout.write(JSON.stringify([a.id,b.id]));
+        const fs = await import("node:fs");
+        fs.writeFileSync(${JSON.stringify(join(directory, "result.json"))}, JSON.stringify([a.id,b.id]));
       } finally { await first.close(); await second.close(); }
-    `));
-    const restored = JSON.parse(runProductionStoreScript(path, `
+    `, "development");
+    const taskIds = JSON.parse(readFileSync(join(directory, "result.json"), "utf8"));
+    runProductionStoreScript(path, `
       const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
-      process.stdout.write(JSON.stringify(store.getSnapshot().tasks.filter(task => ${JSON.stringify(taskIds)}.includes(task.id))));
-    `));
+      const owner = store.createPlatformStore();
+      const saved = owner.run(() => store.getSnapshot().tasks.filter(task => ${JSON.stringify(taskIds)}.includes(task.id)));
+      if (JSON.stringify(saved.map(task => task.title)) !== JSON.stringify(["Sequential first app", "Sequential second app"]) || JSON.stringify(saved.map(task => task.summary)) !== JSON.stringify(["Concurrent first app", "Concurrent second app"])) throw new Error("Concurrent dev writes were not recovered");
+    `, "development");
+    const restored = JSON.parse(readFileSync(path, "utf8")).tasks.filter((task: { id: string }) => taskIds.includes(task.id));
     assert.deepEqual(restored.map((task: { title: string }) => task.title), ["Sequential first app", "Sequential second app"]);
     assert.deepEqual(restored.map((task: { summary: string }) => task.summary), ["Concurrent first app", "Concurrent second app"]);
   } finally {

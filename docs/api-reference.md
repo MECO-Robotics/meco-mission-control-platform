@@ -108,13 +108,13 @@ Retention policy:
 - `POST /api/tasks/:taskId/claim`: claim a task for the signed-in student or lead. Optional `{ "start": true }` starts eligible unblocked work. Returns `409 task_already_claimed` when another owner claimed first.
 - `POST /api/tasks/:taskId/release`: release a task. Students can release their own task; leads, mentors, and admins can release any task.
 - `POST /api/tasks/:taskId/reassign`: assign or unassign a task owner. Requires lead, mentor, or admin when auth is enabled.
-- `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled.
+- `PATCH /api/tasks/:taskId`: update a task. Requires mentor, lead, or admin when auth is enabled. Setting status to `complete` returns `409` until required work-log, documentation and reviewed QA evidence exist, or while blocking risks or unfinished hard dependencies remain.
 - `DELETE /api/tasks/:taskId`: delete a task. Requires mentor, lead, or admin when auth is enabled.
 - `GET /api/task-targets`: list valid target entities for task linkage.
 - `GET /api/task-dependencies`: list dependencies.
-- `POST /api/task-dependencies`: create a dependency.
-- `PATCH /api/task-dependencies/:dependencyId`: update a dependency.
-- `DELETE /api/task-dependencies/:dependencyId`: delete a dependency.
+- `POST /api/task-dependencies`: create a dependency. Requires lead, mentor, or admin when auth is enabled. Hard task dependencies cannot create cycles; self-dependencies are rejected.
+- `PATCH /api/task-dependencies/:dependencyId`: update a dependency. Requires lead, mentor, or admin when auth is enabled. Hard task dependencies cannot create cycles; self-dependencies are rejected.
+- `DELETE /api/task-dependencies/:dependencyId`: delete a dependency. Requires lead, mentor, or admin when auth is enabled.
 
 ## Work Logs And Meetings
 
@@ -127,16 +127,18 @@ Retention policy:
 ## Reports, QA, And Risks
 
 - `GET /api/reports`: list reports.
-- `POST /api/reports`: create a typed report (`qa`, `practice`, `competition`, or `review`) with project ownership and typed `targetRefs`.
+- `POST /api/reports`: create a typed report (`qa`, `practice`, `competition`, or `review`) with project ownership and typed `targetRefs`. QA creation accepts `draft` or `submitted`; a QA `status: "reviewed"` request returns 400 with the required transition route. Use this endpoint for nonapproval evidence only.
 - `GET /api/report-findings`: list report findings.
-- `POST /api/report-findings`: create a report finding.
-- `GET /api/qa-reports`: list QA reports.
-- `POST /api/qa-reports`: create a QA report using project ownership and typed `targetRefs`; reports may target any supported domain entity.
-- `POST /api/qa-reports/submit`: submit QA evidence atomically. Task completion, follow-up, and dependency effects apply only when a Task is among the report's typed targets. Report creation does not duplicate Risk-owned state.
+- `POST /api/report-findings`: create a report finding only from a mentor/admin reviewed QA report. The corrective task and optional QA risk must belong to that report and overlap its target scope.
+- `GET /api/qa-reports`: list QA reports. Legacy reviewed evidence without server approval stamps includes `needsReverification: true` and does not satisfy completion/readiness.
+- `POST /api/qa-reports`: create draft or submitted QA evidence using project ownership and typed `targetRefs`; reports may target any supported domain entity. A reviewed status returns 400 and points to the transition route.
+- `POST /api/qa-reports/submit`: save QA evidence atomically. A submission may contain multiple part targets, but at most one distinct task target; multiple task targets return 400 before publishing any report or workflow effects. Draft/submitted reports retain their QA request and create no task, risk, or finding. Only an authenticated, roster-linked mentor/admin reviewed-pass transition can complete an eligible task or close its request; reviewer identity, approval time and review order are server-owned. `createdAt` is observation time.
+- `POST /api/report-findings/:findingId/retest`: mentor/admin only, supports both QA and test findings. Payload is `{ operationId?, sourceType?, result: "pass" | "fail", notes, evidenceNotes?, observedAt? }`. `operationId` is optional for older clients; clients that retry should durably preserve and resend the same key and normalized payload. Matching retries return the existing record; a changed payload with the same reviewer/category/finding/key returns 409. `sourceType` is optional unless the same ID exists in both categories, in which case it is required or the route returns 409. The response includes `sourceType`, source ID, reviewer-attributed retest history, frozen instance/revision coverage and server verification order. Passing retest resolves only the finding; it supersedes only its linked historical failure when current revision and instance coverage match. A risk changes only when it was generated from that source, links to the finding's target and corrective task, and is exclusively linked to that finding. Corrective task completion alone does not resolve a finding.
+- `POST /api/reports` and `POST /api/qa-reports` accept draft/submitted evidence. A reviewed status is rejected with 400 and directs authors to `POST /api/qa-reports/submit` for the authorized review transition.
 - `GET /api/qa-requests`: list QA requests.
 - `POST /api/qa-requests`: create a QA request. A task-targeted request requires exactly one in-progress task without blocking risks or unfinished dependencies, an active mentor in its season, and an assigned requester or lead/mentor/admin. The authenticated requester overrides client identity. The command atomically persists the request, task mentor, `waiting-for-qa` status and audit entry; the response contains `{ item, task }`. Retrying a pending request for the same mentor returns the existing request without duplicate writes. Taskless requests retain their independent subject/target workflow and return `task: null`.
 - `GET /api/test-results`: list test results.
-- `POST /api/test-results`: create a test result.
+- `POST /api/test-results`: create a test result. Server `createdAt` and `verificationOrder` own ordering; optional `observedAt` preserves the operator's observation date. Caller-supplied order/revision/coverage fields are not authoritative. Legacy results without stamps remain stored, include `needsReverification: true` in list/bootstrap output and do not satisfy readiness.
 - `GET /api/risks`: list risks.
 - `POST /api/risks`: create a risk, including typed `category: "help"` requests. Optional `createdByMemberId` references a roster member; authenticated requests derive the creator from the session.
 - `PATCH /api/risks/:riskId`: update a risk. Creator attribution is immutable.
@@ -148,7 +150,7 @@ Retention policy:
 - `GET /api/materials`: list materials.
 - `POST /api/materials`: create a material.
 - `PATCH /api/materials/:materialId`: update a material.
-- `DELETE /api/materials/:materialId`: delete a material.
+- `DELETE /api/materials/:materialId`: delete a material unless a purchase, part definition, or manufacturing task references it.
 - `GET /api/artifacts`: list artifacts.
 - `POST /api/artifacts`: create an artifact.
 - `PATCH /api/artifacts/:artifactId`: update an artifact.
@@ -158,11 +160,11 @@ Retention policy:
 - `PATCH /api/manufacturing/processes/:processId`: archive an unused process with `{ "isActive": false }`. Requires mentor/admin; in-use processes return `409`.
 - Manufacturing work is represented by a Robot Kanban Task with `workType=manufacturing`; `manufacturingDetails` holds its technical part, quantity, process, fulfillment source, material/files, tolerances, and QA requirements. It has no separate status or assignment workflow.
 - `GET /api/purchases`: list purchase items.
-- `POST /api/purchases`: create a requested, unapproved purchase item.
-- `PATCH /api/purchases/:itemId`: edit non-workflow fields while status is `requested`. Unchanged legacy workflow fields are accepted as no-ops.
+- `POST /api/purchases`: create a requested, unapproved purchase item. Purchases with `kind` other than `manufacturing-service` and a non-null `partDefinitionId` require a positive whole-number quantity, including when a material is also linked. Material-only and manufacturing-service quantities may be fractional; whole-number part orders have no purchase-order maximum.
+- `PATCH /api/purchases/:itemId`: edit non-workflow fields while status is `requested`. A changed quantity or changed discrete-part identity must have a positive whole-number quantity. Unchanged legacy quantities remain readable and allow unrelated metadata edits. Unchanged legacy workflow fields are accepted as no-ops.
 - `PUT /api/purchases/:itemId/approval`: approve or revoke approval with `{ "approved": boolean }`. Requires mentor or admin and derives approver metadata from the session; approval cannot be revoked after purchasing begins.
 - `POST /api/purchases/:itemId/transition`: advance through `not-ordered -> ordered -> shipped -> delivered`, or cancel before delivery. Ordering requires approval. Requires mentor/admin; accepts optional `finalCost: { amount, currency } | null` and `purchaseOrderNumber: string | null`. The current order state is accepted to edit metadata without advancing, and same-state retries preserve transition timestamps.
-- `DELETE /api/purchases/:itemId`: delete a purchase item. Requires mentor or admin.
+- `DELETE /api/purchases/:itemId`: delete a purchase item without receipt history. Requires mentor or admin; receipt-bearing purchase history is retained.
 
 Workflow endpoints return `403` for insufficient role, `404` for a missing item, and `409` for a non-adjacent or otherwise invalid transition.
 
@@ -242,3 +244,9 @@ Media signing enforces kind-specific maximum sizes, a per-IP issuance rate, and 
 
 
 Dependencies are stored as typed TaskDependency records. Unresolved problems are stored in Risks with typed related targets; Task blocked state and readiness are projections, not duplicate blocker fields.
+
+## Receiving and evidence revisions
+
+`POST /api/purchases/:itemId/receipts` requires a client-generated stable `operationId`, positive finite `quantity` (up to 1,000 per command), and nonempty stock `location`. Reuse the same operation ID and payload when retrying one logical receipt: the original receipt result is returned without applying stock effects again; reuse with a different quantity or location returns `409`. Mentor/admin actors may receive ordered, shipped or delivered purchases; cumulative receipts cannot exceed the purchase quantity, with decimal-safe partial sums. Part-instance receipts require whole-number quantities; material and manufacturing-service receipts allow fractional quantities, and existing fractional purchase quantities remain valid. The returned receipt includes its operation ID, quantity, location, timestamp and created part-instance IDs. Missing receipt history and legacy receipt records without operation IDs remain valid. COTS purchases linked to a part definition create stock instances even when a material reference also exists. Raw-material purchases add material quantity; a conflicting destination for existing material stock is rejected atomically. Outsourced fabrication receipts do not create duplicate stock. Receiving does not complete tasks or verify readiness. Receipt-bearing purchases cannot change their kind, linked task, part or material identity, lower quantity below receipts, or be deleted. Materials referenced by purchases or part definitions cannot be deleted; stock edit permissions remain as before.
+
+QA/test evidence records the applicable part-definition revision. Historical evidence remains stored; evidence without a matching revision cannot verify current readiness. Reviewed QA and the latest result for each test title are considered; failures from different tests remain independent. Generated corrective tasks and risks retain report/finding links. Milestones require meaningful required verification criteria; automatic project `in_scope` markers remain scope metadata and do not establish readiness.

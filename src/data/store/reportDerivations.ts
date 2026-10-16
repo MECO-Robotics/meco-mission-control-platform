@@ -21,6 +21,7 @@ export interface FindingListItem {
   projectId: string;
   createdAt: string;
   updatedAt: string;
+  retests?: ReadonlyData<QaFinding>["retests"];
 }
 
 function findingListItemFromFinding(
@@ -40,6 +41,7 @@ function findingListItemFromFinding(
     projectId: finding.projectId,
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
+    ...(finding.retests ? { retests: finding.retests } : {}),
   };
 }
 
@@ -51,6 +53,7 @@ export function reportFromQaReport(
   const { photoUrl, ...base } = report;
   return {
     ...base,
+    ...(report.status === "reviewed" && (report.reviewOrder === undefined || report.reviewedAt === null || report.reviewedById === null || report.targetRevisions === undefined || report.inspectedPartInstanceIds === undefined) ? { needsReverification: true } : {}),
     ...(options.includePhoto === false || !photoUrl ? {} : { photoUrl }),
     targetRefs: report.targetRefs.map((ref) => ({ ...ref })),
   };
@@ -69,9 +72,9 @@ export function reportFindingFromFinding(finding: ReadonlyData<QaFinding | TestF
     issueType: finding.title,
     severity: finding.severity,
     notes: finding.detail,
-    spawnedTaskId: finding.targetRefs.find((ref) => ref.kind === "task")?.id ?? null,
+    spawnedTaskId: finding.correctiveTaskId ?? finding.targetRefs.find((ref) => ref.kind === "task")?.id ?? null,
     spawnedIterationId: null,
-    spawnedRiskId: null,
+    spawnedRiskId: finding.riskId ?? null,
     title: finding.title,
     detail: finding.detail,
     status: finding.status === "resolved" ? "resolved" : "open",

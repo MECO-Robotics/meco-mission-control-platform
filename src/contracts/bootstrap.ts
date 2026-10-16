@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { subsystemLayoutSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, riskSchema, purchaseItemSchema, artifactSchema, qaRequestSchema, testResultSchema, domainReferenceSchema, manufacturingProcessCreateSchema, manufacturingProcessArchiveSchema } from "../routes/routeSchemas";
+import { subsystemLayoutSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, riskSchema, purchaseItemRecordSchema, purchaseReceiptRecordSchema, purchaseItemSchema, artifactSchema, qaRequestSchema, testResultSchema, domainReferenceSchema, manufacturingProcessCreateSchema, manufacturingProcessArchiveSchema } from "../routes/routeSchemas";
 
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
 export const BOOTSTRAP_CONTRACT_VERSION = 1;
@@ -82,7 +82,7 @@ const manufacturingDetailsSchema = z.object({
   batchLabel: z.string().optional(),
 }).strict();
 const taskBootstrapSchema = z.object({
-  id: z.string(), createdAt: z.string().optional(), serialNumber: z.number().optional(), serial: z.string().optional(),
+  id: z.string(), completionScopeReviewOrder: z.number().int().nonnegative().optional(), createdAt: z.string().optional(), serialNumber: z.number().optional(), serial: z.string().optional(),
   projectId: z.string(), workTypeId: z.string(), responsibleGroupId: z.string().nullable(), workstreamIds: z.array(z.string()),
   title: z.string(), summary: z.string(), photoUrl: z.string().optional(), subsystemIds: z.array(z.string()),
   mechanismIds: z.array(z.string()), partInstanceIds: z.array(z.string()), scheduleRefs: z.array(scheduleReferenceSchema),
@@ -94,8 +94,9 @@ const taskBootstrapSchema = z.object({
 }).strict();
 const artifactBootstrapSchema = artifactSchema.extend({ id: z.string(), targetRefs: z.array(domainReferenceSchema) }).strict();
 const qaRequestBootstrapSchema = qaRequestSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema), createdAt: z.string().datetime({ offset: true }), status: z.enum(["requested", "in-review", "complete", "cancelled"]) }).strict();
-const testResultBootstrapSchema = testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema) }).strict();
-const findingBootstrapSchema = z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(domainReferenceSchema), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string() }).strict();
+const testResultBootstrapSchema = testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema), verificationOrder: z.number().int().positive().optional(), needsReverification: z.boolean().optional() }).strict();
+const retestBootstrapSchema = z.object({ operationId: z.string().optional(), sourceType: z.enum(["qa", "test"]).optional(), result: z.enum(["pass", "fail"]), notes: z.string(), evidenceNotes: z.string().optional(), observedAt: z.string().optional(), reviewedAt: z.string(), reviewedById: z.string(), order: z.number().int().positive(), verificationOrder: z.number().int().positive().optional(), targetRevisions: z.record(z.string(), z.string()).optional(), inspectedPartInstanceIds: z.array(z.string()).optional(), supersedesId: z.string().optional() }).strict();
+const findingBootstrapSchema = z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(domainReferenceSchema), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional(), retests: z.array(retestBootstrapSchema).optional() }).strict();
 const scheduleIdentitySchema = z.object({ id: z.string(), title: z.string(), startAt: z.string(), endAt: z.string().nullable() });
 const meetingBootstrapSchema = scheduleIdentitySchema.extend({ meetingType: z.string().optional(), seasonId: z.string().optional(), projectIds: z.array(z.string()).optional(), location: z.string().optional(), description: z.string().optional(), rsvpsYes: z.number(), rsvpsMaybe: z.number(), openSignIns: z.number() }).passthrough();
 const eventBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string(), projectIds: z.array(z.string()), eventType: z.string(), location: z.string().optional(), description: z.string().optional() }).passthrough();
@@ -141,7 +142,7 @@ export const bootstrapPayloadSchema = z
     events: z.array(eventBootstrapSchema),
     manufacturingProcesses: z.array(manufacturingProcessRecordSchema),
     attendanceRecords: bootstrapCollectionSchema,
-    purchaseItems: z.array(purchaseItemSchema.extend({ id: z.string() }).strict()),
+    purchaseItems: z.array(purchaseItemRecordSchema.extend({ id: z.string(), receipts: z.array(purchaseReceiptRecordSchema).optional() }).strict()),
     actions: bootstrapCollectionSchema,
     designIterations: bootstrapCollectionSchema.optional(),
   })

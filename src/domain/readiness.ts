@@ -5,6 +5,8 @@ import type {
   ReadinessStatus,
   SnapshotView,
   ReadonlyData,
+  QaFinding,
+  TestFinding,
 } from "./types";
 
 function hasTarget(targets: readonly { kind: string; id: string }[], kind: string, id: string) {
@@ -14,25 +16,79 @@ function hasTarget(targets: readonly { kind: string; id: string }[], kind: strin
 export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, snapshot: SnapshotView): ReadinessStatus {
   const relatedTasks = snapshot.tasks.filter((task) => task.partInstanceIds.includes(part.id));
   const taskIds = new Set(relatedTasks.map((task) => task.id));
+  const matchesPartOrDefinition = (refs: readonly { kind: string; id: string }[]) =>
+    hasTarget(refs, "part-instance", part.id) || hasTarget(refs, "part-definition", part.partDefinitionId);
   if (snapshot.risks.some((risk) => risk.status !== "resolved" && (
     hasTarget(risk.relatedTargets, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(risk.relatedTargets, "task", id))
   ))) return "blocked";
 
   const findings = [...snapshot.qaFindings, ...snapshot.testFindings];
   if (findings.some((finding) => finding.status !== "resolved" && (
-    hasTarget(finding.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))
+    matchesPartOrDefinition(finding.targetRefs) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))
   ))) return "blocked";
 
-  const qa = snapshot.qaReports.filter((report) => hasTarget(report.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(report.targetRefs, "task", id)));
-  if (qa.some((report) => report.result === "iteration-worthy")) return "blocked";
-  if (qa.some((report) => report.result === "minor-fix")) return "qa";
-  if (qa.some((report) => report.result === "pass")) return "ready";
+  const currentRevision = snapshot.partDefinitions.find((definition) => definition.id === part.partDefinitionId)?.revision;
+  const hasCurrentPassingRetest = (finding: ReadonlyData<QaFinding> | ReadonlyData<TestFinding>, sourceId: string, sourceOrder: number | undefined) => {
+    return finding?.retests?.some((retest) => retest.result === "pass" && retest.supersedesId === sourceId &&
+      retest.verificationOrder !== undefined && (sourceOrder === undefined || retest.verificationOrder > sourceOrder) &&
+      retest.inspectedPartInstanceIds?.includes(part.id) === true && retest.targetRevisions?.[part.partDefinitionId] === currentRevision) === true;
+  };
+  const reportCoversPart = (report: (typeof snapshot.qaReports)[number]) =>
+    (matchesPartOrDefinition(report.targetRefs) || [...taskIds].some((id) => hasTarget(report.targetRefs, "task", id))) && report.inspectedPartInstanceIds?.includes(part.id) === true;
+  const qaTaskTargeted = (report: (typeof snapshot.qaReports)[number]) => [...taskIds].some((id) => hasTarget(report.targetRefs, "task", id)) || hasTarget(report.targetRefs, "part-definition", part.partDefinitionId);
+  const hasStaleOutcome = snapshot.qaReports.some((report) => report.status === "reviewed" &&
+    (reportCoversPart(report) || qaTaskTargeted(report) || matchesPartOrDefinition(report.targetRefs)) &&
+    (report.reviewOrder === undefined || (qaTaskTargeted(report) && report.inspectedPartInstanceIds === undefined) || ((matchesPartOrDefinition(report.targetRefs) || qaTaskTargeted(report)) && report.inspectedPartInstanceIds?.includes(part.id) !== true) || report.targetRevisions?.[part.partDefinitionId] !== currentRevision)) ||
+    snapshot.testResults.some((result) => (matchesPartOrDefinition(result.targetRefs) || [...taskIds].some((id) => hasTarget(result.targetRefs, "task", id))) &&
+      (result.verificationOrder === undefined || result.inspectedPartInstanceIds?.includes(part.id) !== true || result.targetRevisions?.[part.partDefinitionId] !== currentRevision));
+  const qa = snapshot.qaReports.filter((report) =>
+    report.status === "reviewed" &&
+    report.reviewOrder !== undefined &&
+    reportCoversPart(report) &&
+    currentRevision !== undefined && report.targetRevisions?.[part.partDefinitionId] === currentRevision,
+  );
+  const latestQa = qa.reduce<typeof qa[number] | undefined>((latest, report) =>
+    !latest || (report.reviewOrder ?? -1) > (latest.reviewOrder ?? -1) ? report : latest, undefined);
+  const latestQaFindings = latestQa
+    ? snapshot.qaFindings.filter((finding) => finding.reportId === latestQa.id &&
+      (matchesPartOrDefinition(finding.targetRefs) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))))
+    : [];
+  const latestQaIsClearedNonpass = latestQa !== undefined && latestQa.result !== "pass" && latestQaFindings.length > 0 &&
+    latestQaFindings.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, latestQa.id, latestQa.reviewOrder));
+  if (!latestQaIsClearedNonpass && latestQa?.result === "iteration-worthy") return "blocked";
+  if (!latestQaIsClearedNonpass && latestQa?.result === "minor-fix") return "qa";
 
-  const tests = snapshot.testResults.filter((result) => hasTarget(result.targetRefs, "part-instance", part.id) || [...taskIds].some((id) => hasTarget(result.targetRefs, "task", id)));
-  if (tests.some((result) => result.status === "fail" || result.status === "blocked")) return "blocked";
-  if (tests.some((result) => result.status === "pass")) return "ready";
+  const tests = snapshot.testResults.filter((result) =>
+    (matchesPartOrDefinition(result.targetRefs) || [...taskIds].some((id) => hasTarget(result.targetRefs, "task", id))) &&
+    result.inspectedPartInstanceIds?.includes(part.id) === true &&
+    currentRevision !== undefined && result.targetRevisions?.[part.partDefinitionId] === currentRevision && result.createdAt && result.verificationOrder !== undefined,
+  );
+  const latestTestsByTitle = new Map<string, typeof tests[number]>();
+  for (const result of tests) {
+    const latest = latestTestsByTitle.get(result.title);
+    if (!latest || (result.verificationOrder ?? -1) > (latest.verificationOrder ?? -1)) latestTestsByTitle.set(result.title, result);
+  }
+  const latestTests = [...latestTestsByTitle.values()];
+  const isTestFailureCleared = (result: (typeof latestTests)[number]) => {
+    const linked = snapshot.testFindings.filter((finding) => finding.testResultId === result.id &&
+      (matchesPartOrDefinition(finding.targetRefs) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
+    return linked.length > 0 && linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, result.id, result.verificationOrder));
+  };
+  const activeTestFailures = [...latestTestsByTitle.values()].filter((result) => {
+    if (result.status !== "fail" && result.status !== "blocked") return false;
+    return !isTestFailureCleared(result);
+  });
+  if (activeTestFailures.length > 0) return "blocked";
+  const clearedTestFailures = latestTests.filter((result) => {
+    if (result.status !== "fail" && result.status !== "blocked") return false;
+    return isTestFailureCleared(result);
+  });
+  if (clearedTestFailures.length > 0) return "not-ready";
+  if (latestQaIsClearedNonpass) return "not-ready";
+  if (latestTests.some((result) => result.status === "pass" && result.inspectedPartInstanceIds !== undefined)) return "ready";
+  if (latestQa?.result === "pass") return "ready";
   if (relatedTasks.some((task) => task.status === "waiting-for-qa")) return "qa";
-  if (relatedTasks.length > 0 && relatedTasks.every((task) => task.status === "complete")) return "ready";
+  if (hasStaleOutcome) return "not-ready";
   return "not-ready";
 }
 
@@ -76,6 +132,10 @@ export function deriveMilestoneReadiness(milestone: ReadonlyData<Milestone>, sna
   ));
   if (hasOpenRisk) return "blocked";
   const required = (snapshot.milestoneRequirements ?? []).filter((item) => item.milestoneId === milestone.id && item.required);
+  const verificationCriteria = required.filter((item) =>
+    !(item.conditionType === "custom" && item.conditionValue.trim().toLowerCase() === "in_scope"),
+  );
+  if (verificationCriteria.length === 0) return "not-ready";
   if (required.some((item) => !requirementSatisfied(item, snapshot))) return "not-ready";
   if (required.some((item) => item.targetRefs.some((ref) => ref.kind === "part-instance" && snapshot.partInstances.some((part) => part.id === ref.id && derivePartInstanceReadiness(part, snapshot) === "qa")))) return "qa";
   return "ready";

@@ -49,6 +49,7 @@ test("unrelated HTTP patches retain saved fields; explicit clears apply and inva
   await withIntegrationApp(async ({ app }) => {
     const fixture = structuredClone(getSnapshot()) as PlatformSnapshot;
     Object.assign(fixture.tasks[0], { checklistItems: ["Keep checklist"], requiresDocumentation: true });
+    fixture.tasks[0].status = "in-progress";
     Object.assign(fixture.subsystems[0], { photoUrl: "subsystem-photo", iteration: 4 });
     Object.assign(fixture.mechanisms[0], { googleSheetsUrl: "sheet-link", photoUrl: "mechanism-photo", iteration: 3, isArchived: true });
     Object.assign(fixture.partDefinitions[0], { iteration: 5 });

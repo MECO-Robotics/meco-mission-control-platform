@@ -291,24 +291,27 @@ test("web report and task planning contract endpoints persist records", async ()
         issueType: "Bracket needs edge cleanup",
         severity: "medium",
         notes: "Deburr the bracket before final install.",
-        spawnedTaskId: null,
+        spawnedTaskId: "swerve-sensor-bundle",
         spawnedIterationId: null,
-        spawnedRiskId: null,
+        spawnedRiskId: "risk-drive-evidence-delay",
       },
     });
 
-    assert.equal(findingCreateResponse.statusCode, 201);
-    assert.equal(findingCreateResponse.json().item.reportId, reportBody.item.id);
+    assert.equal(findingCreateResponse.statusCode, 409, findingCreateResponse.body);
+    assert.match(findingCreateResponse.json().message, /reviewed QA reports/);
 
     resetLimits();
+
+    const dependencyTaskId = "wire-swerve-module";
+    const dependencyRefId = "intake-guard";
 
     const dependencyCreateResponse = await app.inject({
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "swerve-sensor-bundle",
+        taskId: dependencyTaskId,
         kind: "task",
-        refId: "wire-swerve-module",
+        refId: dependencyRefId,
         requiredState: "complete",
         dependencyType: "hard",
       },
@@ -342,9 +345,9 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "swerve-sensor-bundle",
+        taskId: dependencyTaskId,
         kind: "task",
-        refId: "wire-swerve-module",
+        refId: dependencyRefId,
         requiredState: "complete",
         dependencyType: "soft",
       },
@@ -379,7 +382,7 @@ test("web report and task planning contract endpoints persist records", async ()
       url: "/api/bootstrap",
     });
 
-    assert.equal(bootstrapResponse.statusCode, 200);
+    assert.equal(bootstrapResponse.statusCode, 200, bootstrapResponse.body);
     const bootstrapBody = bootstrapResponse.json() as {
       qaFindings: Array<{ reportId?: string | null; testResultId?: string | null }>;
       testFindings: Array<{ reportId?: string | null; testResultId?: string | null }>;
@@ -393,8 +396,10 @@ test("web report and task planning contract endpoints persist records", async ()
       }>;
     };
     assert.ok(bootstrapBody.reports.some((report) => report.id === reportBody.item.id));
-    assert.ok(
+    assert.equal(
       [...bootstrapBody.qaFindings, ...bootstrapBody.testFindings].some((finding) => finding.reportId === reportBody.item.id || finding.testResultId === reportBody.item.id),
+      false,
+      "submitted QA evidence does not generate findings before mentor/admin review",
     );
     assert.ok(
       bootstrapBody.taskDependencies.some(

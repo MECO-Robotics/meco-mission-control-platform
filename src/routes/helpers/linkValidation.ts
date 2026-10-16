@@ -58,6 +58,7 @@ function validateTargetReferences(targetRefs: readonly { kind: string; id: strin
 export function validateQaReportLinks(input: {
   targetRefs?: readonly { kind: string; id: string }[];
   taskId?: string;
+  projectId?: string;
   participantIds: readonly string[];
 }) {
   const linkError = input.taskId
@@ -67,6 +68,9 @@ export function validateQaReportLinks(input: {
       : null;
   if (linkError) {
     return linkError;
+  }
+  if (input.taskId && input.projectId !== undefined && getTasks().find((task) => task.id === input.taskId)?.projectId !== input.projectId) {
+    return "The QA report project must match its task.";
   }
   const targetError = validateTargetReferences(input.targetRefs);
   if (targetError) return targetError;

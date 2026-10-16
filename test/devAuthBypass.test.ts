@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetRequestLimits } from "../src/security/requestLimits";
 
-const platformStore = createPlatformStore();
+const platformStore = createPlatformStore({ durability: "memory" });
 
 test("buildApp exposes a development-only sign-in bypass", () => platformStore.run(async () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
