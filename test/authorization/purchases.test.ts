@@ -236,6 +236,20 @@ test("receipt operation IDs return one durable effect on retry and conflict on c
   });
 });
 
+test("receiving a part purchase with a missing definition is atomic", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    updatePurchaseItem("polycarb-sheet", { partDefinitionId: "deleted-part-definition" });
+    const before = getSnapshot();
+    const response = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: {
+      operationId: "missing-definition-receipt", quantity: 1, location: "Receiving shelf A",
+    } });
+    assert.equal(response.statusCode, 409, response.body);
+    assert.match(response.json().message, /part definition no longer exists/i);
+    assert.deepEqual(getSnapshot(), before, "rejected receipt creates no receipt, part instance, stock change, task link, or audit action");
+  });
+});
+
 test("fractional material receipts use decimal-safe cumulative bounds and old receipt records remain valid", async () => {
   assert.equal(purchaseReceiptRecordSchema.safeParse({ id: "old", quantity: 1, location: "Shelf", receivedAt: "2026-01-01T00:00:00.000Z", partInstanceIds: [] }).success, true);
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {

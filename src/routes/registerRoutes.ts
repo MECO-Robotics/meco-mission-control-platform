@@ -3513,6 +3513,7 @@ export async function registerRoutes(
         if (result.error === "operation-conflict") return reply.code(409).send({ message: "This operationId was already used with a different receipt payload." });
         if (result.error === "not-ordered") return reply.code(409).send({ message: "Only ordered purchases can be received." });
         if (result.error === "location-conflict") return reply.code(409).send({ message: "Material stock already exists at a different location; receive it at the existing stock location." });
+        if (result.error === "missing-part-definition") return reply.code(409).send({ message: "The purchased part definition no longer exists." });
         return reply.code(400).send({ message: "Receipt quantity must be positive and finite; part-instance receipts require a whole number." });
       }
       return { item: result.item, receipt: result.receipt };

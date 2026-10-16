@@ -4370,6 +4370,9 @@ export function receivePurchaseItem(
   }
   if (!Number.isFinite(input.quantity) || input.quantity <= 0 || input.quantity > 1000) return { error: "invalid-quantity" as const };
   const createsPartInstances = item.kind !== "manufacturing-service" && !(item.partDefinitionId === null && item.materialId !== null) && item.partDefinitionId !== null;
+  if (createsPartInstances && !currentSnapshot.partDefinitions.some((definition) => definition.id === item.partDefinitionId)) {
+    return { error: "missing-part-definition" as const };
+  }
   if (createsPartInstances && !Number.isSafeInteger(input.quantity)) return { error: "invalid-quantity" as const };
   if (item.orderStatus !== "ordered" && item.orderStatus !== "shipped" && item.orderStatus !== "delivered") return { error: "not-ordered" as const };
   const received = Number(receipts.reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
