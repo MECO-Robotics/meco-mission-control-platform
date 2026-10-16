@@ -109,6 +109,51 @@ test("reviewed nonpass closes only its request and creates genuinely linked corr
   }, { env });
 });
 
+test("finding scope cannot be self-authorized by an unrelated same-project task", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const snapshot = getSnapshot();
+    const projectTasks = snapshot.tasks.filter((item) => item.projectId === "project-robot-2026");
+    const scopeIds = (task: typeof projectTasks[number]) => new Set([
+      ...task.workstreamIds.map((id) => `workstream:${id}`), ...task.subsystemIds.map((id) => `subsystem:${id}`),
+      ...task.mechanismIds.map((id) => `mechanism:${id}`), ...task.partInstanceIds.map((id) => `part-instance:${id}`),
+    ]);
+    const reviewedTask = projectTasks[0];
+    const reviewedScope = reviewedTask && scopeIds(reviewedTask);
+    const unrelatedTask = projectTasks.find((candidate) => candidate.id !== reviewedTask?.id &&
+      [...scopeIds(candidate)].every((ref) => !reviewedScope?.has(ref)));
+    assert.ok(reviewedTask && unrelatedTask);
+    const report = createQaReport({ projectId: reviewedTask.projectId, targetRefs: [{ kind: "task", id: reviewedTask.id }], participantIds: [], result: "minor-fix", notes: "Reviewed scope", mentorId: null, requestedById: null });
+    const current = getSnapshot();
+    const reviewed = { ...report, status: "reviewed" as const, reviewedById: current.members.find((item) => item.role === "mentor")!.id, reviewedAt: new Date().toISOString(), reviewOrder: (current.qaReviewSequence ?? 0) + 1 };
+    const correctiveTask = { ...reviewedTask, id: "scoped-corrective-task", title: "Scoped corrective work" };
+    resetStore({ ...current, tasks: [...current.tasks, correctiveTask], qaReviewSequence: reviewed.reviewOrder, qaReports: current.qaReports.map((item) => item.id === report.id ? reviewed : item) });
+    const before = getSnapshot();
+    const response = await app.inject({ method: "POST", url: "/api/report-findings", headers: await createWorkflowAuthHeaders("student"), payload: {
+      reportId: report.id, targetRefs: [{ kind: "task", id: unrelatedTask.id }], issueType: "Unrelated task issue", severity: "medium", notes: "Synthetic scope abuse", spawnedTaskId: unrelatedTask.id, spawnedRiskId: null, spawnedIterationId: null,
+    } });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(getSnapshot(), before, "rejected finding does not publish any data or corrective task attribution");
+    const unrelatedWithoutTask = await app.inject({ method: "POST", url: "/api/report-findings", headers: await createWorkflowAuthHeaders("student"), payload: {
+      reportId: report.id, targetRefs: [{ kind: "task", id: unrelatedTask.id }], issueType: "Unrelated target issue", severity: "medium", notes: "Synthetic target abuse", spawnedTaskId: null, spawnedRiskId: null, spawnedIterationId: null,
+    } });
+    assert.equal(unrelatedWithoutTask.statusCode, 400, unrelatedWithoutTask.body);
+    assert.deepEqual(getSnapshot(), before, "unlinked findings use the same reviewed report scope without publishing");
+    const validFinding = await app.inject({ method: "POST", url: "/api/report-findings", headers: await createWorkflowAuthHeaders("student"), payload: {
+      reportId: report.id, targetRefs: [{ kind: "task", id: correctiveTask.id }], issueType: "Scoped issue", severity: "medium", notes: "Synthetic covered issue", spawnedTaskId: correctiveTask.id, spawnedRiskId: null, spawnedIterationId: null,
+    } });
+    assert.equal(validFinding.statusCode, 201, validFinding.body);
+    const finding = validFinding.json().item;
+    const retest = await app.inject({ method: "POST", url: `/api/report-findings/${finding.id}/retest`, headers: await createWorkflowAuthHeaders("mentor"), payload: { sourceType: "qa", result: "fail", notes: "Verified covered corrective work" } });
+    assert.equal(retest.statusCode, 200, retest.body);
+    const audit = getSnapshot().actions?.find((item) => item.entityType === "qa-finding-retest" && item.entityId === finding.id);
+    assert.equal(audit?.taskId, correctiveTask.id, "valid corrective task remains the retest audit attribution");
+    const parentFinding = await app.inject({ method: "POST", url: "/api/report-findings", headers: await createWorkflowAuthHeaders("student"), payload: {
+      reportId: report.id, targetRefs: [{ kind: "task", id: reviewedTask.id }], issueType: "Parent task issue", severity: "low", notes: "Synthetic parent task finding", spawnedTaskId: null, spawnedRiskId: null, spawnedIterationId: null,
+    } });
+    assert.equal(parentFinding.statusCode, 201, "findings can still directly reference the reviewed parent task");
+  }, { env });
+});
+
 test("QA submission rejects multiple task targets atomically while retaining multi-part targets", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const snapshot = getSnapshot();

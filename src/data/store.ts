@@ -3592,12 +3592,23 @@ export function createReportFinding(input: ReportFindingInput) {
   if (report.reportType !== "qa" || report.status !== "reviewed") return null;
   const task = input.spawnedTaskId ? currentSnapshot.tasks.find((item) => item.id === input.spawnedTaskId) : undefined;
   const targets = new Set(input.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
-  const sourceTasks = currentSnapshot.tasks.filter((item) => targets.has(`task:${item.id}`));
-  const spawnedTaskMatchesScope = task && (targets.has(`task:${task.id}`) || flattenTaskTargets(task).some((ref) => targets.has(`${ref.targetType}:${ref.targetId}`)) ||
-    sourceTasks.some((source) => {
-      const sourceTargets = new Set(flattenTaskTargets(source).map((ref) => `${ref.targetType}:${ref.targetId}`));
-      return flattenTaskTargets(task).some((ref) => sourceTargets.has(`${ref.targetType}:${ref.targetId}`));
-    }));
+  const reportTargets = new Set(report.targetRefs.map((ref) => `${ref.kind}:${ref.id}`));
+  const reportTaskIds = new Set(report.targetRefs.filter((ref) => ref.kind === "task").map((ref) => ref.id));
+  const taskScopeTargets = new Set(report.targetRefs.filter((ref) => ref.kind !== "task").map((ref) => `${ref.kind}:${ref.id}`));
+  for (const reportTaskId of reportTaskIds) {
+    const reportTask = currentSnapshot.tasks.find((item) => item.id === reportTaskId);
+    if (reportTask) {
+      for (const ref of flattenTaskTargets(reportTask)) {
+        if (ref.targetType !== "project") taskScopeTargets.add(`${ref.targetType}:${ref.targetId}`);
+      }
+    }
+  }
+  const taskMatchesReportScope = (candidate: Task) => reportTaskIds.has(candidate.id) || flattenTaskTargets(candidate).some((ref) =>
+    ref.targetType !== "project" && taskScopeTargets.has(`${ref.targetType}:${ref.targetId}`));
+  const findingTargetsMatchReport = input.targetRefs.every((ref) => reportTargets.has(`${ref.kind}:${ref.id}`) || taskScopeTargets.has(`${ref.kind}:${ref.id}`) ||
+    ref.kind === "task" && currentSnapshot.tasks.some((candidate) => candidate.id === ref.id && candidate.projectId === report.projectId && taskMatchesReportScope(candidate)));
+  const spawnedTaskMatchesScope = task && taskMatchesReportScope(task);
+  if (!findingTargetsMatchReport) return null;
   if (input.spawnedTaskId && (!task || task.projectId !== report.projectId || !spawnedTaskMatchesScope)) return null;
   const spawnedRisk = input.spawnedRiskId ? currentSnapshot.risks.find((item) => item.id === input.spawnedRiskId) : undefined;
   if (input.spawnedRiskId && (!spawnedRisk || report.followUpRiskId !== spawnedRisk.id || spawnedRisk.projectId !== report.projectId || spawnedRisk.category !== "qa" || spawnedRisk.source.kind !== "report" || spawnedRisk.source.id !== report.id || !spawnedRisk.relatedTargets.some((ref) => targets.has(`${ref.kind}:${ref.id}`)) || spawnedRisk.mitigationTaskId !== (input.spawnedTaskId ?? null))) return null;
