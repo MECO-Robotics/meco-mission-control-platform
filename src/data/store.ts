@@ -686,9 +686,22 @@ function replaceCurrentSnapshot(snapshot: PlatformSnapshot) {
   if (state === activeOwner().global && activeOwner().durable) {
     throw new Error("Durable platform mutations require a request transaction.");
   }
+  assertCompletedTaskDependenciesDoNotBecomeUnresolved(state.current, snapshot);
   state.current = ownSnapshot(deriveTaskSummaries(snapshot));
   if (state.mutation) {
     state.mutation.dirty = true;
+  }
+}
+
+function assertCompletedTaskDependenciesDoNotBecomeUnresolved(previous: SnapshotView, next: SnapshotView) {
+  const previousTasks = new Map(previous.tasks.map((task) => [task.id, task]));
+  for (const task of next.tasks) {
+    if (task.status !== "complete" || previousTasks.get(task.id)?.status !== "complete") continue;
+    const previouslyWaiting = new Set(getTaskWaitingOnDependencyRecords(task.id, previous).map((dependency) => dependency.id));
+    const newlyWaiting = getTaskWaitingOnDependencyRecords(task.id, next).find((dependency) => !previouslyWaiting.has(dependency.id));
+    if (newlyWaiting) {
+      throw Object.assign(new Error("A completed task cannot become blocked by a dependency."), { statusCode: 409 });
+    }
   }
 }
 
@@ -4575,12 +4588,16 @@ export function receivePurchaseItem(
   const item = currentSnapshot.purchaseItems.find((candidate) => candidate.id === itemId);
   if (!item) return { error: "not-found" as const };
   const receipts = item.receipts ?? [];
+  const validInputQuantity = Number.isFinite(input.quantity) && input.quantity > 0 && input.quantity <= 1000;
+  const quantity = validInputQuantity ? Number(input.quantity.toFixed(12)) : Number.NaN;
+  const normalizedQuantityIsValid = validInputQuantity && quantity > 0;
+  const location = input.location.trim();
   const priorOperation = receipts.find((receipt) => receipt.operationId === input.operationId);
   if (priorOperation) {
-    if (priorOperation.quantity !== input.quantity || priorOperation.location !== input.location.trim()) return { error: "operation-conflict" as const };
+    if (!normalizedQuantityIsValid || priorOperation.quantity !== quantity || priorOperation.location !== location) return { error: "operation-conflict" as const };
     return { item, receipt: priorOperation, replayed: true as const };
   }
-  if (!Number.isFinite(input.quantity) || input.quantity <= 0 || input.quantity > 1000) return { error: "invalid-quantity" as const };
+  if (!normalizedQuantityIsValid) return { error: "invalid-quantity" as const };
   const createsPartInstances = item.kind !== "manufacturing-service" && !(item.partDefinitionId === null && item.materialId !== null) && item.partDefinitionId !== null;
   if (createsPartInstances && !currentSnapshot.partDefinitions.some((definition) => definition.id === item.partDefinitionId)) {
     return { error: "missing-part-definition" as const };
@@ -4588,8 +4605,8 @@ export function receivePurchaseItem(
   if (createsPartInstances && !Number.isSafeInteger(input.quantity)) return { error: "invalid-quantity" as const };
   if (item.orderStatus !== "ordered" && item.orderStatus !== "shipped" && item.orderStatus !== "delivered") return { error: "not-ordered" as const };
   const received = Number(receipts.reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
-  const floatingPointTolerance = Number.EPSILON * Math.max(1, Math.abs(item.quantity), Math.abs(received), Math.abs(input.quantity)) * 8;
-  if (received + input.quantity - item.quantity > floatingPointTolerance) {
+  const floatingPointTolerance = Number.EPSILON * Math.max(1, Math.abs(item.quantity), Math.abs(received), Math.abs(quantity)) * 8;
+  if (received + quantity - item.quantity > floatingPointTolerance) {
     return { error: "over-receipt" as const };
   }
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === item.taskId);
@@ -4611,7 +4628,7 @@ export function receivePurchaseItem(
     ? currentSnapshot.materials.map((candidate) => candidate.id === material.id
       ? {
           ...candidate,
-          onHandQuantity: Number((candidate.onHandQuantity + input.quantity).toFixed(12)),
+          onHandQuantity: Number((candidate.onHandQuantity + quantity).toFixed(12)),
           // A material has one stock location. Keep the established location
           // when it already has stock rather than moving that stock on receipt.
           location: candidate.onHandQuantity === 0 ? input.location.trim() : candidate.location,
@@ -4638,8 +4655,8 @@ export function receivePurchaseItem(
   const receipt: PurchaseReceipt = {
     id: receiptId,
     operationId: input.operationId,
-    quantity: input.quantity,
-    location: input.location.trim(),
+    quantity,
+    location,
     receivedAt: new Date().toISOString(),
     partInstanceIds: partInstances.map((part) => part.id),
   };

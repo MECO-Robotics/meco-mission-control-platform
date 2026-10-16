@@ -4,6 +4,7 @@ import { withWorkflowAuthApp, createWorkflowAuthHeaders } from "./helpers/workfl
 import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createSubsystem, createTask, createTaskDependency, createTestResult, createWorkLog, getSnapshot, resetStore, updateRisk, updateTask, updateTaskDependency } from "../src/data/store";
 import { derivePartInstanceReadiness } from "../src/domain/readiness";
 import { evaluateTaskCompletion } from "../src/domain/workflows";
+import { getTaskWaitingOnDependencyRecords } from "../src/domain/taskDependencyState";
 import { reportFromQaReport } from "../src/data/store/reportDerivations";
 import type { SnapshotView } from "../src/domain/types";
 
@@ -524,6 +525,40 @@ test("authenticated dependency mutations cannot invalidate completed task requir
     resetLimits();
     const benignSoftEdit = await app.inject({ method: "PATCH", url: `/api/task-dependencies/${soft.json().item.id}`, headers: mentor, payload: { requiredState: "in-progress" } });
     assert.equal(benignSoftEdit.statusCode, 200, `soft dependency edits do not invalidate completion: ${benignSoftEdit.body}`);
+  }, { env });
+});
+
+test("completed dependent tasks reject prerequisite changes that make satisfied dependencies unresolved", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const initial = getSnapshot();
+    const dependent = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const prerequisite = initial.tasks.find((item) => item.id === "pdh-labels")!;
+    assert.equal(dependent.status, "complete");
+    assert.equal(prerequisite.status, "complete");
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const created = await app.inject({ method: "POST", url: "/api/task-dependencies", headers: mentor, payload: {
+      taskId: dependent.id, kind: "task", refId: prerequisite.id, requiredState: "complete", dependencyType: "hard",
+    } });
+    assert.equal(created.statusCode, 201, created.body);
+    assert.equal(getTaskWaitingOnDependencyRecords(dependent.id, getSnapshot()).length, 0, "a satisfied hard dependency is valid on an existing completed task");
+
+    const beforeDirectReject = getSnapshot();
+    assert.throws(
+      () => updateTask(prerequisite.id, { status: "in-progress" }),
+      (error: unknown) => error instanceof Error && "statusCode" in error && error.statusCode === 409,
+    );
+    assert.deepEqual(getSnapshot(), beforeDirectReject, "direct rejection preserves the full snapshot and audit history");
+
+    const beforeRouteReject = getSnapshot();
+    const rejected = await app.inject({ method: "PATCH", url: `/api/tasks/${prerequisite.id}`, headers: mentor, payload: { status: "in-progress" } });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.deepEqual(getSnapshot(), beforeRouteReject, "authenticated rejection publishes neither prerequisite change nor audit action");
+
+    const reopened = await app.inject({ method: "PATCH", url: `/api/tasks/${dependent.id}`, headers: mentor, payload: { status: "in-progress" } });
+    assert.equal(reopened.statusCode, 200, reopened.body);
+    const changedPrerequisite = updateTask(prerequisite.id, { status: "in-progress" });
+    assert.equal(changedPrerequisite?.status, "in-progress", "the prerequisite can reopen after its dependent is reopened");
+    assert.equal(getTaskWaitingOnDependencyRecords(dependent.id, getSnapshot()).length, 1, "the reopened dependent remains blocked by the unresolved hard dependency");
   }, { env });
 });
 
