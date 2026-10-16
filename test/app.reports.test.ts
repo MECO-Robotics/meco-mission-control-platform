@@ -302,13 +302,16 @@ test("web report and task planning contract endpoints persist records", async ()
 
     resetLimits();
 
+    const dependencyTaskId = "wire-swerve-module";
+    const dependencyRefId = "intake-guard";
+
     const dependencyCreateResponse = await app.inject({
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "swerve-sensor-bundle",
+        taskId: dependencyTaskId,
         kind: "task",
-        refId: "wire-swerve-module",
+        refId: dependencyRefId,
         requiredState: "complete",
         dependencyType: "hard",
       },
@@ -342,9 +345,9 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        taskId: "swerve-sensor-bundle",
+        taskId: dependencyTaskId,
         kind: "task",
-        refId: "wire-swerve-module",
+        refId: dependencyRefId,
         requiredState: "complete",
         dependencyType: "soft",
       },

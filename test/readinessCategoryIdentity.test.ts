@@ -148,3 +148,32 @@ test("a finding retest does not replace its newer nonpass QA report with an olde
   const unrelatedOpenFailure = { ...resolvedFinding, id: "unrelated-open-failure", reportId: "another-review", status: "open", retests: [] };
   assert.equal(readiness([reviewedPass, reviewedMinorFix], [resolvedFinding, unrelatedOpenFailure]), "blocked", "an unrelated active failure continues to block after the linked finding is retested");
 });
+
+test("a passing test finding retest does not replace its newer failed test with an older pass", () => {
+  const part = { id: "part-1", partDefinitionId: "definition-1" };
+  const targetRefs = [{ kind: "part-instance", id: part.id }];
+  const testPass = {
+    id: "older-test-pass", title: "Continuity", status: "pass", createdAt: "2026-01-01T00:00:00.000Z",
+    verificationOrder: 1, targetRefs, inspectedPartInstanceIds: [part.id], targetRevisions: { "definition-1": "A" },
+  };
+  const testFailure = {
+    ...testPass, id: "newer-test-failure", status: "fail", verificationOrder: 2,
+  };
+  const finding = {
+    id: "test-finding", testResultId: testFailure.id, status: "resolved", targetRefs,
+    retests: [{ result: "pass", supersedesId: testFailure.id, verificationOrder: 3,
+      inspectedPartInstanceIds: [part.id], targetRevisions: { "definition-1": "A" } }],
+  };
+  const base = {
+    partInstances: [part], partDefinitions: [{ id: part.partDefinitionId, revision: "A" }], tasks: [], risks: [],
+    qaReports: [], qaFindings: [], testFindings: [finding], milestoneRequirements: [],
+  };
+  const readiness = (testResults: unknown[]) => derivePartInstanceReadiness(part as never, { ...base, testResults } as unknown as SnapshotView);
+
+  assert.equal(readiness([testPass, testFailure]), "not-ready");
+  assert.equal(readiness([testFailure, testPass]), "not-ready", "verification order wins over array order");
+  const laterPass = { ...testPass, id: "later-test-pass", verificationOrder: 4 };
+  assert.equal(readiness([testFailure, laterPass, testPass]), "ready", "a later full test pass for the same check restores readiness");
+  const unrelatedOpenFailure = { ...testFailure, id: "unrelated-failure", title: "Separate check", verificationOrder: 5 };
+  assert.equal(readiness([testFailure, laterPass, unrelatedOpenFailure]), "blocked", "an unrelated active failed check still blocks");
+});

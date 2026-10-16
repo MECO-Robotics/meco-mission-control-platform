@@ -468,6 +468,65 @@ test("authenticated completion rejects unresolved hard dependencies on the candi
   }, { env });
 });
 
+test("authenticated dependency mutations cannot invalidate completed task requirements", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const initial = getSnapshot();
+    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const unfinished = initial.tasks.find((item) => item.projectId === task.projectId && item.id !== task.id && item.status !== "complete")!;
+    const completedPrerequisite = initial.tasks.find((item) => item.projectId === task.projectId && item.id !== task.id && item.status === "complete")!;
+    const source = initial.tasks.find((item) => item.projectId === task.projectId && item.id !== task.id && item.id !== unfinished.id && item.status !== "complete" &&
+      !initial.taskDependencies.some((dependency) => dependency.taskId === item.id))!;
+    assert.ok(unfinished && completedPrerequisite && source);
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const memberId = task.ownerId ?? initial.members[0]!.id;
+    updateTask(task.id, { status: "waiting-for-qa", requiresDocumentation: false });
+    createWorkLog({ taskId: task.id, date: "2026-10-16", hours: 1, participantIds: [memberId], notes: "Dependency mutation fixture" });
+    const reviewed = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
+      reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
+      createdByMemberId: memberId, participantIds: [memberId], mentorId: null, requestedById: null,
+      result: "pass", summary: "Dependency mutation fixture", notes: "Synthetic fresh review", status: "reviewed",
+      createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null,
+    } });
+    assert.equal(reviewed.statusCode, 201, reviewed.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete", "fixture completion is supported by fresh reviewed QA");
+    const unresolved = { taskId: task.id, kind: "task", refId: unfinished.id, requiredState: "complete", dependencyType: "hard" };
+
+    const beforeCreateReject = getSnapshot();
+    const rejectedCreate = await app.inject({ method: "POST", url: "/api/task-dependencies", headers: mentor, payload: unresolved });
+    assert.equal(rejectedCreate.statusCode, 409, rejectedCreate.body);
+    assert.deepEqual(getSnapshot(), beforeCreateReject, "unresolved edge creation leaves dependencies and audits unchanged");
+
+    resetLimits();
+    const soft = await app.inject({ method: "POST", url: "/api/task-dependencies", headers: mentor, payload: { ...unresolved, dependencyType: "soft" } });
+    assert.equal(soft.statusCode, 201, soft.body);
+    const beforeUpdateReject = getSnapshot();
+    const rejectedUpdate = await app.inject({ method: "PATCH", url: `/api/task-dependencies/${soft.json().item.id}`, headers: mentor, payload: { dependencyType: "hard" } });
+    assert.equal(rejectedUpdate.statusCode, 409, rejectedUpdate.body);
+    assert.deepEqual(getSnapshot(), beforeUpdateReject, "unresolved edge update is atomic");
+
+    resetLimits();
+    const satisfied = await app.inject({ method: "POST", url: "/api/task-dependencies", headers: mentor, payload: {
+      taskId: task.id, kind: "task", refId: completedPrerequisite.id, requiredState: "complete", dependencyType: "hard",
+    } });
+    assert.equal(satisfied.statusCode, 201, `a satisfied hard dependency is allowed: ${satisfied.body}`);
+    resetLimits();
+    const movable = await app.inject({ method: "POST", url: "/api/task-dependencies", headers: mentor, payload: {
+      taskId: source.id, kind: "task", refId: unfinished.id, requiredState: "complete", dependencyType: "soft",
+    } });
+    assert.equal(movable.statusCode, 201, movable.body);
+    const beforeMoveReject = getSnapshot();
+    const rejectedMove = await app.inject({ method: "PATCH", url: `/api/task-dependencies/${movable.json().item.id}`, headers: mentor, payload: {
+      taskId: task.id, dependencyType: "hard",
+    } });
+    assert.equal(rejectedMove.statusCode, 409, rejectedMove.body);
+    assert.deepEqual(getSnapshot(), beforeMoveReject, "moving an unresolved edge into a completed task is atomic");
+
+    resetLimits();
+    const benignSoftEdit = await app.inject({ method: "PATCH", url: `/api/task-dependencies/${soft.json().item.id}`, headers: mentor, payload: { requiredState: "in-progress" } });
+    assert.equal(benignSoftEdit.statusCode, 200, `soft dependency edits do not invalidate completion: ${benignSoftEdit.body}`);
+  }, { env });
+});
+
 test("part revision and definition reassignment require fresh QA on completed task targets", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
     const initial = getSnapshot();

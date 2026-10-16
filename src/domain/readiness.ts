@@ -69,13 +69,21 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
     if (!latest || (result.verificationOrder ?? -1) > (latest.verificationOrder ?? -1)) latestTestsByTitle.set(result.title, result);
   }
   const latestTests = [...latestTestsByTitle.values()];
-  const activeTestFailures = [...latestTestsByTitle.values()].filter((result) => {
-    if (result.status !== "fail" && result.status !== "blocked") return false;
+  const isTestFailureCleared = (result: (typeof latestTests)[number]) => {
     const linked = snapshot.testFindings.filter((finding) => finding.testResultId === result.id &&
       (matchesPartOrDefinition(finding.targetRefs) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
-    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, result.id, result.verificationOrder));
+    return linked.length > 0 && linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, result.id, result.verificationOrder));
+  };
+  const activeTestFailures = [...latestTestsByTitle.values()].filter((result) => {
+    if (result.status !== "fail" && result.status !== "blocked") return false;
+    return !isTestFailureCleared(result);
   });
   if (activeTestFailures.length > 0) return "blocked";
+  const clearedTestFailures = latestTests.filter((result) => {
+    if (result.status !== "fail" && result.status !== "blocked") return false;
+    return isTestFailureCleared(result);
+  });
+  if (clearedTestFailures.length > 0) return "not-ready";
   if (latestQaIsClearedNonpass) return "not-ready";
   if (latestTests.some((result) => result.status === "pass" && result.inspectedPartInstanceIds !== undefined)) return "ready";
   if (latestQa?.result === "pass") return "ready";

@@ -98,6 +98,7 @@ import {
   updateProject,
   updateSubsystem,
   updatePurchaseItem,
+  validateReceivedPurchaseItemUpdate,
   receivePurchaseItem,
   updateRisk,
   startInteractiveTutorialSession,
@@ -3336,17 +3337,9 @@ export async function registerRoutes(
         return reply.code(400).send({ message: "Discrete part purchase quantity must be a positive whole number." });
       }
 
-      const receivedQuantity = Number((currentItem.receipts ?? []).reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
-      if (receivedQuantity > 0 && parsed.data.quantity !== undefined && parsed.data.quantity < receivedQuantity) {
-        return reply.code(409).send({ message: "Purchase quantity cannot be lower than the quantity already received." });
-      }
-      if (receivedQuantity > 0 && (
-        (parsed.data.partDefinitionId !== undefined && parsed.data.partDefinitionId !== currentItem.partDefinitionId) ||
-        (parsed.data.materialId !== undefined && parsed.data.materialId !== currentItem.materialId) ||
-        (parsed.data.kind !== undefined && parsed.data.kind !== currentItem.kind) ||
-        (parsed.data.taskId !== undefined && parsed.data.taskId !== currentItem.taskId)
-      )) {
-        return reply.code(409).send({ message: "Purchase identity cannot change after receipts have been recorded." });
+      const receiptValidationError = validateReceivedPurchaseItemUpdate(currentItem, nextItemShape);
+      if (receiptValidationError) {
+        return reply.code(409).send({ message: receiptValidationError });
       }
 
 

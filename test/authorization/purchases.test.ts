@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMaterial, createPartInstance, createSubsystem, getSnapshot, getTasks, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
+import { createMaterial, createPartInstance, createPurchaseItem, createSubsystem, getSnapshot, getTasks, receivePurchaseItem, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
 import { purchaseItemSchema, purchaseReceiptRecordSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
 import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
 
@@ -487,14 +487,82 @@ test("postreceipt quantity floor is decimal-safe and allows unchanged quantity m
     const second = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "floor-0.1", quantity: 0.1, location: "Onyx shelf" } });
     assert.equal(second.statusCode, 200, second.body);
     resetLimits();
+    const beforeUnderfloor = getSnapshot();
     const underfloor = await app.inject({ method: "PATCH", url: "/api/purchases/ferrule-kit", headers: mentor, payload: { title: "Must not apply", quantity: 1.19 } });
     assert.equal(underfloor.statusCode, 409);
+    assert.deepEqual(getSnapshot(), beforeUnderfloor, "HTTP rejection leaves receipt, inventory, and audit snapshot unchanged");
     resetLimits();
     const after = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
     const saved = after.purchaseItems.find((item: { id: string }) => item.id === "ferrule-kit");
     assert.equal(saved.title, "Ferrule kit received");
     assert.equal(saved.quantity, 1.2);
     assert.equal(saved.receipts.length, 2);
+  });
+});
+
+test("direct purchase edits cannot rewrite received identity or lower received quantity", async () => {
+  await withWorkflowAuthApp(async () => {
+    updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
+    updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", quantity: 1.2, orderStatus: "ordered" });
+    const received = receivePurchaseItem("ferrule-kit", { operationId: "domain-decimal-receipt", quantity: 0.1, location: "Onyx shelf" });
+    assert.ok("receipt" in received);
+    const fractionalReceipt = receivePurchaseItem("ferrule-kit", { operationId: "domain-decimal-receipt-2", quantity: 0.2, location: "Onyx shelf" });
+    assert.ok("receipt" in fractionalReceipt);
+    const beforeRejectedEdits = getSnapshot();
+    const forgedEdits = [
+      { taskId: "another-task" }, { taskId: undefined }, { kind: "manufacturing-service" },
+      { partDefinitionId: "pd-polycarbonate-sheet" },
+      { materialId: null }, { materialId: undefined }, { quantity: 0.2 }, { quantity: Number.NaN }, { quantity: undefined },
+    ];
+    for (const patch of forgedEdits) {
+      assert.throws(
+        () => updatePurchaseItem("ferrule-kit", patch as unknown as Parameters<typeof updatePurchaseItem>[1]),
+        (error: unknown) => error instanceof Error && "statusCode" in error && error.statusCode === 409,
+        `domain rejects received purchase edit ${JSON.stringify(patch)}`,
+      );
+      assert.deepEqual(getSnapshot(), beforeRejectedEdits, "rejected direct edit leaves inventory, receipts, and audit unchanged");
+    }
+
+    updatePurchaseItem("ferrule-kit", { taskId: beforeRejectedEdits.purchaseItems.find((item) => item.id === "ferrule-kit")!.taskId, partDefinitionId: null, materialId: "mat-onyx-filament" });
+    updatePurchaseItem("ferrule-kit", { title: "Valid commercial edit", quantity: 0.3 });
+    assert.equal(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.title, "Valid commercial edit");
+    assert.equal(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.quantity, 0.3);
+    assert.ok(Math.abs(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts!.reduce((total, receipt) => total + receipt.quantity, 0) - 0.3) < Number.EPSILON);
+
+    updatePurchaseItem("polycarb-sheet", { kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId: null, quantity: 1, orderStatus: "ordered" });
+    const partReceipt = receivePurchaseItem("polycarb-sheet", { operationId: "domain-part-receipt", quantity: 1, location: "Part shelf" });
+    assert.ok("receipt" in partReceipt);
+    const beforePartIdentityEdits = getSnapshot();
+    for (const patch of [{ partDefinitionId: null }, { taskId: null }]) {
+      assert.throws(() => updatePurchaseItem("polycarb-sheet", patch as unknown as Parameters<typeof updatePurchaseItem>[1]));
+      assert.deepEqual(getSnapshot(), beforePartIdentityEdits, "part identity rewrite cannot orphan receipt provenance");
+    }
+  });
+});
+
+test("received purchase edits honor receiver floating-point tolerance without allowing a real shortfall", async () => {
+  await withWorkflowAuthApp(async () => {
+    const requestedQuantity = 1.4 - 0.1;
+    assert.equal(requestedQuantity, 1.2999999999999998);
+    updatePurchaseItem("outsourced-swerve-bracket", { quantity: requestedQuantity, orderStatus: "ordered" });
+    const received = receivePurchaseItem("outsourced-swerve-bracket", {
+      operationId: "domain-float-boundary-receipt",
+      quantity: 1.3,
+      location: "Fabrication receiving",
+    });
+    assert.ok("receipt" in received);
+
+    updatePurchaseItem("outsourced-swerve-bracket", { title: "Boundary receipt title edit" });
+    const edited = getSnapshot().purchaseItems.find((item) => item.id === "outsourced-swerve-bracket")!;
+    assert.equal(edited.title, "Boundary receipt title edit");
+    assert.equal(edited.quantity, requestedQuantity);
+
+    const beforeShortfall = getSnapshot();
+    assert.throws(
+      () => updatePurchaseItem("outsourced-swerve-bracket", { quantity: 1.29 }),
+      (error: unknown) => error instanceof Error && "statusCode" in error && error.statusCode === 409,
+    );
+    assert.deepEqual(getSnapshot(), beforeShortfall, "a meaningful below-received quantity leaves purchase and audit unchanged");
   });
 });
 
@@ -787,19 +855,21 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
     assert.equal(afterBothLinked.materials.find((entry: { id: string }) => entry.id === material.id).onHandQuantity, material.onHandQuantity);
     assert.equal(afterBothLinked.partInstances.length, before.partInstances.length + 1);
 
-    updatePurchaseItem("polycarb-sheet", { partDefinitionId: null });
+    const { id: _id, receipts: _receipts, ...materialPurchaseFields } = originalPurchase;
+    const materialPurchase = createPurchaseItem({ ...materialPurchaseFields, title: "Independent material receipt test", partDefinitionId: null, materialId: material.id, quantity: 4 });
+    const materialPurchaseId = materialPurchase.id;
     resetLimits();
-    const conflicting = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "conflicting-location", quantity: 1, location: "New material shelf" } });
+    const conflicting = await inject({ method: "POST", url: `/api/purchases/${materialPurchaseId}/receipts`, headers: mentor, payload: { operationId: "conflicting-location", quantity: 1, location: "New material shelf" } });
     assert.equal(conflicting.statusCode, 409);
     assert.match(conflicting.json().message, /different location/i);
     resetLimits();
     const afterConflict = (await inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
     assert.equal(afterConflict.materials.find((entry: { id: string }) => entry.id === material.id).onHandQuantity, material.onHandQuantity);
-    assert.equal(afterConflict.purchaseItems.find((entry: { id: string }) => entry.id === "polycarb-sheet").receipts.length, originalPurchase.receipts.length + 1);
+    assert.equal(afterConflict.purchaseItems.find((entry: { id: string }) => entry.id === materialPurchaseId).receipts.length, 0);
     assert.equal(afterConflict.partInstances.length, before.partInstances.length + 1);
 
     resetLimits();
-    const sameLocationMaterial = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "same-location-material", quantity: 1, location: material.location } });
+    const sameLocationMaterial = await inject({ method: "POST", url: `/api/purchases/${materialPurchaseId}/receipts`, headers: mentor, payload: { operationId: "same-location-material", quantity: 1, location: material.location } });
     assert.equal(sameLocationMaterial.statusCode, 200, sameLocationMaterial.body);
     resetLimits();
     const afterMaterialOnly = (await inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
@@ -810,7 +880,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
 
     updateMaterial(material.id, { onHandQuantity: 0 });
     resetLimits();
-    const emptyStockReceipt = await inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "empty-stock-material", quantity: 1, location: "New material shelf" } });
+    const emptyStockReceipt = await inject({ method: "POST", url: `/api/purchases/${materialPurchaseId}/receipts`, headers: mentor, payload: { operationId: "empty-stock-material", quantity: 1, location: "New material shelf" } });
     assert.equal(emptyStockReceipt.statusCode, 200, emptyStockReceipt.body);
     resetLimits();
     const afterEmptyStock = (await inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();

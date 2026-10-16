@@ -3864,10 +3864,10 @@ export function createTaskDependency(
     createdAt: new Date().toISOString(),
   };
 
-  replaceCurrentSnapshot({
-    ...currentSnapshot,
-    taskDependencies: [...currentSnapshot.taskDependencies, dependency],
-  });
+  const nextSnapshot = { ...currentSnapshot, taskDependencies: [...currentSnapshot.taskDependencies, dependency] };
+  assertCompletedTaskDependencyIsSatisfied(dependency, nextSnapshot);
+
+  replaceCurrentSnapshot(nextSnapshot);
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
   recordAuditAction({
@@ -3901,12 +3901,15 @@ export function updateTaskDependency(
     ...input,
   } as TaskDependency;
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     taskDependencies: currentSnapshot.taskDependencies.map((dependency) =>
       dependency.id === dependencyId ? savedDependency : dependency,
     ),
-  });
+  };
+  assertCompletedTaskDependencyIsSatisfied(savedDependency, nextSnapshot);
+
+  replaceCurrentSnapshot(nextSnapshot);
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.taskId);
   recordAuditAction({
@@ -3960,6 +3963,13 @@ export function removeTaskDependency(
   });
 
   return dependency;
+}
+
+function assertCompletedTaskDependencyIsSatisfied(dependency: ReadonlyData<TaskDependency>, snapshot: SnapshotView) {
+  const task = snapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
+  if (task?.status === "complete" && getTaskWaitingOnDependencyRecords(task.id, snapshot).some((waiting) => waiting.id === dependency.id)) {
+    throw Object.assign(new Error("A completed task cannot receive an unresolved hard dependency."), { statusCode: 409 });
+  }
 }
 
 export function updateMilestone(milestoneId: string, input: Partial<MilestoneInput>) {
@@ -4253,11 +4263,17 @@ export function updateWorkLog(
     ...input,
   };
 
+  const nextWorkLogs = currentSnapshot.workLogs.map((workLog) =>
+    workLog.id === workLogId ? updatedWorkLog : workLog,
+  );
+  if (updatedWorkLog.taskId !== previousWorkLog.taskId) {
+    assertCompletedTaskRetainsWorkLog(previousWorkLog.taskId, nextWorkLogs);
+    assertCompletedTaskRetainsWorkLog(updatedWorkLog.taskId, nextWorkLogs);
+  }
+
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    workLogs: currentSnapshot.workLogs.map((workLog) =>
-      workLog.id === workLogId ? updatedWorkLog : workLog,
-    ),
+    workLogs: nextWorkLogs,
   });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === updatedWorkLog.taskId);
@@ -4292,11 +4308,12 @@ export function removeWorkLog(
     return null;
   }
 
+  const nextWorkLogs = currentSnapshot.workLogs.filter((candidate) => candidate.id !== workLogId);
+  assertCompletedTaskRetainsWorkLog(workLog.taskId, nextWorkLogs);
+
   replaceCurrentSnapshot({
     ...currentSnapshot,
-    workLogs: currentSnapshot.workLogs.filter(
-      (candidate) => candidate.id !== workLogId,
-    ),
+    workLogs: nextWorkLogs,
   });
 
   const task = currentSnapshot.tasks.find((candidate) => candidate.id === workLog.taskId);
@@ -4314,6 +4331,13 @@ export function removeWorkLog(
   });
 
   return workLog;
+}
+
+function assertCompletedTaskRetainsWorkLog(taskId: string, workLogs: readonly WorkLog[]) {
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (task?.status === "complete" && evaluateTaskCompletion(task, { ...currentSnapshot, workLogs }).workLogCount === 0) {
+    throw Object.assign(new Error("A completed task must retain at least one work log."), { statusCode: 409 });
+  }
 }
 
 export function updateTask(
@@ -4485,6 +4509,10 @@ export function updatePurchaseItem(
     ...input,
     receipts: previousItem.receipts,
   };
+  const receiptValidationError = validateReceivedPurchaseItemUpdate(previousItem, updatedItem);
+  if (receiptValidationError) {
+    throw Object.assign(new Error(receiptValidationError), { statusCode: 409 });
+  }
   if ((input.quantity !== undefined && input.quantity !== previousItem.quantity) ||
       (input.kind !== undefined && input.kind !== previousItem.kind) ||
       (input.partDefinitionId !== undefined && input.partDefinitionId !== previousItem.partDefinitionId)) {
@@ -4507,6 +4535,29 @@ export function updatePurchaseItem(
   );
 
   return updatedItem;
+}
+
+type PurchaseReceiptInvariantState = Pick<PurchaseItem, "taskId" | "kind" | "partDefinitionId" | "materialId" | "quantity"> & {
+  receipts?: readonly Pick<PurchaseReceipt, "quantity">[];
+};
+
+export function validateReceivedPurchaseItemUpdate(previousItem: PurchaseReceiptInvariantState, updatedItem: PurchaseReceiptInvariantState) {
+  const receipts = previousItem.receipts ?? [];
+  if (receipts.length === 0) return null;
+
+  const receivedQuantity = Number(receipts.reduce((total, receipt) => total + receipt.quantity, 0).toFixed(12));
+  const floatingPointTolerance = typeof updatedItem.quantity === "number" && Number.isFinite(updatedItem.quantity)
+    ? Number.EPSILON * Math.max(1, Math.abs(updatedItem.quantity), Math.abs(receivedQuantity)) * 8
+    : 0;
+  if (typeof updatedItem.quantity !== "number" || !Number.isFinite(updatedItem.quantity) ||
+      receivedQuantity - updatedItem.quantity > floatingPointTolerance) {
+    return "Purchase quantity cannot be lower than the quantity already received.";
+  }
+  if (updatedItem.taskId !== previousItem.taskId || updatedItem.kind !== previousItem.kind ||
+      updatedItem.partDefinitionId !== previousItem.partDefinitionId || updatedItem.materialId !== previousItem.materialId) {
+    return "Purchase identity cannot change after receipts have been recorded.";
+  }
+  return null;
 }
 
 function assertValidDiscretePurchaseQuantity(item: Pick<PurchaseItem, "kind" | "partDefinitionId" | "quantity">) {
