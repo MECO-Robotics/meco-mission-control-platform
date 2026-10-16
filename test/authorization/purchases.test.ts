@@ -250,6 +250,57 @@ test("receiving a part purchase with a missing definition is atomic", async () =
   });
 });
 
+test("task deletion preserves linked orders and receipt history until the purchase is resolved", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const task = getTasks().find((candidate) => !getSnapshot().purchaseItems.some((item) => item.taskId === candidate.id))!;
+    assert.ok(task);
+    updatePurchaseItem("ferrule-kit", { taskId: task.id, orderStatus: "ordered" });
+    const beforeDelete = getSnapshot();
+
+    const rejected = await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}`, headers: mentor });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.match(rejected.json().message, /retarget or remove linked purchase items/i);
+    assert.deepEqual(getSnapshot(), beforeDelete, "rejected deletion leaves tasks, orders, and audit history untouched");
+
+    resetLimits();
+    const receipt = await app.inject({
+      method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor,
+      payload: { operationId: "task-delete-order-receipt", quantity: 1, location: "Receiving shelf A" },
+    });
+    assert.equal(receipt.statusCode, 200, receipt.body);
+    assert.equal(receipt.json().item.taskId, task.id);
+    assert.equal(receipt.json().item.receipts.length, 1);
+
+    const unreferencedTask = getTasks().find((candidate) => !getSnapshot().purchaseItems.some((item) => item.taskId === candidate.id))!;
+    assert.ok(unreferencedTask);
+    resetLimits();
+    const deleted = await app.inject({ method: "DELETE", url: `/api/tasks/${unreferencedTask.id}`, headers: mentor });
+    assert.equal(deleted.statusCode, 200, deleted.body);
+    assert.equal(getTasks().some((candidate) => candidate.id === unreferencedTask.id), false);
+  });
+});
+
+test("subsystem deletion cannot cascade away a linked purchase item", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const snapshot = getSnapshot();
+    const subsystem = snapshot.subsystems.find((candidate) => !candidate.isCore && snapshot.tasks.some((task) =>
+      task.subsystemIds.includes(candidate.id) && !snapshot.purchaseItems.some((item) => item.taskId === task.id),
+    ));
+    assert.ok(subsystem);
+    const task = snapshot.tasks.find((candidate) => candidate.subsystemIds.includes(subsystem.id) && !snapshot.purchaseItems.some((item) => item.taskId === candidate.id))!;
+    assert.ok(task);
+    updatePurchaseItem("ferrule-kit", { taskId: task.id });
+    const before = getSnapshot();
+
+    const response = await app.inject({ method: "DELETE", url: `/api/subsystems/${subsystem.id}`, headers: mentor });
+    assert.equal(response.statusCode, 409, response.body);
+    assert.match(response.json().message, /retarget or remove linked purchase items/i);
+    assert.deepEqual(getSnapshot(), before, "rejected hierarchy deletion preserves task, purchase, and audit records");
+  });
+});
+
 test("fractional material receipts use decimal-safe cumulative bounds and old receipt records remain valid", async () => {
   assert.equal(purchaseReceiptRecordSchema.safeParse({ id: "old", quantity: 1, location: "Shelf", receivedAt: "2026-01-01T00:00:00.000Z", partInstanceIds: [] }).success, true);
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {

@@ -2564,11 +2564,6 @@ export function removeSubsystem(subsystemId: string) {
       )
       .map((partInstance) => partInstance.id),
   );
-  const purchaseItemIdsToRemove = new Set(
-    currentSnapshot.purchaseItems
-      .filter((item) => currentSnapshot.tasks.find((task) => task.id === item.taskId)?.subsystemIds.some((id) => subsystemIdsToRemove.has(id)))
-      .map((item) => item.id),
-  );
   const taskIdsToRemove = new Set(
     currentSnapshot.tasks
       .filter(
@@ -2579,6 +2574,7 @@ export function removeSubsystem(subsystemId: string) {
       )
       .map((task) => task.id),
   );
+  assertTasksHaveNoLinkedPurchaseItems(taskIdsToRemove);
 
   replaceCurrentSnapshot({
     ...currentSnapshot,
@@ -2612,9 +2608,6 @@ export function removeSubsystem(subsystemId: string) {
 
       return true;
     }),
-    purchaseItems: currentSnapshot.purchaseItems.filter(
-      (item) => !purchaseItemIdsToRemove.has(item.id),
-    ),
   });
 
   recordAuditAction({
@@ -2629,6 +2622,16 @@ export function removeSubsystem(subsystemId: string) {
   });
 
   return subsystem;
+}
+
+function assertTasksHaveNoLinkedPurchaseItems(taskIds: ReadonlySet<string>) {
+  const linkedItems = currentSnapshot.purchaseItems.filter((item) => taskIds.has(item.taskId));
+  if (linkedItems.length > 0) {
+    throw Object.assign(
+      new Error("Retarget or remove linked purchase items before deleting these tasks."),
+      { statusCode: 409 },
+    );
+  }
 }
 
 export function createPartDefinition(input: PartDefinitionInput, auditContext: AuditMutationContext = {}) {
@@ -4318,6 +4321,7 @@ export function removeTask(taskId: string) {
   if (!task) {
     return null;
   }
+  assertTasksHaveNoLinkedPurchaseItems(new Set([taskId]));
 
   replaceCurrentSnapshot({
     ...currentSnapshot,

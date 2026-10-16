@@ -111,6 +111,17 @@ test("first target owns serial and audit context while reparenting and deletion 
     intendedSubsystemId: controls.id, intendedMechanismId: null,
     partDefinitionId: getSnapshot().partDefinitions[0].id, location: { kind: "stock", location: "Controls" },
   });
+  const snapshotBeforeSubsystemRemoval = getSnapshot();
+  const retainedTask = snapshotBeforeSubsystemRemoval.tasks.find((item) =>
+    item.id !== task.id && item.projectId === task.projectId && !item.subsystemIds.includes(controls.id),
+  );
+  assert.ok(retainedTask);
+  resetStore({
+    ...snapshotBeforeSubsystemRemoval,
+    purchaseItems: snapshotBeforeSubsystemRemoval.purchaseItems.map((item) =>
+      item.taskId === task.id ? { ...item, taskId: retainedTask.id } : item,
+    ),
+  });
   removeSubsystem(controls.id);
   assert.equal(getSnapshot().partInstances.some((item) => item.id === loosePart.id), false);
   assert.equal(getSnapshot().tasks.some((item) => item.id === task.id), false);

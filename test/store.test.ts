@@ -1205,7 +1205,7 @@ test("hierarchy deletion removes dependency owners while retaining missing-targe
   const removedTask = snapshot.tasks.find((task) => task.subsystemIds.includes("drive"))!;
   const remainingTask = snapshot.tasks.find((task) => task.projectId !== removedTask.projectId)!;
   assert.ok(removedTask && remainingTask);
-  resetStore({ ...snapshot, taskDependencies: [
+  resetStore({ ...snapshot, purchaseItems: snapshot.purchaseItems.map((item) => ({ ...item, taskId: remainingTask.id })), taskDependencies: [
     { id: "removed-owner", dependencyType: "hard", taskId: removedTask.id, kind: "task", refId: remainingTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
     { id: "remaining-owner", dependencyType: "hard", taskId: remainingTask.id, kind: "task", refId: removedTask.id, requiredState: "complete", createdAt: new Date().toISOString() },
   ] });
@@ -1262,7 +1262,10 @@ test("task removal removes attributed help and retains missing hard dependency t
   const remaining = snapshot.tasks[1]!;
   createRisk({ projectId: task.projectId, title: "Help requested", detail: "Need a mentor", category: "help", severity: "medium", status: "open", blocksWork: false, source: { kind: "task", id: task.id }, relatedTargets: [{ kind: "task", id: task.id }], mitigationTaskId: null, ownerGroupId: null });
   const before = getSnapshot();
-  resetStore({ ...before, taskDependencies: [{ id: "missing-blocker", taskId: remaining.id, kind: "task", refId: task.id, requiredState: "complete", dependencyType: "hard", createdAt: new Date().toISOString() }] });
+  resetStore({ ...before,
+    purchaseItems: before.purchaseItems.map((item) => item.taskId === task.id ? { ...item, taskId: remaining.id } : item),
+    taskDependencies: [{ id: "missing-blocker", taskId: remaining.id, kind: "task", refId: task.id, requiredState: "complete", dependencyType: "hard", createdAt: new Date().toISOString() }],
+  });
   removeTask(task.id);
   assert.ok(!getSnapshot().risks.some((risk) => risk.source.kind === "task" && risk.source.id === task.id));
   assert.equal(getSnapshot().taskDependencies[0]?.refId, task.id);
