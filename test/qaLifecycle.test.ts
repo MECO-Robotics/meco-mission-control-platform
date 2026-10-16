@@ -188,6 +188,36 @@ test("QA submission rejects multiple task targets atomically while retaining mul
   });
 });
 
+test("reviewed task QA rejects a different existing project before publishing workflow records", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const snapshot = getSnapshot();
+    const task = snapshot.tasks.find((item) => snapshot.projects.some((project) => project.id !== item.projectId))!;
+    const otherProject = snapshot.projects.find((project) => project.id !== task.projectId)!;
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const payload = {
+      reportType: "qa", projectId: otherProject.id, targetRefs: [{ kind: "task", id: task.id }],
+      createdByMemberId: task.ownerId, participantIds: task.ownerId ? [task.ownerId] : [],
+      mentorId: null, requestedById: null, result: "iteration-worthy", summary: "Project ownership check",
+      notes: "Synthetic cross-project QA submission", status: "reviewed", createdAt: new Date().toISOString(),
+      reviewedById: null, reviewedAt: null,
+    };
+    const before = getSnapshot();
+    const rejected = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload });
+    assert.equal(rejected.statusCode, 400, rejected.body);
+    assert.deepEqual(getSnapshot(), before, "rejection publishes no report, corrective task, finding, risk, request change, or action");
+
+    const accepted = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: { ...payload, projectId: task.projectId } });
+    assert.equal(accepted.statusCode, 201, accepted.body);
+    const report = accepted.json().item;
+    const after = getSnapshot();
+    assert.equal(report.projectId, task.projectId);
+    assert.ok(report.followUpTaskId && after.tasks.some((item) => item.id === report.followUpTaskId), "matching-project review creates its corrective task");
+    assert.ok(report.followUpRiskId && after.risks.some((item) => item.id === report.followUpRiskId), "matching-project review creates its linked risk");
+    assert.ok(after.qaFindings.some((finding) => finding.reportId === report.id && finding.correctiveTaskId === report.followUpTaskId), "matching-project review creates its linked finding");
+    assert.ok(after.actions?.some((action) => action.entityType === "report" && action.entityId === report.id), "matching-project review records its action");
+  }, { env });
+});
+
 test("only roster-linked mentor review applies QA approval and completion gate", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
     const snapshot = getSnapshot();

@@ -1188,7 +1188,7 @@ export async function registerRoutes(
     }
     const taskId = parsed.data.targetRefs.find((ref) => ref.kind === "task")?.id;
     const validationError = taskId
-      ? validateQaReportLinks({ taskId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
+      ? validateQaReportLinks({ taskId, projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs, participantIds: parsed.data.participantIds })
       : validateTestResultLinks({ projectId: parsed.data.projectId, targetRefs: parsed.data.targetRefs });
     if (validationError) return reply.code(400).send({ message: validationError });
     const approvalMember = parsed.data.status === "reviewed" && isAuthEnabled() ? getWorkflowApprovalMember(request) : null;
