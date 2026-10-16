@@ -37,6 +37,7 @@ export type TaskInput = OptionalFields<
     | "isBlocked"
     | "isWaitingOnDependency"
     | "actualHours"
+    | "completionScopeReviewOrder"
   >,
   "checklistItems" | "responsibleGroupId" | "requestedById" | "scheduleRefs" | "manufacturingDetails"
 >;

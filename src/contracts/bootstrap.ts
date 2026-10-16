@@ -82,7 +82,7 @@ const manufacturingDetailsSchema = z.object({
   batchLabel: z.string().optional(),
 }).strict();
 const taskBootstrapSchema = z.object({
-  id: z.string(), createdAt: z.string().optional(), serialNumber: z.number().optional(), serial: z.string().optional(),
+  id: z.string(), completionScopeReviewOrder: z.number().int().nonnegative().optional(), createdAt: z.string().optional(), serialNumber: z.number().optional(), serial: z.string().optional(),
   projectId: z.string(), workTypeId: z.string(), responsibleGroupId: z.string().nullable(), workstreamIds: z.array(z.string()),
   title: z.string(), summary: z.string(), photoUrl: z.string().optional(), subsystemIds: z.array(z.string()),
   mechanismIds: z.array(z.string()), partInstanceIds: z.array(z.string()), scheduleRefs: z.array(scheduleReferenceSchema),

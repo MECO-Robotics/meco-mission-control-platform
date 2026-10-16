@@ -179,6 +179,21 @@ test("current schema snapshots load without rewriting and reset archives the con
   }
 });
 
+test("optional task completion review watermarks load while legacy tasks remain valid", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-platform-task-scope-watermark-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  try {
+    writeFileSync(snapshotPath, JSON.stringify(snapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.tasks[0]?.completionScopeReviewOrder, undefined);
+    const marked = structuredClone(snapshot);
+    marked.tasks[0]!.completionScopeReviewOrder = 17;
+    writeFileSync(snapshotPath, JSON.stringify(marked), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.tasks[0]?.completionScopeReviewOrder, 17);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("durable store construction loads a valid snapshot without rewriting it", () => {
   const directory = mkdtempSync(join(tmpdir(), "meco-platform-constructor-load-"));
   const snapshotPath = join(directory, "platform-snapshot.json");

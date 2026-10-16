@@ -149,7 +149,9 @@ export function formatTaskStatus(status: TaskStatus) {
 }
 
 function hasMentorPass(qaReports: SnapshotView["qaReports"], task: ReadonlyData<Task>, snapshot: SnapshotView) {
-  const applicable = qaReports.filter((report) => report.status === "reviewed" && report.reviewOrder !== undefined && report.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id));
+  const applicable = qaReports.filter((report) => report.status === "reviewed" && report.reviewOrder !== undefined &&
+    (task.completionScopeReviewOrder === undefined || report.reviewOrder > task.completionScopeReviewOrder) &&
+    report.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id));
   const latest = applicable.reduce<(typeof applicable)[number] | undefined>((current, report) => !current || report.reviewOrder! > current.reviewOrder! ? report : current, undefined);
   if (!latest || !(latest.result === "pass" && latest.reviewedById !== null && latest.reviewedAt !== null && latest.targetRevisions !== undefined && latest.inspectedPartInstanceIds !== undefined)) return false;
   return (() => {

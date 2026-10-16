@@ -1703,12 +1703,16 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
     color: input.color === undefined ? previousWorkstream.color : nextColor,
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     workstreams: currentSnapshot.workstreams.map((workstream) =>
       workstream.id === workstreamId ? updatedWorkstream : workstream,
     ),
-  });
+  };
+  const changedTaskIds = previousWorkstream.projectId === updatedWorkstream.projectId
+    ? new Set<string>()
+    : new Set(currentSnapshot.tasks.filter((task) => task.workstreamIds.includes(workstreamId)).map((task) => task.id));
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, changedTaskIds));
 
   recordAuditAction({
     operation: "update",
@@ -2306,10 +2310,11 @@ export function createArtifact(input: ArtifactInput) {
     updatedAt: input.updatedAt,
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     artifacts: [...currentSnapshot.artifacts, artifact],
-  });
+  };
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, tasksAffectedByArtifact(artifact, currentSnapshot)));
 
   recordAuditAction({
     operation: "create",
@@ -2333,12 +2338,18 @@ export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>
     ...input,
   };
 
-  replaceCurrentSnapshot({
+  const previousTargets = previousArtifact.targetRefs.map((ref) => `${ref.kind}:${ref.id}`);
+  const updatedTargets = updatedArtifact.targetRefs.map((ref) => `${ref.kind}:${ref.id}`);
+  const changedTaskIds = sameTargetSet(previousTargets, updatedTargets)
+    ? new Set<string>()
+    : new Set([...tasksAffectedByArtifact(previousArtifact, currentSnapshot), ...tasksAffectedByArtifact(updatedArtifact, currentSnapshot)]);
+  const nextSnapshot = {
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.map((artifact) =>
       artifact.id === artifactId ? updatedArtifact : artifact,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, changedTaskIds));
 
   recordAuditAction({
     operation: "update",
@@ -2363,13 +2374,14 @@ export function removeArtifact(artifactId: string) {
     return null;
   }
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.filter(
       (candidate) => candidate.id !== artifactId,
     ),
     designIterations: currentSnapshot.designIterations,
-  });
+  };
+  replaceCurrentSnapshot(markTaskCompletionScopeChanged(nextSnapshot, tasksAffectedByArtifact(artifact, currentSnapshot)));
 
   recordAuditAction({
     operation: "delete",
@@ -2794,7 +2806,7 @@ export function removePartDefinition(partDefinitionId: string) {
       .map((partInstance) => partInstance.id),
   );
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partDefinitions: currentSnapshot.partDefinitions.filter(
       (candidate) => candidate.id !== partDefinitionId,
@@ -2825,7 +2837,8 @@ export function removePartDefinition(partDefinitionId: string) {
           }
         : item,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -2961,7 +2974,7 @@ export function removePartInstance(partInstanceId: string) {
     return null;
   }
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     partInstances: currentSnapshot.partInstances.filter(
       (candidate) => candidate.id !== partInstanceId,
@@ -2981,7 +2994,8 @@ export function removePartInstance(partInstanceId: string) {
         partInstanceIds,
       });
     }),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -3027,7 +3041,7 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
         : normalizeIteration(input.iteration),
   };
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     mechanisms: currentSnapshot.mechanisms.map((mechanism) =>
       mechanism.id === mechanismId ? updatedMechanism : mechanism,
@@ -3058,7 +3072,8 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
           }
         : partInstance,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "update",
@@ -3087,7 +3102,7 @@ export function removeMechanism(mechanismId: string) {
     return null;
   }
 
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     mechanisms: currentSnapshot.mechanisms.filter(
       (candidate) => candidate.id !== mechanismId,
@@ -3114,7 +3129,8 @@ export function removeMechanism(mechanismId: string) {
           }
         : partInstance,
     ),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
 
   recordAuditAction({
     operation: "delete",
@@ -3274,7 +3290,62 @@ export function createMilestone(input: MilestoneInput) {
 
 function nextQaReviewOrder() {
   const retestOrders = [...currentSnapshot.qaFindings, ...currentSnapshot.testFindings].flatMap((finding) => finding.retests ?? []).map((retest) => retest.verificationOrder ?? 0);
-  return Math.max(currentSnapshot.qaReviewSequence ?? 0, ...currentSnapshot.qaReports.map((report) => report.reviewOrder ?? 0), ...currentSnapshot.testResults.map((result) => result.verificationOrder ?? 0), ...retestOrders) + 1;
+  return Math.max(currentSnapshot.qaReviewSequence ?? 0, ...currentSnapshot.tasks.map((task) => task.completionScopeReviewOrder ?? 0), ...currentSnapshot.qaReports.map((report) => report.reviewOrder ?? 0), ...currentSnapshot.testResults.map((result) => result.verificationOrder ?? 0), ...retestOrders) + 1;
+}
+
+function currentQaReviewOrder() {
+  return nextQaReviewOrder() - 1;
+}
+
+function sameTargetSet(left: readonly string[], right: readonly string[]) {
+  if (left.length !== right.length) return false;
+  const sortedRight = [...right].sort();
+  return [...left].sort().every((id, index) => id === sortedRight[index]);
+}
+
+function taskCompletionScopeChanged(previous: ReadonlyData<Task>, next: ReadonlyData<Task>) {
+  return previous.projectId !== next.projectId || previous.requiresDocumentation !== next.requiresDocumentation ||
+    !sameTargetSet(previous.workstreamIds, next.workstreamIds) ||
+    !sameTargetSet(previous.subsystemIds, next.subsystemIds) ||
+    !sameTargetSet(previous.mechanismIds, next.mechanismIds) ||
+    !sameTargetSet(previous.partInstanceIds, next.partInstanceIds);
+}
+
+function tasksAffectedByArtifact(artifact: Pick<Artifact, "targetRefs">, snapshot: SnapshotView) {
+  return new Set(snapshot.tasks.filter((task) => artifact.targetRefs.some((ref) =>
+    ref.kind === "task" ? ref.id === task.id
+      : ref.kind === "workstream" ? task.workstreamIds.includes(ref.id)
+        : ref.kind === "subsystem" ? task.subsystemIds.includes(ref.id)
+          : ref.kind === "mechanism" ? task.mechanismIds.includes(ref.id)
+            : ref.kind === "part-instance" ? task.partInstanceIds.includes(ref.id)
+              : false,
+  )).map((task) => task.id));
+}
+
+function markTaskCompletionScopeChanged(snapshot: PlatformSnapshot, taskIds: ReadonlySet<string>): PlatformSnapshot {
+  if (taskIds.size === 0) return snapshot;
+  const reviewOrder = currentQaReviewOrder();
+  const nextSnapshot = {
+    ...snapshot,
+    tasks: snapshot.tasks.map((task) => taskIds.has(task.id) ? { ...task, completionScopeReviewOrder: reviewOrder } : task),
+  };
+  for (const task of nextSnapshot.tasks) {
+    if (!taskIds.has(task.id) || task.status !== "complete") continue;
+    const hasBlockingRisk = snapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === task.id));
+    if (hasBlockingRisk || isTaskWaitingOnDependencies(task, nextSnapshot) || !evaluateTaskCompletion(task, nextSnapshot).canFinalize) {
+      throw Object.assign(new Error("A completed task cannot retain completion after its evidence scope changes; reopen it and obtain reviewed QA for the updated scope."), { statusCode: 409 });
+    }
+  }
+  return nextSnapshot;
+}
+
+function markChangedTaskCompletionScopes(previousSnapshot: SnapshotView, nextSnapshot: PlatformSnapshot): PlatformSnapshot {
+  const previousTasks = new Map(previousSnapshot.tasks.map((task) => [task.id, task]));
+  const changedTaskIds = new Set(nextSnapshot.tasks.filter((task) => {
+    const previous = previousTasks.get(task.id);
+    return previous !== undefined && taskCompletionScopeChanged(previous, task);
+  }).map((task) => task.id));
+  return markTaskCompletionScopeChanged(nextSnapshot, changedTaskIds);
 }
 
 function captureInspectedPartInstanceIds(targetRefs: readonly { kind: string; id: string }[]) {
@@ -4176,6 +4247,7 @@ export function updateTask(
   let updatedTask = normalizeTaskTargets({
     ...currentTask,
     ...input,
+    completionScopeReviewOrder: currentTask.completionScopeReviewOrder,
     ...normalizeTaskTargetIds(getSnapshot(), input, currentTask),
   });
 
@@ -4189,8 +4261,8 @@ export function updateTask(
 
   assertTaskLinks(updatedTask, input.responsibleGroupId === undefined && currentTask.responsibleGroupId !== null);
 
-  const completionScopeChanged = ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds", "artifactIds"].some((field) =>
-    JSON.stringify(updatedTask[field as keyof Task]) !== JSON.stringify(currentTask[field as keyof Task])) || updatedTask.projectId !== currentTask.projectId || updatedTask.requiresDocumentation !== currentTask.requiresDocumentation;
+  const completionScopeChanged = taskCompletionScopeChanged(currentTask, updatedTask);
+  if (completionScopeChanged) updatedTask = { ...updatedTask, completionScopeReviewOrder: currentQaReviewOrder() };
   if (updatedTask.status === "complete" && (currentTask.status !== "complete" || completionScopeChanged)) {
     const hasBlockingRisk = currentSnapshot.risks.some((risk) => risk.blocksWork && risk.status !== "resolved" && risk.relatedTargets.some((ref) => ref.kind === "task" && ref.id === taskId));
     if (hasBlockingRisk || isTaskWaitingOnDependencies(updatedTask, currentSnapshot) || !evaluateTaskCompletion(updatedTask, currentSnapshot).canFinalize) {
@@ -4440,13 +4512,14 @@ export function receivePurchaseItem(
       ? task.partInstanceIds
       : uniqueIds([...task.partInstanceIds, ...receipt.partInstanceIds]),
   });
-  replaceCurrentSnapshot({
+  const nextSnapshot = {
     ...currentSnapshot,
     purchaseItems: currentSnapshot.purchaseItems.map((candidate) => candidate.id === itemId ? updatedItem : candidate),
     materials: nextMaterials,
     partInstances: [...currentSnapshot.partInstances, ...partInstances],
     tasks: currentSnapshot.tasks.map((candidate) => candidate.id === task.id ? updatedTask : candidate),
-  });
+  };
+  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
   recordProductionItemAudit("purchase-item", "update", updatedItem, auditContext, ["receipts"]);
   return { item: updatedItem, receipt, replayed: false as const };
 }

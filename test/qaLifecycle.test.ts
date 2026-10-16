@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withWorkflowAuthApp, createWorkflowAuthHeaders } from "./helpers/workflowAuth";
-import { createQaReport, createQaRequest, createReportFinding, createRisk, createTask, createTestResult, createWorkLog, getSnapshot, resetStore, updateTask } from "../src/data/store";
+import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createTask, createTestResult, createWorkLog, getSnapshot, resetStore, updateTask } from "../src/data/store";
 import { derivePartInstanceReadiness } from "../src/domain/readiness";
 import { evaluateTaskCompletion } from "../src/domain/workflows";
 import { reportFromQaReport } from "../src/data/store/reportDerivations";
@@ -66,6 +66,7 @@ test("completed tasks allow unrelated edits while reapproval changes stay gated"
     assert.equal(metadata.statusCode, 200, metadata.body);
     assert.equal(metadata.json().item.status, "complete");
     assert.deepEqual(metadata.json().item.checklistItems, ["Historical completion retained"]);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === candidate.id)?.completionScopeReviewOrder, undefined, "legacy completion is not invalidated by an unrelated edit");
     assert.deepEqual(getSnapshot().workLogs, historyBefore.workLogs, "metadata edit preserves work history");
     assert.deepEqual(getSnapshot().qaReports, historyBefore.qaReports, "metadata edit does not rewrite historical reviews");
 
@@ -223,7 +224,18 @@ test("only roster-linked mentor review applies QA approval and completion gate",
     const snapshot = getSnapshot();
     const task = snapshot.tasks.find((item) => !item.isBlocked && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
     const member = snapshot.members[0]!;
-    resetStore({ ...snapshot, workLogs: snapshot.workLogs.filter((item) => item.taskId !== task.id) });
+    const existingOrders = [
+      ...snapshot.qaReports.map((report) => report.reviewOrder ?? 0),
+      ...snapshot.testResults.map((result) => result.verificationOrder ?? 0),
+      ...[...snapshot.qaFindings, ...snapshot.testFindings].flatMap((finding) => (finding.retests ?? []).map((retest) => retest.verificationOrder ?? 0)),
+    ];
+    const restoredScopeWatermark = Math.max(snapshot.qaReviewSequence ?? 0, ...existingOrders) + 17;
+    resetStore({
+      ...snapshot,
+      qaReviewSequence: 1,
+      tasks: snapshot.tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: restoredScopeWatermark } : item),
+      workLogs: snapshot.workLogs.filter((item) => item.taskId !== task.id),
+    });
     updateTask(task.id, { status: "waiting-for-qa", requiresDocumentation: false });
     const initialTaskCount = getSnapshot().tasks.length;
     const payload = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: member.id, participantIds: [member.id], mentorId: null, requestedById: null, result: "pass", summary: "QA", notes: "Pass", evidenceNotes: "Synthetic only", createdAt: "2099-01-01T00:00:00.000Z", status: "submitted", reviewedById: "spoofed-reviewer", reviewedAt: "2099-01-01T00:00:00.000Z" };
@@ -252,10 +264,174 @@ test("only roster-linked mentor review applies QA approval and completion gate",
     const reviewer = getSnapshot().members.find((item) => item.email === "jordan.lee@mecorobotics.org")!;
     assert.equal(saved.reviewedById, reviewer.id);
     assert.notEqual(saved.reviewedAt, payload.reviewedAt);
-    assert.ok(saved.reviewOrder > (snapshot.qaReviewSequence ?? 0));
+    assert.ok(restoredScopeWatermark > (snapshot.qaReviewSequence ?? 0));
+    assert.ok(saved.reviewOrder > restoredScopeWatermark, "fresh authenticated approval follows a restored task scope watermark");
     assert.equal(getSnapshot().qaReviewSequence, saved.reviewOrder);
     assert.equal(saved.createdAt, payload.createdAt);
     assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
+  }, { env });
+});
+
+test("part deletion invalidates task completion scope atomically until reviewed again", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const initial = getSnapshot();
+    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const partInstanceId = task.partInstanceIds[0]!;
+    const mentor = await createWorkflowAuthHeaders("mentor");
+
+    const completedBefore = getSnapshot();
+    const rejectedDelete = await app.inject({ method: "DELETE", url: `/api/part-instances/${partInstanceId}`, headers: mentor });
+    assert.equal(rejectedDelete.statusCode, 409, rejectedDelete.body);
+    assert.deepEqual(getSnapshot(), completedBefore, "completed-task deletion publishes no part, target, or audit changes");
+
+    const unreferencedPart = createPartInstance({
+      partDefinitionId: initial.partDefinitions[0]!.id,
+      intendedSubsystemId: null,
+      intendedMechanismId: null,
+      location: { kind: "stock", location: "Unreferenced test bin" },
+    });
+    const unreferencedDelete = await app.inject({ method: "DELETE", url: `/api/part-instances/${unreferencedPart.id}`, headers: mentor });
+    assert.equal(unreferencedDelete.statusCode, 200, unreferencedDelete.body);
+    assert.equal(getSnapshot().partInstances.some((item) => item.id === unreferencedPart.id), false, "unreferenced part deletion remains available");
+
+    const reopened = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "in-progress", requiresDocumentation: false } });
+    assert.equal(reopened.statusCode, 200, reopened.body);
+    const beforeDelete = getSnapshot();
+    const removed = await app.inject({ method: "DELETE", url: `/api/part-instances/${partInstanceId}`, headers: mentor });
+    assert.equal(removed.statusCode, 200, removed.body);
+    const afterDelete = getSnapshot();
+    const changedTask = afterDelete.tasks.find((item) => item.id === task.id)!;
+    assert.deepEqual(changedTask.partInstanceIds, []);
+    assert.equal(afterDelete.partInstances.some((item) => item.id === partInstanceId), false);
+    assert.equal(typeof changedTask.completionScopeReviewOrder, "number", "surviving task records a review watermark after its part target is removed");
+    assert.ok(changedTask.completionScopeReviewOrder! >= (beforeDelete.tasks.find((item) => item.id === task.id)?.completionScopeReviewOrder ?? 0));
+
+    const beforeOldApprovalCompletion = getSnapshot();
+    const oldApprovalCompletion = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "complete" } });
+    assert.equal(oldApprovalCompletion.statusCode, 409, oldApprovalCompletion.body);
+    assert.deepEqual(getSnapshot(), beforeOldApprovalCompletion, "old approval cannot complete the task with no remaining part targets");
+
+    updateTask(task.id, { status: "waiting-for-qa" });
+    const reviewer = afterDelete.members.find((item) => item.email === "jordan.lee@mecorobotics.org")!;
+    const freshPass = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
+      reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
+      createdByMemberId: task.ownerId ?? reviewer.id, participantIds: [task.ownerId ?? reviewer.id],
+      mentorId: null, requestedById: null, result: "pass", summary: "Reviewed remaining scope", notes: "Synthetic passing review",
+      status: "reviewed", createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null,
+    } });
+    assert.equal(freshPass.statusCode, 201, freshPass.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete", "fresh reviewed QA can complete the updated scope");
+    assert.ok(freshPass.json().item.reviewOrder > changedTask.completionScopeReviewOrder!);
+  }, { env });
+});
+
+test("completion approval is invalidated by every normalized task and artifact scope change", async () => {
+  await withWorkflowAuthApp(async ({ app }) => {
+    const initial = getSnapshot();
+    const task = initial.tasks.find((item) => item.partInstanceIds.length > 0 && !item.isBlocked &&
+      initial.workstreams.some((workstream) => workstream.projectId === item.projectId && !item.workstreamIds.includes(workstream.id)))!;
+    const originalWorkstreams = [...task.workstreamIds];
+    const addedWorkstream = initial.workstreams.find((workstream) => workstream.projectId === task.projectId && !originalWorkstreams.includes(workstream.id))!;
+    const addedSubsystem = initial.subsystems.find((subsystem) => subsystem.projectId === task.projectId && !task.subsystemIds.includes(subsystem.id))!;
+    const addedMechanism = initial.mechanisms.find((mechanism) => initial.subsystems.some((subsystem) => subsystem.id === mechanism.subsystemId && subsystem.projectId === task.projectId) && !task.mechanismIds.includes(mechanism.id))!;
+    const addedPart = initial.partInstances.find((part) => part.intendedSubsystemId === task.subsystemIds[0] && part.intendedMechanismId === task.mechanismIds[0] && !task.partInstanceIds.includes(part.id));
+    const otherProject = initial.projects.find((project) => project.id !== task.projectId)!;
+    const otherSubsystem = initial.subsystems.find((subsystem) => subsystem.projectId === otherProject.id)!;
+    const otherWorkType = initial.workTypes.find((workType) => workType.projectType === otherProject.projectType && workType.isActive)!;
+    const mentor = await createWorkflowAuthHeaders("mentor");
+
+    updateTask(task.id, {
+      status: "in-progress", requiresDocumentation: false,
+      workstreamIds: [...originalWorkstreams, addedWorkstream.id],
+    });
+    const scopedTask = getSnapshot().tasks.find((item) => item.id === task.id)!;
+    const priorScopeOrder = scopedTask.completionScopeReviewOrder;
+    assert.equal(typeof priorScopeOrder, "number", "scope change stores a durable review watermark");
+    createWorkLog({ taskId: task.id, date: "2026-10-16", hours: 1, participantIds: task.ownerId ? [task.ownerId] : [initial.members[0]!.id], notes: "Synthetic completion evidence" });
+    updateTask(task.id, { status: "waiting-for-qa" });
+    const submitPass = () => app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
+      reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
+      createdByMemberId: task.ownerId, participantIds: task.ownerId ? [task.ownerId] : [initial.members[0]!.id],
+      mentorId: null, requestedById: null, result: "pass", summary: "Reviewed scope", notes: "Synthetic passing review",
+      status: "reviewed", createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null,
+    } });
+    const firstPass = await submitPass();
+    assert.equal(firstPass.statusCode, 201, firstPass.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
+
+    const completeTask = getSnapshot().tasks.find((item) => item.id === task.id)!;
+    const harmlessReorder = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: {
+      workstreamIds: [...completeTask.workstreamIds].reverse(), title: `${completeTask.title} reviewed`,
+    } });
+    assert.equal(harmlessReorder.statusCode, 200, harmlessReorder.body);
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.completionScopeReviewOrder, priorScopeOrder, "set reordering and metadata edits retain the existing watermark");
+
+    const moveProject = {
+      projectId: otherProject.id, workTypeId: otherWorkType.id, responsibleGroupId: null,
+      workstreamIds: [], subsystemIds: [otherSubsystem.id], mechanismIds: [], partInstanceIds: [], manufacturingDetails: null,
+    };
+    const scopeChanges: Array<Record<string, unknown>> = [
+      { workstreamIds: [addedWorkstream.id] },
+      { workstreamIds: [...completeTask.workstreamIds, initial.workstreams.find((item) => item.projectId === task.projectId && !completeTask.workstreamIds.includes(item.id) && item.id !== addedWorkstream.id)!.id] },
+      { subsystemIds: [...completeTask.subsystemIds, addedSubsystem.id] },
+      { mechanismIds: [...completeTask.mechanismIds, addedMechanism.id], subsystemIds: [...completeTask.subsystemIds, addedMechanism.subsystemId] },
+      ...(addedPart ? [{ partInstanceIds: [...completeTask.partInstanceIds, addedPart.id] }] : []),
+      moveProject,
+    ];
+    for (const scopeChange of scopeChanges) {
+      const before = getSnapshot();
+      const rejected = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: scopeChange });
+      assert.equal(rejected.statusCode, 409, rejected.body);
+      assert.deepEqual(getSnapshot(), before, "completed-task scope rejection is atomic");
+    }
+    const beforeArtifactAddition = getSnapshot();
+    const rejectedArtifactAddition = await app.inject({ method: "POST", url: "/api/artifacts", headers: mentor, payload: {
+      projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], kind: "evidence",
+      title: "Unreviewed added evidence", summary: "Synthetic", status: "published", uri: "",
+    } });
+    assert.equal(rejectedArtifactAddition.statusCode, 409, rejectedArtifactAddition.body);
+    assert.deepEqual(getSnapshot(), beforeArtifactAddition, "adding task-linked evidence to a completed task is atomic");
+
+    const beforeCompleteScopeChange = getSnapshot();
+    const reopenedAndChanged = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: {
+      status: "in-progress", workstreamIds: [addedWorkstream.id],
+    } });
+    assert.equal(reopenedAndChanged.statusCode, 200, reopenedAndChanged.body);
+    const changedScope = getSnapshot().tasks.find((item) => item.id === task.id)!;
+    assert.equal(typeof changedScope.completionScopeReviewOrder, "number");
+    assert.ok(changedScope.completionScopeReviewOrder! >= (beforeCompleteScopeChange.qaReviewSequence ?? 0));
+    assert.deepEqual(changedScope.partInstanceIds, task.partInstanceIds, "non-part scope change retains the reviewed part instances");
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor });
+    assert.equal(bootstrap.json().tasks.find((item: { id: string }) => item.id === task.id)?.completionScopeReviewOrder, changedScope.completionScopeReviewOrder);
+    const beforeOldApprovalCompletion = getSnapshot();
+    const oldApprovalCompletion = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "complete" } });
+    assert.equal(oldApprovalCompletion.statusCode, 409, oldApprovalCompletion.body);
+    assert.deepEqual(getSnapshot(), beforeOldApprovalCompletion, "failed completion attempt does not publish partial task or audit changes");
+    assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "in-progress", "old approval cannot complete the changed scope");
+
+    const artifactPayload = {
+      projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], kind: "evidence",
+      title: "Scope review evidence", summary: "Synthetic", status: "published", uri: "",
+    };
+    const artifact = await app.inject({ method: "POST", url: "/api/artifacts", headers: mentor, payload: artifactPayload });
+    assert.equal(artifact.statusCode, 201, artifact.body);
+    const artifactScopeOrder = getSnapshot().tasks.find((item) => item.id === task.id)?.completionScopeReviewOrder;
+    assert.equal(typeof artifactScopeOrder, "number");
+    assert.ok(artifactScopeOrder! >= (changedScope.completionScopeReviewOrder ?? 0), "task-linked artifact addition advances the watermark");
+
+    updateTask(task.id, { status: "waiting-for-qa" });
+    const freshPass = await submitPass();
+    assert.equal(freshPass.statusCode, 201, freshPass.body);
+    const latestTask = getSnapshot().tasks.find((item) => item.id === task.id)!;
+    const latestReport = getSnapshot().qaReports.filter((report) => report.targetRefs.some((ref) => ref.kind === "task" && ref.id === task.id)).sort((left, right) => (right.reviewOrder ?? 0) - (left.reviewOrder ?? 0))[0]!;
+    assert.equal(latestTask.status, "complete");
+    assert.equal(typeof latestReport.reviewOrder, "number");
+    assert.ok(latestReport.reviewOrder! > latestTask.completionScopeReviewOrder!);
+
+    const beforeArtifactDelete = getSnapshot();
+    const rejectedArtifactDelete = await app.inject({ method: "DELETE", url: `/api/artifacts/${artifact.json().item.id}`, headers: mentor });
+    assert.equal(rejectedArtifactDelete.statusCode, 409, rejectedArtifactDelete.body);
+    assert.deepEqual(getSnapshot(), beforeArtifactDelete, "removing task-linked artifact from a completed task is atomic");
   }, { env });
 });
 

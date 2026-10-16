@@ -348,6 +348,7 @@ export function buildBootstrapResponse(
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({
         id: task.id,
+        ...(task.completionScopeReviewOrder !== undefined ? { completionScopeReviewOrder: task.completionScopeReviewOrder } : {}),
         ...(task.createdAt ? { createdAt: task.createdAt } : {}),
         ...(task.serialNumber !== undefined ? { serialNumber: task.serialNumber } : {}),
         ...(task.serial !== undefined ? { serial: task.serial } : {}),

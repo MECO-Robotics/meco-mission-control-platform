@@ -291,6 +291,7 @@ export interface Artifact {
 
 export interface Task extends TaskTargets {
   id: string;
+  completionScopeReviewOrder?: number;
   createdAt?: string;
   serialNumber?: number;
   serial?: string;

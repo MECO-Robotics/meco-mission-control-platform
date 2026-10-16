@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { taskRecordTargetsSchema } from "../src/domain/taskTargets";
-import { getSnapshot, resetStore, createPartInstance, createSubsystem, updateTask, updateMechanism, removeMechanism, removeSubsystem } from "../src/data/store";
+import { getSnapshot, resetStore, createPartInstance, createSubsystem, createWorkstream, updateTask, updateMechanism, removeMechanism, removeSubsystem, updateWorkstream } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 const targetFields = ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds"] as const;
@@ -92,11 +92,21 @@ test("first target owns serial and audit context while reparenting and deletion 
   assert.ok(updated);
   assert.match(updated.serial ?? "", /^T-CO/);
   assert.equal(getSnapshot().actions?.at(-1)?.subsystemId, controls.id);
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
   updateMechanism("swerve-module", { subsystemId: manipulator.id });
   const reparented = getSnapshot().tasks.find((item) => item.id === task.id)!;
   assert.deepEqual(reparented.subsystemIds, [manipulator.id, controls.id]);
+  assert.equal(typeof reparented.completionScopeReviewOrder, "number", "mechanism reparenting updates surviving task subsystem scope watermark");
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
   removeMechanism("swerve-module");
-  assert.deepEqual(getSnapshot().tasks.find((item) => item.id === task.id)?.mechanismIds, []);
+  const afterMechanismRemoval = getSnapshot().tasks.find((item) => item.id === task.id)!;
+  assert.deepEqual(afterMechanismRemoval.mechanismIds, []);
+  assert.equal(typeof afterMechanismRemoval.completionScopeReviewOrder, "number", "mechanism deletion updates surviving task target watermark");
+  const workstream = createWorkstream({ projectId: task.projectId, name: "Scoped workstream", description: "Task target scope move fixture." });
+  updateTask(task.id, { workstreamIds: [workstream.id] });
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((item) => item.id === task.id ? { ...item, completionScopeReviewOrder: undefined } : item) });
+  updateWorkstream(workstream.id, { projectId: "project-media-2026" });
+  assert.equal(typeof getSnapshot().tasks.find((item) => item.id === task.id)?.completionScopeReviewOrder, "number", "moving a linked workstream project invalidates task scope approval");
   const loosePart = createPartInstance({
     intendedSubsystemId: controls.id, intendedMechanismId: null,
     partDefinitionId: getSnapshot().partDefinitions[0].id, location: { kind: "stock", location: "Controls" },

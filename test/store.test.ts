@@ -669,6 +669,7 @@ test("removePartDefinition clears linked part instances and task references", ()
   updateTask("swerve-sensor-bundle", {
     partInstanceIds: [createdPartInstance.id],
   });
+  resetStore({ ...getSnapshot(), tasks: getSnapshot().tasks.map((task) => task.id === "swerve-sensor-bundle" ? { ...task, completionScopeReviewOrder: undefined } : task) });
 
   const removed = removePartDefinition(createdPartDefinition.id);
   const snapshot = getSnapshot();
@@ -686,6 +687,7 @@ test("removePartDefinition clears linked part instances and task references", ()
     snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.partInstanceIds,
     [],
   );
+  assert.equal(typeof snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.completionScopeReviewOrder, "number", "part-definition cleanup invalidates the surviving task target scope");
 });
 
 test("removeSubsystem clears QA requests for removed tasks", () => {
@@ -1236,7 +1238,16 @@ test("within-project mechanism moves retain ancestors required by other task tar
   const destination = before.subsystems.find((subsystem) => subsystem.projectId === source.projectId && subsystem.id !== source.id)!;
   const otherMechanism = { ...mechanism, id: "unmoved-mechanism" };
   const task = before.tasks.find((task) => task.projectId === source.projectId)!;
-  resetStore({ ...before, mechanisms: [...before.mechanisms, otherMechanism], tasks: before.tasks.map((item) => item.id === task.id ? { ...item, subsystemIds: [source.id], mechanismIds: [mechanism.id, otherMechanism.id], partInstanceIds: [] } : item) });
+  resetStore({
+    ...before,
+    mechanisms: [...before.mechanisms, otherMechanism],
+    tasks: before.tasks.map((item) => {
+      const affected = item.id === task.id
+        ? { ...item, subsystemIds: [source.id], mechanismIds: [mechanism.id, otherMechanism.id], partInstanceIds: [] }
+        : item;
+      return affected.mechanismIds.includes(mechanism.id) ? { ...affected, status: "in-progress" as const } : affected;
+    }),
+  });
   updateMechanism(mechanism.id, { subsystemId: destination.id });
   const saved = getSnapshot().tasks.find((item) => item.id === task.id)!;
   assert.deepEqual(new Set(saved.subsystemIds), new Set([destination.id, source.id]));
