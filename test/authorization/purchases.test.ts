@@ -562,9 +562,63 @@ test("purchase receipts accumulate stock instances without completing the linked
     assert.equal(excessive.statusCode, 400);
 
     resetLimits();
+    const beforeReceipt = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    const linkedTaskBefore = beforeReceipt.tasks.find((item: { id: string }) => item.id === "intake-guard");
+    const linkedTaskTargetsBefore = {
+      workstreamIds: linkedTaskBefore.workstreamIds,
+      subsystemIds: linkedTaskBefore.subsystemIds,
+      mechanismIds: linkedTaskBefore.mechanismIds,
+      partInstanceIds: linkedTaskBefore.partInstanceIds,
+    };
+    resetLimits();
     const first = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "first-partial", quantity: 1, location: "Receiving shelf A" } });
     assert.equal(first.statusCode, 200);
     assert.equal(first.json().item.receipts.length, 1);
+
+    const unrelatedTaskBefore = beforeReceipt.tasks.find((item: { id: string; projectId: string; status: string }) => item.id !== "intake-guard" && item.projectId === linkedTaskBefore.projectId && item.status !== "complete");
+    assert.ok(unrelatedTaskBefore);
+    resetLimits();
+    const unrelatedPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${unrelatedTaskBefore.id}`,
+      headers: mentor,
+      payload: { title: `${unrelatedTaskBefore.title} after receiving stock` },
+    });
+    assert.equal(unrelatedPatch.statusCode, 200, unrelatedPatch.body);
+    assert.deepEqual({
+      workstreamIds: unrelatedPatch.json().item.workstreamIds,
+      subsystemIds: unrelatedPatch.json().item.subsystemIds,
+      mechanismIds: unrelatedPatch.json().item.mechanismIds,
+      partInstanceIds: unrelatedPatch.json().item.partInstanceIds,
+    }, {
+      workstreamIds: unrelatedTaskBefore.workstreamIds,
+      subsystemIds: unrelatedTaskBefore.subsystemIds,
+      mechanismIds: unrelatedTaskBefore.mechanismIds,
+      partInstanceIds: unrelatedTaskBefore.partInstanceIds,
+    });
+
+    const receivedInstanceId = first.json().receipt.partInstanceIds[0];
+    resetLimits();
+    const placed = await app.inject({
+      method: "PATCH",
+      url: `/api/part-instances/${receivedInstanceId}`,
+      headers: mentor,
+      payload: {
+        intendedSubsystemId: "drive",
+        intendedMechanismId: "swerve-module",
+        location: { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" },
+      },
+    });
+    assert.equal(placed.statusCode, 200, placed.body);
+    resetLimits();
+    const explicitlyTargeted = await app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${unrelatedTaskBefore.id}`,
+      headers: mentor,
+      payload: { partInstanceIds: [...unrelatedTaskBefore.partInstanceIds, receivedInstanceId] },
+    });
+    assert.equal(explicitlyTargeted.statusCode, 200, explicitlyTargeted.body);
+    assert.ok(explicitlyTargeted.json().item.partInstanceIds.includes(receivedInstanceId));
 
     resetLimits();
     const second = await app.inject({ method: "POST", url: "/api/purchases/polycarb-sheet/receipts", headers: mentor, payload: { operationId: "second-partial", quantity: 1, location: "Bin 4" } });
@@ -625,13 +679,56 @@ test("purchase receipts accumulate stock instances without completing the linked
     const task = body.tasks.find((item: { id: string }) => item.id === "intake-guard");
     assert.equal(purchase.receipts.reduce((total: number, receipt: { quantity: number }) => total + receipt.quantity, 0), 2);
     assert.equal(task.status, "in-progress");
+    assert.deepEqual({
+      workstreamIds: task.workstreamIds,
+      subsystemIds: task.subsystemIds,
+      mechanismIds: task.mechanismIds,
+      partInstanceIds: task.partInstanceIds,
+    }, linkedTaskTargetsBefore, "partial stock receipts do not change linked task scope");
     assert.equal(purchase.orderStatus, "delivered");
     assert.deepEqual(legacyPurchase.receipts, []);
     assert.deepEqual(purchase.receipts.map((receipt: { location: string }) => receipt.location), ["Receiving shelf A", "Bin 4"]);
     const receivedIds = purchase.receipts.flatMap((receipt: { partInstanceIds: string[] }) => receipt.partInstanceIds);
     assert.equal(receivedIds.length, 2);
-    assert.ok(receivedIds.every((id: string) => task.partInstanceIds.includes(id)));
-    assert.ok(body.partInstances.filter((part: { id: string }) => receivedIds.includes(part.id)).every((part: { location: { kind: string } }) => part.location.kind === "stock"));
+    assert.deepEqual(purchase.receipts.map((receipt: { partInstanceIds: string[] }) => receipt.partInstanceIds).flat(), receivedIds);
+    const receivedParts = body.partInstances.filter((part: { id: string }) => receivedIds.includes(part.id));
+    assert.equal(receivedParts.find((part: { id: string }) => part.id === receivedIds[0]).location.kind, "installed");
+    assert.equal(receivedParts.find((part: { id: string }) => part.id === receivedIds[1]).location.kind, "stock");
+  });
+});
+
+test("partial receipt leaves completed task targets unchanged", async () => {
+  await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const mentor = await createWorkflowAuthHeaders("mentor");
+    const bootstrap = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    const completedTask = bootstrap.tasks.find((item: { projectId: string; status: string }) => item.projectId === "project-robot-2026" && item.status === "complete");
+    assert.ok(completedTask, "fixture includes a completed robot task");
+    updatePurchaseItem("ferrule-kit", {
+      taskId: completedTask.id,
+      kind: "cots-goods",
+      partDefinitionId: "pd-polycarbonate-sheet",
+      materialId: null,
+      quantity: 1,
+      orderStatus: "ordered",
+    });
+
+    resetLimits();
+    const received = await app.inject({
+      method: "POST",
+      url: "/api/purchases/ferrule-kit/receipts",
+      headers: mentor,
+      payload: { operationId: "completed-task-stock", quantity: 1, location: "Receiving shelf B" },
+    });
+    assert.equal(received.statusCode, 200, received.body);
+    assert.equal(received.json().receipt.partInstanceIds.length, 1);
+    resetLimits();
+    const after = (await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor })).json();
+    const completedTaskAfter = after.tasks.find((item: { id: string }) => item.id === completedTask.id);
+    for (const field of ["workstreamIds", "subsystemIds", "mechanismIds", "partInstanceIds"] as const) {
+      assert.deepEqual(completedTaskAfter[field], completedTask[field], `receipt leaves completed task ${field} unchanged`);
+    }
+    assert.ok(after.partInstances.some((part: { id: string }) => part.id === received.json().receipt.partInstanceIds[0]));
+    assert.deepEqual(after.purchaseItems.find((item: { id: string }) => item.id === "ferrule-kit").receipts[0].partInstanceIds, received.json().receipt.partInstanceIds);
   });
 });
 

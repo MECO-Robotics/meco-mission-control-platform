@@ -4542,22 +4542,13 @@ export function receivePurchaseItem(
     partInstanceIds: partInstances.map((part) => part.id),
   };
   const updatedItem: PurchaseItem = { ...item, receipts: [...receipts, receipt] };
-  const updatedTask = normalizeTaskTargets({
-    ...task,
-    // A completed task is historical evidence; attaching new stock would make
-    // readiness infer completion for parts that have not passed QA or testing.
-    partInstanceIds: task.status === "complete"
-      ? task.partInstanceIds
-      : uniqueIds([...task.partInstanceIds, ...receipt.partInstanceIds]),
-  });
   const nextSnapshot = {
     ...currentSnapshot,
     purchaseItems: currentSnapshot.purchaseItems.map((candidate) => candidate.id === itemId ? updatedItem : candidate),
     materials: nextMaterials,
     partInstances: [...currentSnapshot.partInstances, ...partInstances],
-    tasks: currentSnapshot.tasks.map((candidate) => candidate.id === task.id ? updatedTask : candidate),
   };
-  replaceCurrentSnapshot(markChangedTaskCompletionScopes(currentSnapshot, nextSnapshot));
+  replaceCurrentSnapshot(nextSnapshot);
   recordProductionItemAudit("purchase-item", "update", updatedItem, auditContext, ["receipts"]);
   return { item: updatedItem, receipt, replayed: false as const };
 }
