@@ -47,16 +47,16 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
     reportCoversPart(report) &&
     currentRevision !== undefined && report.targetRevisions?.[part.partDefinitionId] === currentRevision,
   );
-  const currentQa = qa.filter((report) => {
-    if (report.result === "pass") return true;
-    const linked = snapshot.qaFindings.filter((finding) => finding.reportId === report.id &&
-      (matchesPartOrDefinition(finding.targetRefs) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))));
-    return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, report.id, report.reviewOrder));
-  });
-  const latestQa = currentQa.reduce<typeof qa[number] | undefined>((latest, report) =>
+  const latestQa = qa.reduce<typeof qa[number] | undefined>((latest, report) =>
     !latest || (report.reviewOrder ?? -1) > (latest.reviewOrder ?? -1) ? report : latest, undefined);
-  if (latestQa?.result === "iteration-worthy") return "blocked";
-  if (latestQa?.result === "minor-fix") return "qa";
+  const latestQaFindings = latestQa
+    ? snapshot.qaFindings.filter((finding) => finding.reportId === latestQa.id &&
+      (matchesPartOrDefinition(finding.targetRefs) || [...taskIds].some((id) => hasTarget(finding.targetRefs, "task", id))))
+    : [];
+  const latestQaIsClearedNonpass = latestQa !== undefined && latestQa.result !== "pass" && latestQaFindings.length > 0 &&
+    latestQaFindings.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, latestQa.id, latestQa.reviewOrder));
+  if (!latestQaIsClearedNonpass && latestQa?.result === "iteration-worthy") return "blocked";
+  if (!latestQaIsClearedNonpass && latestQa?.result === "minor-fix") return "qa";
 
   const tests = snapshot.testResults.filter((result) =>
     (matchesPartOrDefinition(result.targetRefs) || [...taskIds].some((id) => hasTarget(result.targetRefs, "task", id))) &&
@@ -76,6 +76,7 @@ export function derivePartInstanceReadiness(part: ReadonlyData<PartInstance>, sn
     return linked.length === 0 || !linked.every((finding) => finding.status === "resolved" && hasCurrentPassingRetest(finding, result.id, result.verificationOrder));
   });
   if (activeTestFailures.length > 0) return "blocked";
+  if (latestQaIsClearedNonpass) return "not-ready";
   if (latestTests.some((result) => result.status === "pass" && result.inspectedPartInstanceIds !== undefined)) return "ready";
   if (latestQa?.result === "pass") return "ready";
   if (relatedTasks.some((task) => task.status === "waiting-for-qa")) return "qa";

@@ -111,3 +111,40 @@ test("definition-scoped QA and test findings clear only their retested failures"
   assert.equal(readiness([], [testFinding, { ...testFinding, id: "open-test-finding", status: "open", retests: [] }], [], [testResult]), "blocked", "an open test finding on the same definition keeps its failure active");
   assert.equal(readiness([qaFinding], [testFinding], [qaReport], [testResult, { ...testResult, id: "unrelated-test-failure", title: "Separate check", verificationOrder: 9 }]), "blocked", "an unrelated failing test remains blocking after definition-scoped retests");
 });
+
+test("a finding retest does not replace its newer nonpass QA report with an older pass", () => {
+  const part = { id: "part-1", partDefinitionId: "definition-1" };
+  const targetRefs = [{ kind: "part-instance", id: part.id }];
+  const reviewedPass = {
+    id: "older-overall-pass", status: "reviewed", result: "pass", reviewOrder: 1,
+    targetRefs, inspectedPartInstanceIds: [part.id], targetRevisions: { "definition-1": "A" },
+  };
+  const reviewedMinorFix = {
+    ...reviewedPass, id: "newer-minor-fix", result: "minor-fix", reviewOrder: 2,
+  };
+  const resolvedFinding = {
+    id: "minor-fix-finding", reportId: reviewedMinorFix.id, status: "resolved", targetRefs,
+    retests: [{
+      result: "pass", supersedesId: reviewedMinorFix.id, verificationOrder: 3,
+      inspectedPartInstanceIds: [part.id], targetRevisions: { "definition-1": "A" },
+    }],
+  };
+  const base = {
+    partInstances: [part], partDefinitions: [{ id: part.partDefinitionId, revision: "A" }], tasks: [], risks: [],
+    qaFindings: [resolvedFinding], testFindings: [], testResults: [], milestoneRequirements: [],
+  };
+  const readiness = (qaReports: unknown[], qaFindings = base.qaFindings) =>
+    derivePartInstanceReadiness(part as never, { ...base, qaReports, qaFindings } as unknown as SnapshotView);
+
+  assert.equal(readiness([reviewedPass, reviewedMinorFix]), "not-ready", "passing finding retest clears its failure but not the newer report's overall approval");
+  assert.equal(readiness([reviewedMinorFix, reviewedPass]), "not-ready", "server review order wins regardless of report input order");
+  const laterOverallPass = { ...reviewedPass, id: "fresh-overall-pass", reviewOrder: 4 };
+  assert.equal(readiness([reviewedPass, reviewedMinorFix, laterOverallPass]), "ready", "a fresh reviewed overall pass clears the newer nonpass outcome");
+  assert.equal(readiness([laterOverallPass, reviewedMinorFix, reviewedPass]), "ready", "fresh pass selection is independent of input order");
+  const reviewedIterationWorthy = { ...reviewedMinorFix, id: "newer-iteration-worthy", result: "iteration-worthy" };
+  const iterationFinding = { ...resolvedFinding, id: "iteration-finding", reportId: reviewedIterationWorthy.id, retests: [{ ...resolvedFinding.retests[0]!, supersedesId: reviewedIterationWorthy.id }] };
+  assert.equal(readiness([reviewedPass, reviewedIterationWorthy], [iterationFinding]), "not-ready", "a passing retest of an iteration-worthy report still needs a fresh overall pass");
+  assert.equal(readiness([reviewedIterationWorthy, reviewedPass, { ...laterOverallPass, reviewOrder: 4 }], [iterationFinding]), "ready");
+  const unrelatedOpenFailure = { ...resolvedFinding, id: "unrelated-open-failure", reportId: "another-review", status: "open", retests: [] };
+  assert.equal(readiness([reviewedPass, reviewedMinorFix], [resolvedFinding, unrelatedOpenFailure]), "blocked", "an unrelated active failure continues to block after the linked finding is retested");
+});
