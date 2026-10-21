@@ -67,6 +67,10 @@ test("restored tutorial seed keeps historical demo records and chapter examples 
   const membersById = new Map(snapshot.members.map((member) => [member.id, member]));
   const students = snapshot.members.filter((member) => member.role === "student");
   assert.deepEqual(snapshot.responsibleGroups.map((group) => group.name), ["Mechanical", "Electrical", "Programming", "Business", "Strategy", "Admin", "Media"]);
+  assert.deepEqual(snapshot.responsibleGroups.map(({ icon, color }) => [icon, color]), [
+    ["wrench", "#B45309"], ["zap", "#A16207"], ["code", "#7C3AED"], ["briefcase", "#0D9488"],
+    ["target", "#2563EB"], ["clipboard", "#DB2777"], ["clapperboard", "#C026D3"],
+  ]);
   assert.ok(snapshot.responsibleGroups.every((group) => group.workTypeIds.length === 0));
   for (const team of snapshot.responsibleGroups) {
     assert.ok(team.memberIds.some((memberId) => membersById.get(memberId)?.role === "student"), `Missing student in ${team.name}`);

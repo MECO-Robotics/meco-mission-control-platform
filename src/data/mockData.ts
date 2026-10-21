@@ -3,7 +3,7 @@ import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
 
 // Restored from the pre-compaction development seed and mapped to the canonical FRC model.
 export const snapshot: PlatformSnapshot = {
-  "snapshotSchemaVersion": 1,
+  "snapshotSchemaVersion": 2,
   "seasons": [
     {
       "id": "default-season",
@@ -320,6 +320,8 @@ export const snapshot: PlatformSnapshot = {
     "id": "team-drivetrain",
     "seasonId": "default-season",
     "name": "Drivetrain",
+    "icon": "wrench",
+    "color": "#B45309",
     "projectIds": ["project-robot-2026"],
     "workTypeIds": [],
     "memberIds": ["ava"],
@@ -5881,13 +5883,13 @@ snapshot.members = snapshot.members.map((member) => ({
 }));
 
 const teamDivisions = [
-  { id: "team-mechanical", name: "Mechanical" },
-  { id: "team-electrical", name: "Electrical" },
-  { id: "team-programming", name: "Programming" },
-  { id: "team-business", name: "Business" },
-  { id: "team-strategy", name: "Strategy" },
-  { id: "team-admin", name: "Admin" },
-  { id: "team-media", name: "Media" },
+  { id: "team-mechanical", name: "Mechanical", icon: "wrench", color: "#B45309" },
+  { id: "team-electrical", name: "Electrical", icon: "zap", color: "#A16207" },
+  { id: "team-programming", name: "Programming", icon: "code", color: "#7C3AED" },
+  { id: "team-business", name: "Business", icon: "briefcase", color: "#0D9488" },
+  { id: "team-strategy", name: "Strategy", icon: "target", color: "#2563EB" },
+  { id: "team-admin", name: "Admin", icon: "clipboard", color: "#DB2777" },
+  { id: "team-media", name: "Media", icon: "clapperboard", color: "#C026D3" },
 ] as const;
 const demoStudents = snapshot.members.filter((member) => member.role === "student");
 const demoMentors = snapshot.members.filter((member) => member.role === "mentor");

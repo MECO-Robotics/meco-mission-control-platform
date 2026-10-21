@@ -126,6 +126,25 @@
           "name": {
             "type": "string"
           },
+          "icon": {
+            "type": "string",
+            "enum": [
+              "wrench",
+              "zap",
+              "code",
+              "briefcase",
+              "target",
+              "clipboard",
+              "clapperboard",
+              "megaphone",
+              "graduation-cap",
+              "users"
+            ]
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
           "projectIds": {
             "type": "array",
             "items": {
@@ -158,6 +177,8 @@
           "id",
           "seasonId",
           "name",
+          "icon",
+          "color",
           "projectIds",
           "workTypeIds",
           "memberIds",
@@ -3475,7 +3496,7 @@
   "description": "Current bootstrap contract with target FRC domain identities and strict domain-owned collections.",
   "x_contract": {
     "contractName": "meco-mission-control-platform-bootstrap",
-    "contractVersion": 1,
+    "contractVersion": 2,
     "resource": "/api/bootstrap",
     "migrationPolicy": "Prototype contracts are replaced in coordination with both clients; no legacy payload support."
   },
@@ -4559,6 +4580,129 @@
         }
       },
       "additionalProperties": false
+    },
+    "responsibleGroup": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "seasonId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "icon": {
+          "type": "string",
+          "enum": [
+            "wrench",
+            "zap",
+            "code",
+            "briefcase",
+            "target",
+            "clipboard",
+            "clapperboard",
+            "megaphone",
+            "graduation-cap",
+            "users"
+          ]
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "projectIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "memberIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "primaryMemberIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "isArchived": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "seasonId",
+        "name",
+        "icon",
+        "color",
+        "projectIds",
+        "memberIds"
+      ]
+    },
+    "responsibleGroupPatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "seasonId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "icon": {
+          "type": "string",
+          "enum": [
+            "wrench",
+            "zap",
+            "code",
+            "briefcase",
+            "target",
+            "clipboard",
+            "clapperboard",
+            "megaphone",
+            "graduation-cap",
+            "users"
+          ]
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "projectIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "memberIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "primaryMemberIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "isArchived": {
+          "type": "boolean"
+        }
+      }
     },
     "report": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

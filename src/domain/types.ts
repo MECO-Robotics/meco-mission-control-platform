@@ -193,10 +193,15 @@ export interface WorkType {
   isActive: boolean;
 }
 
+export const RESPONSIBLE_GROUP_ICONS = ["wrench", "zap", "code", "briefcase", "target", "clipboard", "clapperboard", "megaphone", "graduation-cap", "users"] as const;
+export type ResponsibleGroupIcon = (typeof RESPONSIBLE_GROUP_ICONS)[number];
+
 export interface ResponsibleGroup {
   id: string;
   seasonId: string;
   name: string;
+  icon: ResponsibleGroupIcon;
+  color: string;
   projectIds: string[];
   workTypeIds: string[];
   memberIds: string[];
@@ -750,7 +755,7 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
-  snapshotSchemaVersion: 1;
+  snapshotSchemaVersion: 2;
   /** Optional migration-free, server-owned monotonic QA review counter. */
   qaReviewSequence?: number;
   seasons: Season[];

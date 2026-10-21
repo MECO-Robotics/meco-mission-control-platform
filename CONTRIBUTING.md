@@ -26,6 +26,13 @@ npm run snapshot:reset
 
 The reset command preserves the original bytes in a timestamped archive; it does not migrate or reset Prisma or CAD storage. A fresh snapshot retains writes across ordinary restarts in development and production.
 
+Current snapshots use schema version 2. Teams require an explicit supported
+`icon` and `#RRGGBB` `color`; creation requires both and omitted PATCH fields
+retain their saved values. Bootstrap contract version 2 carries the same
+required identity. Older snapshots need an explicit reviewed upgrade or the
+archive/reseed command above; startup never infers identity from team names or
+work types. See [contract migration notes](contracts/platform/README.md).
+
 ## Validation
 
 Run `npm run verify` for application, package or CI changes. It verifies the bootstrap contract, generates Prisma, checks test types, runs the test suite and builds the server; do not repeat those steps separately on the same revision. Use `npm test` for focused test iteration. Integration tests own temporary preference files; `buildApp({ userPreferencesPath })` selects their storage. Ordinary application startup retains `data/user-preferences.json`, and reopening that path retains saved preferences. Set `TEST_DATABASE_URL` to an isolated, bootstrapped PostgreSQL database when running `npm run verify` to include the production mobile-session persistence/competition test. Without it, that scenario is explicitly skipped. Schema changes also require `npx prisma validate` and a clean-database bootstrap/persistence check. Deployment changes require the relevant workflow tests and compose validation described in the [operator runbook](docs/platform-deployment-recovery.md).
