@@ -5926,7 +5926,6 @@ const overdueDemoTask = snapshot.tasks.find((task) => task.id === "travel-pack-f
 if (overdueDemoTask) {
   overdueDemoTask.ownerId = "ben";
   overdueDemoTask.assigneeIds = ["ben"];
-  overdueDemoTask.dueDate = "2026-04-20";
 }
 
 for (const [riskId, taskId] of [
