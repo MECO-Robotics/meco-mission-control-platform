@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isTaskDisciplineAllowedForProject } from "../src/domain/taskDisciplines";
 import { createTutorialSnapshot } from "../src/data/tutorialSnapshot";
+import { snapshot } from "../src/data/mockData";
 
 for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
   test(`tutorial activity spans the rolling FRC season at ${date}`, () => {
@@ -27,6 +28,9 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
     assert.ok(milestoneWeeks.size >= 8, `expected milestones across at least eight weeks; got ${milestoneWeeks.size}`);
     for (const task of data.tasks) {
       assert.ok(task.startDate <= task.dueDate);
+      const source = snapshot.tasks.find((candidate) => candidate.id === task.id)!;
+      assert.equal(Date.parse(task.dueDate) - Date.parse(task.startDate), Date.parse(source.dueDate) - Date.parse(source.startDate), `${task.id} retains its source duration`);
+      if (overdueTaskIds.has(task.id)) assert.equal(Date.parse(task.dueDate), Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 86_400_000, `${task.id} remains due yesterday`);
       assert.equal(task.actualHours, data.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0));
     }
     for (const recorded of [...data.workLogs.map((log) => log.date), ...data.qaReports.map((report) => report.reviewedAt).filter((date): date is string => date !== null), ...data.attendanceRecords.map((record) => record.date)]) assert.ok(Date.parse(recorded) <= now.getTime(), recorded);
@@ -50,6 +54,18 @@ for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
     assert.deepEqual(createTutorialSnapshot(now), data);
   });
 }
+
+test("tutorial tasks retain long source spans and valid overdue example dates", () => {
+  const data = createTutorialSnapshot(new Date("2026-10-21T12:00:00Z"));
+  const vision = data.tasks.find((task) => task.id === "vision-calibration-sweep")!;
+  assert.equal((Date.parse(vision.dueDate) - Date.parse(vision.startDate)) / 86_400_000, 55);
+  const travelSource = snapshot.tasks.find((task) => task.id === "travel-pack-finalize")!;
+  assert.equal(travelSource.startDate, "2026-04-27");
+  assert.equal(travelSource.dueDate, "2026-05-03");
+  const travel = data.tasks.find((task) => task.id === travelSource.id)!;
+  assert.equal(travel.startDate, "2026-10-14");
+  assert.equal(travel.dueDate, "2026-10-20");
+});
 
 test("new tutorial data rolls forward without mutating an earlier session", () => {
   const old = createTutorialSnapshot(new Date("2026-12-31T12:00:00Z"));
