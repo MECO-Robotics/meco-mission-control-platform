@@ -65,6 +65,33 @@ test("default development platform stores acknowledge only durable commits and s
   }
 });
 
+test("team identity survives durable create, edit and process restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-team-identity-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  try {
+    runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const tx = await store.acquireSnapshotMutation(); tx.enter();
+      const group = store.createResponsibleGroup({ seasonId: store.getSnapshot().seasons[0].id, name: "Custom identity", icon: "megaphone", color: "#123ABC", projectIds: [], memberIds: [], primaryMemberIds: [] });
+      store.updateResponsibleGroup(group.id, { icon: "graduation-cap", color: "#A1B2C3" });
+      store.updateResponsibleGroup(group.id, { name: "Renamed identity", isArchived: true });
+      await tx.commit(); tx.release();
+    `);
+    const loaded = runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      console.log(JSON.stringify(store.getSnapshot().responsibleGroups.find(group => group.name === "Renamed identity")));
+    `);
+    const group = JSON.parse(loaded);
+    assert.equal(group.icon, "graduation-cap");
+    assert.equal(group.color, "#A1B2C3");
+    assert.equal(group.isArchived, true);
+    assert.deepEqual(group.projectIds, []);
+    assert.deepEqual(group.primaryMemberIds, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("development persistence failure rejects commit without publishing the staged snapshot", () => {
   runProductionStoreScript("/dev/null/blocked-snapshot.json", `
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
@@ -99,6 +126,24 @@ test("memory fixture owners neither load nor replace the configured snapshot fil
       assert.equal(store.getSnapshot().tasks[0]!.title, "Memory fixture change");
     });
     assert.equal(readFileSync(snapshotPath, "utf8"), sentinel);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("snapshot loading rejects missing or invalid team identities without changing the file", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-team-identity-invalid-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  try {
+    for (const [field, value] of [["icon", undefined], ["color", undefined], ["icon", "unknown"], ["color", "#123"]] as const) {
+      const invalid = structuredClone(snapshot);
+      if (value === undefined) Reflect.deleteProperty(invalid.responsibleGroups[0]!, field);
+      else Reflect.set(invalid.responsibleGroups[0]!, field, value);
+      const contents = JSON.stringify(invalid);
+      writeFileSync(snapshotPath, contents, "utf8");
+      assert.throws(() => loadPlatformSnapshotFile(snapshotPath), /does not match schema 2/);
+      assert.equal(readFileSync(snapshotPath, "utf8"), contents);
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -151,7 +196,7 @@ test("current schema snapshots load without rewriting and reset archives the con
   writeFileSync(snapshotPath, contents, "utf8");
 
   try {
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 1);
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 2);
     assert.equal(readFileSync(snapshotPath, "utf8"), contents);
     const { archivePlatformSnapshotFile } = await import("../src/data/platformSnapshotFile");
     const archive = archivePlatformSnapshotFile(snapshotPath);

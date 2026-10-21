@@ -2,12 +2,13 @@ import { existsSync, linkSync, readFileSync, unlinkSync } from "node:fs";
 import { mkdir, rename as renameAsync, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
+import { hexColorSchema, responsibleGroupIconSchema } from "../routes/routeSchemas";
 
 import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
 import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemRecordSchema, purchaseReceiptRecordSchema, reportSchema, riskSchema, taskSchema, testResultSchema, subsystemSchema, milestoneSchema, meetingSchema } from "../routes/routeSchemas";
 
-export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 1 as const;
+export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 2 as const;
 
 const snapshotCollectionKeys = [
   "seasons", "projects", "workTypes", "responsibleGroups", "workstreams", "vendors", "members", "subsystems", "mechanisms",
@@ -32,7 +33,7 @@ const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
     plannedAttendanceNotes: z.string().optional(),
   }).strict(),
   projects: z.object({ id: z.string(), teamId: z.string(), seasonId: z.string(), name: z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]), projectType: z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]), description: z.string(), status: z.enum(["planned", "active", "paused", "complete"]) }).strict(),
-  responsibleGroups: z.object({ id: z.string(), seasonId: z.string(), name: z.string(), projectIds: z.array(z.string()), workTypeIds: z.array(z.string()).default([]), memberIds: z.array(z.string()), primaryMemberIds: z.array(z.string()).default([]), isArchived: z.boolean() }).strict(),
+  responsibleGroups: z.object({ id: z.string(), seasonId: z.string(), name: z.string(), icon: responsibleGroupIconSchema, color: hexColorSchema, projectIds: z.array(z.string()), workTypeIds: z.array(z.string()).default([]), memberIds: z.array(z.string()), primaryMemberIds: z.array(z.string()).default([]), isArchived: z.boolean() }).strict(),
   tasks: taskSchema.passthrough().extend({ id: z.string() }),
   subsystems: subsystemSchema.extend({ id: z.string(), isCore: z.boolean() }).strict(),
   milestones: milestoneSchema.extend({ id: z.string(), seasonId: z.string().optional() }).strict(),

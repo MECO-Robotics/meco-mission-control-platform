@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { hexColorSchema, responsibleGroupIconSchema, responsibleGroupSchema as responsibleGroupCommandSchema, responsibleGroupPatchSchema } from "../routes/routeSchemas";
 import { subsystemLayoutSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, riskSchema, purchaseItemRecordSchema, purchaseReceiptRecordSchema, purchaseItemSchema, artifactSchema, qaRequestSchema, testResultSchema, domainReferenceSchema, manufacturingProcessCreateSchema, manufacturingProcessArchiveSchema } from "../routes/routeSchemas";
 
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
-export const BOOTSTRAP_CONTRACT_VERSION = 1;
+export const BOOTSTRAP_CONTRACT_VERSION = 2;
 
 const [taskDependencyOption, milestoneDependencyOption, partDependencyOption] = taskDependencySchema.options;
 const dependencyRecordFields = { id: z.string(), createdAt: z.string() };
@@ -34,7 +35,7 @@ const pmCadProvenanceCollectionSchema = z.array(pmCadProvenanceRecordSchema);
 const projectTypeSchema = z.enum(["robot", "media", "outreach", "operations", "strategy", "training"]);
 const projectNameSchema = z.enum(["Robot", "Media", "Outreach", "Operations", "Strategy", "Training"]);
 const workTypeSchema = z.object({ id: z.string(), projectType: projectTypeSchema, code: z.string(), name: z.string(), isActive: z.boolean() }).strict();
-const responsibleGroupSchema = z.object({ id: z.string(), seasonId: z.string(), name: z.string(), projectIds: z.array(z.string()), workTypeIds: z.array(z.string()), memberIds: z.array(z.string()), primaryMemberIds: z.array(z.string()), isArchived: z.boolean() }).strict();
+const responsibleGroupSchema = z.object({ id: z.string(), seasonId: z.string(), name: z.string(), icon: responsibleGroupIconSchema, color: hexColorSchema, projectIds: z.array(z.string()), workTypeIds: z.array(z.string()), memberIds: z.array(z.string()), primaryMemberIds: z.array(z.string()), isArchived: z.boolean() }).strict();
 const memberBootstrapSchema = z.object({ id: z.string() }).passthrough();
 const vendorSchema = z.object({ id: z.string(), name: z.string(), website: z.string().nullable(), isArchived: z.boolean() }).strict();
 const manufacturingProcessRecordSchema = z.object({ id: z.string(), code: z.string(), name: z.string(), isActive: z.boolean() }).strict();
@@ -159,7 +160,7 @@ export const bootstrapContractDocument = {
     resource: "/api/bootstrap",
     migrationPolicy: "Prototype contracts are replaced in coordination with both clients; no legacy payload support.",
   },
-  x_commands: Object.fromEntries(Object.entries({ task: taskSchema, taskPatch: taskPatchSchema, subsystem: subsystemSchema, subsystemPatch: subsystemPatchSchema, report: reportSchema, qaReport: qaReportSchema, qaSubmit: qaSubmitSchema, risk: riskSchema, purchaseItem: purchaseItemSchema, taskDependency: taskDependencySchema, manufacturingProcessCreate: manufacturingProcessCreateSchema, manufacturingProcessArchive: manufacturingProcessArchiveSchema }).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: "input" })])),
+  x_commands: Object.fromEntries(Object.entries({ task: taskSchema, taskPatch: taskPatchSchema, subsystem: subsystemSchema, subsystemPatch: subsystemPatchSchema, responsibleGroup: responsibleGroupCommandSchema, responsibleGroupPatch: responsibleGroupPatchSchema, report: reportSchema, qaReport: qaReportSchema, qaSubmit: qaSubmitSchema, risk: riskSchema, purchaseItem: purchaseItemSchema, taskDependency: taskDependencySchema, manufacturingProcessCreate: manufacturingProcessCreateSchema, manufacturingProcessArchive: manufacturingProcessArchiveSchema }).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: "input" })])),
 };
 
 export function toBootstrapContractDocument() {
