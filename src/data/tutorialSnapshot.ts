@@ -51,6 +51,12 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
   }
   for (const task of copy.tasks) {
     task.actualHours = copy.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0);
+    if (!task.startDate || !task.dueDate) continue;
+    const startDate = Date.parse(task.startDate);
+    const dueDate = Date.parse(task.dueDate);
+    if (Number.isFinite(startDate) && Number.isFinite(dueDate) && dueDate - startDate > 30 * DAY) {
+      task.dueDate = new Date(startDate + 30 * DAY).toISOString().slice(0, 10);
+    }
   }
   // Keep a few assigned examples overdue after tutorial dates roll forward.
   // Otherwise the compressed historical timeline can place every due date on
