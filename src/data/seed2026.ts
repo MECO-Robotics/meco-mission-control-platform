@@ -5,7 +5,7 @@ import sourceSupplement from "./sourceSeedSupplement.json";
 import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
 import { artifactSchema, reportSchema } from "../routes/routeSchemas";
 import type { MilestoneType, PlatformSnapshot, ProjectType, ResponsibleGroupIcon, ScheduleEvent, SeasonType, TaskStatus } from "../domain/types";
-import { buildSeedRisks, buildSeedTaskDependencies, contextualTaskProjectAreas, taskScheduleWindow } from "./taskScheduleSeed";
+import { buildSeedRisks, buildSeedTaskDependencies, contextualTaskProjectAreas, hasExplicitOpenProgressEvidence, inferTaskProjectArea, isActionableSeedTask, taskScheduleWindow } from "./taskScheduleSeed";
 
 const seedRecordedAt = "2026-10-23T00:00:00.000Z";
 const areas = ["robot", "operations", "outreach", "media", "strategy", "training"] as const;
@@ -206,6 +206,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       };
     }),
     { id: season.id, name: season.name, type: season.type as SeasonType, startDate: season.firstDatedActivity, endDate: season.lastDatedActivity, description: `${season.dateBoundaryBasis} Date bounds represent documented activity only; official season boundaries were not stated.` },
+    { id: "season-2027-meco", name: "MECO Robotics 2027 planning season (2026–27)", type: "season" as const, startDate: null, endDate: null, description: "A 2026–27 season is identified by FY 2027 purchase records and 2027-season mentor minutes. Official season date bounds are not stated." },
   ];
   const projects = source.projects.map((project) => ({
     id: project.id, teamId: project.teamId, seasonId: project.seasonId, name: project.name, projectType: project.projectType as ProjectType,
@@ -213,8 +214,17 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   }));
   const historicalProjects = historicalYears.map((year) => ({
     id: `project-operations-${year}`, teamId: "meco-robotics", seasonId: `season-${year}-meco`, name: "Operations", projectType: "operations" as const,
-    description: `Source grouping for historical ${year} records; separate project workstreams were not inferred.`, status: "active" as const,
+    description: `Source grouping for historical ${year} records; separate project workstreams were not inferred.`, status: "complete" as const,
   }));
+  const historicalRobotProjects = historicalYears.map((year) => ({
+    id: `project-robot-${year}`, teamId: "meco-robotics", seasonId: `season-${year}-meco`, name: "Robot", projectType: "robot" as const,
+    description: `Source grouping for robot catalog purchases recorded in ${year}; task links and robot-specific project plans are not inferred.`, status: "complete" as const,
+  }));
+  const nextSeasonProjects = [
+    { id: "project-operations-2027", teamId: "meco-robotics", seasonId: "season-2027-meco", name: "Operations", projectType: "operations" as const, description: "2026–27 registration and team operations documents; exact competition-season bounds are not stated.", status: "active" as const },
+    { id: "project-training-2027", teamId: "meco-robotics", seasonId: "season-2027-meco", name: "Training", projectType: "training" as const, description: "Mentor planning documented for the 2027 season; no additional training tasks are inferred.", status: "active" as const },
+    { id: "project-robot-2027", teamId: "meco-robotics", seasonId: "season-2027-meco", name: "Robot", projectType: "robot" as const, description: "Robot-related FY 2027 purchase records; no new robot design or build tasks are inferred.", status: "active" as const },
+  ];
   const members = source.members.map((member) => ({
     id: member.id, name: pseudonymFor(member.id.replace(/^member-/, "")), email: "", role: roleByMemberId[member.id] ?? "unknown", elevated: false,
     seasonId: season.id, activeSeasonIds: [season.id],
@@ -307,7 +317,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     rsvpsYes: 0, rsvpsMaybe: 0, openSignIns: 0,
   }));
   const meetingIds = new Set(meetings.map((meeting) => meeting.id));
-  const taskCandidates = [...source.taskCandidates].sort((left, right) =>
+  const taskCandidates = [...source.taskCandidates].filter((candidate) => isActionableSeedTask(candidate.title)).sort((left, right) =>
     (left.sourceDate ?? "9999-99-99").localeCompare(right.sourceDate ?? "9999-99-99"),
   );
   for (const { taskId, prerequisiteTaskId } of source.sequenceDependencies) {
@@ -325,7 +335,8 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     return "step-subsystem-chassis";
   };
   const tasks = taskCandidates.map((candidate) => {
-    const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : contextualTaskProjectAreas[candidate.id] ?? "operations";
+    const inferredArea = inferTaskProjectArea(candidate.title);
+    const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : contextualTaskProjectAreas[candidate.id] ?? inferredArea ?? "operations";
     const title = safeText(candidate.title) || "Untitled source task";
     const subsystemId = area === "robot" ? robotSubsystemForTask(title) : `season-work-${area}-2026`;
     const exactDue = exactDueDate(candidate);
@@ -334,18 +345,24 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     const hasPassedSourceDate = Boolean(sourceTaskDate && sourceTaskDate <= "2026-10-23");
     const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress"
       ? candidate.status
+      : hasExplicitOpenProgressEvidence(candidate) || ["task-src-523b57b9b07057", "task-src-87e563935cd25a"].includes(candidate.id) ? "in-progress"
       : hasPassedSourceDate ? "complete" : "in-progress";
+    const progressEvidence = candidate.statusEvidence ?? (candidate.id === "task-src-523b57b9b07057"
+      ? "Oct 4 recap set a CAD completion goal for Oct 6; Oct 8 and Oct 10 recaps confirm intake CAD and cut plates were still being finished and not installed. Source: https://mecorobotics.slack.com/archives/C03MXBFGAM6/p1791496927328879 https://mecorobotics.slack.com/archives/C03MXBFGAM6/p1791665847534219"
+      : candidate.id === "task-src-87e563935cd25a"
+        ? "Oct 13 recap says the Roboticon post was not planned yet; Oct 20 says the social post had only been started. Source: https://mecorobotics.slack.com/archives/C03MXBFGAM6/p1791943411998309 https://mecorobotics.slack.com/archives/C03MXBFGAM6/p1792540360791729"
+        : null);
     const notes = [
       `Source: ${candidate.sourceLabels.join(", ")}${candidate.sourceEntryId ? `; entry ${candidate.sourceEntryId}` : ""}; date ${candidate.sourceDateLabel ?? "not stated"}.`,
-      candidate.statusEvidence
-        ? `Progress context: ${safeText(candidate.statusEvidence)}`
+      progressEvidence
+        ? `Progress context: ${safeText(progressEvidence)}`
         : hasPassedSourceDate
           ? "Status inference: the source date has passed, and the public recap crawl found no later report that this task remained open. Marked complete per user direction; this is an inference, not direct confirmation."
           : "Status inference: this source-dated task is still in the future; kept active because the user asked for scheduled work without a not-started state. Confirm progress in a later recap.",
       candidate.dueDateEvidence ? `Due-date evidence: ${safeText(candidate.dueDateEvidence)}.` : exactDue ? `Explicit due date: ${exactDue}.` : "No explicit task due date was stated.",
       schedule.note,
       candidate.sequenceEvidence ? `Sequence evidence: ${safeText(candidate.sequenceEvidence)}.` : "",
-      candidate.projectArea ? "Project area classified from source wording." : contextualTaskProjectAreas[candidate.id] ? "Project area classified as Robot from linked design/integration context." : "Project area was not explicit; grouped under Operations for review.",
+      candidate.projectArea ? "Project area classified from source wording." : contextualTaskProjectAreas[candidate.id] ? "Project area classified as Robot from linked design/integration context." : inferredArea ? `Project area inferred from task title as ${inferredArea}; source did not label the area.` : "Project area was not explicit; grouped under Operations for review.",
       area === "robot" ? `Robot subsystem grouped by task-title keywords to ${subsystemId.replace("step-subsystem-", "")}; general robot work defaults to Chassis for coordination.` : "",
     ].join(" ");
     const assignees = (candidate.ownerIds ?? []).filter((id: string) => members.some((member) => member.id === id));
@@ -361,21 +378,41 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const taskIds = new Set(tasks.map((task) => task.id));
   const taskDependencies = buildSeedTaskDependencies(taskIds, seedRecordedAt);
   const risks = buildSeedRisks(seedRecordedAt);
+  const milestoneProjectArea = (candidate: (typeof source.milestoneCandidates)[number]) => {
+    if (areas.includes(candidate.projectArea as (typeof areas)[number])) return candidate.projectArea as (typeof areas)[number];
+    if (/deliver all subsystems|deliver (?:conveyer|intake|bumpers|complete autos)/i.test(candidate.title)) return "robot" as const;
+    if (/student presentation/i.test(candidate.title)) return "training" as const;
+    if (/leadership application/i.test(candidate.title)) return "training" as const;
+    if (/research grants|all orders/i.test(candidate.title)) return "operations" as const;
+    return null;
+  };
+  const milestoneStatus: Record<string, "planned" | "active" | "complete"> = {
+    "milestone-src-339d567d1e5178": "complete", // The matching Impact Award entry is explicitly confirmed submitted in the Feb 11 recap.
+    "milestone-src-676efb24aeee8f": "complete", // Mar 15 retrospective says all subsystems were finished before competition.
+  };
   const milestones = source.milestoneCandidates.map((candidate) => {
-    const date = exactDueDate(candidate) ?? (/\bdeliver\b/i.test(candidate.title) ? sourceDate(candidate.sourceDate) : null);
-    const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : null;
+    const conflictingDate = candidate.id === "milestone-src-2538cd2c478a8b";
+    const date = conflictingDate ? null : exactDueDate(candidate) ?? (/\bdeliver\b|\bimpact submission\b/i.test(candidate.title) ? sourceDate(candidate.sourceDate) : null);
+    const area = milestoneProjectArea(candidate);
     return {
       id: candidate.id, seasonId: season.id, title: safeText(candidate.title), type: milestoneType(candidate.title, candidate.type), date,
       dateLabel: candidate.sourceDateLabel, startAt: null, endAt: null, isExternal: false,
-      description: `${candidate.source}; source entry ${candidate.sourceEntryId}.${candidate.explicitDueText ? ` Explicit due text: ${safeText(candidate.explicitDueText)}.` : ""}${date ? " Date is from the source plan." : " No milestone date is stated."}`,
-      projectIds: area ? [projectId(area)] : [], status: "planned" as const, photoUrl: "",
+      description: `${candidate.source}; source entry ${candidate.sourceEntryId}.${candidate.explicitDueText ? ` Explicit due text: ${safeText(candidate.explicitDueText)}.` : ""}${conflictingDate ? " Date withheld for review: the entry is under Mon, 3/2 but says tomorrow (03/01/26), so the source conflicts." : date ? " Date is from the source plan." : " No milestone due date is stated."}${milestoneStatus[candidate.id] ? " Status is confirmed by a matching recap." : " Completion status is not confirmed by a matching recap."}`,
+      projectIds: area ? [projectId(area)] : [], status: milestoneStatus[candidate.id] ?? "planned", photoUrl: "",
     };
   }).sort((left, right) => (left.date ?? "9999").localeCompare(right.date ?? "9999") || left.title.localeCompare(right.title));
-  const events = source.events.map((event) => ({
-    id: event.id, seasonId: season.id, projectIds: [projectId(event.eventType === "competition" ? "operations" : "outreach")],
-    title: safeText(event.title), description: `${event.source.join("; ")}${event.dateNote ? ` ${safeText(event.dateNote)}` : ""}${event.packDate ? ` Pack: ${event.packDate}.` : ""}${event.unpackDate ? ` Unpack: ${event.unpackDate}.` : ""}`,
-    date: event.startDate ?? null, startAt: null, endAt: null, location: event.location ?? "", eventType: event.eventType as ScheduleEvent["eventType"],
-  })).sort((left, right) => (left.date ?? "9999").localeCompare(right.date ?? "9999") || left.title.localeCompare(right.title));
+  const events = source.events.map((event) => {
+    const inferredMakerFaire = event.id === "event-maker-faire-2026-candidate";
+    const date = inferredMakerFaire ? "2026-11-07" : event.startDate ?? null;
+    const dateNote = inferredMakerFaire
+      ? "Inferred as Nov 7–8 from the Oct 20 public #outreach post (Saturday the 7th, Sunday the 8th) and the dated November meeting plan; month is inferred from context. https://mecorobotics.slack.com/archives/C02343MKTNF/p1792536048949139"
+      : event.dateNote;
+    return {
+      id: event.id, seasonId: season.id, projectIds: [projectId(event.eventType === "competition" ? "operations" : "outreach")],
+      title: safeText(event.title), description: `${event.source.join("; ")}${dateNote ? ` ${safeText(dateNote)}` : ""}${inferredMakerFaire ? " Event dates: Nov 7–8, 2026." : ""}${event.packDate ? ` Pack: ${event.packDate}.` : ""}${event.unpackDate ? ` Unpack: ${event.unpackDate}.` : ""}`,
+      date, startAt: null, endAt: null, location: inferredMakerFaire ? "Orange County Fairgrounds" : event.location ?? "", eventType: event.eventType as ScheduleEvent["eventType"],
+    };
+  }).sort((left, right) => (left.date ?? "9999").localeCompare(right.date ?? "9999") || left.title.localeCompare(right.title));
   const vendorNames = [...new Set(source.materials.map((material) => material.vendorName).filter((name): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b));
   const purchaseVendors = purchaseSource.flatMap((item) => item.vendor ? [String(item.vendor)] : []);
   const vendors = [...new Set([...vendorNames, ...purchaseVendors])].sort((a, b) => a.localeCompare(b)).map((name) => ({ id: `vendor-${slug(name)}`, name, website: null, isArchived: false }));
@@ -408,7 +445,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       ...(image ? { photoUrl: image } : {}),
     };
   });
-  const purchaseSeasonId = (sheet: string) => sheet === "2023 offseason" ? "season-2023-meco" : sheet.startsWith("2024") ? "season-2024-meco" : sheet.startsWith("2025") ? "season-2025-meco" : season.id;
+  const purchaseSeasonId = (sheet: string) => sheet === "2023 offseason" ? "season-2023-meco" : sheet.startsWith("2024") ? "season-2024-meco" : sheet.startsWith("2025") ? "season-2025-meco" : sheet === "FY 2027" ? "season-2027-meco" : season.id;
   const materialByPurchaseId = new Map(stockSources.flatMap((material) => material.purchaseIds.map((id: string) => [id, material] as const)));
   const partByPurchaseId = new Map(partSources.flatMap((item) => item.purchaseIds.map((id: string) => [id, item] as const)));
   const receiptsByPurchaseId = new Map<string, Array<{ id: string; operationId: string; quantity: number; location: string; receivedAt: string | null; partInstanceIds: string[] }>>();
@@ -432,10 +469,13 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     const amount = typeof row.total === "number" && row.total >= 0 ? { amount: row.total, currency: "USD" } : null;
     const quoteId = `quote-${row.id}`;
     const quotes = vendorId && amount ? [{ id: quoteId, vendorId, reference: row.orderNumber ? String(row.orderNumber) : null, amount, ...(row.url ? { url: String(row.url) } : {}), quotedAt: sourceDate(row.requestedAt) }] : [];
+    const purchaseSeason = purchaseSeasonId(row.sourceSheet);
+    const robotCatalogItem = Boolean(material || partDefinition);
+    const purchaseProjectId = robotCatalogItem ? `project-robot-${purchaseSeason.slice(7, 11)}` : `project-operations-${purchaseSeason.slice(7, 11)}`;
     return {
-      id: row.id, taskId: null, seasonId: purchaseSeasonId(row.sourceSheet), projectId: `project-operations-${purchaseSeasonId(row.sourceSheet).slice(7, 11)}`,
+      id: row.id, taskId: null, seasonId: purchaseSeason, projectId: purchaseProjectId,
       sourceStatus: row.status == null ? null : String(row.status),
-      sourceReference: `MECO Purchase List.xlsx — ${row.sourceSheet}, row ${row.sourceRow}`,
+      sourceReference: `MECO Purchase List.xlsx — ${row.sourceSheet}, row ${row.sourceRow}${row.purpose ? `. Purpose: ${safeHistoricalText(String(row.purpose))}` : ". Purpose not recorded in the source row."}`,
       kind: "cots-goods" as const, partDefinitionId: partDefinition ? partDefinitionBySourceId.get(partDefinition.id) ?? null : null, materialId: material?.id ?? null, title: safeText(String(row.title)),
       quantity: typeof row.quantity === "number" ? row.quantity : null, quotes, selectedQuoteId: quotes.length ? quoteId : null,
       approvalStatus: canceled ? "rejected" as const : ordered ? "approved" as const : "pending" as const,
@@ -445,7 +485,16 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       orderedAt: sourceDate(row.orderedAt), deliveredAt: sourceDate(row.receivedAt), receipts,
     };
   });
-  const artifacts = sourceSupplement.artifacts.map(({ id, ...artifact }) => ({ ...artifactSchema.parse(artifact), id, updatedAt: artifact.updatedAt ?? seedRecordedAt }));
+  const artifacts = sourceSupplement.artifacts.map(({ id, ...artifact }) => {
+    const historicalYear = artifact.title.includes("Meeting Plan 2024") ? 2024 : artifact.title.includes("Meeting Plan 2025") ? 2025 : null;
+    const nextSeasonProject = artifact.title.startsWith("Mentor minutes - 2027") ? "project-training-2027"
+      : artifact.title.startsWith("How to register - mentor 2026-27") ? "project-operations-2027" : null;
+    const scopedProjectId = historicalYear ? `project-operations-${historicalYear}` : nextSeasonProject ?? artifact.projectId;
+    const scopedArtifact = scopedProjectId === artifact.projectId ? artifact : {
+      ...artifact, projectId: scopedProjectId, targetRefs: [{ kind: "project" as const, id: scopedProjectId }],
+    };
+    return { ...artifactSchema.parse(scopedArtifact), id, updatedAt: artifact.updatedAt ?? seedRecordedAt };
+  });
   const reports = sourceSupplement.reports.map(({ id, ...report }) => ({ ...reportSchema.parse(report), id }));
   const qaReports = reports.filter((report) => report.reportType === "qa");
   const teamReports = reports.filter((report) => report.reportType !== "qa");
@@ -513,7 +562,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   });
   Object.assign(snapshot, {
     snapshotSchemaVersion: 3,
-    seasons, projects: [...projects, ...historicalProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
+    seasons, projects: [...projects, ...historicalProjects, ...historicalRobotProjects, ...nextSeasonProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
     subsystems: [...subsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
     artifacts, partDefinitions, partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
     qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks, workLogs: [],
