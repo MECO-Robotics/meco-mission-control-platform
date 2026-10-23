@@ -11,10 +11,6 @@ export function validateTaskPeople(snapshot: SnapshotView, input: {
     ...(input.assigneeIds ?? []),
     input.mentorId,
   ].filter((id): id is string => Boolean(id)))];
-  if (contributorIds.length === 0) {
-    return "Each task must be assigned to at least one student, lead, or mentor.";
-  }
-
   const membersById = new Map(snapshot.members.map((member) => [member.id, member]));
   for (const contributorId of contributorIds) {
     const contributor = membersById.get(contributorId);
@@ -22,7 +18,7 @@ export function validateTaskPeople(snapshot: SnapshotView, input: {
       return "One or more assigned people do not exist.";
     }
 
-    if (contributor.role !== "student" && contributor.role !== "lead" && contributor.role !== "mentor") {
+    if (contributor.role !== "student" && contributor.role !== "lead" && contributor.role !== "mentor" && contributor.role !== "unknown") {
       return "Tasks can only be assigned to students, leads, or mentors.";
     }
   }

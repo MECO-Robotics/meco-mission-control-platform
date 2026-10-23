@@ -1,8 +1,8 @@
 import type { Meeting } from "../../domain/types";
 import { uniqueIds } from "../../domain/ids";
 
-export function assertCalendarInterval(startAt: string, endAt: string | null | undefined) {
-  if (!Number.isFinite(Date.parse(startAt)) || (endAt != null && (!Number.isFinite(Date.parse(endAt)) || Date.parse(endAt) < Date.parse(startAt)))) {
+export function assertCalendarInterval(startAt: string | null, endAt: string | null | undefined) {
+  if ((startAt === null && endAt != null) || (startAt !== null && (!Number.isFinite(Date.parse(startAt)) || (endAt != null && (!Number.isFinite(Date.parse(endAt)) || Date.parse(endAt) < Date.parse(startAt)))))) {
     throw Object.assign(new Error("Calendar end must be at or after its valid start."), { statusCode: 400 });
   }
 }
@@ -13,6 +13,7 @@ export function normalizeMeetingSchedule(meeting: Meeting, fallbackSeasonId: str
     meetingType: meeting.meetingType ?? "general",
     seasonId: meeting.seasonId ?? fallbackSeasonId,
     projectIds: uniqueIds(meeting.projectIds ?? []),
+    date: meeting.date ?? (meeting.startAt ? meeting.startAt.slice(0, 10) : null),
     startAt: meeting.startAt,
     endAt: meeting.endAt ?? null,
     location: meeting.location ?? "",

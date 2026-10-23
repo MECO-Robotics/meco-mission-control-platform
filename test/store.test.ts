@@ -9,6 +9,7 @@ import {
   createPurchaseItem,
   acquireSnapshotMutation,
   createMaterial,
+  createMaterialTransaction,
   updateProject,
   updateWorkstream,
   updateRisk,
@@ -67,40 +68,64 @@ function hasCorrectiveHistory(snapshot: ReturnType<typeof getSnapshot>, taskId: 
 }
 
 test("purchase commands keep receipt history owned by receiving", () => {
-  const source = getSnapshot().purchaseItems[0]!;
-  const { id: _id, receipts: _receipts, ...createInput } = source;
+  const task = getSnapshot().tasks[0]!;
+  const material = createMaterial({ name: "Receipt ownership stock", category: "hardware", unit: "each", reorderPoint: 0, location: "Receiving shelf", preferredVendorId: null, notes: "" });
+  const createInput = {
+    taskId: task.id, kind: "cots-goods" as const, partDefinitionId: null, materialId: material.id, title: "Receipt ownership test", quantity: 10,
+    quotes: [], selectedQuoteId: null, approvalStatus: "approved" as const, approvedById: null, approvedAt: null, purchaseOrderNumber: null,
+    orderStatus: "ordered" as const, finalCost: null, expectedDeliveryDate: null, trackingNumber: null, trackingUrl: null, orderedAt: null, deliveredAt: null,
+  };
   const beforeCreate = getSnapshot();
   const forgedReceipt = { id: "forged-receipt", quantity: 99, location: "Forged shelf", receivedAt: new Date().toISOString(), partInstanceIds: ["forged-instance"] };
-  const created = createPurchaseItem({ ...createInput, title: "Receipt ownership test", receipts: [forgedReceipt] } as unknown as Parameters<typeof createPurchaseItem>[0]);
+  const created = createPurchaseItem({ ...createInput, receipts: [forgedReceipt] } as unknown as Parameters<typeof createPurchaseItem>[0]);
   assert.deepEqual(created.receipts, []);
   assert.equal(getSnapshot().partInstances.length, beforeCreate.partInstances.length);
   assert.equal(getSnapshot().actions?.length, (beforeCreate.actions?.length ?? 0) + 1);
 
-  updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId: null, quantity: 1, orderStatus: "ordered" });
-  const received = receivePurchaseItem("ferrule-kit", { operationId: "domain-receipt", quantity: 1, location: "Receiving shelf" });
+  assert.ok(!("error" in createMaterialTransaction(material.id, { operationId: "collision-id", movementType: "receipt", quantity: 1, reason: "Separate receipt" })));
+  assert.equal(receivePurchaseItem(created.id, { operationId: "collision-id", quantity: 1, location: "Receiving shelf" }).error, "operation-conflict");
+  assert.equal(getSnapshot().materials.find((item) => item.id === material.id)?.onHandQuantity, 1);
+  const received = receivePurchaseItem(created.id, { operationId: "domain-receipt", quantity: 4, location: "Receiving shelf" });
   assert.ok("receipt" in received);
+  assert.equal(getSnapshot().materials.find((item) => item.id === material.id)?.onHandQuantity, 5);
+  assert.equal(getSnapshot().materialTransactions.filter((row) => row.purchaseItemId === created.id).length, 1);
   const afterReceive = getSnapshot();
   const beforeReplayActions = afterReceive.actions?.length ?? 0;
-  const replay = receivePurchaseItem("ferrule-kit", { operationId: "domain-receipt", quantity: 1, location: "Receiving shelf" });
+  const replay = receivePurchaseItem(created.id, { operationId: "domain-receipt", quantity: 4, location: "Receiving shelf" });
   assert.ok("replayed" in replay && replay.replayed);
   assert.equal(getSnapshot().actions?.length, beforeReplayActions, "idempotent replay does not add stock or audit actions");
 
-  const storedReceipt = getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts;
+  const storedReceipt = getSnapshot().purchaseItems.find((item) => item.id === created.id)!.receipts;
   const beforeUnsafeUpdate = getSnapshot();
   const unsafeReceiptValues = [undefined, [], [{ ...forgedReceipt, id: "replacement-receipt" }]];
   unsafeReceiptValues.forEach((receipts, index) => {
-    updatePurchaseItem("ferrule-kit", { title: `Legitimate purchase edit ${index + 1}`, receipts } as unknown as Parameters<typeof updatePurchaseItem>[1]);
-    assert.deepEqual(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.receipts, storedReceipt);
+    updatePurchaseItem(created.id, { title: `Legitimate purchase edit ${index + 1}`, receipts } as unknown as Parameters<typeof updatePurchaseItem>[1]);
+    assert.deepEqual(getSnapshot().purchaseItems.find((item) => item.id === created.id)!.receipts, storedReceipt);
     assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, ["title"]);
   });
   const afterUnsafeUpdate = getSnapshot();
-  const updated = afterUnsafeUpdate.purchaseItems.find((item) => item.id === "ferrule-kit")!;
+  const updated = afterUnsafeUpdate.purchaseItems.find((item) => item.id === created.id)!;
   assert.equal(updated.title, "Legitimate purchase edit 3");
   assert.deepEqual(updated.receipts, storedReceipt);
-  assert.equal(updated.quantity, beforeUnsafeUpdate.purchaseItems.find((item) => item.id === "ferrule-kit")!.quantity);
+  assert.equal(updated.quantity, beforeUnsafeUpdate.purchaseItems.find((item) => item.id === created.id)!.quantity);
   assert.equal(afterUnsafeUpdate.partInstances.length, beforeUnsafeUpdate.partInstances.length);
   assert.deepEqual(afterUnsafeUpdate.partInstances, beforeUnsafeUpdate.partInstances);
   assert.deepEqual(afterUnsafeUpdate.actions?.at(-1)?.changedFields, ["title"]);
+});
+
+test("material stock movements are idempotent, append-only, and reject negative balances", () => {
+  const material = createMaterial({ name: "Ledger wire", category: "consumable", unit: "ft", reorderPoint: 1, location: "Rack", preferredVendorId: null, notes: "" });
+  const receipt = createMaterialTransaction(material.id, { operationId: "ledger-receipt-1", movementType: "receipt", quantity: 8, reason: "Received stock" });
+  assert.ok(!("error" in receipt));
+  assert.equal(receipt.material?.onHandQuantity, 8);
+  const replay = createMaterialTransaction(material.id, { operationId: "ledger-receipt-1", movementType: "receipt", quantity: 8, reason: "Received stock" });
+  assert.ok(!("error" in replay));
+  assert.equal(replay.replayed, true);
+  const consumption = createMaterialTransaction(material.id, { operationId: "ledger-consumption-1", movementType: "consumption", quantity: 3, reason: "Cut wire for robot" });
+  assert.ok(!("error" in consumption));
+  assert.equal(consumption.material?.onHandQuantity, 5);
+  assert.equal(createMaterialTransaction(material.id, { operationId: "ledger-consumption-2", movementType: "consumption", quantity: 6, reason: "Too much" }).error, "insufficient-stock");
+  assert.equal(getSnapshot().materialTransactions.filter((transaction) => transaction.materialId === material.id).length, 2);
 });
 
 test("readiness ignores stale QA and test outcomes after a part revision changes", () => {
@@ -1086,24 +1111,26 @@ test("missing update targets leave the published snapshot and audit trail untouc
 test("prepared updates retain detached results, audit changes, and reject invalid publication", () => {
   const material = createMaterial({
     name: "Update contract stock", category: "metal", unit: "sheet",
-    onHandQuantity: 5, reorderPoint: 1, location: "Rack", preferredVendorId: "vendor-tutorial-supplier", notes: "Retain notes",
+    reorderPoint: 1, location: "Rack", preferredVendorId: "vendor-tutorial-supplier", notes: "Retain notes",
   });
+  createMaterialTransaction(material.id, { operationId: "opening-five", movementType: "receipt", quantity: 5, reason: "Initial receipt" });
   const before = getSnapshot();
-  const updated = updateMaterial(material.id, { onHandQuantity: 3 });
+  const updated = updateMaterial(material.id, { notes: "Retain notes updated" });
   assert.ok(updated);
-  assert.equal(updated.notes, "Retain notes");
+  assert.equal(updated.notes, "Retain notes updated");
   assert.equal(before.materials.find((item) => item.id === material.id)?.onHandQuantity, 5);
   const published = getSnapshot();
   assert.deepEqual(published.materials.find((item) => item.id === material.id), updated);
-  assert.deepEqual(published.actions?.at(-1)?.changedFields, ["onHandQuantity"]);
+  assert.deepEqual(published.actions?.at(-1)?.changedFields, ["notes"]);
   updated.onHandQuantity = 99;
-  assert.equal(getSnapshot().materials.find((item) => item.id === material.id)?.onHandQuantity, 3);
-  assert.throws(() => updateMaterial(material.id, { onHandQuantity: Number.NaN }), /plain JSON data/);
-  assert.equal(getSnapshot(), published);
+  assert.equal(getSnapshot().materials.find((item) => item.id === material.id)?.onHandQuantity, 5);
+  updateMaterial(material.id, { onHandQuantity: 3 } as unknown as Parameters<typeof updateMaterial>[1]);
+  assert.equal(getSnapshot().materials.find((item) => item.id === material.id)?.onHandQuantity, 5);
+  const afterQuantityAttempt = getSnapshot();
 
   const unchanged = updateMaterial(material.id, {});
-  assert.equal(unchanged?.onHandQuantity, 3);
-  assert.equal(getSnapshot().actions?.length, (published.actions?.length ?? 0) + 1);
+  assert.equal(unchanged?.onHandQuantity, 5);
+  assert.equal(getSnapshot().actions?.length, (afterQuantityAttempt.actions?.length ?? 0) + 1);
   assert.deepEqual(getSnapshot().actions?.at(-1)?.changedFields, []);
 });
 
