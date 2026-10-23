@@ -301,9 +301,16 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     const [prerequisite] = taskCandidates.splice(prerequisiteIndex, 1);
     taskCandidates.splice(dependentIndex, 0, prerequisite!);
   }
+  const robotSubsystemForTask = (title: string) => {
+    if (/shooter|flywheel|hood/i.test(title)) return "step-subsystem-shooter";
+    if (/convey[eo]r|hopper/i.test(title)) return "step-subsystem-conveyer";
+    if (/intake|rack|roller/i.test(title)) return "step-subsystem-intake";
+    return "step-subsystem-chassis";
+  };
   const tasks = taskCandidates.map((candidate) => {
     const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : contextualTaskProjectAreas[candidate.id] ?? "operations";
     const title = safeText(candidate.title) || "Untitled source task";
+    const subsystemId = area === "robot" ? robotSubsystemForTask(title) : `season-work-${area}-2026`;
     const exactDue = exactDueDate(candidate);
     const schedule = taskScheduleWindow(candidate, area, sourceDate(candidate.sourceDate), exactDue);
     const sourceTaskDate = sourceDate(candidate.sourceDate);
@@ -322,12 +329,13 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       schedule.note,
       candidate.sequenceEvidence ? `Sequence evidence: ${safeText(candidate.sequenceEvidence)}.` : "",
       candidate.projectArea ? "Project area classified from source wording." : contextualTaskProjectAreas[candidate.id] ? "Project area classified as Robot from linked design/integration context." : "Project area was not explicit; grouped under Operations for review.",
+      area === "robot" ? `Robot subsystem grouped by task-title keywords to ${subsystemId.replace("step-subsystem-", "")}; general robot work defaults to Chassis for coordination.` : "",
     ].join(" ");
     const assignees = (candidate.ownerIds ?? []).filter((id: string) => members.some((member) => member.id === id));
     return {
       id: candidate.id, projectId: projectId(area), workTypeId: workTypeFor(area, title), responsibleGroupId: `group-${area}-2026`, requestedById: null,
       scheduleRefs: candidate.sourceEntryId && meetingIds.has(candidate.sourceEntryId) ? [{ kind: "meeting" as const, id: candidate.sourceEntryId }] : [],
-      manufacturingDetails: null, workstreamIds: [], subsystemIds: [`season-work-${area}-2026`], mechanismIds: [], partInstanceIds: [],
+      manufacturingDetails: null, workstreamIds: [], subsystemIds: [subsystemId], mechanismIds: [], partInstanceIds: [],
       title, summary: notes, ownerId: null, assigneeIds: assignees, mentorId: null,
       startDate: schedule.startDate, dueDate: schedule.dueDate, priority: /critical|urgent|must/i.test(title) ? "high" as const : "medium" as const,
       status, checklistItems: [], estimatedHours: 0, actualHours: 0, requiresDocumentation: false,
@@ -427,25 +435,41 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       ...(purchaseIdSet.has(row.purchaseId) ? { purchaseItemId: row.purchaseId } : {}),
     })),
   ];
+  const targetSubsystemForSourceMap: Record<string, "Shooter" | "Conveyer" | "Intake" | "Chassis"> = {
+    shooter: "Shooter", conveyor: "Conveyer", hopper: "Conveyer", intake: "Intake",
+    drivetrain: "Chassis", bumpers: "Chassis", electrical: "Chassis", vision: "Chassis",
+  };
   const componentsBySubsystem = new Map<string, typeof source.stepComponents>();
   for (const component of source.stepComponents) {
-    const name = String(component.mappedSubsystemName).replace(/ hardware$/i, "");
+    const sourceMap = String(component.mappedSubsystemName).replace(/ hardware$/i, "");
+    const name = targetSubsystemForSourceMap[sourceMap];
+    if (!name) continue;
     const rows = componentsBySubsystem.get(name) ?? [];
     rows.push(component); componentsBySubsystem.set(name, rows);
   }
-  const subsystems = [...componentsBySubsystem.entries()].map(([name, components]) => ({
-    id: `step-subsystem-${slug(name)}`, projectId: "project-robot-2026", name: name.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase()),
-    description: `Mapped from MAIN ASSEMBLY.step. Clearly labeled CAD components: ${components.map((component) => safeText(component.name)).join(", ")}. Installed CAD components do not represent stock quantity.`,
+  const subsystemMappingNotes: Record<string, string> = {
+    Shooter: "Shooter-labeled CAD components are grouped here.",
+    Conveyer: "Conveyer and hopper labels are grouped as the robot's game-piece transfer path; the source assembly spells Conveyer with one o.",
+    Intake: "Intake-labeled CAD components are grouped here.",
+    Chassis: "Drivetrain, bumper, electrical, and vision labels are grouped here for the four-subsystem robot view; the STEP names do not establish individual physical mounting relationships.",
+  };
+  const subsystems = (["Shooter", "Conveyer", "Intake", "Chassis"] as const).filter((name) => componentsBySubsystem.has(name)).map((name) => {
+    const components = componentsBySubsystem.get(name)!;
+    return {
+    id: `step-subsystem-${slug(name)}`, projectId: "project-robot-2026", name,
+    description: `Mapped from MAIN ASSEMBLY.step. ${subsystemMappingNotes[name]} Clearly labeled CAD components: ${components.map((component) => safeText(component.name)).join(", ")}. Installed CAD components do not represent stock quantity.`,
     isCore: false, parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [], iteration: 1, isArchived: false,
-  }));
-  const taskGroupingSubsystems = areas.map((area) => ({
+    };
+  });
+  const taskGroupingSubsystems = areas.filter((area) => area !== "robot").map((area) => ({
     id: `season-work-${area}-2026`, projectId: projectId(area), name: "Season work (not a CAD component)",
     description: "Organizational target for sourced 2026 tasks that do not identify a specific robot component.",
     isCore: false, parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [], iteration: 1, isArchived: false,
   }));
   const subsystemIdByMap = new Map([...componentsBySubsystem.keys()].map((name) => [name, `step-subsystem-${slug(name)}`]));
   const mechanisms = source.stepComponents.map((component) => {
-    const mapped = String(component.mappedSubsystemName).replace(/ hardware$/i, "");
+    const sourceMap = String(component.mappedSubsystemName).replace(/ hardware$/i, "");
+    const mapped = targetSubsystemForSourceMap[sourceMap];
     return {
       id: component.id, subsystemId: subsystemIdByMap.get(mapped)!, name: safeText(component.name),
       description: `Named ${component.componentKind} from MAIN ASSEMBLY.step. ${safeText(component.sourceConfidence)}. ${safeText(component.quantityMeaning)}.`,
