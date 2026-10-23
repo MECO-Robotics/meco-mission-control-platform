@@ -172,10 +172,15 @@ function milestoneType(title: string, declared: string | null): MilestoneType {
 export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const season = source.season;
   const historicalYears = [2023, 2024, 2025] as const;
-  const seasonMeetings = (year: number) => historicalPlans.entries.filter((entry) => entry.date.startsWith(`${year}-`)).map((entry) => entry.date).sort();
+  const seasonActivityDates = (year: number) => [
+    ...historicalPlans.entries.filter((entry) => entry.date.startsWith(`${year}-`)).map((entry) => entry.date),
+    ...purchaseSource.filter((row) => row.sourceSheet.startsWith(String(year))).flatMap((row) =>
+      [row.requestedAt, row.orderedAt, row.receivedAt, row.expectedDeliveryDate].map(sourceDate).filter((date): date is string => date !== null),
+    ),
+  ].sort();
   const seasons = [
     ...historicalYears.map((year) => {
-      const dates = seasonMeetings(year);
+      const dates = seasonActivityDates(year);
       return {
         id: `season-${year}-meco`, name: year === 2023 ? "MECO Robotics 2023 purchase history" : `MECO Robotics ${year} historical season`,
         type: year === 2023 ? "initiative" as const : "season" as const, startDate: dates[0] ?? null, endDate: dates.at(-1) ?? null,
