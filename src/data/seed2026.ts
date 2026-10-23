@@ -5,6 +5,7 @@ import sourceSupplement from "./sourceSeedSupplement.json";
 import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
 import { artifactSchema, reportSchema } from "../routes/routeSchemas";
 import type { MilestoneType, PlatformSnapshot, ProjectType, ResponsibleGroupIcon, ScheduleEvent, SeasonType, TaskStatus } from "../domain/types";
+import { buildSeedRisks, buildSeedTaskDependencies, contextualTaskProjectAreas, taskScheduleWindow } from "./taskScheduleSeed";
 
 const seedRecordedAt = "2026-10-23T00:00:00.000Z";
 const areas = ["robot", "operations", "outreach", "media", "strategy", "training"] as const;
@@ -250,16 +251,18 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     taskCandidates.splice(dependentIndex, 0, prerequisite!);
   }
   const tasks = taskCandidates.map((candidate) => {
-    const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : "operations";
+    const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : contextualTaskProjectAreas[candidate.id] ?? "operations";
     const title = safeText(candidate.title) || "Untitled source task";
     const exactDue = exactDueDate(candidate);
+    const schedule = taskScheduleWindow(candidate, area, sourceDate(candidate.sourceDate), exactDue);
     const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress" ? candidate.status : "unrecorded";
     const notes = [
       `Source: ${candidate.sourceLabels.join(", ")}${candidate.sourceEntryId ? `; entry ${candidate.sourceEntryId}` : ""}; date ${candidate.sourceDateLabel ?? "not stated"}.`,
       candidate.statusEvidence ? `Progress context: ${safeText(candidate.statusEvidence)} Status remains unrecorded because the source does not establish a workflow state.` : "Source did not establish a workflow status; status left unrecorded.",
       candidate.dueDateEvidence ? `Due-date evidence: ${safeText(candidate.dueDateEvidence)}.` : exactDue ? `Explicit due date: ${exactDue}.` : "No explicit task due date was stated.",
+      schedule.note,
       candidate.sequenceEvidence ? `Sequence evidence: ${safeText(candidate.sequenceEvidence)}.` : "",
-      candidate.projectArea ? "Project area classified from source wording." : "Project area was not explicit; grouped under Operations for review.",
+      candidate.projectArea ? "Project area classified from source wording." : contextualTaskProjectAreas[candidate.id] ? "Project area classified as Robot from linked design/integration context." : "Project area was not explicit; grouped under Operations for review.",
     ].join(" ");
     const assignees = (candidate.ownerIds ?? []).filter((id: string) => members.some((member) => member.id === id));
     return {
@@ -267,14 +270,13 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       scheduleRefs: candidate.sourceEntryId && meetingIds.has(candidate.sourceEntryId) ? [{ kind: "meeting" as const, id: candidate.sourceEntryId }] : [],
       manufacturingDetails: null, workstreamIds: [], subsystemIds: [`season-work-${area}-2026`], mechanismIds: [], partInstanceIds: [],
       title, summary: notes, ownerId: null, assigneeIds: assignees, mentorId: null,
-      startDate: null, dueDate: exactDue, priority: /critical|urgent|must/i.test(title) ? "high" as const : "medium" as const,
+      startDate: schedule.startDate, dueDate: schedule.dueDate, priority: /critical|urgent|must/i.test(title) ? "high" as const : "medium" as const,
       status, checklistItems: [], estimatedHours: 0, actualHours: 0, requiresDocumentation: false,
     };
   });
-  const taskDependencies = source.sequenceDependencies.map((dependency) => ({
-    id: dependency.id, taskId: dependency.taskId, kind: "task" as const, refId: dependency.prerequisiteTaskId,
-    requiredState: "complete" as const, dependencyType: "hard" as const, createdAt: seedRecordedAt,
-  }));
+  const taskIds = new Set(tasks.map((task) => task.id));
+  const taskDependencies = buildSeedTaskDependencies(taskIds, seedRecordedAt);
+  const risks = buildSeedRisks(seedRecordedAt);
   const milestones = source.milestoneCandidates.map((candidate) => {
     const date = exactDueDate(candidate) ?? (/\bdeliver\b/i.test(candidate.title) ? sourceDate(candidate.sourceDate) : null);
     const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : null;
@@ -397,7 +399,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     seasons, projects: [...projects, ...historicalProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
     subsystems: [...subsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
     artifacts, partDefinitions: [], partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
-    qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks: [], workLogs: [],
+    qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks, workLogs: [],
     meetings: [...meetings, ...historicalMeetings].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.title.localeCompare(b.title)), events, attendanceRecords: [], purchaseItems, escalations: [], actions: [],
   } satisfies Partial<PlatformSnapshot>);
 }
