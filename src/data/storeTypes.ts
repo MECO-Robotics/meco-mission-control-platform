@@ -69,7 +69,7 @@ export type ProjectInput = OptionalFields<
 export type PurchaseItemInput = Omit<PurchaseItem, "id" | "receipts">;
 
 
-export type MaterialInput = Omit<Material, "id">;
+export type MaterialInput = Omit<Material, "id" | "onHandQuantity">;
 
 export type ArtifactInput = Omit<Artifact, "id" | "targetRefs"> & { targetRefs?: Artifact["targetRefs"] };
 
@@ -96,6 +96,8 @@ export type MilestoneInput = Pick<
   Milestone,
   | "title"
   | "type"
+  | "date"
+  | "dateLabel"
   | "startAt"
   | "endAt"
   | "isExternal"

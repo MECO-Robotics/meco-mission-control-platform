@@ -8,11 +8,11 @@ import { taskRecordTargetsSchema } from "../domain/taskTargets";
 import type { PlatformSnapshot } from "../domain/types";
 import { artifactSchema, materialSchema, partDefinitionSchema, partInstanceSchema, purchaseItemRecordSchema, purchaseReceiptRecordSchema, reportSchema, riskSchema, taskSchema, testResultSchema, subsystemSchema, milestoneSchema, meetingSchema } from "../routes/routeSchemas";
 
-export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 2 as const;
+export const PLATFORM_SNAPSHOT_SCHEMA_VERSION = 3 as const;
 
 const snapshotCollectionKeys = [
   "seasons", "projects", "workTypes", "responsibleGroups", "workstreams", "vendors", "members", "subsystems", "mechanisms",
-  "materials", "artifacts", "partDefinitions", "partInstances", "tasks", "milestones",
+  "materials", "materialTransactions", "artifacts", "partDefinitions", "partInstances", "tasks", "milestones",
   "milestoneRequirements", "taskDependencies", "qaReports", "qaRequests",
   "testResults", "qaFindings", "testFindings", "teamReports", "designIterations", "risks", "workLogs", "meetings",
   "attendanceRecords", "events", "manufacturingProcesses", "purchaseItems", "escalations", "actions",
@@ -27,7 +27,7 @@ const optionalSnapshotCollectionKeys = new Set<keyof PlatformSnapshot>([
 const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
   members: z.object({
     id: z.string(), name: z.string(), email: z.string(), photoUrl: z.string().optional(),
-    role: z.enum(["student", "lead", "mentor", "admin", "external"]), elevated: z.boolean(), seasonId: z.string(),
+    role: z.enum(["student", "lead", "mentor", "admin", "external", "unknown"]), elevated: z.boolean(), seasonId: z.string(),
     activeSeasonIds: z.array(z.string()).optional(), plannedWeeklyAttendanceHours: z.number().optional(),
     plannedAttendanceDays: z.array(z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])).optional(),
     plannedAttendanceNotes: z.string().optional(),
@@ -40,6 +40,7 @@ const rowSchemas: Partial<Record<keyof PlatformSnapshot, z.ZodType>> = {
   meetings: meetingSchema.extend({ id: z.string(), rsvpsYes: z.number(), rsvpsMaybe: z.number(), openSignIns: z.number() }).strict(),
   artifacts: artifactSchema.extend({ id: z.string() }).strict(),
   materials: materialSchema.extend({ id: z.string() }).strict(),
+  materialTransactions: z.object({ id: z.string(), operationId: z.string(), materialId: z.string(), movementType: z.enum(["opening-balance", "receipt", "consumption", "adjustment"]), quantityDelta: z.number().finite().refine((value) => value !== 0).nullable(), reason: z.string(), recordedAt: z.string(), actorMemberId: z.string().nullable(), taskId: z.string().optional(), projectId: z.string().optional(), purchaseItemId: z.string().optional(), purchaseReceiptId: z.string().optional(), occurredAt: z.string().date().nullable().optional(), sourceReference: z.string().optional() }).strict(),
   partDefinitions: partDefinitionSchema.extend({ id: z.string() }).strict(),
   partInstances: partInstanceSchema.extend({ id: z.string() }).strict(),
   purchaseItems: purchaseItemRecordSchema.extend({ id: z.string(), receipts: z.array(purchaseReceiptRecordSchema).optional() }).strict(),
@@ -80,7 +81,19 @@ function looksLikePlatformSnapshot(value: unknown): value is PlatformSnapshot {
     projectKeys.add(key);
   }
   const seasons = snapshot.seasons as PlatformSnapshot["seasons"];
-  return (snapshot.qaReviewSequence === undefined || (Number.isInteger(snapshot.qaReviewSequence) && Number(snapshot.qaReviewSequence) >= 0)) && seasons.every((season) => (["robot", "media", "outreach", "operations", "strategy", "training"] as const).every((type) => projectKeys.has(`${season.id}:${type}`)));
+  const materialIds = new Set((snapshot.materials as PlatformSnapshot["materials"]).map((material) => material.id));
+  const taskIds = new Set((snapshot.tasks as PlatformSnapshot["tasks"]).map((task) => task.id));
+  const memberIds = new Set((snapshot.members as PlatformSnapshot["members"]).map((member) => member.id));
+  const projectIds = new Set((snapshot.projects as PlatformSnapshot["projects"]).map((project) => project.id));
+  const purchaseItems = snapshot.purchaseItems as PlatformSnapshot["purchaseItems"];
+  const transactionRefsValid = (snapshot.materialTransactions as PlatformSnapshot["materialTransactions"]).every((transaction) =>
+    materialIds.has(transaction.materialId) &&
+    (!transaction.taskId || taskIds.has(transaction.taskId)) &&
+    (!transaction.projectId || projectIds.has(transaction.projectId)) &&
+    (!transaction.actorMemberId || memberIds.has(transaction.actorMemberId)) &&
+    (!transaction.purchaseItemId || purchaseItems.some((item) => item.id === transaction.purchaseItemId)) &&
+    (!transaction.purchaseReceiptId || purchaseItems.some((item) => item.receipts?.some((receipt) => receipt.id === transaction.purchaseReceiptId))));
+  return transactionRefsValid && (snapshot.qaReviewSequence === undefined || (Number.isInteger(snapshot.qaReviewSequence) && Number(snapshot.qaReviewSequence) >= 0)) && seasons.every((season) => (["robot", "media", "outreach", "operations", "strategy", "training"] as const).every((type) => projectKeys.has(`${season.id}:${type}`)));
 }
 
 export function loadPlatformSnapshotFile(path: string): PlatformSnapshot | null {

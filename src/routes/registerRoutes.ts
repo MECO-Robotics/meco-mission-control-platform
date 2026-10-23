@@ -89,6 +89,8 @@ import {
   resetTutorialBaseline,
   updateArtifact,
   updateMaterial,
+  createMaterialTransaction,
+  getMaterialTransactions,
   updateMember,
   updateResponsibleGroup,
   updateMechanism,
@@ -164,6 +166,8 @@ import {
   milestonePatchSchema,
   milestoneSchema,
   materialPatchSchema,
+  materialCreateSchema,
+  materialTransactionSchema,
   materialSchema,
   mediaUploadRequestSchema,
   memberPatchSchema,
@@ -488,7 +492,6 @@ export async function registerRoutes(
     if (!isAuthEnabled()) {
       return (
         members.find((member) => member.role === "student" || member.role === "lead") ??
-        members[0] ??
         null
       );
     }
@@ -1759,7 +1762,7 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = parseRouteInput(materialSchema, request.body, reply, "Material payload is invalid.");
+    const parsed = parseRouteInput(materialCreateSchema, request.body, reply, "Material payload is invalid.");
     if (!parsed) {
       return reply;
     }
@@ -1799,6 +1802,24 @@ export async function registerRoutes(
       };
     },
   );
+
+  app.get<{ Params: { materialId: string } }>("/api/materials/:materialId/transactions", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!findMaterial(request.params.materialId)) return reply.code(404).send({ message: "Material not found." });
+    return { items: getMaterialTransactions(request.params.materialId) };
+  });
+
+  app.post<{ Body: unknown; Params: { materialId: string } }>("/api/materials/:materialId/transactions", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    const parsed = parseRouteInput(materialTransactionSchema, request.body, reply, "Material transaction payload is invalid.");
+    if (!parsed) return reply;
+    const result = createMaterialTransaction(request.params.materialId, parsed.data, buildTaskAuditContext(request));
+    if ("error" in result) {
+      const statusCode = result.error === "not-found" ? 404 : result.error === "insufficient-stock" || result.error === "unknown-stock" || result.error === "operation-conflict" ? 409 : result.error === "invalid-reference" ? 400 : 400;
+      return reply.code(statusCode).send({ message: result.error });
+    }
+    return reply.code(result.replayed ? 200 : 201).send({ item: result.material, transaction: result.transaction, replayed: result.replayed });
+  });
 
   app.delete<{ Params: { materialId: string } }>(
     "/api/materials/:materialId", { config: { snapshotMutation: true } }, async (request, reply) => {

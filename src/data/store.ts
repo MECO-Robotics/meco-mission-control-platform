@@ -22,6 +22,7 @@ import type {
   MilestoneRequirement,
   Milestone,
   Material,
+  MaterialTransaction,
   Mechanism,
   ManufacturingProcessRecord,
   Member,
@@ -571,8 +572,17 @@ function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
     ),
   });
 
+  const materialTransactions = clonedSnapshot.materialTransactions ?? [];
+  const balances = new Map<string, number>();
+  const unknownBalances = new Set<string>();
+  for (const transaction of materialTransactions) {
+    if (transaction.quantityDelta === null) unknownBalances.add(transaction.materialId);
+    else balances.set(transaction.materialId, (balances.get(transaction.materialId) ?? 0) + transaction.quantityDelta);
+  }
   return deriveTaskSummaries(normalizeSnapshotTaskSerials({
     ...normalizedSnapshot,
+    materialTransactions,
+    materials: normalizedSnapshot.materials.map((material) => ({ ...material, onHandQuantity: unknownBalances.has(material.id) ? null : Number((balances.get(material.id) ?? 0).toFixed(12)) })),
     actions: normalizedSnapshot.actions ?? [],
   }));
 }
@@ -2220,11 +2230,12 @@ export function createMaterial(input: MaterialInput) {
     name: input.name,
     category: input.category,
     unit: input.unit,
-    onHandQuantity: input.onHandQuantity,
+    onHandQuantity: 0,
     reorderPoint: input.reorderPoint,
     location: input.location,
     preferredVendorId: input.preferredVendorId,
     notes: input.notes,
+    ...(input.photoUrl ? { photoUrl: input.photoUrl } : {}),
   };
 
   replaceCurrentSnapshot({
@@ -2250,7 +2261,14 @@ export function updateMaterial(materialId: string, input: Partial<MaterialInput>
 
   const updatedMaterial: Material = {
     ...previousMaterial,
-    ...input,
+    name: input.name ?? previousMaterial.name,
+    category: input.category ?? previousMaterial.category,
+    unit: input.unit ?? previousMaterial.unit,
+    reorderPoint: input.reorderPoint === undefined ? previousMaterial.reorderPoint : input.reorderPoint,
+    location: input.location ?? previousMaterial.location,
+    preferredVendorId: input.preferredVendorId === undefined ? previousMaterial.preferredVendorId : input.preferredVendorId,
+    notes: input.notes ?? previousMaterial.notes,
+    photoUrl: input.photoUrl ?? previousMaterial.photoUrl,
   };
 
   replaceCurrentSnapshot({
@@ -2274,6 +2292,44 @@ export function updateMaterial(materialId: string, input: Partial<MaterialInput>
   return updatedMaterial;
 }
 
+export function getMaterialTransactions(materialId: string) {
+  return currentSnapshot.materialTransactions.filter((transaction) => transaction.materialId === materialId).slice().sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+}
+
+export function createMaterialTransaction(
+  materialId: string,
+  input: { operationId: string; movementType: "receipt" | "consumption" | "adjustment"; quantity: number; adjustmentDirection?: "increase" | "decrease"; reason: string; taskId?: string; projectId?: string },
+  auditContext: AuditMutationContext = {},
+) {
+  const material = currentSnapshot.materials.find((candidate) => candidate.id === materialId);
+  if (!material) return { error: "not-found" as const };
+  const prior = currentSnapshot.materialTransactions.find((transaction) => transaction.materialId === materialId && transaction.operationId === input.operationId);
+  const sign = input.movementType === "consumption" || (input.movementType === "adjustment" && input.adjustmentDirection === "decrease") ? -1 : 1;
+  const quantityDelta = Number((input.quantity * sign).toFixed(12));
+  if (!Number.isFinite(quantityDelta) || quantityDelta === 0 || input.quantity > 1000000 || !input.reason.trim() || (input.movementType === "adjustment" && input.adjustmentDirection !== "increase" && input.adjustmentDirection !== "decrease")) return { error: "invalid-quantity" as const };
+  if (prior) {
+    const same = prior.movementType === input.movementType && prior.quantityDelta === quantityDelta && prior.reason === input.reason.trim() && prior.taskId === input.taskId && prior.projectId === input.projectId;
+    return same ? { material, transaction: prior, replayed: true as const } : { error: "operation-conflict" as const };
+  }
+  if (input.taskId && !currentSnapshot.tasks.some((task) => task.id === input.taskId)) return { error: "invalid-reference" as const };
+  if (input.projectId && !currentSnapshot.projects.some((project) => project.id === input.projectId)) return { error: "invalid-reference" as const };
+  if (material.onHandQuantity === null && quantityDelta < 0) return { error: "unknown-stock" as const };
+  if (material.onHandQuantity !== null && material.onHandQuantity + quantityDelta < -1e-9) return { error: "insufficient-stock" as const };
+  const transaction: MaterialTransaction = {
+    id: uniqueId(`material-transaction-${toSlug(input.operationId) || "movement"}`, new Set(currentSnapshot.materialTransactions.map((row) => row.id))),
+    operationId: input.operationId, materialId, movementType: input.movementType, quantityDelta,
+    reason: input.reason.trim(), recordedAt: new Date().toISOString(), actorMemberId: auditContext.actorMemberId ?? null,
+    ...(input.taskId ? { taskId: input.taskId } : {}), ...(input.projectId ? { projectId: input.projectId } : {}),
+  };
+  replaceCurrentSnapshot({
+    ...currentSnapshot,
+    materials: currentSnapshot.materials.map((candidate) => candidate.id === materialId ? { ...candidate, onHandQuantity: candidate.onHandQuantity === null ? null : Number((candidate.onHandQuantity + quantityDelta).toFixed(12)) } : candidate),
+    materialTransactions: [...currentSnapshot.materialTransactions, transaction],
+  });
+  recordAuditAction({ operation: "create", entityType: "material-transaction", entityId: transaction.id, entityLabel: material.name, actorMemberId: auditContext.actorMemberId ?? null, requestId: auditContext.requestId ?? null });
+  return { material: findMaterial(materialId), transaction, replayed: false as const };
+}
+
 export function removeMaterial(materialId: string) {
   const material = currentSnapshot.materials.find(
     (candidate) => candidate.id === materialId,
@@ -2283,6 +2339,7 @@ export function removeMaterial(materialId: string) {
   }
 
   if (
+    currentSnapshot.materialTransactions.some((transaction) => transaction.materialId === materialId) ||
     currentSnapshot.purchaseItems.some((item) => item.materialId === materialId) ||
     currentSnapshot.partDefinitions.some((part) => part.materialId === materialId) ||
     currentSnapshot.tasks.some((task) =>
@@ -2720,6 +2777,7 @@ export function createPartDefinition(input: PartDefinitionInput, auditContext: A
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     name: input.name,
     partNumber,
+    vendorPartNumbers: input.vendorPartNumbers ?? {},
     isHardware: input.isHardware ?? false,
     revision: input.revision,
     iteration: normalizeIteration(input.iteration),
@@ -3346,10 +3404,12 @@ export function createMilestone(input: MilestoneInput) {
       .find((candidate): candidate is string => Boolean(candidate)) ??
     fallbackSeasonId;
   const milestone: Milestone = {
-    id: uniqueId(toSlug(`${input.title} ${input.startAt.slice(0, 10)}`) || "milestone", milestoneIds),
+    id: uniqueId(toSlug(`${input.title} ${input.date ?? input.startAt?.slice(0, 10) ?? "undated"}`) || "milestone", milestoneIds),
     seasonId,
     title: input.title,
     type: input.type,
+    date: input.date ?? null,
+    ...(input.dateLabel ? { dateLabel: input.dateLabel } : {}),
     startAt: input.startAt,
     endAt: input.endAt,
     isExternal: input.isExternal,
@@ -3991,7 +4051,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
     return null;
   }
 
-  assertCalendarInterval(input.startAt ?? currentMilestone.startAt, input.endAt === undefined ? currentMilestone.endAt : input.endAt);
+  assertCalendarInterval(input.startAt === undefined ? currentMilestone.startAt : input.startAt, input.endAt === undefined ? currentMilestone.endAt : input.endAt);
   let updatedMilestone: Milestone | null = null;
   const desiredProjectIds = input.projectIds === undefined ? undefined : uniqueIds(input.projectIds);
   const nextProjectIds = desiredProjectIds ?? (currentMilestone.projectIds ?? []);
@@ -4113,11 +4173,13 @@ export function createMeeting(input: MeetingInput) {
     fallbackSeasonId;
   const meeting = normalizeMeetingSchedule(
     {
-      id: uniqueId(toSlug(`${input.title} ${input.startAt.slice(0, 10)}`) || "meeting", meetingIds),
+      id: uniqueId(toSlug(`${input.title} ${input.date ?? input.startAt?.slice(0, 10) ?? "undated"}`) || "meeting", meetingIds),
       title: input.title,
       meetingType: input.meetingType ?? "general",
       seasonId,
       projectIds,
+      date: input.date ?? null,
+      ...(input.dateLabel ? { dateLabel: input.dateLabel } : {}),
       startAt: input.startAt,
       endAt: input.endAt ?? null,
       location: input.location ?? "",
@@ -4161,7 +4223,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
       .find((candidate): candidate is string => Boolean(candidate)) ??
     currentMeeting.seasonId ??
     fallbackSeasonId;
-  const startAt = input.startAt ?? currentMeeting.startAt;
+  const startAt = input.startAt === undefined ? currentMeeting.startAt : input.startAt;
   assertCalendarInterval(startAt, input.endAt === undefined ? currentMeeting.endAt : input.endAt);
   const updatedMeeting = normalizeMeetingSchedule(
     {
@@ -4169,6 +4231,8 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
       ...input,
       seasonId,
       projectIds,
+      date: input.date === undefined ? currentMeeting.date ?? null : input.date,
+      dateLabel: input.dateLabel === undefined ? currentMeeting.dateLabel : input.dateLabel,
       startAt,
       endAt:
         input.endAt === undefined
@@ -4621,14 +4685,17 @@ export function receivePurchaseItem(
     ? currentSnapshot.materials.find((candidate) => candidate.id === item.materialId)
     : undefined;
   if (isMaterialPurchase && !material) return { error: "not-found" as const };
-  if (material && material.onHandQuantity > 0 && material.location.trim() !== input.location.trim()) {
+  if (material && currentSnapshot.materialTransactions.some((transaction) => transaction.materialId === material.id && transaction.operationId === input.operationId)) {
+    return { error: "operation-conflict" as const };
+  }
+  if (material && material.onHandQuantity !== null && material.onHandQuantity > 0 && material.location.trim() !== input.location.trim()) {
     return { error: "location-conflict" as const };
   }
   const nextMaterials = material
     ? currentSnapshot.materials.map((candidate) => candidate.id === material.id
       ? {
           ...candidate,
-          onHandQuantity: Number((candidate.onHandQuantity + quantity).toFixed(12)),
+          onHandQuantity: candidate.onHandQuantity === null ? null : Number((candidate.onHandQuantity + quantity).toFixed(12)),
           // A material has one stock location. Keep the established location
           // when it already has stock rather than moving that stock on receipt.
           location: candidate.onHandQuantity === 0 ? input.location.trim() : candidate.location,
@@ -4660,11 +4727,19 @@ export function receivePurchaseItem(
     receivedAt: new Date().toISOString(),
     partInstanceIds: partInstances.map((part) => part.id),
   };
+  const materialTransaction: MaterialTransaction | null = material ? {
+    id: uniqueId(`material-transaction-${toSlug(input.operationId) || "receipt"}`, new Set(currentSnapshot.materialTransactions.map((row) => row.id))),
+    operationId: input.operationId, materialId: material.id, movementType: "receipt", quantityDelta: quantity,
+    reason: `Purchase receipt ${item.id}`, recordedAt: receipt.receivedAt, actorMemberId: auditContext.actorMemberId ?? null,
+    taskId: item.taskId, projectId: task.projectId, purchaseItemId: item.id, purchaseReceiptId: receipt.id,
+    occurredAt: receipt.receivedAt.slice(0, 10), sourceReference: `Purchase item ${item.id}, receipt ${receipt.id}`,
+  } : null;
   const updatedItem: PurchaseItem = { ...item, receipts: [...receipts, receipt] };
   const nextSnapshot = {
     ...currentSnapshot,
     purchaseItems: currentSnapshot.purchaseItems.map((candidate) => candidate.id === itemId ? updatedItem : candidate),
     materials: nextMaterials,
+    materialTransactions: materialTransaction ? [...currentSnapshot.materialTransactions, materialTransaction] : currentSnapshot.materialTransactions,
     partInstances: [...currentSnapshot.partInstances, ...partInstances],
   };
   replaceCurrentSnapshot(nextSnapshot);

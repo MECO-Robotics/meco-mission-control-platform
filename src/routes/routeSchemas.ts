@@ -28,7 +28,7 @@ const memberFieldsSchema = z.object({
   name: z.string().trim().min(2),
   email: z.union([z.literal(""), z.string().trim().email()]),
   photoUrl: z.string().trim(),
-  role: z.enum(["student", "lead", "mentor", "admin", "external"]),
+  role: z.enum(["student", "lead", "mentor", "admin", "external", "unknown"]),
   elevated: z.boolean(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
@@ -68,8 +68,8 @@ export const profilePatchSchema = memberPatchSchema.pick({ name: true, email: tr
 export const seasonSchema = z.object({
   name: z.string().trim().min(2),
   type: z.enum(["season", "offseason", "initiative"]).default("season"),
-  startDate: z.string().date().optional(),
-  endDate: z.string().date().optional(),
+  startDate: z.string().date().nullable().optional(),
+  endDate: z.string().date().nullable().optional(),
 });
 
 const projectFieldsSchema = z.object({
@@ -122,8 +122,8 @@ const taskFieldsSchema = z.object({
   ownerId: z.string().trim().min(1).nullable(),
   assigneeIds: z.array(z.string().trim().min(1)),
   mentorId: z.string().trim().min(1).nullable(),
-  startDate: z.string().date().optional(),
-  dueDate: z.string().date(),
+  startDate: z.string().date().nullable().optional(),
+  dueDate: z.string().date().nullable(),
   priority: z.enum(["critical", "high", "medium", "low"]),
   status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]),
   estimatedHours: z.coerce.number().min(0),
@@ -162,7 +162,9 @@ const milestoneFieldsSchema = z.object({
     "demo",
   ]),
   status: z.enum(["planned", "active", "complete"]),
-  startAt: calendarDateTimeSchema,
+  date: z.string().date().nullable().optional(),
+  dateLabel: z.string().optional(),
+  startAt: calendarDateTimeSchema.nullable(),
   endAt: calendarDateTimeSchema.nullable(),
   isExternal: z.boolean(),
   description: z.string().trim(),
@@ -187,7 +189,9 @@ const meetingFieldsSchema = z.object({
   meetingType: meetingTypeSchema,
   seasonId: z.string().trim().min(1).optional(),
   projectIds: z.array(z.string().trim().min(1)),
-  startAt: calendarDateTimeSchema,
+  date: z.string().date().nullable().optional(),
+  dateLabel: z.string().optional(),
+  startAt: calendarDateTimeSchema.nullable(),
   endAt: calendarDateTimeSchema.nullable().optional(),
   location: z.string().trim(),
   description: z.string().trim(),
@@ -471,6 +475,7 @@ const partDefinitionFieldsSchema = z.object({
   name: z.string().trim().min(2),
   // When omitted/blank, the platform assigns the next available part number.
   partNumber: z.string().trim(),
+  vendorPartNumbers: z.record(z.string(), z.string().trim()).default({}),
   isHardware: z.boolean(),
   revision: z.string().trim().min(1),
   iteration: iterationSchema,
@@ -591,18 +596,30 @@ const materialFieldsSchema = z.object({
     "other",
   ]),
   unit: z.string().trim().min(1),
-  onHandQuantity: z.coerce.number().min(0),
-  reorderPoint: z.coerce.number().min(0),
+  reorderPoint: z.number().min(0).nullable(),
   location: z.string().trim().min(1),
   preferredVendorId: z.string().trim().min(1).nullable(),
   notes: z.string().trim(),
+  photoUrl: z.string().trim().url().optional(),
 });
 
-export const materialSchema = materialFieldsSchema.extend({
+export const materialCreateSchema = materialFieldsSchema.extend({
   notes: materialFieldsSchema.shape.notes.default(""),
-});
+}).strict();
 
-export const materialPatchSchema = materialFieldsSchema.partial();
+export const materialSchema = materialFieldsSchema.extend({ onHandQuantity: z.number().min(0).nullable() }).strict();
+
+export const materialPatchSchema = materialFieldsSchema.partial().strict();
+
+export const materialTransactionSchema = z.object({
+  operationId: z.string().trim().min(1).max(200),
+  movementType: z.enum(["receipt", "consumption", "adjustment"]),
+  quantity: z.coerce.number().positive().finite().max(1000000),
+  adjustmentDirection: z.enum(["increase", "decrease"]).optional(),
+  reason: z.string().trim().min(1).max(1000),
+  taskId: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1).optional(),
+}).strict().refine((value) => value.movementType === "adjustment" ? Boolean(value.adjustmentDirection) : value.adjustmentDirection === undefined, { message: "Adjustment direction is required only for adjustments." });
 
 const artifactFieldsSchema = z.object({
   projectId: z.string().trim().min(1),
