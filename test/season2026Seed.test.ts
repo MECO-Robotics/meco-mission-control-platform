@@ -16,7 +16,16 @@ test("2026 seed preserves sourced activity and derives stock from receipt transa
   assert.ok(snapshot.tasks.filter((task) => task.status === "unrecorded").every((task) => task.summary.includes("unrecorded")));
   assert.equal(snapshot.meetings.length, 133);
   assert.ok(snapshot.meetings.some((meeting) => meeting.date === null && meeting.dateLabel === "Tue, 11/0"));
-  assert.ok(snapshot.members.every((member) => member.role === "unknown" && /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(member.name)));
+  assert.ok(snapshot.members.every((member) => /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(member.name)));
+  const sourcedRoles = new Map(snapshot.members.map(({ id, role }) => [id, role]));
+  for (const id of ["member-person-13", "member-person-15", "member-person-18", "member-person-20", "member-person-21", "member-person-26", "member-person-30", "member-person-32", "member-person-33", "member-person-34"]) {
+    assert.equal(sourcedRoles.get(id), "student", `${id} is listed in a student shift or as a student ambassador`);
+  }
+  for (const id of ["member-person-14", "member-person-25"]) assert.equal(sourcedRoles.get(id), "lead");
+  for (const id of ["member-person-16", "member-person-17", "member-person-23", "member-person-24", "member-person-27", "member-person-28", "member-person-29", "member-person-39"]) {
+    assert.equal(sourcedRoles.get(id), "mentor", `${id} is identified as a mentor in Slack`);
+  }
+  assert.equal(snapshot.members.filter((member) => member.role === "unknown").length, 8);
   assert.equal(new Set(snapshot.members.map((member) => member.name)).size, snapshot.members.length);
   assert.ok(snapshot.tasks.some((task) => task.assigneeIds.length > 0));
   assert.ok(snapshot.tasks.every((task) => task.assigneeIds.every((id) => snapshot.members.some((member) => member.id === id))));

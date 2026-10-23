@@ -14,6 +14,30 @@ const projectId = (area: string | null | undefined) => `project-${areas.includes
 const slug = (value: string) => value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const pseudonyms = ["Avery Reed", "Cameron Ellis", "Jordan Vale", "Riley Quinn", "Casey Rowan", "Morgan Hayes", "Skyler Bennett", "Devin Parker", "Kendall Brooks", "Jamie Foster", "Logan Avery", "Dakota Flynn", "Harper Lewis", "Emerson Blake", "Sage Monroe", "Parker Vaughn", "Finley Cross", "Reese Dalton", "Bailey Sinclair", "Arden Wells", "Micah Sutton", "Taylor Mercer", "Rowan Clarke", "Drew Winslow", "Blair Jennings", "Lane Whitaker", "Noel Pierce", "Emery Knox"];
 const pseudonymByPersonId = new Map(source.members.map((member, index) => [member.id.replace(/^member-/, "").toLocaleLowerCase(), pseudonyms[index]!]));
+// Public #outreach STEMventure staffing post (2026-08-22) identifies area mentors and student shifts.
+// Public Slack role announcements/profile evidence identifies the two current subteam leads.
+const roleByMemberId: Record<string, "student" | "lead" | "mentor"> = {
+  "member-person-13": "student",
+  "member-person-14": "lead",
+  "member-person-15": "student",
+  "member-person-16": "mentor",
+  "member-person-17": "mentor",
+  "member-person-18": "student",
+  "member-person-20": "student",
+  "member-person-21": "student",
+  "member-person-23": "mentor",
+  "member-person-24": "mentor",
+  "member-person-25": "lead",
+  "member-person-26": "student",
+  "member-person-27": "mentor",
+  "member-person-28": "mentor",
+  "member-person-29": "mentor",
+  "member-person-30": "student",
+  "member-person-32": "student",
+  "member-person-33": "student",
+  "member-person-34": "student",
+  "member-person-39": "mentor",
+};
 const pseudonymFor = (value: string) => pseudonymByPersonId.get(value.replace(/^member-/, "").toLocaleLowerCase()) ?? "Team member";
 const safeText = (value: string | null | undefined) => (value ?? "").replace(/person-(\d+)/gi, (_match, number: string) => pseudonymByPersonId.get(`person-${number}`.toLocaleLowerCase()) ?? "Team member").trim();
 const sourceDate = (value: string | null | undefined) => {
@@ -84,7 +108,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     description: `${project.description} Status is active based on documented 2026 activity; individual ownership is unassigned where sources do not identify it.`, status: "active" as const,
   }));
   const members = source.members.map((member) => ({
-    id: member.id, name: pseudonymFor(member.id.replace(/^member-/, "")), email: "", role: "unknown" as const, elevated: false,
+    id: member.id, name: pseudonymFor(member.id.replace(/^member-/, "")), email: "", role: roleByMemberId[member.id] ?? "unknown", elevated: false,
     seasonId: season.id, activeSeasonIds: [season.id],
   }));
   const groups = areas.map((area) => ({
