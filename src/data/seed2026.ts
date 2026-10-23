@@ -202,12 +202,63 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     id: member.id, name: pseudonymFor(member.id.replace(/^member-/, "")), email: "", role: roleByMemberId[member.id] ?? "unknown", elevated: false,
     seasonId: season.id, activeSeasonIds: [season.id],
   }));
+  const memberAreas = new Map<string, Map<(typeof areas)[number], number>>();
+  for (const candidate of source.taskCandidates) {
+    const area = areas.includes(candidate.projectArea as (typeof areas)[number])
+      ? candidate.projectArea as (typeof areas)[number]
+      : contextualTaskProjectAreas[candidate.id];
+    if (!area) continue;
+    for (const memberId of candidate.ownerIds ?? []) {
+      const counts = memberAreas.get(memberId) ?? new Map<(typeof areas)[number], number>();
+      counts.set(area, (counts.get(area) ?? 0) + 1);
+      memberAreas.set(memberId, counts);
+    }
+  }
+  const leadByArea: Record<(typeof areas)[number], string> = {
+    robot: "member-person-25",
+    operations: "member-person-14",
+    outreach: "member-person-14",
+    media: "member-person-25",
+    strategy: "member-person-14",
+    training: "member-person-25",
+  };
   const groups = areas.map((area) => ({
     id: `group-${area}-2026`, seasonId: season.id, name: projects.find((project) => project.projectType === area)!.name,
     icon: icons[area], color: colors[area], projectIds: [projectId(area)],
     workTypeIds: INITIAL_WORK_TYPES.filter((workType) => workType.projectType === area).map((workType) => workType.id),
-    memberIds: [] as string[], primaryMemberIds: [] as string[], isArchived: false,
+    memberIds: [leadByArea[area]], primaryMemberIds: [] as string[], isArchived: false,
   }));
+  // Preserve source-backed work-area assignments; distribute the remaining pseudonymous roster
+  // evenly so nobody is left off a default team. The lead assignments are provisional where
+  // Slack did not identify a current lead for that area or map names to these member IDs.
+  const groupByArea = new Map(groups.map((group) => [group.id.replace(/^group-/, "").replace(/-2026$/, "") as (typeof areas)[number], group]));
+  members.forEach((member, index) => {
+    const counts = memberAreas.get(member.id);
+    const sourceAreas = counts ? [...counts.keys()] : [];
+    const primaryArea = sourceAreas.length
+      ? [...sourceAreas].sort((left, right) => (counts!.get(right)! - counts!.get(left)!) || areas.indexOf(left) - areas.indexOf(right))[0]!
+      : areas[index % areas.length]!;
+    const primaryGroup = groupByArea.get(primaryArea)!;
+    if (!primaryGroup.memberIds.includes(member.id)) primaryGroup.memberIds.push(member.id);
+    if (member.role === "student" || member.role === "lead") primaryGroup.primaryMemberIds.push(member.id);
+    for (const secondaryArea of sourceAreas.filter((candidateArea) => candidateArea !== primaryArea)) {
+      const secondaryGroup = groupByArea.get(secondaryArea)!;
+      if (!secondaryGroup.memberIds.includes(member.id)) secondaryGroup.memberIds.push(member.id);
+    }
+  });
+  for (const area of areas) {
+    const group = groupByArea.get(area)!;
+    if (group.primaryMemberIds.some((memberId) => members.find((member) => member.id === memberId)?.role === "student")) continue;
+    const donor = [...groups]
+      .filter((candidate) => candidate !== group)
+      .sort((left, right) => right.primaryMemberIds.filter((id) => members.find((member) => member.id === id)?.role === "student").length - left.primaryMemberIds.filter((id) => members.find((member) => member.id === id)?.role === "student").length)[0];
+    const studentId = donor?.primaryMemberIds.find((id) => members.find((member) => member.id === id)?.role === "student");
+    if (donor && studentId) {
+      donor.primaryMemberIds = donor.primaryMemberIds.filter((id) => id !== studentId);
+      if (!group.memberIds.includes(studentId)) group.memberIds.push(studentId);
+      group.primaryMemberIds.push(studentId);
+    }
+  }
   const meetingNotes = new Map<string, string[]>();
   for (const note of source.meetingNotes) {
     const lines = meetingNotes.get(note.meetingId) ?? [];
