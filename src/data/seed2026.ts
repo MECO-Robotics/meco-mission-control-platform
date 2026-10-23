@@ -117,15 +117,27 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     };
   }).sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.dateLabel.localeCompare(b.dateLabel));
   const meetingIds = new Set(meetings.map((meeting) => meeting.id));
-  const tasks = source.taskCandidates.map((candidate) => {
+  const taskCandidates = [...source.taskCandidates].sort((left, right) =>
+    (left.sourceDate ?? "9999-99-99").localeCompare(right.sourceDate ?? "9999-99-99"),
+  );
+  for (const { taskId, prerequisiteTaskId } of source.sequenceDependencies) {
+    const dependentIndex = taskCandidates.findIndex(({ id }) => id === taskId);
+    const prerequisiteIndex = taskCandidates.findIndex(({ id }) => id === prerequisiteTaskId);
+    if (dependentIndex < 0 || prerequisiteIndex < 0 || prerequisiteIndex < dependentIndex) continue;
+    if (taskCandidates[dependentIndex]!.sourceDate !== taskCandidates[prerequisiteIndex]!.sourceDate) continue;
+    const [prerequisite] = taskCandidates.splice(prerequisiteIndex, 1);
+    taskCandidates.splice(dependentIndex, 0, prerequisite!);
+  }
+  const tasks = taskCandidates.map((candidate) => {
     const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : "operations";
     const title = safeText(candidate.title) || "Untitled source task";
     const exactDue = exactDueDate(candidate);
     const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress" ? candidate.status : "unrecorded";
     const notes = [
-      `Source: ${candidate.sourceLabels.join(", ")}; entry ${candidate.sourceEntryId}; date ${candidate.sourceDateLabel ?? "not stated"}.`,
+      `Source: ${candidate.sourceLabels.join(", ")}${candidate.sourceEntryId ? `; entry ${candidate.sourceEntryId}` : ""}; date ${candidate.sourceDateLabel ?? "not stated"}.`,
       candidate.statusEvidence ? `Progress context: ${safeText(candidate.statusEvidence)} Status remains unrecorded because the source does not establish a workflow state.` : "Source did not establish a workflow status; status left unrecorded.",
       candidate.dueDateEvidence ? `Due-date evidence: ${safeText(candidate.dueDateEvidence)}.` : exactDue ? `Explicit due date: ${exactDue}.` : "No explicit task due date was stated.",
+      candidate.sequenceEvidence ? `Sequence evidence: ${safeText(candidate.sequenceEvidence)}.` : "",
       candidate.projectArea ? "Project area classified from source wording." : "Project area was not explicit; grouped under Operations for review.",
     ].join(" ");
     const assignees = (candidate.ownerIds ?? []).filter((id: string) => members.some((member) => member.id === id));
@@ -138,6 +150,10 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       status, checklistItems: [], estimatedHours: 0, actualHours: 0, requiresDocumentation: false,
     };
   });
+  const taskDependencies = source.sequenceDependencies.map((dependency) => ({
+    id: dependency.id, taskId: dependency.taskId, kind: "task" as const, refId: dependency.prerequisiteTaskId,
+    requiredState: "complete" as const, dependencyType: "hard" as const, createdAt: seedRecordedAt,
+  }));
   const milestones = source.milestoneCandidates.map((candidate) => {
     const date = exactDueDate(candidate) ?? (/\bdeliver\b/i.test(candidate.title) ? sourceDate(candidate.sourceDate) : null);
     const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : null;
@@ -215,7 +231,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     seasons: [{ id: season.id, name: season.name, type: season.type as SeasonType, startDate: season.firstDatedActivity, endDate: season.lastDatedActivity, description: `${season.dateBoundaryBasis} Date bounds represent documented activity only; official season boundaries were not stated.` }],
     projects, workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
     subsystems: [...subsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
-    artifacts: [], partDefinitions: [], partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies: [],
+    artifacts: [], partDefinitions: [], partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
     qaReports: [], teamReports: [], qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks: [], workLogs: [],
     meetings, events, attendanceRecords: [], purchaseItems: [], escalations: [], actions: [],
   } satisfies Partial<PlatformSnapshot>);
