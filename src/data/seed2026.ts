@@ -118,6 +118,7 @@ const sourceDate = (value: string | null | undefined) => {
 function classifyMaterial(name: string): "metal" | "plastic" | "filament" | "electronics" | "hardware" | "consumable" | "other" {
   const text = name.toLocaleLowerCase();
   if (/filament|onyx|pla\b|petg|abs\b/.test(text)) return "filament";
+  if (/\b(?:nylon )?fabric\b|\bbumper fabric\b|hook and loop|sew on velcro|polycord|round belting|hardware cloth|open[- ]ended.*timing belt|roller chain.*\b(?:feet|ft)\b/.test(text)) return "other";
   if (/polycarbonate|plexi|acrylic|plastic|nylon|delrin|uhmw|hdpe|3d print/.test(text)) return "plastic";
   if (/aluminum|aluminium|steel|metal|tube|shaft|plate|angle|sheet|bracket|bar stock/.test(text)) return "metal";
   if (/wire|electrical|battery|motor|radio|connector|sensor|pdp|pdh|limelight|cable|switch|breaker|electronics/.test(text)) return "electronics";
@@ -126,12 +127,13 @@ function classifyMaterial(name: string): "metal" | "plastic" | "filament" | "ele
   return "other";
 }
 
-// Materials is the raw-stock catalog. Purchased assemblies, mechanisms, tools,
-// electronics, fasteners, and consumables belong in the parts catalog instead.
+// Materials is the fabrication-input catalog: stock that must be cut, formed,
+// machined, sewn, printed, or terminated before it becomes a robot component.
 function isStockMaterial(name: string): boolean {
   const text = name.toLocaleLowerCase();
-  if (/\bled\b|shaft collar|roller|sprocket|gear|bearing|bracket|support|mount|hub|plug|wheel|block/.test(text)) return false;
-  return /\bshaft(?:s)?\b|\bhex stock\b|\bchurro\b|\b(?:round |box |aluminum |aluminium )?tube(?:s| stock| extrusion)?\b|\btubing\b|\bextrusion(?:s)?\b|\b(?:aluminum |aluminium |polycarbonate |polycarb )?(?:sheet|sheets|plate stock|stock plate)\b|\bplate stock\b|^polycarb(?:onate)?$/.test(text);
+  if (/\bled\b|paper plates?|shaft collar|versaroller|roller hub|sprocket|gear|bearing|bracket|support|mount|hub|plug|wheel|block|\bcable\b|\bcord\b|connector|terminal|\bchain drive\b/.test(text)) return false;
+  if (/\b(?:open[- ]ended|open end)\b.*\btiming belt\b|\bround belting\b|\bpolycord\b|\broller chain\b.*\b(?:feet|ft)\b|\b(?:hook and loop|velcro).*\b\d+\s*(?:yd|yds|ft|feet)\b|\bsew on velcro\b|\b\d+\s*(?:awg|gauge)\b.*\bwire\b|\bcan wire\b|\bbonded wire\b|\bnylon fabric\b|\bbumper fabric\b|\bhardware cloth\b|\bfilament\b/.test(text)) return true;
+  return /\bshaft(?:s)?\b|\bhex (?:lite )?(?:stock|bar)\b|\bchurro\b|\b(?:round |box |aluminum |aluminium )?tube(?:s| stock| extrusion)?\b|\btubing\b|\bextrusion(?:s)?\b|\b(?:aluminum |aluminium |steel |polycarbonate |polycarb )?plate(?:s| stock)?\b|\b(?:aluminum|aluminium|polycarbonate|polycarb|plastic|acrylic)\b.*\bsheets?\b|\bsheets?\b.*\b(?:aluminum|aluminium|polycarbonate|polycarb|plastic|acrylic)\b|\bbar stock\b/.test(text) || /^polycarb(?:onate)?$/.test(text);
 }
 
 function workTypeFor(area: (typeof areas)[number], title: string) {
