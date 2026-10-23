@@ -3804,7 +3804,12 @@ export function createReport(input: ReportInput) {
     return reportFromQaReport(undefined, report);
   }
   const report: TeamReport = { ...input, id: uniqueId(toSlug(input.summary) || "team-report", new Set(currentSnapshot.teamReports.map((item) => item.id))) };
-  replaceCurrentSnapshot({ ...currentSnapshot, teamReports: [...currentSnapshot.teamReports, report] });
+  publishAuditedSnapshot({ ...currentSnapshot, teamReports: [...currentSnapshot.teamReports, report] }, {
+    operation: "create", entityType: "report", entityId: report.id, entityLabel: report.summary,
+    projectId: report.projectId, actorMemberId: report.createdByMemberId ?? report.requestedById,
+    memberIds: [...report.participantIds, report.mentorId],
+    detailsJson: { reportType: report.reportType, targetRefs: report.targetRefs, status: report.status },
+  });
   return report;
 }
 
