@@ -9,6 +9,26 @@ export const contextualTaskProjectAreas: Record<string, SeedArea> = {
   "task-src-9bcabb65dcc9f5": "robot", // Vision-stack validation is robot integration work.
 };
 
+const taskHeadings = /^(?:mechanical|electrical|programming|recap|intake|shooter|hopper|conveyer|conveyor|cad):?$/i;
+const robotTask = /\b(?:robot|intake|shooter|convey[eo]r|hopper|chassis|climb(?:er)?|swerve|bumper|hood|flywheel|vision|motor|drivetrain|drive train|autonomous|spark ?max(?:es)?|neo|battery|rio|pdp|pdh|can loops?|rack|roller|gearbox|pigeon|limelight|photonvision|questnav|delta[- ]?v)\b/i;
+const mediaTask = /\b(?:photo|photography|video|website|social media|media post|announcement|graphic|design post)\b/i;
+const outreachTask = /\b(?:outreach|maker faire|roboticon|stemventure|impact award|sponsor|thank.?you note|community event)\b/i;
+const trainingTask = /\b(?:training|presentation|student interview|leadership application|safety instruction|lesson)\b/i;
+const strategyTask = /\b(?:scouting|game strategy|drive team|strategy meeting)\b/i;
+
+export function isActionableSeedTask(title: string): boolean {
+  return !taskHeadings.test(title.trim());
+}
+
+export function inferTaskProjectArea(title: string): SeedArea | null {
+  if (robotTask.test(title)) return "robot";
+  if (mediaTask.test(title)) return "media";
+  if (outreachTask.test(title)) return "outreach";
+  if (trainingTask.test(title)) return "training";
+  if (strategyTask.test(title)) return "strategy";
+  return null;
+}
+
 function shiftDate(value: string, days: number) {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -25,23 +45,25 @@ function estimatedDuration(title: string, area: SeedArea) {
 export function taskScheduleWindow(candidate: TaskCandidate, area: SeedArea, sourceActivityDate: string | null, explicitDueDate: string | null) {
   const duration = estimatedDuration(candidate.title ?? "", area);
   const explicitDue = explicitDueDate !== null && sourceActivityDate !== null && explicitDueDate >= sourceActivityDate;
-  const malformedNovemberFollowUp = candidate.sourceEntryId === "meeting-d7d34b6c1803df";
-  const malformedNovemberRecap = candidate.id === "task-src-5ba56250f28624";
   const startDate = sourceActivityDate
     ? candidate.status === "complete" ? shiftDate(sourceActivityDate, -(duration - 1)) : sourceActivityDate
-    : malformedNovemberFollowUp ? "2026-11-09"
     : explicitDue ? explicitDueDate : null;
   const dueDate = explicitDue
     ? explicitDueDate
     : sourceActivityDate
       ? candidate.status === "complete" ? sourceActivityDate : shiftDate(sourceActivityDate, duration - 1)
-      : malformedNovemberFollowUp ? malformedNovemberRecap ? "2026-11-10" : "2026-11-14"
       : null;
-  const estimatedDays = malformedNovemberFollowUp ? malformedNovemberRecap ? 2 : 6 : duration;
+  const malformedNovemberFollowUp = candidate.sourceEntryId === "meeting-d7d34b6c1803df";
   const note = startDate && dueDate
-    ? `Planning window: ${startDate} to ${dueDate}. Estimated ${estimatedDays}-calendar-day duration; exact task dates and duration were not reported.${malformedNovemberFollowUp ? " The source entry date is malformed (Tue, 11/0); this window is estimated from the Nov 7–8 Maker Faire and next dated Nov 14 meeting, not a correction of that label." : " The window is anchored to the source activity date."}`
-    : "No planning window could be estimated from the source date.";
+    ? `Planning window: ${startDate} to ${dueDate}. Estimated ${duration}-calendar-day duration; exact task dates and duration were not reported. The window is anchored to the source activity date.`
+    : malformedNovemberFollowUp
+      ? "No planning window assigned: source date label Tue, 11/0 is malformed and retained for review."
+      : "No planning window could be estimated from the source date.";
   return { startDate, dueDate, note };
+}
+
+export function hasExplicitOpenProgressEvidence(candidate: TaskCandidate): boolean {
+  return Boolean(candidate.statusEvidence && !candidate.status);
 }
 
 export function buildSeedTaskDependencies(taskIds: ReadonlySet<string>, recordedAt: string): TaskDependency[] {
