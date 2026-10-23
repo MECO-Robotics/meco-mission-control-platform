@@ -126,6 +126,14 @@ function classifyMaterial(name: string): "metal" | "plastic" | "filament" | "ele
   return "other";
 }
 
+// Materials is the raw-stock catalog. Purchased assemblies, mechanisms, tools,
+// electronics, fasteners, and consumables belong in the parts catalog instead.
+function isStockMaterial(name: string): boolean {
+  const text = name.toLocaleLowerCase();
+  if (/\bled\b|shaft collar|roller|sprocket|gear|bearing|bracket|support|mount|hub|plug|wheel|block/.test(text)) return false;
+  return /\bshaft(?:s)?\b|\bhex stock\b|\bchurro\b|\b(?:round |box |aluminum |aluminium )?tube(?:s| stock| extrusion)?\b|\btubing\b|\bextrusion(?:s)?\b|\b(?:aluminum |aluminium |polycarbonate |polycarb )?(?:sheet|sheets|plate stock|stock plate)\b|\bplate stock\b|^polycarb(?:onate)?$/.test(text);
+}
+
 function workTypeFor(area: (typeof areas)[number], title: string) {
   const text = title.toLocaleLowerCase();
   const choices = INITIAL_WORK_TYPES.filter((item) => item.projectType === area);
@@ -364,7 +372,9 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const vendors = [...new Set([...vendorNames, ...purchaseVendors])].sort((a, b) => a.localeCompare(b)).map((name) => ({ id: `vendor-${slug(name)}`, name, website: null, isArchived: false }));
   const imageBySku = new Map(source.verifiedProductImages.filter((image) => image.sku).map((image) => [String(image.sku).toLocaleLowerCase(), image.imageUrl]));
   const imageByProduct = new Map(source.verifiedProductImages.map((image) => [String(image.product).toLocaleLowerCase(), image.imageUrl]));
-  const materials = source.materials.map((material) => {
+  const stockSources = source.materials.filter((material) => isStockMaterial(material.name));
+  const partSources = source.materials.filter((material) => !isStockMaterial(material.name));
+  const materials = stockSources.map((material) => {
     const sourceRows = material.sourceEvidence.map((row) => `${row.sheet} row ${row.row}${row.receivedDate ? ` received ${row.receivedDate}` : ""}`).join("; ");
     const unresolved = [material.unit ? "" : "Unit not specified by purchase source.", material.location ? "" : "Storage location not stated.", material.reorderPoint == null ? "Reorder point not stated." : ""].filter(Boolean).join(" ");
     return {
@@ -376,8 +386,22 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       photoUrl: material.photoUrl ?? (material.sku ? imageBySku.get(String(material.sku).toLocaleLowerCase()) : undefined) ?? imageByProduct.get(String(material.name).toLocaleLowerCase()),
     };
   });
+  const partDefinitionBySourceId = new Map(partSources.map((item) => [item.id, `purchase-catalog-${item.id}`] as const));
+  const partDefinitions = partSources.map((item) => {
+    const image = (item.sku ? imageBySku.get(String(item.sku).toLocaleLowerCase()) : undefined)
+      ?? imageByProduct.get(String(item.name).toLocaleLowerCase());
+    return {
+      id: partDefinitionBySourceId.get(item.id)!, seasonId: season.id, activeSeasonIds: [season.id],
+      name: safeText(item.name), partNumber: safeText(item.sku ?? item.id), vendorPartNumbers: item.sku ? { [item.vendorName ?? "Source"]: safeText(item.sku) } : {},
+      revision: "", iteration: 1, isArchived: false, isHardware: /bolt|screw|nut|washer|rivet|fastener|spacer|pin\b/i.test(item.name),
+      type: classifyMaterial(item.name), defaultAcquisitionMethod: "purchase-cots" as const, materialId: null,
+      description: `Imported from MECO Purchase List.xlsx. ${safeText(item.notes)}${item.sourceEvidence.length ? ` Source rows: ${item.sourceEvidence.map((row) => `${row.sheet} row ${row.row}`).join(", ")}.` : ""}`,
+      ...(image ? { photoUrl: image } : {}),
+    };
+  });
   const purchaseSeasonId = (sheet: string) => sheet === "2023 offseason" ? "season-2023-meco" : sheet.startsWith("2024") ? "season-2024-meco" : sheet.startsWith("2025") ? "season-2025-meco" : season.id;
-  const materialByPurchaseId = new Map(source.materials.flatMap((material) => material.purchaseIds.map((id: string) => [id, material] as const)));
+  const materialByPurchaseId = new Map(stockSources.flatMap((material) => material.purchaseIds.map((id: string) => [id, material] as const)));
+  const partByPurchaseId = new Map(partSources.flatMap((item) => item.purchaseIds.map((id: string) => [id, item] as const)));
   const receiptsByPurchaseId = new Map<string, Array<{ id: string; operationId: string; quantity: number; location: string; receivedAt: string | null; partInstanceIds: string[] }>>();
   for (const movement of [...source.openingMaterialTransactions, ...source.unquantifiedReceivedRows.map((row) => ({ id: `unknown-receipt-${row.purchaseId}`, idempotencyKey: `seed:${row.purchaseId}`, purchaseId: row.purchaseId, materialId: row.materialId, quantityDelta: null, sourceEvidence: { sheet: row.sourceSheet, row: row.sourceRow } }))]) {
     if (!movement.purchaseId) continue;
@@ -389,6 +413,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   }
   const purchaseItems = purchaseSource.map((row) => {
     const material = materialByPurchaseId.get(row.id);
+    const partDefinition = partByPurchaseId.get(row.id);
     const status = String(row.status ?? "").trim();
     const canceled = /^canceled|cancelled$/i.test(status);
     const receipts = receiptsByPurchaseId.get(row.id) ?? [];
@@ -402,7 +427,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       id: row.id, taskId: null, seasonId: purchaseSeasonId(row.sourceSheet), projectId: `project-operations-${purchaseSeasonId(row.sourceSheet).slice(7, 11)}`,
       sourceStatus: row.status == null ? null : String(row.status),
       sourceReference: `MECO Purchase List.xlsx — ${row.sourceSheet}, row ${row.sourceRow}`,
-      kind: "cots-goods" as const, partDefinitionId: null, materialId: material?.id ?? null, title: safeText(String(row.title)),
+      kind: "cots-goods" as const, partDefinitionId: partDefinition ? partDefinitionBySourceId.get(partDefinition.id) ?? null : null, materialId: material?.id ?? null, title: safeText(String(row.title)),
       quantity: typeof row.quantity === "number" ? row.quantity : null, quotes, selectedQuoteId: quotes.length ? quoteId : null,
       approvalStatus: canceled ? "rejected" as const : ordered ? "approved" as const : "pending" as const,
       approvedById: null, approvedAt: null, purchaseOrderNumber: row.orderNumber ? String(row.orderNumber) : null,
@@ -418,7 +443,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const purchaseIdSet = new Set(purchaseItems.map((item) => item.id));
   const receiptIdByOperation = new Map(purchaseItems.flatMap((item) => (item.receipts ?? []).map((receipt) => [receipt.operationId, receipt.id] as const)));
   const transactionRows = [
-    ...source.openingMaterialTransactions.map((row) => ({
+    ...source.openingMaterialTransactions.filter((row) => materials.some((material) => material.id === row.materialId)).map((row) => ({
       id: row.id, operationId: row.idempotencyKey, materialId: row.materialId, movementType: "receipt" as const,
       quantityDelta: row.quantityDelta, reason: `${row.reason} Source: ${row.sourceEvidence.sheet} row ${row.sourceEvidence.row}.`,
       recordedAt: seedRecordedAt, actorMemberId: null, occurredAt: sourceDate(row.occurredDate),
@@ -427,7 +452,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       ...(receiptIdByOperation.has(row.idempotencyKey) ? { purchaseReceiptId: receiptIdByOperation.get(row.idempotencyKey)! } : {}),
       ...(row.taskId ? { taskId: row.taskId } : {}), ...(row.projectId ? { projectId: row.projectId } : {}),
     })),
-    ...source.unquantifiedReceivedRows.map((row) => ({
+    ...source.unquantifiedReceivedRows.filter((row) => materials.some((material) => material.id === row.materialId)).map((row) => ({
       id: `unknown-receipt-${row.purchaseId}`, operationId: `seed:${row.purchaseId}`, materialId: row.materialId,
       movementType: "receipt" as const, quantityDelta: null,
       reason: `${row.reason} Source: ${row.sourceSheet} row ${row.sourceRow}.`, recordedAt: seedRecordedAt, actorMemberId: null,
@@ -481,7 +506,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     snapshotSchemaVersion: 3,
     seasons, projects: [...projects, ...historicalProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
     subsystems: [...subsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
-    artifacts, partDefinitions: [], partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
+    artifacts, partDefinitions, partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
     qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks, workLogs: [],
     meetings: [...meetings, ...historicalMeetings].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.title.localeCompare(b.title)), events, attendanceRecords: [], purchaseItems, escalations: [], actions: [],
   } satisfies Partial<PlatformSnapshot>);
