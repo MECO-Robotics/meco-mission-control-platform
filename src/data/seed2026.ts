@@ -118,7 +118,7 @@ const sourceDate = (value: string | null | undefined) => {
 function classifyMaterial(name: string): "metal" | "plastic" | "filament" | "electronics" | "hardware" | "consumable" | "other" {
   const text = name.toLocaleLowerCase();
   if (/filament|onyx|pla\b|petg|abs\b/.test(text)) return "filament";
-  if (/\b(?:nylon )?fabric\b|\bbumper fabric\b|hook and loop|sew on velcro|polycord|round belting|hardware cloth|open[- ]ended.*timing belt|roller chain.*\b(?:feet|ft)\b/.test(text)) return "other";
+  if (/\b(?:nylon )?fabric\b|\bbumper fabric\b|hook and loop|sew on velcro|polycord|round belting|hardware cloth|wheel tread|cat'?s? (?:tounge|tongue) tape|low friction tape|heat shrink|open[- ]ended.*timing belt|roller chain.*\b(?:feet|ft)\b/.test(text)) return "other";
   if (/polycarbonate|plexi|acrylic|plastic|nylon|delrin|uhmw|hdpe|3d print/.test(text)) return "plastic";
   if (/aluminum|aluminium|steel|metal|tube|shaft|plate|angle|sheet|bracket|bar stock/.test(text)) return "metal";
   if (/wire|electrical|battery|motor|radio|connector|sensor|pdp|pdh|limelight|cable|switch|breaker|electronics/.test(text)) return "electronics";
@@ -131,10 +131,17 @@ function classifyMaterial(name: string): "metal" | "plastic" | "filament" | "ele
 // machined, sewn, printed, or terminated before it becomes a robot component.
 function isStockMaterial(name: string): boolean {
   const text = name.toLocaleLowerCase();
+  if (/wheel tread|cat'?s? (?:tounge|tongue) tape|low friction tape|heat shrink|heat-shrink/.test(text)) return true;
   if (/\bled\b|paper plates?|shaft collar|versaroller|roller hub|sprocket|gear|bearing|bracket|support|mount|hub|plug|wheel|block|\bcable\b|\bcord\b|connector|terminal|\bchain drive\b/.test(text)) return false;
-  if (/\b(?:open[- ]ended|open end)\b.*\btiming belt\b|\bround belting\b|\bpolycord\b|\broller chain\b.*\b(?:feet|ft)\b|\b(?:hook and loop|velcro).*\b\d+\s*(?:yd|yds|ft|feet)\b|\bsew on velcro\b|\b\d+\s*(?:awg|gauge)\b.*\bwire\b|\bcan wire\b|\bbonded wire\b|\bnylon fabric\b|\bbumper fabric\b|\bhardware cloth\b|\bfilament\b/.test(text)) return true;
+  if (/\b(?:open[- ]ended|open end)\b.*\btiming belt\b|\bround belting\b|\bpolycord\b|\broller chain\b.*\b(?:feet|ft)\b|\b(?:hook and loop|velcro).*\b\d+\s*(?:yd|yds|ft|feet)\b|\bsew on velcro\b|\b\d+\s*(?:awg|gauge)\b.*\bwire\b|\bcan wire\b|\bbonded wire\b|\bnylon fabric\b|\bbumper fabric\b|\bhardware cloth\b|\bfilament\b|\bpet[- ]?g\b|\bmagnet sticks?\b/.test(text)) return true;
   return /\bshaft(?:s)?\b|\bhex (?:lite )?(?:stock|bar)\b|\bchurro\b|\b(?:round |box |aluminum |aluminium )?tube(?:s| stock| extrusion)?\b|\btubing\b|\bextrusion(?:s)?\b|\b(?:aluminum |aluminium |steel |polycarbonate |polycarb )?plate(?:s| stock)?\b|\b(?:aluminum|aluminium|polycarbonate|polycarb|plastic|acrylic)\b.*\bsheets?\b|\bsheets?\b.*\b(?:aluminum|aluminium|polycarbonate|polycarb|plastic|acrylic)\b|\bbar stock\b/.test(text) || /^polycarb(?:onate)?$/.test(text);
 }
+
+function isRobotPart(name: string): boolean {
+  return !NON_ROBOT_CATALOG_ITEM.test(name);
+}
+
+const NON_ROBOT_CATALOG_ITEM = /center punch|torque wrench|\bchisel|hacksaw|\bdrill bits?\b|drill tap|drill bushings?|end mill|needle[- ]nose pliers|hand broom|broom handle|\bwrench\b|file brushes|acid shop brushes|\bstrip brushes\b|wire stripper|wire crimper|\bcrimpers?\b|\bcalipers\b|rivet removal tool|rivet gun|sanding (?:belts|disks)|\bvacuum\b|shop vac|air filters?|cordless miter saw|drill press|saw blade|bandsaw blade|drop saw blade|battery charger|battery charging station|battery discharger|solder sucker|soldering iron|soldering iorn|fume extractor|\bbit set\b|\ballen keys?\b|countersink bits?|thread taps?|hot ?glue gun|plastic drop cloths?|rubber mallet|chain tools?|locking clamps|\bsafety glasses\b|ear muffs|ear plugs|\bgloves\b|eye wash|first aid|finger splints?|thermometer|cold packs?|ice packs?|hand sanitizer|paper towels|disinfectant wipes|dry erase wipes|whiteboard cleaner|\bwhiteboard\b|water dispenser|air conditioner|rat zapper|feminine hygiene|trash bags?|trashcans|flight suits?|serving utensils|\bforks\b|hair ties|ear wire hooks|clip earrings|nametag|science stampers|button (?:maker|box|sets|supplies)|button making machine|\bbuttons?\b|\bjournals\b|\bcardstock\b|note cards?|printer paper|dry erase markers|wet erase markers|\bsharpies?\b|\bpens\b|pen leashes|label maker|square labels|yard signs|garden stakes|sign holders|\blanyards\b|tent bag|medication|laptop|Acer Aspire|\bprinter\b|Quest 3S|cord reel|extension cord|Goo Gone|cutting oil|paper plates?|plastic forks|\bdispenser\b|\borganizer\b|Lego container|\bfurniture dollies\b|\bwagon\b|\bramps for loading\b|\bshop infrastructure\b|LED replacement tubes?|dimmable LED tube lights|lights for closet|software|licen[cs]e|subscription|\bgame pieces?\b|fuel game piece|pool noodles?|foam display board|velcro belt for wrapping floor tiles|\b(?:AA|AAA|D) batteries\b|\bCR ?2032 batteries\b|spindle motor kit/i;
 
 function workTypeFor(area: (typeof areas)[number], title: string) {
   const text = title.toLocaleLowerCase();
@@ -375,7 +382,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const imageBySku = new Map(source.verifiedProductImages.filter((image) => image.sku).map((image) => [String(image.sku).toLocaleLowerCase(), image.imageUrl]));
   const imageByProduct = new Map(source.verifiedProductImages.map((image) => [String(image.product).toLocaleLowerCase(), image.imageUrl]));
   const stockSources = source.materials.filter((material) => isStockMaterial(material.name));
-  const partSources = source.materials.filter((material) => !isStockMaterial(material.name));
+  const partSources = source.materials.filter((material) => !isStockMaterial(material.name) && isRobotPart(material.name));
   const materials = stockSources.map((material) => {
     const sourceRows = material.sourceEvidence.map((row) => `${row.sheet} row ${row.row}${row.receivedDate ? ` received ${row.receivedDate}` : ""}`).join("; ");
     const unresolved = [material.unit ? "" : "Unit not specified by purchase source.", material.location ? "" : "Storage location not stated.", material.reorderPoint == null ? "Reorder point not stated." : ""].filter(Boolean).join(" ");
