@@ -145,7 +145,11 @@ export function formatTaskStatus(status: TaskStatus) {
     return "QA";
   }
 
-  return "Complete";
+  if (status === "complete") {
+    return "Complete";
+  }
+
+  return "Unrecorded";
 }
 
 function hasMentorPass(qaReports: SnapshotView["qaReports"], task: ReadonlyData<Task>, snapshot: SnapshotView) {

@@ -132,6 +132,7 @@ const taskFieldsSchema = z.object({
 }).strict();
 
 export const taskSchema = taskFieldsSchema.extend({
+  status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete", "unrecorded"]),
   responsibleGroupId: taskFieldsSchema.shape.responsibleGroupId.default(null),
   requestedById: taskFieldsSchema.shape.requestedById.default(null),
   scheduleRefs: taskFieldsSchema.shape.scheduleRefs.default([]),

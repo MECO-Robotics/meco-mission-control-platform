@@ -37,11 +37,12 @@ export type DisciplineCode =
   | "writing"
   | "web"
   | "social_media";
-export type TaskStatus =
+export type TaskWorkflowStatus =
   | "not-started"
   | "in-progress"
   | "waiting-for-qa"
   | "complete";
+export type TaskStatus = TaskWorkflowStatus | "unrecorded";
 export type ReadinessStatus = "not-ready" | "blocked" | "qa" | "ready";
 
 export type ScheduleReference =
@@ -493,7 +494,7 @@ export type TaskDependency =
   taskId: string;
   kind: "task";
   refId: string;
-  requiredState: TaskStatus;
+  requiredState: TaskWorkflowStatus;
   dependencyType: TaskDependencyType;
   createdAt: string;
 }

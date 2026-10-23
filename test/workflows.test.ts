@@ -424,6 +424,7 @@ test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("in-progress"), "In Progress");
   assert.equal(formatTaskStatus("waiting-for-qa"), "QA");
   assert.equal(formatTaskStatus("complete"), "Complete");
+  assert.equal(formatTaskStatus("unrecorded"), "Unrecorded");
 });
 
 test("production compose configures the database connection and private health-checked API", () => {

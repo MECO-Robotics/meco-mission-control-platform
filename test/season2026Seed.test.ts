@@ -10,6 +10,10 @@ test("2026 seed preserves sourced activity and derives stock from receipt transa
   assert.equal(season.endDate, "2026-12-19");
   assert.match(season.description ?? "", /documented activity only/);
   assert.equal(snapshot.tasks.length, 733);
+  assert.equal(snapshot.tasks.filter((task) => task.status === "unrecorded").length, 706);
+  assert.equal(snapshot.tasks.filter((task) => task.status === "complete").length, 14);
+  assert.equal(snapshot.tasks.filter((task) => task.status === "in-progress").length, 13);
+  assert.ok(snapshot.tasks.filter((task) => task.status === "unrecorded").every((task) => task.summary.includes("unrecorded")));
   assert.equal(snapshot.meetings.length, 133);
   assert.ok(snapshot.meetings.some((meeting) => meeting.date === null && meeting.dateLabel === "Tue, 11/0"));
   assert.ok(snapshot.members.every((member) => member.role === "unknown" && /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(member.name)));

@@ -121,10 +121,10 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     const area = areas.includes(candidate.projectArea as (typeof areas)[number]) ? candidate.projectArea as (typeof areas)[number] : "operations";
     const title = safeText(candidate.title) || "Untitled source task";
     const exactDue = exactDueDate(candidate);
-    const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress" ? candidate.status : "not-started";
+    const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress" ? candidate.status : "unrecorded";
     const notes = [
       `Source: ${candidate.sourceLabels.join(", ")}; entry ${candidate.sourceEntryId}; date ${candidate.sourceDateLabel ?? "not stated"}.`,
-      candidate.statusEvidence ? `Status evidence: ${safeText(candidate.statusEvidence)}.` : "Source did not establish a workflow status; initialized as not started.",
+      candidate.statusEvidence ? `Progress context: ${safeText(candidate.statusEvidence)} Status remains unrecorded because the source does not establish a workflow state.` : "Source did not establish a workflow status; status left unrecorded.",
       candidate.dueDateEvidence ? `Due-date evidence: ${safeText(candidate.dueDateEvidence)}.` : exactDue ? `Explicit due date: ${exactDue}.` : "No explicit task due date was stated.",
       candidate.projectArea ? "Project area classified from source wording." : "Project area was not explicit; grouped under Operations for review.",
     ].join(" ");

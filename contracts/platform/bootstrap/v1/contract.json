@@ -2690,7 +2690,8 @@
               "not-started",
               "in-progress",
               "waiting-for-qa",
-              "complete"
+              "complete",
+              "unrecorded"
             ]
           },
           "checklistItems": {
@@ -4057,7 +4058,8 @@
             "not-started",
             "in-progress",
             "waiting-for-qa",
-            "complete"
+            "complete",
+            "unrecorded"
           ]
         },
         "estimatedHours": {
