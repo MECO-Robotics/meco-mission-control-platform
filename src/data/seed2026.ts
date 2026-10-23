@@ -255,10 +255,18 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     const title = safeText(candidate.title) || "Untitled source task";
     const exactDue = exactDueDate(candidate);
     const schedule = taskScheduleWindow(candidate, area, sourceDate(candidate.sourceDate), exactDue);
-    const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress" ? candidate.status : "unrecorded";
+    const sourceTaskDate = sourceDate(candidate.sourceDate);
+    const hasPassedSourceDate = Boolean(sourceTaskDate && sourceTaskDate <= "2026-10-23");
+    const status: TaskStatus = candidate.status === "complete" || candidate.status === "in-progress"
+      ? candidate.status
+      : hasPassedSourceDate ? "complete" : "in-progress";
     const notes = [
       `Source: ${candidate.sourceLabels.join(", ")}${candidate.sourceEntryId ? `; entry ${candidate.sourceEntryId}` : ""}; date ${candidate.sourceDateLabel ?? "not stated"}.`,
-      candidate.statusEvidence ? `Progress context: ${safeText(candidate.statusEvidence)} Status remains unrecorded because the source does not establish a workflow state.` : "Source did not establish a workflow status; status left unrecorded.",
+      candidate.statusEvidence
+        ? `Progress context: ${safeText(candidate.statusEvidence)}`
+        : hasPassedSourceDate
+          ? "Status inference: the source date has passed, and the public recap crawl found no later report that this task remained open. Marked complete per user direction; this is an inference, not direct confirmation."
+          : "Status inference: this source-dated task is still in the future; kept active because the user asked for scheduled work without a not-started state. Confirm progress in a later recap.",
       candidate.dueDateEvidence ? `Due-date evidence: ${safeText(candidate.dueDateEvidence)}.` : exactDue ? `Explicit due date: ${exactDue}.` : "No explicit task due date was stated.",
       schedule.note,
       candidate.sequenceEvidence ? `Sequence evidence: ${safeText(candidate.sequenceEvidence)}.` : "",
