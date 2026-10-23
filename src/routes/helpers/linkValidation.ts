@@ -237,15 +237,15 @@ export function validatePartInstanceLinks(input: Pick<PartInstance, "location" |
   return validatePartDefinitionLink(input.partDefinitionId);
 }
 
-export function validatePurchaseItemLinks(input: { taskId: string; kind: PurchaseItem["kind"]; partDefinitionId: string | null; materialId: string | null; quotes: readonly Pick<PurchaseItem["quotes"][number], "id" | "vendorId">[]; selectedQuoteId: string | null }) {
+export function validatePurchaseItemLinks(input: { taskId: string | null; sourceReference?: string; kind: PurchaseItem["kind"]; partDefinitionId: string | null; materialId: string | null; quotes: readonly Pick<PurchaseItem["quotes"][number], "id" | "vendorId">[]; selectedQuoteId: string | null }) {
   const snapshot = getSnapshot();
-  const task = snapshot.tasks.find((candidate) => candidate.id === input.taskId);
-  if (!task) return "The associated procurement task does not exist.";
-  if (input.kind === "cots-goods" && task.manufacturingDetails) return "COTS purchasing tasks cannot carry ManufacturingDetails.";
+  const task = input.taskId ? snapshot.tasks.find((candidate) => candidate.id === input.taskId) : null;
+  if (!task && !input.sourceReference) return "The associated procurement task does not exist.";
+  if (task && input.kind === "cots-goods" && task.manufacturingDetails) return "COTS purchasing tasks cannot carry ManufacturingDetails.";
   if (input.kind === "manufacturing-service") {
-    const workType = snapshot.workTypes.find((candidate) => candidate.id === task.workTypeId);
-    const project = snapshot.projects.find((candidate) => candidate.id === task.projectId);
-    if (!task.manufacturingDetails || task.manufacturingDetails.fulfillmentSource !== "outsourced" || project?.projectType !== "robot" || workType?.projectType !== "robot" || workType.code !== "manufacturing") return "Manufacturing service purchases must link to an outsourced Robot manufacturing task.";
+    const workType = task ? snapshot.workTypes.find((candidate) => candidate.id === task.workTypeId) : null;
+    const project = task ? snapshot.projects.find((candidate) => candidate.id === task.projectId) : null;
+    if (!task || !task.manufacturingDetails || task.manufacturingDetails.fulfillmentSource !== "outsourced" || project?.projectType !== "robot" || workType?.projectType !== "robot" || workType.code !== "manufacturing") return "Manufacturing service purchases must link to an outsourced Robot manufacturing task.";
   }
   if (input.partDefinitionId && !snapshot.partDefinitions.some((part) => part.id === input.partDefinitionId)) return "The selected part definition does not exist.";
   if (input.materialId && !snapshot.materials.some((material) => material.id === input.materialId)) return "The selected material does not exist.";

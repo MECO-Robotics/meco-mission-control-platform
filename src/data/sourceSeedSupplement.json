@@ -1,0 +1,1410 @@
+{
+  "artifacts": [
+    {
+      "projectId": "project-outreach-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-outreach-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Maker Faire Recaps",
+      "summary": "MECO Google Drive shared drive: Outreach. Source format: application/vnd.google-apps.document. Last modified: 2026-10-22.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/15V-Ihw4aDrHFJrrXFYjvmwUb0rLyOpqzgtr6WKNETNs/edit?usp=drivesdk",
+      "updatedAt": "2026-10-22T01:04:38.161Z",
+      "id": "maker-faire-recaps"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "AI decision making and resources",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-10-22.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/116Ks3HVq28jY5o1TiJgk0jrkoRMCcntUNDrVG9vwRhA/edit?usp=drivesdk",
+      "updatedAt": "2026-10-22T00:58:05.579Z",
+      "id": "ai-decision-making-and-resources"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Meeting Plan 2026 - May-Dec",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-10-21.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1NCyCKmlbVXljBJAqD2vBbDv7w80ufXKgQsjMCwRZ_R4/edit?usp=drivesdk",
+      "updatedAt": "2026-10-21T21:35:03.826Z",
+      "id": "meeting-plan-2026-may-dec"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO AI Governance Proposal",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-10-19.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1l-eJwucjrmdrqDP5pc2lz3AQqcX1gY_UxJV0FUExzoM/edit?usp=drivesdk",
+      "updatedAt": "2026-10-19T19:55:13.601Z",
+      "id": "meco-ai-governance-proposal"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO Purchase List",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-10-15.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1aGfCfMbePtxjTBnXHpT4tL538lNvU__kRrqpa___Kuo/edit?usp=drivesdk",
+      "updatedAt": "2026-10-15T09:10:44.946Z",
+      "id": "meco-purchase-list"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Grant Database",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-10-14.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1Fae8OkH2zarFVBSmFxSVJ_6Xc4MmiA0Gc6mJs0l3QqI/edit?usp=drivesdk",
+      "updatedAt": "2026-10-14T09:03:05.880Z",
+      "id": "grant-database"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Sponsorship tracking",
+      "summary": "MECO Google Drive shared drive: MECO Finance and Sponsorship. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-10-10.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/14kJNuRV5M5YA8bemlGNMC-wn5gL9JAAJeEUKecjqLyg/edit?usp=drivesdk",
+      "updatedAt": "2026-10-10T20:54:57.468Z",
+      "id": "sponsorship-tracking"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Mentor minutes - 2027 season (May 2026-April 2027)",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-10-10.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1rRq8MrooXl_OTnPYVaOuq10fU58YKyXLxoHdN_a6p1E/edit?usp=drivesdk",
+      "updatedAt": "2026-10-10T19:17:53.354Z",
+      "id": "mentor-minutes-2027-season-may-2026-apri"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Team 8324 checkbook",
+      "summary": "MECO Google Drive shared drive: MECO Finance and Sponsorship. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-09-30.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1NjGAqQPO-Bgy4dWCy7vX-oL7Nimp2wa1AzX_rW2c0bk/edit?usp=drivesdk",
+      "updatedAt": "2026-09-30T22:13:29.127Z",
+      "id": "team-8324-checkbook"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Proper Hand Tool Usage",
+      "summary": "MECO Google Drive shared drive: Training. Source format: application/vnd.google-apps.document. Last modified: 2026-09-16.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1KuBWzbFce_hg3RPDjol0GXczFG4UpcnniQBuVBS81Cc/edit?usp=drivesdk",
+      "updatedAt": "2026-09-16T17:59:40.781Z",
+      "id": "proper-hand-tool-usage"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Artificial Intelligence",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-09-15.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1MFLASoQF-ZWbx_XEKH0slR-aBuLg2feQwID7n7LDD4U/edit?usp=drivesdk",
+      "updatedAt": "2026-09-15T23:32:29.291Z",
+      "id": "artificial-intelligence"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "2026 Intuitive Foundation grant (due 8/14)",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-09-13.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1rhkMu9E_ZMkhFdN95XAemNshdllmAEXyrnvJzw6vr54/edit?usp=drivesdk",
+      "updatedAt": "2026-09-13T15:10:44.928Z",
+      "id": "2026-intuitive-foundation-grant-due-8-14"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Haas grant application",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-09-09.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/175GdqEJ1_lEHp3KupaiySBD_X18--zTvM1d_1L_-_iw/edit?usp=drivesdk",
+      "updatedAt": "2026-09-09T00:26:37.298Z",
+      "id": "haas-grant-application"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO inventory",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-08-22.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1ufLjV2oDQZVdeXhXXqnjNDjdd-ORJsimnPgpDU0kvoU/edit?usp=drivesdk",
+      "updatedAt": "2026-08-22T18:44:44.759Z",
+      "id": "meco-inventory"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Mentor Retreat 2026 Potential Agenda Items / Ideas",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-08-22.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1gljNoq0alV6ucy54KrIj5mm4WJHVqXqS4zPBgQPtyY8/edit?usp=drivesdk",
+      "updatedAt": "2026-08-22T16:58:07.003Z",
+      "id": "mentor-retreat-2026-potential-agenda-ite"
+    },
+    {
+      "projectId": "project-outreach-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-outreach-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Outreach Data",
+      "summary": "MECO Google Drive shared drive: Outreach. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-08-12.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/10dOdiysS9ILljNW-hRD1o9SYtuHgQdWrqgYOUv6K3l8/edit?usp=drivesdk",
+      "updatedAt": "2026-08-12T20:52:30.364Z",
+      "id": "outreach-data"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "How to register - mentor, 2026-27",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-07-15.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1PvxpUpY6RDvtxk4vOV37mq2jhx4y9Zfx_m9fcfpttAU/edit?usp=drivesdk",
+      "updatedAt": "2026-07-15T10:03:05.388Z",
+      "id": "how-to-register-mentor-2026-27"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Competition To Do Checklist - Orlando 2026",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-07-07.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1QMUwv1xirhY3mIxw7z0yZcudugb-Qw0_MhiKIiJ-f8Y/edit?usp=drivesdk",
+      "updatedAt": "2026-07-07T01:39:32.105Z",
+      "id": "competition-to-do-checklist-orlando-2026"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Mentor minutes - 2026 season (April 2025-April 2026)",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-07-07.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1-nJBbH67gyVqeWnPH89viQiIQA6W7ttCZSU7MGhDONE/edit?usp=drivesdk",
+      "updatedAt": "2026-07-07T01:39:04.919Z",
+      "id": "mentor-minutes-2026-season-april-2025-ap"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "2025 scheduling responses",
+      "summary": "MECO Google Drive shared drive: MECO Finance and Sponsorship. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-06-12.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1Yf2zIDXYjSHDbzfWodKFslpzRF_WjdL5rqre70kHEG4/edit?usp=drivesdk",
+      "updatedAt": "2026-06-12T17:22:22.768Z",
+      "id": "2025-scheduling-responses"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECH Curriculum Planning",
+      "summary": "MECO Google Drive shared drive: Training. Source format: application/vnd.google-apps.document. Last modified: 2026-05-30.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1oPX5W-w4in37aEaBH1A0nEQAxDN5Fdmt1a1AADTGwmA/edit?usp=drivesdk",
+      "updatedAt": "2026-05-30T14:08:10.515Z",
+      "id": "mech-curriculum-planning"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Design Curriculum for Students",
+      "summary": "MECO Google Drive shared drive: Training. Source format: application/vnd.google-apps.document. Last modified: 2026-05-23.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1-xGnfPSHyxR5B6aE4BEj4u4e8f7tKAxUQsMGAIRuGM8/edit?usp=drivesdk",
+      "updatedAt": "2026-05-23T17:43:09.420Z",
+      "id": "design-curriculum-for-students"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-robot-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Super app",
+      "summary": "MECO Google Drive shared drive: Programming. Source format: application/vnd.google-apps.document. Last modified: 2026-04-21.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1HnUqloiWg-n2wCKScbahlo7Xsl_RrRMw7H_ThSrIkms/edit?usp=drivesdk",
+      "updatedAt": "2026-04-21T21:08:44.899Z",
+      "id": "super-app"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Web site competition standings",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-04-18.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1JBMjs8fX1M7wdXggT2P14YlySp2DogDUw69T70odtls/edit?usp=drivesdk",
+      "updatedAt": "2026-04-18T19:24:52.651Z",
+      "id": "web-site-competition-standings"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO Business Plan 2026",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-04-15.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1ZwL_igRQE8drQmXdWZaB7bH-3Wzgo4XpWNr7ok8uYcY/edit?usp=drivesdk",
+      "updatedAt": "2026-04-15T18:15:33.483Z",
+      "id": "meco-business-plan-2026"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Tech Binder Information for Transfer 2026",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.document. Last modified: 2026-04-14.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1P4PyZBBSm-DI2XAIzV-eRo7li9F4NCdKqL21kSIppZ4/edit?usp=drivesdk",
+      "updatedAt": "2026-04-14T00:19:16.027Z",
+      "id": "tech-binder-information-for-transfer-202"
+    },
+    {
+      "projectId": "project-strategy-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-strategy-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Scouting-108, 744, and 5472-By Iliyana :)",
+      "summary": "MECO Google Drive shared drive: Scouting & Strategy. Source format: application/vnd.google-apps.document. Last modified: 2026-04-11.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1ZrGMeMXETIhc5ZrnbQu3EMmFG4SSuZukUw0iw7KmzgY/edit?usp=drivesdk",
+      "updatedAt": "2026-04-11T19:26:47.595Z",
+      "id": "scouting-108-744-and-5472-by-iliyana"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Meeting Plan 2026 - Jan-Apr",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-04-11.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1YqWBHb91HuG6uQPs55G8HWoziTnEdKVVlOIKo3_QSY4/edit?usp=drivesdk",
+      "updatedAt": "2026-04-11T17:13:10.014Z",
+      "id": "meeting-plan-2026-jan-apr"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Timeline until Tallahassee 2026",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-03-30.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/14M_x85OFr4UYvvc53i6MPWPUnoGSu_hSs5jn1uJRBl4/edit?usp=drivesdk",
+      "updatedAt": "2026-03-30T14:15:16.703Z",
+      "id": "timeline-until-tallahassee-2026"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-robot-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Belts Inventory",
+      "summary": "MECO Google Drive shared drive: Mechanical/Technical. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-03-29.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1U5ZGYcERzK7a73xVmd-IZT31v1BP8GSSFfC-g9hd-Sg/edit?usp=drivesdk",
+      "updatedAt": "2026-03-29T16:01:38.501Z",
+      "id": "belts-inventory"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Student recruitment 2025",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-03-23.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1ytIqsxE0vNYmsFGODNa3XllLVoJXTOe5U2Px2XyXEWw/edit?usp=drivesdk",
+      "updatedAt": "2026-03-23T16:32:53.599Z",
+      "id": "student-recruitment-2025"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-robot-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "2026 MECO ICD",
+      "summary": "MECO Google Drive shared drive: Mechanical/Technical. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-03-17.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1Tw6_dhJik8Akuvc_skaEcTRHGZsSlNPyS8-BL6F18BQ/edit?usp=drivesdk",
+      "updatedAt": "2026-03-17T04:24:28.028Z",
+      "id": "2026-meco-icd"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-robot-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Pre Orlando Task List 2026",
+      "summary": "MECO Google Drive shared drive: Mechanical/Technical. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-03-15.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1vEq503vFXHLmjCyNgE2QGerpZGU94gHc4zolnpWeVr0/edit?usp=drivesdk",
+      "updatedAt": "2026-03-15T18:31:30.410Z",
+      "id": "pre-orlando-task-list-2026"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Scrimmage Packing List",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2026-03-13.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1XjFVRsyjmIa4gRjjPWjir1_uh1IMZBXC077IAySw6TI/edit?usp=drivesdk",
+      "updatedAt": "2026-03-13T21:38:23.183Z",
+      "id": "scrimmage-packing-list"
+    },
+    {
+      "projectId": "project-outreach-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-outreach-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Impact 2026",
+      "summary": "MECO Google Drive shared drive: Awards. Source format: application/vnd.google-apps.document. Last modified: 2026-02-14.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1cJoEmVWF12fgwo5hlhci5ZnjTznCO1bQUf95qFxpYyo/edit?usp=drivesdk",
+      "updatedAt": "2026-02-14T22:14:17.631Z",
+      "id": "impact-2026"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-robot-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Wiring Plan 2026",
+      "summary": "MECO Google Drive shared drive: Mechanical/Technical. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2026-02-08.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1uRU39m-o4VIhLeriZgv3-0acgEI-4fVy-4AN9CUeQUQ/edit?usp=drivesdk",
+      "updatedAt": "2026-02-08T19:20:20.640Z",
+      "id": "wiring-plan-2026"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO Vision Statement",
+      "summary": "MECO Google Drive shared drive: Mentors. Source format: application/vnd.google-apps.presentation. Last modified: 2026-01-18.",
+      "status": "published",
+      "uri": "https://docs.google.com/presentation/d/1JgU1ZFb7f4y5ptxp3IIpTQv_OllSwaGWE2qWx8t7taE/edit?usp=drivesdk",
+      "updatedAt": "2026-01-18T20:18:01.609Z",
+      "id": "meco-vision-statement"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-training-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Technical Training meetings 2025",
+      "summary": "MECO Google Drive shared drive: Training. Source format: application/vnd.google-apps.document. Last modified: 2026-01-12.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1wtBtFMiWHMq-7xZhQkDLiA36sTzvoUaMxaV8Z3uAEMQ/edit?usp=drivesdk",
+      "updatedAt": "2026-01-12T17:07:25.670Z",
+      "id": "technical-training-meetings-2025"
+    },
+    {
+      "projectId": "project-outreach-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-outreach-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "2025 STEMventure",
+      "summary": "MECO Google Drive shared drive: Outreach. Source format: application/vnd.google-apps.document. Last modified: 2025-12-29.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/12Itw3q2bf0oHgtbml0_eiqrl5-oouR7KgL6Pn1IlJu0/edit?usp=drivesdk",
+      "updatedAt": "2025-12-29T14:47:26.787Z",
+      "id": "2025-stemventure"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Meeting Plan 2025 - Apr-Dec",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-12-17.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1_52W_9bljDo81bDu_5egYXPjcYtf9_6l3HGgrC-fSYY/edit?usp=drivesdk",
+      "updatedAt": "2025-12-17T21:46:50.461Z",
+      "id": "meeting-plan-2025-apr-dec"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Sponsorship Communications",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2025-11-01.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1dBH-uMTSzusaE61aOV5yvnO1W8TZvph-IIt3Vn-wswQ/edit?usp=drivesdk",
+      "updatedAt": "2025-11-01T18:55:18.753Z",
+      "id": "sponsorship-communications"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "How to register - mentor, 2025-26",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-10-29.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1xXZloaaxed0LbN-3SoxF7A6Q2QXWpJ4AJ7qoSTkCEIY/edit?usp=drivesdk",
+      "updatedAt": "2025-10-29T20:44:26.401Z",
+      "id": "how-to-register-mentor-2025-26"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Template fundraising letters",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-10-25.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/19jFlUyTye6l3eGZkeWRdqHtqkIR3l5vNlpnsR1mvMEI/edit?usp=drivesdk",
+      "updatedAt": "2025-10-25T20:22:08.377Z",
+      "id": "template-fundraising-letters"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "How to register - FLL student, 2025-26",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-10-22.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1jNapZsLjYfLiexfMq0A03yN3wgE8VRBlDqHMj_DNFw0/edit?usp=drivesdk",
+      "updatedAt": "2025-10-22T01:38:39.844Z",
+      "id": "how-to-register-fll-student-2025-26"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Student Travel Packing List - Northshore Knockout 2025",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-07-17.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/17H0OuLfuSwzHXSaGbHU8sXdGCSh_mSS5829iwCKfVgs/edit?usp=drivesdk",
+      "updatedAt": "2025-07-17T16:14:49.400Z",
+      "id": "student-travel-packing-list-northshore-k"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Competition To Do Checklist - Northshore Knockout 2025",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-07-10.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1T1Dwgqa3fVAjZXmZZ-ehA4PJCGh1x9oBfPaoNVndKv8/edit?usp=drivesdk",
+      "updatedAt": "2025-07-10T18:07:01.062Z",
+      "id": "competition-to-do-checklist-northshore-k"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Finance Team meetings",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-06-07.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1ZZ4YYGH-CMD8rWSsD02mlrD2JQxM0lC5TYLkzROhej0/edit?usp=drivesdk",
+      "updatedAt": "2025-06-07T20:04:00.128Z",
+      "id": "finance-team-meetings"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Timed-Based Robot Code",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.presentation. Last modified: 2025-05-24.",
+      "status": "published",
+      "uri": "https://docs.google.com/presentation/d/1FOoMNWUrkQuhILNgiWJj91s61YCIM2Z-x49Xd3yu_xc/edit?usp=drivesdk",
+      "updatedAt": "2025-05-24T20:01:39.585Z",
+      "id": "timed-based-robot-code"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "TRI Budget Breakdowm/Estimates",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2025-05-21.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1rQVcVq_AZrXSZFj56MWKm1k5krqxga-sbc_MBJ1rY5Q/edit?usp=drivesdk",
+      "updatedAt": "2025-05-21T22:04:46.024Z",
+      "id": "tri-budget-breakdowm-estimates"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Sponsor flyer 2024, one page.pdf",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/pdf. Last modified: 2025-04-29.",
+      "status": "published",
+      "uri": "https://drive.google.com/file/d/1R6si4fyelc19h3q3oGjhEyrdzvHcUuPr/view?usp=drivesdk",
+      "updatedAt": "2025-04-29T13:58:42.478Z",
+      "id": "sponsor-flyer-2024-one-page-pdf"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Introduction to Control Theory",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.presentation. Last modified: 2025-04-02.",
+      "status": "published",
+      "uri": "https://docs.google.com/presentation/d/1VPt-GAXUgP66g8z-yZEjgY-r1h3JXSFvpLekk0Pz7qM/edit?usp=drivesdk",
+      "updatedAt": "2025-04-02T22:19:57.418Z",
+      "id": "introduction-to-control-theory"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Meeting Plan 2025 - Jan-Mar",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-03-18.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1zIZgAu7dB9IDYW8vgKSLqY7Xs1Augh8Qkt_QQSTACXY/edit?usp=drivesdk",
+      "updatedAt": "2025-03-18T23:08:14.054Z",
+      "id": "meeting-plan-2025-jan-mar"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Sponsor Thank You note",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.presentation. Last modified: 2025-03-01.",
+      "status": "published",
+      "uri": "https://docs.google.com/presentation/d/1_4sa1p7EC-qeykvpmfKwOoss0XTp3W3i0r533UQlx38/edit?usp=drivesdk",
+      "updatedAt": "2025-03-01T13:37:54.371Z",
+      "id": "sponsor-thank-you-note"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Sponsor Levels and Opportunities 2024-25",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-02-28.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1wQgQ96NxU_MOq6BD6RRYuJZCG4ZWvMBlLOveY1xGzn4/edit?usp=drivesdk",
+      "updatedAt": "2025-02-28T23:10:51.237Z",
+      "id": "sponsor-levels-and-opportunities-2024-25"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Other teams sponsorship levels (2021)",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2025-02-06.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1txYbSyRrI-lDweL2v9I3yS-TWO7822H1uDqOt2DUmnE/edit?usp=drivesdk",
+      "updatedAt": "2025-02-06T02:41:40.687Z",
+      "id": "other-teams-sponsorship-levels-2021"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Fundraising video brainstorm 2022",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-02-06.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1CqN-8hXfEH8sysF_wEYSGuWoSnUQ2qKT0gQWNEMF8BM/edit?usp=drivesdk",
+      "updatedAt": "2025-02-06T02:40:36.449Z",
+      "id": "fundraising-video-brainstorm-2022"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Budget Outline",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2025-02-06.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1egnQtUY6lr0lKDK4lUta3MWVNHXBikx4IPluC2S5crQ/edit?usp=drivesdk",
+      "updatedAt": "2025-02-06T02:37:19.972Z",
+      "id": "budget-outline"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "2024 Budget",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2025-02-06.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1pKS1fKMv6n73h4tX2R6thND6WjMupc2cS_kAjHIuryM/edit?usp=drivesdk",
+      "updatedAt": "2025-02-06T02:37:15.698Z",
+      "id": "2024-budget"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-operations-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Meeting Plan 2024 - Jan-Mar",
+      "summary": "MECO Google Drive shared drive: Business and Fundraising. Source format: application/vnd.google-apps.document. Last modified: 2025-02-06.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1XLQLRRpMyA7aHVMMb3BCJ-Hzrlu59NaWSbrLOEePd9Q/edit?usp=drivesdk",
+      "updatedAt": "2025-02-06T02:02:51.487Z",
+      "id": "meeting-plan-2024-jan-mar"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "Social Media, Web Site, Newsletter Schedule 2023",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.spreadsheet. Last modified: 2025-02-05.",
+      "status": "published",
+      "uri": "https://docs.google.com/spreadsheets/d/1xeHpq7rsOCYXL2ZkaMv0pCn7jmrwE64im8Ipqqjy8oU/edit?usp=drivesdk",
+      "updatedAt": "2025-02-05T23:51:45.255Z",
+      "id": "social-media-web-site-newsletter-schedul"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO Presentation Template",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.presentation. Last modified: 2025-02-05.",
+      "status": "published",
+      "uri": "https://docs.google.com/presentation/d/1vxt0NHoVXXSuR1w6A_NT1YlTWBuhKveq9J1eMp35Ox4/edit?usp=drivesdk",
+      "updatedAt": "2025-02-05T23:51:37.808Z",
+      "id": "meco-presentation-template"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "plan",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.document. Last modified: 2025-02-05.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1WH9dbMeQ0SUMqe-NnKTgpirNwsiKKLTmf6lF4J7N1oQ/edit?usp=drivesdk",
+      "updatedAt": "2025-02-05T23:51:25.251Z",
+      "id": "plan"
+    },
+    {
+      "projectId": "project-media-2026",
+      "targetRefs": [
+        {
+          "kind": "project",
+          "id": "project-media-2026"
+        }
+      ],
+      "kind": "document",
+      "title": "MECO Robotics Branding Guide",
+      "summary": "MECO Google Drive shared drive: Media/Public Relations. Source format: application/vnd.google-apps.document. Last modified: 2024-11-24.",
+      "status": "published",
+      "uri": "https://docs.google.com/document/d/1jo04tP2xJEjaHd4Mzs1bSpHQGVMsyHPSUNZU9ZttuAU/edit?usp=drivesdk",
+      "updatedAt": "2024-11-24T21:03:39.026Z",
+      "id": "meco-robotics-branding-guide"
+    }
+  ],
+  "reports": [
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "task",
+          "id": "task-src-22d364c5bfcc8f"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] QA report: Intake Testing — Illustrative cycle check: a hypothetical ten-cycle feed showed no stalls, but a jam-clear safety repeat remains on the sample checklist. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "notes": "[SYNTHETIC SAMPLE] QA report: Intake Testing — Illustrative cycle check: a hypothetical ten-cycle feed showed no stalls, but a jam-clear safety repeat remains on the sample checklist. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "evidenceNotes": "Synthetic example only. No source evidence exists; this draft must not be treated as an actual QA result.",
+      "createdAt": "2026-10-23T20:31:00.029Z",
+      "status": "draft",
+      "reportType": "qa",
+      "result": "minor-fix",
+      "reviewedById": null,
+      "reviewedAt": null,
+      "targetRevisions": {},
+      "id": "task-task-src-22d364c5bfcc8f-qa"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "task",
+          "id": "task-src-6c47de271c152d"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] QA report: Focus on Shooter and Transfer geometry — Illustrative geometry review: a hypothetical transfer path had 4 mm of sample clearance at full extension; repeat after final fastener torque. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "notes": "[SYNTHETIC SAMPLE] QA report: Focus on Shooter and Transfer geometry — Illustrative geometry review: a hypothetical transfer path had 4 mm of sample clearance at full extension; repeat after final fastener torque. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "evidenceNotes": "Synthetic example only. No source evidence exists; this draft must not be treated as an actual QA result.",
+      "createdAt": "2026-10-23T20:31:00.140Z",
+      "status": "draft",
+      "reportType": "qa",
+      "result": "minor-fix",
+      "reviewedById": null,
+      "reviewedAt": null,
+      "targetRevisions": {},
+      "id": "task-task-src-6c47de271c152d-qa"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "task",
+          "id": "task-src-a7de5bd6c4a253"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] QA report: Finish Block CAD — Illustrative CAD check: a hypothetical interference scan showed no collisions; drawing sign-off is intentionally left pending. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "notes": "[SYNTHETIC SAMPLE] QA report: Finish Block CAD — Illustrative CAD check: a hypothetical interference scan showed no collisions; drawing sign-off is intentionally left pending. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "evidenceNotes": "Synthetic example only. No source evidence exists; this draft must not be treated as an actual QA result.",
+      "createdAt": "2026-10-23T20:31:00.239Z",
+      "status": "draft",
+      "reportType": "qa",
+      "result": "pass",
+      "reviewedById": null,
+      "reviewedAt": null,
+      "targetRevisions": {},
+      "id": "task-task-src-a7de5bd6c4a253-qa"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "task",
+          "id": "task-src-add02c5c68aef2"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] QA report: Prototype working intake — Illustrative prototype scenario: a hypothetical roller test showed uneven capture at the left edge; try a guide adjustment in the next iteration. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "notes": "[SYNTHETIC SAMPLE] QA report: Prototype working intake — Illustrative prototype scenario: a hypothetical roller test showed uneven capture at the left edge; try a guide adjustment in the next iteration. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "evidenceNotes": "Synthetic example only. No source evidence exists; this draft must not be treated as an actual QA result.",
+      "createdAt": "2026-10-23T20:31:00.297Z",
+      "status": "draft",
+      "reportType": "qa",
+      "result": "iteration-worthy",
+      "reviewedById": null,
+      "reviewedAt": null,
+      "targetRevisions": {},
+      "id": "task-task-src-add02c5c68aef2-qa"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "task",
+          "id": "task-src-b13981fb293867"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] QA report: Base code updated to 2026 — Illustrative code review: a hypothetical autonomous timeout was one second short of the sample target; rerun in simulation after a timing change. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "notes": "[SYNTHETIC SAMPLE] QA report: Base code updated to 2026 — Illustrative code review: a hypothetical autonomous timeout was one second short of the sample target; rerun in simulation after a timing change. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "evidenceNotes": "Synthetic example only. No source evidence exists; this draft must not be treated as an actual QA result.",
+      "createdAt": "2026-10-23T20:31:00.352Z",
+      "status": "draft",
+      "reportType": "qa",
+      "result": "minor-fix",
+      "reviewedById": null,
+      "reviewedAt": null,
+      "targetRevisions": {},
+      "id": "task-task-src-b13981fb293867-qa"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "task",
+          "id": "task-src-0242b9d32c4057"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] QA report: Design review (intake/conveyor) — Illustrative design review: the sample intake-to-conveyor transfer showed a hypothetical dead zone; compare two guide angles in a future iteration. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "notes": "[SYNTHETIC SAMPLE] QA report: Design review (intake/conveyor) — Illustrative design review: the sample intake-to-conveyor transfer showed a hypothetical dead zone; compare two guide angles in a future iteration. SYNTHETIC DATA ONLY: no physical test, measurement, or approval occurred.",
+      "evidenceNotes": "Synthetic example only. No source evidence exists; this draft must not be treated as an actual QA result.",
+      "createdAt": "2026-10-23T20:31:00.422Z",
+      "status": "draft",
+      "reportType": "qa",
+      "result": "iteration-worthy",
+      "reviewedById": null,
+      "reviewedAt": null,
+      "targetRevisions": {},
+      "id": "task-task-src-0242b9d32c4057-qa"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-ab8ad2fd6b60fc"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Deliver Conveyer w/Wiring",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional conveyor integration checklist has belt tracking and labeled connectors checked; strain relief remains to be revisited. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.493Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-delive"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-e156ce7941e182"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Deliver conveyer *(Overdue)",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional recovery review lists a revised conveyor handoff plan and a mock owner/date table for follow-up. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.531Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-delive-2"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-fc528d3b5543fd"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Deliver intake w/Wiring",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional intake delivery checklist has five of six sample checks listed; connector strain testing remains open. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.569Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-delive-3"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-676efb24aeee8f"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Deliver All Subsystems",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional subsystem readiness matrix shows four mock work areas reviewed and one queued for discussion. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.618Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-delive-4"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-3178e0c39809cf"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Deliver Bumpers",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional bumper fit review records sample corner alignment and leaves a mock seam rework item for review. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.658Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-delive-5"
+    },
+    {
+      "projectId": "project-robot-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-aecc978bca9e56"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Deliver complete autos",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional autonomous review contains three simulated runs and a placeholder note to repeat on the competition field. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.703Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-delive-6"
+    },
+    {
+      "projectId": "project-outreach-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-2538cd2c478a8b"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Submit all orders by tomorrow (03/01/26) for DTF, stickers, and/or trading cards to outsource companies",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional print-order review has mock quantities and proof approvals listed, with vendor confirmation left open. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.759Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-submit"
+    },
+    {
+      "projectId": "project-training-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-9995dd20f3c7b0"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Student presentation: reminder to work on it: DUE 8/15",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional presentation practice records a mock six-minute run-through and a placeholder note to tighten the opening. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.790Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-studen"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-0d7389f92e22a8"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Reminder that student leadership application deadline is on the 19th",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional leadership application review shows a sample interview schedule and a mock reviewer checklist. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.825Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-remind"
+    },
+    {
+      "projectId": "project-outreach-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-339d567d1e5178"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Impact submission",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional Impact submission review lists a mock narrative outline and placeholders for sourced outcome measures. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.869Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-impact"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-4be31710e31359"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Research grants and due dates",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional grants review lists three mock opportunities and a placeholder to verify eligibility and deadlines. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.900Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-resear"
+    },
+    {
+      "projectId": "project-operations-2026",
+      "targetRefs": [
+        {
+          "kind": "milestone",
+          "id": "milestone-src-6305d9dcb84276"
+        }
+      ],
+      "createdByMemberId": null,
+      "participantIds": [],
+      "mentorId": null,
+      "requestedById": null,
+      "summary": "[SYNTHETIC SAMPLE] Milestone report: Research grants and due dates (see research grants spreadsheet link in #business-fundraising)",
+      "notes": "SYNTHETIC DATA ONLY: Scenario: a fictional grant-database review flags sample owner and due-date fields for completeness. No milestone completion, date, measurement, or real evidence is asserted.",
+      "evidenceNotes": "Fictional draft created at the user's request for sample/report workflow content; not source evidence.",
+      "createdAt": "2026-10-23T20:31:00.946Z",
+      "status": "draft",
+      "reportType": "review",
+      "result": null,
+      "id": "synthetic-sample-milestone-report-resear-2"
+    }
+  ]
+}

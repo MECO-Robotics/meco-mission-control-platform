@@ -93,7 +93,7 @@ function looksLikePlatformSnapshot(value: unknown): value is PlatformSnapshot {
     (!transaction.actorMemberId || memberIds.has(transaction.actorMemberId)) &&
     (!transaction.purchaseItemId || purchaseItems.some((item) => item.id === transaction.purchaseItemId)) &&
     (!transaction.purchaseReceiptId || purchaseItems.some((item) => item.receipts?.some((receipt) => receipt.id === transaction.purchaseReceiptId))));
-  return transactionRefsValid && (snapshot.qaReviewSequence === undefined || (Number.isInteger(snapshot.qaReviewSequence) && Number(snapshot.qaReviewSequence) >= 0)) && seasons.every((season) => (["robot", "media", "outreach", "operations", "strategy", "training"] as const).every((type) => projectKeys.has(`${season.id}:${type}`)));
+  return transactionRefsValid && (snapshot.qaReviewSequence === undefined || (Number.isInteger(snapshot.qaReviewSequence) && Number(snapshot.qaReviewSequence) >= 0)) && seasons.every((season) => [...projectKeys].some((key) => key.startsWith(`${season.id}:`)));
 }
 
 export function loadPlatformSnapshotFile(path: string): PlatformSnapshot | null {

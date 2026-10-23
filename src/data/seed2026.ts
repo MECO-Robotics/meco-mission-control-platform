@@ -1,5 +1,9 @@
 import source from "./season2026Seed.json";
+import historicalPlans from "./meetingPlans2024-2025.json";
+import purchaseSource from "./purchaseRecords2026.json";
+import sourceSupplement from "./sourceSeedSupplement.json";
 import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
+import { artifactSchema, reportSchema } from "../routes/routeSchemas";
 import type { MilestoneType, PlatformSnapshot, ProjectType, ResponsibleGroupIcon, ScheduleEvent, SeasonType, TaskStatus } from "../domain/types";
 
 const seedRecordedAt = "2026-10-23T00:00:00.000Z";
@@ -40,6 +44,70 @@ const roleByMemberId: Record<string, "student" | "lead" | "mentor"> = {
 };
 const pseudonymFor = (value: string) => pseudonymByPersonId.get(value.replace(/^member-/, "").toLocaleLowerCase()) ?? "Team member";
 const safeText = (value: string | null | undefined) => (value ?? "").replace(/person-(\d+)/gi, (_match, number: string) => pseudonymByPersonId.get(`person-${number}`.toLocaleLowerCase()) ?? "Team member").trim();
+const historicalNameAliases: [string, string][] = ([
+  ["Carrie Udowychenko", "Milo Anders"],
+  ["Noah Sherkow", "Nina Calder"],
+  ["Dayana Chanson", "Jasper Hsu"],
+  ["Barbara Chanson", "Tessa Sloan"],
+  ["Mason Brown", "Vera Kim"],
+  ["Nathan Gelino", "Caleb Finch"],
+  ["Mason B", "Mira Patel"],
+  ["Mason T", "Leo Sato"],
+  ["Kelly Breen", "Zara Mendez"],
+  ["Nikki", "Theo Wilder"],
+  ["Dayana", "Ava Carver"],
+  ["Sage", "Nico Delaney"],
+  ["Phelan", "Iris Cole"],
+  ["Moses", "Owen Shaw"],
+  ["Nate", "Lena Moss"],
+  ["Kaleb", "Ezra Park"],
+  ["Lily", "Maya Cross"],
+  ["Rex", "Eli Stone"],
+  ["Hailey", "Uma Voss"],
+  ["Ryan", "Ivan Pike"],
+  ["Aidan", "Ruby Chen"],
+  ["Conrad", "Felix March"],
+  ["Becky", "Cleo Hart"],
+  ["Mason", "Rafael Venn"],
+  ["Daniel", "Sienna Frost"],
+  ["Grant", "Dante Vale"],
+  ["Steven", "Sylvie Gray"],
+  ["Bianca", "Ronan Lake"],
+  ["Jerry", "Freya Penn"],
+  ["Kris", "Arlo Rhodes"],
+  ["Brennan", "Esme Wells"],
+  ["Francisco", "Soren Hayes"],
+  ["Doug", "Noemi Clarke"],
+  ["Bunn", "Gideon Brooks"],
+  ["Paul", "Priya Kane"],
+  ["Neil", "Ansel Webb"],
+  ["Michelle", "Nola Hart"],
+  ["Yosmar", "Basil Reed"],
+  ["Aurora", "Anika Bell"],
+  ["Krys", "Cormac Dale"],
+  ["Jab", "Elodie King"],
+  ["Manny", "Amara Solis"],
+  ["Sarah", "Tomas Evers"],
+  ["Jaz", "Veda Monroe"],
+  ["Scott", "Juno Harlow"],
+  ["Ethan", "Kieran Lowe"],
+  ["Misha", "Mina Kestrel"],
+  ["Atalya", "Orson Tate"],
+  ["Amadeus", "Lior Wade"],
+  ["Keller", "Naomi French"],
+  ["Brian", "Casper Rowan"],
+  ["Wendy", "Seren Fox"],
+  ["Susan", "Remy Arquette"],
+  ["Kat", "Stellan James"],
+  ["Connor", "Lucca Shaw"],
+  ["Reasha", "Maren Vail"],
+  ["Cady", "Cyrus Bell"],
+  ["Tiara", "Luca Hale"],
+]).sort(([left], [right]) => right.length - left.length) as [string, string][];
+const safeHistoricalText = (value: string) => historicalNameAliases.reduce(
+  (text, [name, alias]) => text.replace(new RegExp(`\\b${name}\\b`, "g"), alias),
+  value,
+);
 const sourceDate = (value: string | null | undefined) => {
   if (!value) return null;
   const date = new Date(`${value}T00:00:00Z`);
@@ -103,9 +171,26 @@ function milestoneType(title: string, declared: string | null): MilestoneType {
 
 export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const season = source.season;
+  const historicalYears = [2023, 2024, 2025] as const;
+  const seasonMeetings = (year: number) => historicalPlans.entries.filter((entry) => entry.date.startsWith(`${year}-`)).map((entry) => entry.date).sort();
+  const seasons = [
+    ...historicalYears.map((year) => {
+      const dates = seasonMeetings(year);
+      return {
+        id: `season-${year}-meco`, name: year === 2023 ? "MECO Robotics 2023 purchase history" : `MECO Robotics ${year} historical season`,
+        type: year === 2023 ? "initiative" as const : "season" as const, startDate: dates[0] ?? null, endDate: dates.at(-1) ?? null,
+        description: year === 2023 ? "Purchase history only; the provided sources do not include a 2023 meeting plan." : `Meeting-plan and purchase records for ${year}. Date bounds show source activity only, not official FRC season dates.`,
+      };
+    }),
+    { id: season.id, name: season.name, type: season.type as SeasonType, startDate: season.firstDatedActivity, endDate: season.lastDatedActivity, description: `${season.dateBoundaryBasis} Date bounds represent documented activity only; official season boundaries were not stated.` },
+  ];
   const projects = source.projects.map((project) => ({
     id: project.id, teamId: project.teamId, seasonId: project.seasonId, name: project.name, projectType: project.projectType as ProjectType,
     description: `${project.description} Status is active based on documented 2026 activity; individual ownership is unassigned where sources do not identify it.`, status: "active" as const,
+  }));
+  const historicalProjects = historicalYears.map((year) => ({
+    id: `project-operations-${year}`, teamId: "meco-robotics", seasonId: `season-${year}-meco`, name: "Operations", projectType: "operations" as const,
+    description: `Source grouping for historical ${year} records; separate project workstreams were not inferred.`, status: "active" as const,
   }));
   const members = source.members.map((member) => ({
     id: member.id, name: pseudonymFor(member.id.replace(/^member-/, "")), email: "", role: roleByMemberId[member.id] ?? "unknown", elevated: false,
@@ -140,6 +225,13 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       rsvpsYes: 0, rsvpsMaybe: 0, openSignIns: 0,
     };
   }).sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.dateLabel.localeCompare(b.dateLabel));
+  const historicalMeetings = historicalPlans.entries.map((entry, index) => ({
+    id: `meeting-${entry.date.replaceAll("-", "")}-${index + 1}`, title: `MECO meeting plan — ${entry.sourceDate}`,
+    meetingType: "general" as const, seasonId: entry.date.slice(0, 4) === "2024" ? "season-2024-meco" : "season-2025-meco",
+    projectIds: [], date: sourceDate(entry.date), dateLabel: entry.sourceDate, startAt: null, endAt: null, location: "",
+    description: [entry.source, entry.dateNote, entry.actionsAndAgenda.length ? `Planned agenda:\n${entry.actionsAndAgenda.map((line) => `• ${safeHistoricalText(line)}`).join("\n")}` : "", entry.meetingNotes.length ? `Notes:\n${entry.meetingNotes.map((line) => `• ${safeHistoricalText(line)}`).join("\n")}` : ""].filter(Boolean).join("\n\n"),
+    rsvpsYes: 0, rsvpsMaybe: 0, openSignIns: 0,
+  }));
   const meetingIds = new Set(meetings.map((meeting) => meeting.id));
   const taskCandidates = [...source.taskCandidates].sort((left, right) =>
     (left.sourceDate ?? "9999-99-99").localeCompare(right.sourceDate ?? "9999-99-99"),
@@ -194,7 +286,8 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     date: event.startDate ?? null, startAt: null, endAt: null, location: event.location ?? "", eventType: event.eventType as ScheduleEvent["eventType"],
   })).sort((left, right) => (left.date ?? "9999").localeCompare(right.date ?? "9999") || left.title.localeCompare(right.title));
   const vendorNames = [...new Set(source.materials.map((material) => material.vendorName).filter((name): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b));
-  const vendors = vendorNames.map((name) => ({ id: `vendor-${slug(name)}`, name, website: null, isArchived: false }));
+  const purchaseVendors = purchaseSource.flatMap((item) => item.vendor ? [String(item.vendor)] : []);
+  const vendors = [...new Set([...vendorNames, ...purchaseVendors])].sort((a, b) => a.localeCompare(b)).map((name) => ({ id: `vendor-${slug(name)}`, name, website: null, isArchived: false }));
   const imageBySku = new Map(source.verifiedProductImages.filter((image) => image.sku).map((image) => [String(image.sku).toLocaleLowerCase(), image.imageUrl]));
   const imageByProduct = new Map(source.verifiedProductImages.map((image) => [String(image.product).toLocaleLowerCase(), image.imageUrl]));
   const materials = source.materials.map((material) => {
@@ -209,12 +302,55 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       photoUrl: material.photoUrl ?? (material.sku ? imageBySku.get(String(material.sku).toLocaleLowerCase()) : undefined) ?? imageByProduct.get(String(material.name).toLocaleLowerCase()),
     };
   });
+  const purchaseSeasonId = (sheet: string) => sheet === "2023 offseason" ? "season-2023-meco" : sheet.startsWith("2024") ? "season-2024-meco" : sheet.startsWith("2025") ? "season-2025-meco" : season.id;
+  const materialByPurchaseId = new Map(source.materials.flatMap((material) => material.purchaseIds.map((id: string) => [id, material] as const)));
+  const receiptsByPurchaseId = new Map<string, Array<{ id: string; operationId: string; quantity: number; location: string; receivedAt: string | null; partInstanceIds: string[] }>>();
+  for (const movement of [...source.openingMaterialTransactions, ...source.unquantifiedReceivedRows.map((row) => ({ id: `unknown-receipt-${row.purchaseId}`, idempotencyKey: `seed:${row.purchaseId}`, purchaseId: row.purchaseId, materialId: row.materialId, quantityDelta: null, sourceEvidence: { sheet: row.sourceSheet, row: row.sourceRow } }))]) {
+    if (!movement.purchaseId) continue;
+    const item = purchaseSource.find((candidate) => candidate.id === movement.purchaseId);
+    const receipts = receiptsByPurchaseId.get(movement.purchaseId) ?? [];
+    if (movement.quantityDelta === null || movement.quantityDelta === undefined) continue;
+    receipts.push({ id: `receipt-${movement.purchaseId}`, operationId: movement.idempotencyKey, quantity: movement.quantityDelta, location: materialByPurchaseId.get(movement.purchaseId)?.location ?? "Not specified", receivedAt: item?.receivedAt ?? null, partInstanceIds: [] });
+    receiptsByPurchaseId.set(movement.purchaseId, receipts);
+  }
+  const purchaseItems = purchaseSource.map((row) => {
+    const material = materialByPurchaseId.get(row.id);
+    const status = String(row.status ?? "").trim();
+    const canceled = /^canceled|cancelled$/i.test(status);
+    const receipts = receiptsByPurchaseId.get(row.id) ?? [];
+    const received = receipts.length > 0 || /^arrived/i.test(status) || Boolean(row.receivedAt);
+    const ordered = received || Boolean(row.orderedAt) || /^ordered|shipped/i.test(status);
+    const vendorId = row.vendor ? `vendor-${slug(String(row.vendor))}` : null;
+    const amount = typeof row.total === "number" && row.total >= 0 ? { amount: row.total, currency: "USD" } : null;
+    const quoteId = `quote-${row.id}`;
+    const quotes = vendorId && amount ? [{ id: quoteId, vendorId, reference: row.orderNumber ? String(row.orderNumber) : null, amount, ...(row.url ? { url: String(row.url) } : {}), quotedAt: sourceDate(row.requestedAt) }] : [];
+    return {
+      id: row.id, taskId: null, seasonId: purchaseSeasonId(row.sourceSheet), projectId: `project-operations-${purchaseSeasonId(row.sourceSheet).slice(7, 11)}`,
+      sourceStatus: row.status == null ? null : String(row.status),
+      sourceReference: `MECO Purchase List.xlsx — ${row.sourceSheet}, row ${row.sourceRow}`,
+      kind: "cots-goods" as const, partDefinitionId: null, materialId: material?.id ?? null, title: safeText(String(row.title)),
+      quantity: typeof row.quantity === "number" ? row.quantity : null, quotes, selectedQuoteId: quotes.length ? quoteId : null,
+      approvalStatus: canceled ? "rejected" as const : ordered ? "approved" as const : "pending" as const,
+      approvedById: null, approvedAt: null, purchaseOrderNumber: row.orderNumber ? String(row.orderNumber) : null,
+      orderStatus: canceled ? "cancelled" as const : received ? "delivered" as const : /^shipped/i.test(status) ? "shipped" as const : ordered ? "ordered" as const : "not-ordered" as const,
+      finalCost: null, expectedDeliveryDate: sourceDate(row.expectedDeliveryDate), trackingNumber: null, trackingUrl: null,
+      orderedAt: sourceDate(row.orderedAt), deliveredAt: sourceDate(row.receivedAt), receipts,
+    };
+  });
+  const artifacts = sourceSupplement.artifacts.map(({ id, ...artifact }) => ({ ...artifactSchema.parse(artifact), id, updatedAt: artifact.updatedAt ?? seedRecordedAt }));
+  const reports = sourceSupplement.reports.map(({ id, ...report }) => ({ ...reportSchema.parse(report), id }));
+  const qaReports = reports.filter((report) => report.reportType === "qa");
+  const teamReports = reports.filter((report) => report.reportType !== "qa");
+  const purchaseIdSet = new Set(purchaseItems.map((item) => item.id));
+  const receiptIdByOperation = new Map(purchaseItems.flatMap((item) => (item.receipts ?? []).map((receipt) => [receipt.operationId, receipt.id] as const)));
   const transactionRows = [
     ...source.openingMaterialTransactions.map((row) => ({
       id: row.id, operationId: row.idempotencyKey, materialId: row.materialId, movementType: "receipt" as const,
       quantityDelta: row.quantityDelta, reason: `${row.reason} Source: ${row.sourceEvidence.sheet} row ${row.sourceEvidence.row}.`,
       recordedAt: seedRecordedAt, actorMemberId: null, occurredAt: sourceDate(row.occurredDate),
       sourceReference: `MECO Purchase List.xlsx — ${row.sourceEvidence.sheet}, row ${row.sourceEvidence.row}`,
+      ...(row.purchaseId && purchaseIdSet.has(row.purchaseId) ? { purchaseItemId: row.purchaseId } : {}),
+      ...(receiptIdByOperation.has(row.idempotencyKey) ? { purchaseReceiptId: receiptIdByOperation.get(row.idempotencyKey)! } : {}),
       ...(row.taskId ? { taskId: row.taskId } : {}), ...(row.projectId ? { projectId: row.projectId } : {}),
     })),
     ...source.unquantifiedReceivedRows.map((row) => ({
@@ -222,6 +358,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       movementType: "receipt" as const, quantityDelta: null,
       reason: `${row.reason} Source: ${row.sourceSheet} row ${row.sourceRow}.`, recordedAt: seedRecordedAt, actorMemberId: null,
       occurredAt: null, sourceReference: `MECO Purchase List.xlsx — ${row.sourceSheet}, row ${row.sourceRow}`,
+      ...(purchaseIdSet.has(row.purchaseId) ? { purchaseItemId: row.purchaseId } : {}),
     })),
   ];
   const componentsBySubsystem = new Map<string, typeof source.stepComponents>();
@@ -252,11 +389,10 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   });
   Object.assign(snapshot, {
     snapshotSchemaVersion: 3,
-    seasons: [{ id: season.id, name: season.name, type: season.type as SeasonType, startDate: season.firstDatedActivity, endDate: season.lastDatedActivity, description: `${season.dateBoundaryBasis} Date bounds represent documented activity only; official season boundaries were not stated.` }],
-    projects, workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
+    seasons, projects: [...projects, ...historicalProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
     subsystems: [...subsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
-    artifacts: [], partDefinitions: [], partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
-    qaReports: [], teamReports: [], qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks: [], workLogs: [],
-    meetings, events, attendanceRecords: [], purchaseItems: [], escalations: [], actions: [],
+    artifacts, partDefinitions: [], partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
+    qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks: [], workLogs: [],
+    meetings: [...meetings, ...historicalMeetings].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.title.localeCompare(b.title)), events, attendanceRecords: [], purchaseItems, escalations: [], actions: [],
   } satisfies Partial<PlatformSnapshot>);
 }

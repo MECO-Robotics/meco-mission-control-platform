@@ -3354,7 +3354,7 @@ export async function registerRoutes(
           (parsed.data.kind !== undefined && parsed.data.kind !== currentItem.kind) ||
           (parsed.data.partDefinitionId !== undefined && parsed.data.partDefinitionId !== currentItem.partDefinitionId)) &&
           nextItemShape.kind !== "manufacturing-service" && nextItemShape.partDefinitionId !== null &&
-          (!Number.isSafeInteger(nextItemShape.quantity) || nextItemShape.quantity <= 0)) {
+          (nextItemShape.quantity === null || !Number.isSafeInteger(nextItemShape.quantity) || nextItemShape.quantity <= 0)) {
         return reply.code(400).send({ message: "Discrete part purchase quantity must be a positive whole number." });
       }
 
@@ -3528,6 +3528,7 @@ export async function registerRoutes(
         if (result.error === "not-ordered") return reply.code(409).send({ message: "Only ordered purchases can be received." });
         if (result.error === "location-conflict") return reply.code(409).send({ message: "Material stock already exists at a different location; receive it at the existing stock location." });
         if (result.error === "missing-part-definition") return reply.code(409).send({ message: "The purchased part definition no longer exists." });
+        if (result.error === "unknown-purchase-quantity") return reply.code(409).send({ message: "This source purchase has no recorded quantity, so it cannot be received until its quantity is verified." });
         return reply.code(400).send({ message: "Receipt quantity must be positive and finite; part-instance receipts require a whole number." });
       }
       return { item: result.item, receipt: result.receipt };

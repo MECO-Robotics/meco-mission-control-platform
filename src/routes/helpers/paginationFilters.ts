@@ -75,7 +75,7 @@ export function filterPurchaseItemsForPerson(personId: string | null) {
 
   const tasks = new Map(getTasks().map((task) => [task.id, task] as const));
   return items.filter((item) => {
-    const task = tasks.get(item.taskId);
+    const task = item.taskId ? tasks.get(item.taskId) : undefined;
     return task?.requestedById === personId || task?.ownerId === personId || task?.assigneeIds.includes(personId);
   });
 }

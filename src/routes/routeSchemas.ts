@@ -550,7 +550,12 @@ const purchaseItemFieldsSchema = z.object({
 export const purchaseItemSchema = purchaseItemFieldsSchema;
 
 export const purchaseItemRecordSchema = purchaseItemFieldsSchema.extend({
-  quantity: z.number().min(1),
+  taskId: z.string().trim().min(1).nullable(),
+  seasonId: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1).nullable().optional(),
+  sourceStatus: z.string().nullable().optional(),
+  sourceReference: z.string().optional(),
+  quantity: z.number().min(1).nullable(),
 });
 
 export const manufacturingProcessCreateSchema = z.object({
@@ -581,7 +586,7 @@ export const purchaseReceiptRecordSchema = z.object({
   operationId: z.string().min(1).max(200).optional(),
   quantity: z.number().finite().positive().max(MAX_RECEIPT_QUANTITY),
   location: z.string(),
-  receivedAt: z.string(),
+  receivedAt: z.string().nullable(),
   partInstanceIds: z.array(z.string()),
 }).strict();
 
