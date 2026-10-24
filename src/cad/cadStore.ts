@@ -8,6 +8,7 @@ import type {
   CadPartInstance,
   CadSnapshot,
   CadSnapshotMapping,
+  CadUploadedFile,
 } from "./cadTypes";
 import type {
   CadAssemblyCreateInput,
@@ -37,6 +38,7 @@ interface CadRuntimeState {
   mappingRules: CadMappingRule[];
   snapshotMappings: CadSnapshotMapping[];
   warnings: CadImportWarning[];
+  uploadedFiles: CadUploadedFile[];
 }
 
 function buildInitialState(): CadRuntimeState {
@@ -49,6 +51,7 @@ function buildInitialState(): CadRuntimeState {
     mappingRules: [],
     snapshotMappings: [],
     warnings: [],
+    uploadedFiles: [],
   };
 }
 
@@ -69,6 +72,35 @@ export function createCadRuntimeStore(): CadStore & { reset(): void } {
   const state = buildInitialState();
   let finalizeSnapshotFailureForTest: Error | null = null;
   const store: CadStore & { reset(): void } = {
+    async transaction(action) {
+      return action(store);
+    },
+    createUploadedFile(input) {
+      const item: CadUploadedFile = {
+        ...input,
+        id: nextId("cad-file", state.uploadedFiles.map(({ id }) => id)),
+        originalContents: Uint8Array.from(input.originalContents),
+        optimizedContents: Uint8Array.from(input.optimizedContents),
+        createdAt: nowIso(),
+      };
+      state.uploadedFiles.push(item);
+      return { id: item.id };
+    },
+    findUploadedFile(id) {
+      const item = state.uploadedFiles.find((file) => file.id === id);
+      return item ? structuredClone(item) : null;
+    },
+    findLatestOptimizedPreview(filter) {
+      const item = filterProjectSeason(state.uploadedFiles, filter.projectId, filter.seasonId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+      return item ? {
+        originalFilename: item.originalFilename,
+        optimizedFilename: item.optimizedFilename,
+        optimizedContentType: item.optimizedContentType,
+        optimizedSizeBytes: item.optimizedSizeBytes,
+        optimizedContents: Uint8Array.from(item.optimizedContents),
+      } : null;
+    },
     createImportRun(input: CadImportRunCreateInput) {
       const timestamp = nowIso();
       const item: CadImportRun = {

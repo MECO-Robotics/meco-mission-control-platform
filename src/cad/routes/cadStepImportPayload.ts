@@ -7,6 +7,18 @@ import { assertValidStepUpload, formatStepUploadLimit } from "../validation/step
 
 const maxStepUploadBytes = cadStepUploadConfig.maxBytes;
 
+interface StepImportPayload {
+  fileName: string;
+  fileText: string;
+  label?: string;
+  projectId?: string | null;
+  seasonId?: string | null;
+  requestedBy?: string | null;
+  allowPlaceholder?: boolean;
+  originalFileBytes: Buffer;
+  optimizedModel?: { filename: string; contentType: string; bytes: Buffer };
+}
+
 function isMultipartFileTooLargeError(error: unknown) {
   return (
     typeof error === "object" &&
@@ -41,7 +53,7 @@ function optionalMultipartBoolean(value: string | undefined) {
   return trimmed;
 }
 
-export async function readStepImportPayload(request: FastifyRequest) {
+export async function readStepImportPayload(request: FastifyRequest): Promise<StepImportPayload> {
   const contentType = String(request.headers["content-type"] ?? "");
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
     const parsed = cadStepImportJsonSchema.safeParse(request.body);
@@ -49,7 +61,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
       throw new CadImportError("STEP import payload is invalid.");
     }
     assertValidStepUpload({ fileName: parsed.data.fileName, fileText: parsed.data.fileText, maxBytes: maxStepUploadBytes });
-    return parsed.data;
+    return { ...parsed.data, originalFileBytes: Buffer.from(parsed.data.fileText, "utf8") };
   }
 
   const multipartRequest = request as FastifyRequest & {
@@ -68,22 +80,29 @@ export async function readStepImportPayload(request: FastifyRequest) {
     let fileName: string | null = null;
     let mimeType: string | undefined;
     let fileText: string | null = null;
+    let originalFileBytes: Buffer | null = null;
+    let optimizedModel: { filename: string; contentType: string; bytes: Buffer } | undefined;
 
-    for await (const part of multipartRequest.parts({ limits: { fileSize: maxStepUploadBytes, files: 1 } })) {
+    for await (const part of multipartRequest.parts({ limits: { fileSize: maxStepUploadBytes, files: 2 } })) {
       if (part.type === "field") {
         if (typeof part.value === "string") {
           fields[part.fieldname] = part.value;
         }
         continue;
       }
-      if (part.fieldname !== "file" || !part.toBuffer) {
+      if (!part.toBuffer) {
         await consumeMultipartFile(part);
         continue;
       }
-      mimeType = part.mimetype;
       const buffer = await part.toBuffer();
-      fileName = part.filename;
-      fileText = buffer.toString("utf8");
+      if (part.fieldname === "file") {
+        mimeType = part.mimetype;
+        fileName = part.filename;
+        fileText = buffer.toString("utf8");
+        originalFileBytes = buffer;
+      } else if (part.fieldname === "optimizedModel") {
+        optimizedModel = { filename: part.filename, contentType: part.mimetype ?? "", bytes: buffer };
+      }
     }
 
     if (!fileName || fileText === null) {
@@ -103,7 +122,11 @@ export async function readStepImportPayload(request: FastifyRequest) {
       throw new CadImportError("STEP import payload is invalid.");
     }
     assertValidStepUpload({ fileName: parsed.data.fileName, fileText: parsed.data.fileText, mimeType, maxBytes: maxStepUploadBytes });
-    return parsed.data;
+    return {
+      ...parsed.data,
+      originalFileBytes: originalFileBytes ?? Buffer.from(parsed.data.fileText, "utf8"),
+      optimizedModel,
+    };
   } catch (error) {
     if (isMultipartFileTooLargeError(error)) {
       throw new CadImportError(
