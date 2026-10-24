@@ -78,6 +78,7 @@ export type MaterialCategory =
   | "electronics"
   | "hardware"
   | "consumable"
+  | "tool"
   | "other";
 export type ArtifactKind = "document" | "evidence" | "media" | "other";
 export type ArtifactStatus = "draft" | "in-review" | "published" | "archived";

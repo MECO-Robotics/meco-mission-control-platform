@@ -599,6 +599,7 @@ const materialFieldsSchema = z.object({
     "electronics",
     "hardware",
     "consumable",
+    "tool",
     "other",
   ]),
   unit: z.string().trim().min(1),
