@@ -131,10 +131,16 @@ function classifyMaterial(name: string): "metal" | "plastic" | "filament" | "ele
 // machined, sewn, printed, or terminated before it becomes a robot component.
 function isStockMaterial(name: string): boolean {
   const text = name.toLocaleLowerCase();
+  if (isShopTool(name)) return false;
   if (/wheel tread|cat'?s? (?:tounge|tongue) tape|low friction tape|heat shrink|heat-shrink/.test(text)) return true;
   if (/\bled\b|paper plates?|shaft collar|versaroller|roller hub|sprocket|gear|bearing|bracket|support|mount|hub|plug|wheel|block|\bcable\b|\bcord\b|connector|terminal|\bchain drive\b/.test(text)) return false;
   if (/\b(?:open[- ]ended|open end)\b.*\btiming belt\b|\bround belting\b|\bpolycord\b|\broller chain\b.*\b(?:feet|ft)\b|\b(?:hook and loop|velcro).*\b\d+\s*(?:yd|yds|ft|feet)\b|\bsew on velcro\b|\b\d+\s*(?:awg|gauge)\b.*\bwire\b|\bcan wire\b|\bbonded wire\b|\bnylon fabric\b|\bbumper fabric\b|\bhardware cloth\b|\bfilament\b|\bpet[- ]?g\b|\bmagnet sticks?\b/.test(text)) return true;
   return /\bshaft(?:s)?\b|\bhex (?:lite )?(?:stock|bar)\b|\bchurro\b|\b(?:round |box |aluminum |aluminium )?tube(?:s| stock| extrusion)?\b|\btubing\b|\bextrusion(?:s)?\b|\b(?:aluminum |aluminium |steel |polycarbonate |polycarb )?plate(?:s| stock)?\b|\b(?:aluminum|aluminium|polycarbonate|polycarb|plastic|acrylic)\b.*\bsheets?\b|\bsheets?\b.*\b(?:aluminum|aluminium|polycarbonate|polycarb|plastic|acrylic)\b|\bbar stock\b/.test(text) || /^polycarb(?:onate)?$/.test(text);
+}
+
+function isShopTool(name: string): boolean {
+  if (/filament|printer paper|label maker (?:ribbon|tape)|(?:hacksaw|bandsaw|drop saw|saw) blades?|\bdrill bits?\b|countersink bits?|thread taps?|file brushes|shop vac carpet attachment/i.test(name)) return false;
+  return /center punch|torque wrench|hot ?glue gun|\ballen keys?\b|needle[- ]nose pliers|wood chisel|rivet removal tool|wire stripper|wire crimper|\bcalipers?\b|rubber mallet|cordless vacuum|shop vac|battery discharger|digital multimeter|cordless rivet gun|solder sucker|fume extractor|drill press|battery charger|cordless miter saw|locking clamps|\btape measures?\b|\bwrenches?\b|\bclamps?\b|\bvises?\b|\bvice\b|drill bushings?|chain tools?|label maker(?:$|[^ -])|\b(?:3d )?printer\b/i.test(name);
 }
 
 function isRobotPart(name: string): boolean {
@@ -419,12 +425,14 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const imageBySku = new Map(source.verifiedProductImages.filter((image) => image.sku).map((image) => [String(image.sku).toLocaleLowerCase(), image.imageUrl]));
   const imageByProduct = new Map(source.verifiedProductImages.map((image) => [String(image.product).toLocaleLowerCase(), image.imageUrl]));
   const stockSources = source.materials.filter((material) => isStockMaterial(material.name));
-  const partSources = source.materials.filter((material) => !isStockMaterial(material.name) && isRobotPart(material.name));
-  const materials = stockSources.map((material) => {
+  const toolSources = source.materials.filter((material) => isShopTool(material.name));
+  const partSources = source.materials.filter((material) => !isStockMaterial(material.name) && !isShopTool(material.name) && isRobotPart(material.name));
+  const catalogStockSources = [...stockSources, ...toolSources];
+  const materials = catalogStockSources.map((material) => {
     const sourceRows = material.sourceEvidence.map((row) => `${row.sheet} row ${row.row}${row.receivedDate ? ` received ${row.receivedDate}` : ""}`).join("; ");
     const unresolved = [material.unit ? "" : "Unit not specified by purchase source.", material.location ? "" : "Storage location not stated.", material.reorderPoint == null ? "Reorder point not stated." : ""].filter(Boolean).join(" ");
     return {
-      id: material.id, name: safeText(material.name), category: material.category ?? classifyMaterial(material.name),
+      id: material.id, name: safeText(material.name), category: isShopTool(material.name) ? "tool" as const : material.category ?? classifyMaterial(material.name),
       unit: material.unit ?? "Not specified", onHandQuantity: material.quantityKnown ? material.quantity : null,
       reorderPoint: material.reorderPoint, location: material.location ?? "Not specified",
       preferredVendorId: material.vendorName ? `vendor-${slug(material.vendorName)}` : null,
@@ -446,7 +454,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     };
   });
   const purchaseSeasonId = (sheet: string) => sheet === "2023 offseason" ? "season-2023-meco" : sheet.startsWith("2024") ? "season-2024-meco" : sheet.startsWith("2025") ? "season-2025-meco" : sheet === "FY 2027" ? "season-2027-meco" : season.id;
-  const materialByPurchaseId = new Map(stockSources.flatMap((material) => material.purchaseIds.map((id: string) => [id, material] as const)));
+  const materialByPurchaseId = new Map(catalogStockSources.flatMap((material) => material.purchaseIds.map((id: string) => [id, material] as const)));
   const partByPurchaseId = new Map(partSources.flatMap((item) => item.purchaseIds.map((id: string) => [id, item] as const)));
   const receiptsByPurchaseId = new Map<string, Array<{ id: string; operationId: string; quantity: number; location: string; receivedAt: string | null; partInstanceIds: string[] }>>();
   for (const movement of [...source.openingMaterialTransactions, ...source.unquantifiedReceivedRows.map((row) => ({ id: `unknown-receipt-${row.purchaseId}`, idempotencyKey: `seed:${row.purchaseId}`, purchaseId: row.purchaseId, materialId: row.materialId, quantityDelta: null, sourceEvidence: { sheet: row.sourceSheet, row: row.sourceRow } }))]) {

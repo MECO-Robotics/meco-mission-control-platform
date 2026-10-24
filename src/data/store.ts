@@ -2303,6 +2303,7 @@ export function createMaterialTransaction(
 ) {
   const material = currentSnapshot.materials.find((candidate) => candidate.id === materialId);
   if (!material) return { error: "not-found" as const };
+  if (material.category === "tool" && input.movementType === "consumption") return { error: "tools-not-consumable" as const };
   const prior = currentSnapshot.materialTransactions.find((transaction) => transaction.materialId === materialId && transaction.operationId === input.operationId);
   const sign = input.movementType === "consumption" || (input.movementType === "adjustment" && input.adjustmentDirection === "decrease") ? -1 : 1;
   const quantityDelta = Number((input.quantity * sign).toFixed(12));

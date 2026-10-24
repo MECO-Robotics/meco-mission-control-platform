@@ -3298,8 +3298,15 @@
         "type": "object",
         "properties": {
           "taskId": {
-            "type": "string",
-            "minLength": 1
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "kind": {
             "type": "string",
@@ -3335,8 +3342,15 @@
             ]
           },
           "quantity": {
-            "type": "number",
-            "minimum": 1
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "quotes": {
             "type": "array",
@@ -3567,6 +3581,34 @@
               }
             ]
           },
+          "seasonId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceReference": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -3592,7 +3634,14 @@
                   "type": "string"
                 },
                 "receivedAt": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "partInstanceIds": {
                   "type": "array",
