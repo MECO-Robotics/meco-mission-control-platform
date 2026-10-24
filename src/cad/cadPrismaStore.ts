@@ -9,6 +9,7 @@ import type {
   CadPartInstance,
   CadSnapshot,
   CadSnapshotMapping,
+  CadUploadedFile,
 } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
 import { assertAcyclicAssemblyParents } from "./cadAssemblyParentValidation";
@@ -169,8 +170,55 @@ function warningFromDb(item: Awaited<ReturnType<PrismaClient["cadImportWarning"]
   };
 }
 
+function uploadedFileFromDb(item: Awaited<ReturnType<PrismaClient["cadUploadedFile"]["create"]>>): CadUploadedFile {
+  return {
+    ...item,
+    originalContents: new Uint8Array(item.originalContents),
+    optimizedContents: new Uint8Array(item.optimizedContents),
+    createdAt: item.createdAt.toISOString(),
+  };
+}
+
 export function createPrismaCadStore(prisma: PrismaClient): CadStore {
   return {
+    async transaction(action) {
+      return prisma.$transaction(
+        (tx) => action(createPrismaCadStore(tx as PrismaClient)),
+        { maxWait: 15_000, timeout: 120_000 },
+      );
+    },
+    async createUploadedFile(input) {
+      const item = await prisma.cadUploadedFile.create({
+        data: {
+          ...input,
+          originalContents: new Uint8Array(input.originalContents),
+          optimizedContents: new Uint8Array(input.optimizedContents),
+        },
+        select: { id: true },
+      });
+      return { id: item.id };
+    },
+    async findUploadedFile(id) {
+      const item = await prisma.cadUploadedFile.findUnique({ where: { id } });
+      return item ? uploadedFileFromDb(item) : null;
+    },
+    async findLatestOptimizedPreview(filter) {
+      const item = await prisma.cadUploadedFile.findFirst({
+        where: {
+          projectId: filter.projectId ?? undefined,
+          seasonId: filter.seasonId ?? undefined,
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          originalFilename: true,
+          optimizedFilename: true,
+          optimizedContentType: true,
+          optimizedSizeBytes: true,
+          optimizedContents: true,
+        },
+      });
+      return item ? { ...item, optimizedContents: new Uint8Array(item.optimizedContents) } : null;
+    },
     async createImportRun(input) {
       return importRunFromDb(await prisma.cadImportRun.create({ data: input as any }));
     },

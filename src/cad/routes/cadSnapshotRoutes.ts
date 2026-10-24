@@ -7,6 +7,40 @@ import { registerCadSnapshotActionRoutes } from "./cadSnapshotActionRoutes";
 import { buildTree, groupedSnapshotMappings, snapshotMappings } from "./cadSnapshotViewService";
 
 export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+  app.get<{ Querystring: { projectId?: string; seasonId?: string } }>("/api/cad/optimized-preview", async (request, reply) => {
+    if (!requireApiSession(request, reply)) return;
+    if (!app.cadStore.findLatestOptimizedPreview) {
+      return reply.code(503).send({ message: "CAD file storage is unavailable." });
+    }
+    const file = await app.cadStore.findLatestOptimizedPreview({
+      projectId: request.query.projectId || undefined,
+      seasonId: request.query.seasonId || undefined,
+    });
+    if (!file) return reply.code(404).send({ message: "No optimized CAD preview is available for this project." });
+    return reply
+      .header("Content-Type", file.optimizedContentType)
+      .header("Content-Length", file.optimizedSizeBytes)
+      .header("Cache-Control", "private, no-store")
+      .header("X-CAD-Source-Name", encodeURIComponent(file.originalFilename))
+      .send(Buffer.from(file.optimizedContents));
+  });
+
+  app.get<{ Params: { assetId: string } }>("/api/cad/assets/:assetId/source", async (request, reply) => {
+    if (!requireApiSession(request, reply)) return;
+    if (!app.cadStore.findUploadedFile) {
+      return reply.code(503).send({ message: "CAD file storage is unavailable." });
+    }
+    const file = await app.cadStore.findUploadedFile(request.params.assetId);
+    if (!file) return reply.code(404).send({ message: "The uploaded CAD source was not found." });
+    const filename = file.originalFilename.replace(/[\r\n"\\]/g, "_");
+    return reply
+      .header("Content-Type", file.originalContentType)
+      .header("Content-Length", file.originalSizeBytes)
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .header("Cache-Control", "private, no-store")
+      .send(Buffer.from(file.originalContents));
+  });
+
   app.get("/api/cad/import-runs", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;

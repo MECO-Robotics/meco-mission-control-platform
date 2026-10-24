@@ -75,7 +75,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(multipart, {
     limits: {
       fileSize: cadStepUploadConfig.maxBytes,
-      files: 1,
+      files: 2,
     },
   });
 

@@ -264,6 +264,26 @@ model CadImportRun {
   @@index([createdAt])
 }
 
+model CadUploadedFile {
+  id                   String   @id @default(cuid())
+  originalFilename     String
+  originalContentType   String
+  originalSizeBytes     Int
+  originalSha256        String
+  originalContents      Bytes
+  optimizedFilename     String
+  optimizedContentType  String
+  optimizedSizeBytes    Int
+  optimizedSha256       String
+  optimizedContents     Bytes
+  projectId             String?
+  seasonId              String?
+  createdBy             String?
+  createdAt             DateTime @default(now())
+
+  @@index([projectId, seasonId, createdAt])
+}
+
 model OnshapeApiRequestLog {
   id                  String        @id @default(cuid())
   importRunId         String?

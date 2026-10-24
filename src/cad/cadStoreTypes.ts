@@ -9,6 +9,9 @@ import type {
   CadPartInstance,
   CadSnapshot,
   CadSnapshotMapping,
+  CadUploadedFile,
+  CadUploadedFileCreateInput,
+  CadOptimizedPreview,
 } from "./cadTypes";
 
 export type Awaitable<T> = T | Promise<T>;
@@ -44,6 +47,10 @@ export type CadSnapshotMappingPatchInput = Partial<Omit<CadSnapshotMapping, "id"
 export type CadWarningCreateInput = Omit<CadImportWarning, "id" | "createdAt">;
 
 export interface CadStore {
+  transaction?<T>(action: (store: CadStore) => Promise<T>): Promise<T>;
+  createUploadedFile?(input: CadUploadedFileCreateInput): Awaitable<Pick<CadUploadedFile, "id">>;
+  findUploadedFile?(id: string): Awaitable<CadUploadedFile | null>;
+  findLatestOptimizedPreview?(filter: { projectId?: string | null; seasonId?: string | null }): Awaitable<CadOptimizedPreview | null>;
   createImportRun(input: CadImportRunCreateInput): Awaitable<CadImportRun>;
   updateImportRun(id: string, patch: CadImportRunPatchInput): Awaitable<CadImportRun | null>;
   listImportRuns(filter?: {
