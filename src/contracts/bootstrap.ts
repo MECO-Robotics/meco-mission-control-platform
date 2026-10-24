@@ -54,7 +54,7 @@ const partInstanceBootstrapSchema = z.object({
   photoUrl: z.string().optional(), ...pmCadProvenanceRecordSchema.shape,
 }).strict();
 const materialBootstrapSchema = z.object({
-  id: z.string(), name: z.string(), category: z.enum(["metal", "plastic", "filament", "electronics", "hardware", "consumable", "other"]),
+  id: z.string(), name: z.string(), category: z.enum(["metal", "plastic", "filament", "electronics", "hardware", "consumable", "tool", "other"]),
   unit: z.string(), onHandQuantity: z.number().nullable(), reorderPoint: z.number().nullable(), location: z.string(), preferredVendorId: z.string().nullable(), notes: z.string(), photoUrl: z.string().optional(),
 }).strict();
 const materialTransactionSchema = z.object({ id: z.string(), operationId: z.string(), materialId: z.string(), movementType: z.enum(["opening-balance", "receipt", "consumption", "adjustment"]), quantityDelta: z.number().finite().refine((value) => value !== 0).nullable(), reason: z.string(), recordedAt: z.string(), actorMemberId: z.string().nullable(), taskId: z.string().optional(), projectId: z.string().optional(), purchaseItemId: z.string().optional(), purchaseReceiptId: z.string().optional(), occurredAt: z.string().date().nullable().optional(), sourceReference: z.string().optional() }).strict();
