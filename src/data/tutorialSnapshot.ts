@@ -49,16 +49,18 @@ export function createTutorialSnapshot(now = new Date()): PlatformSnapshot {
     season.startDate = new Date(seasonStart).toISOString().slice(0, 10);
     season.endDate = new Date(seasonEnd - DAY).toISOString().slice(0, 10);
   }
-  for (const task of copy.tasks) {
+  for (const [index, task] of copy.tasks.entries()) {
     task.actualHours = copy.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0);
-  }
-  // Keep a few assigned examples overdue after tutorial dates roll forward.
-  // Otherwise the compressed historical timeline can place every due date on
-  // today, hiding overdue workload from the demo views.
-  for (const task of copy.tasks.filter((candidate) => ["travel-pack-finalize", "intake-guard", "auto-safety-review"].includes(candidate.id))) {
-    const yesterday = new Date(today - DAY).toISOString().slice(0, 10);
-    task.startDate = yesterday;
-    task.dueDate = yesterday;
+    const source = snapshot.tasks[index]!;
+    const startDate = Date.parse(source.startDate);
+    const dueDate = Date.parse(source.dueDate);
+    // Keep assigned overdue examples due yesterday while preserving their spans.
+    const mappedDueDate = ["travel-pack-finalize", "intake-guard", "auto-safety-review"].includes(task.id) ? today - DAY : Date.parse(task.dueDate);
+    if (!Number.isFinite(startDate) || !Number.isFinite(dueDate) || !Number.isFinite(mappedDueDate)) continue;
+    // Translate both endpoints together so date interpolation cannot stretch work.
+    const shift = mappedDueDate - dueDate;
+    task.startDate = new Date(startDate + shift).toISOString().slice(0, 10);
+    task.dueDate = new Date(dueDate + shift).toISOString().slice(0, 10);
   }
   // The availability view requires attendance today, not just roster membership.
   for (const member of copy.members.filter((member) => member.id.startsWith("demo-"))) {

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { taskTargetsSchema } from "../domain/taskTargets";
+import { RESPONSIBLE_GROUP_ICONS } from "../domain/types";
+
+export const hexColorSchema = z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/);
+export const responsibleGroupIconSchema = z.enum(RESPONSIBLE_GROUP_ICONS);
 
 export const domainReferenceSchema = z.object({
   kind: z.enum(["project", "workstream", "responsible-group", "task", "subsystem", "mechanism", "part-definition", "part-instance", "material", "vendor", "manufacturing-details", "purchase-item", "meeting", "event", "milestone", "qa-request", "test-result", "report", "artifact", "qa-finding", "test-finding", "task-dependency", "risk", "design-iteration"]),
@@ -36,6 +40,8 @@ const memberFieldsSchema = z.object({
 const responsibleGroupFieldsSchema = z.object({
   seasonId: z.string().trim().min(1),
   name: z.string().trim().min(2),
+  icon: responsibleGroupIconSchema,
+  color: hexColorSchema,
   projectIds: z.array(z.string().trim().min(1)),
   memberIds: z.array(z.string().trim().min(1)),
   primaryMemberIds: z.array(z.string().trim().min(1)),
@@ -375,7 +381,7 @@ const pmCadProvenanceSchema = {
 const workstreamFieldsSchema = z.object({
   projectId: z.string().trim().min(1),
   name: z.string().trim().min(2),
-  color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  color: hexColorSchema.optional(),
   description: z.string().trim().min(3),
   isArchived: z.boolean(),
 });
@@ -405,7 +411,7 @@ const subsystemFieldsSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z0-9]{1,8}$/)
     .optional(),
-  color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  color: hexColorSchema.optional(),
   description: z.string().trim().min(3),
   photoUrl: z.string().trim(),
   iteration: iterationSchema,
