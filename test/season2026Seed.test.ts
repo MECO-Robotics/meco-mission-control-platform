@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { snapshot } from "../src/data/mockData";
+import purchaseSource from "../src/data/purchaseRecords2026.json";
 
 test("2026 seed preserves sourced activity and derives stock from receipt transactions", () => {
   const season = snapshot.seasons.find((item) => item.id === "season-2026-meco");
@@ -9,12 +10,14 @@ test("2026 seed preserves sourced activity and derives stock from receipt transa
   assert.equal(season.startDate, "2026-01-08");
   assert.equal(season.endDate, "2026-12-19");
   assert.match(season.description ?? "", /documented activity only/);
-  assert.equal(snapshot.tasks.length, 741);
+  assert.equal(snapshot.tasks.length, 709);
   assert.ok(snapshot.tasks.every((task) => task.status !== "unrecorded" && task.status !== "not-started"));
-  assert.ok(snapshot.tasks.every((task) => task.startDate && task.dueDate));
+  assert.ok(snapshot.tasks.every((task) => task.startDate && task.dueDate && task.startDate <= task.dueDate));
   assert.ok(snapshot.tasks.every((task) => /Progress context:|Status inference:/.test(task.summary)));
-  assert.equal(snapshot.meetings.length, 133);
+  assert.equal(snapshot.meetings.length, 317);
   assert.ok(snapshot.meetings.some((meeting) => meeting.date === null && meeting.dateLabel === "Tue, 11/0"));
+  assert.ok(snapshot.meetings.find((meeting) => meeting.dateLabel === "Tue, 11/0")?.description?.includes("Thank you note to organizers"));
+  assert.ok(!snapshot.tasks.some((task) => task.title === "Thank you note to organizers"));
   assert.ok(snapshot.members.every((member) => /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(member.name)));
   const sourcedRoles = new Map(snapshot.members.map(({ id, role }) => [id, role]));
   for (const id of ["member-person-13", "member-person-15", "member-person-18", "member-person-20", "member-person-21", "member-person-26", "member-person-30", "member-person-32", "member-person-33", "member-person-34"]) {
@@ -33,12 +36,31 @@ test("2026 seed preserves sourced activity and derives stock from receipt transa
   for (const dependency of snapshot.taskDependencies) {
     assert.ok(taskIndex.get(dependency.refId)! < taskIndex.get(dependency.taskId)!);
   }
-  assert.equal(snapshot.taskDependencies.length, 3);
-  assert.ok(snapshot.taskDependencies.every((dependency) => dependency.dependencyType === "hard" && dependency.requiredState === "complete"));
+  assert.equal(snapshot.taskDependencies.length, 12);
+  assert.equal(snapshot.taskDependencies.filter((dependency) => dependency.dependencyType === "hard" && dependency.requiredState === "complete").length, 3);
+  assert.equal(snapshot.taskDependencies.filter((dependency) => dependency.dependencyType === "soft" && dependency.requiredState === "complete").length, 9);
   assert.ok(snapshot.tasks.find((task) => task.id === "task-src-4ecd2c87f9718c")?.summary.includes("after programming it"));
   const criticalPathTask = snapshot.tasks.find((task) => task.id === "task-slack-orlando-counter-roller-endcaps");
   assert.equal(criticalPathTask?.priority, "high");
   assert.match(criticalPathTask?.summary ?? "", /critical path/i);
+
+  assert.equal(snapshot.purchaseItems.length, purchaseSource.length);
+  assert.deepEqual(new Set(snapshot.purchaseItems.map((item) => item.id)), new Set(purchaseSource.map((item) => item.id)));
+  assert.ok(snapshot.members.every((member) => snapshot.responsibleGroups.some((group) => group.memberIds.includes(member.id))));
+  assert.ok(snapshot.responsibleGroups.every((group) => group.memberIds.some((id) => snapshot.members.find((member) => member.id === id)?.role === "lead")));
+
+  const taskById = new Map(snapshot.tasks.map((task) => [task.id, task]));
+  const loggedHours = new Map<string, number>();
+  for (const log of snapshot.workLogs) {
+    const task = taskById.get(log.taskId);
+    assert.ok(task);
+    assert.ok(task.startDate && task.dueDate && log.date >= task.startDate && log.date <= task.dueDate);
+    assert.ok(log.participantIds.length > 0 && log.participantIds.every((id) => snapshot.members.some((member) => member.id === id)));
+    loggedHours.set(log.taskId, (loggedHours.get(log.taskId) ?? 0) + log.hours);
+  }
+  for (const task of snapshot.tasks) assert.equal(task.actualHours, loggedHours.get(task.id) ?? 0);
+  assert.ok(snapshot.workLogs.length > 0);
+  assert.ok([...snapshot.qaReports, ...snapshot.teamReports].every((report) => !/synthetic data only|fictional draft created|synthetic example only/i.test(`${report.summary} ${report.notes} ${report.evidenceNotes}`)));
 
   const quantities = new Map<string, number>();
   const unknown = new Set<string>();

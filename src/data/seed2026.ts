@@ -3,7 +3,7 @@ import historicalPlans from "./meetingPlans2024-2025.json";
 import purchaseSource from "./purchaseRecords2026.json";
 import sourceSupplement from "./sourceSeedSupplement.json";
 import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
-import { artifactSchema, reportSchema } from "../routes/routeSchemas";
+import { artifactSchema, reportSchema, workLogSchema } from "../routes/routeSchemas";
 import type { MilestoneType, PlatformSnapshot, ProjectType, ResponsibleGroupIcon, ScheduleEvent, SeasonType, TaskStatus } from "../domain/types";
 import { buildCadSeed } from "./seedCadModel";
 import { buildSeedRisks, buildSeedTaskDependencies, contextualTaskProjectAreas, hasExplicitOpenProgressEvidence, inferTaskProjectArea, isActionableSeedTask, taskScheduleWindow } from "./taskScheduleSeed";
@@ -299,8 +299,16 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     lines.push(safeText(note.text)); meetingNotes.set(note.meetingId, lines);
   }
   const tasksByEntry = new Map<string, string[]>();
+  const taskDateReviewsByEntry = new Map<string, string[]>();
   for (const task of source.taskCandidates) {
     const entryId = task.sourceEntryId ?? "";
+    if (!isActionableSeedTask(task.title)) continue;
+    if (!sourceDate(task.sourceDate)) {
+      const reviews = taskDateReviewsByEntry.get(entryId) ?? [];
+      reviews.push(`${safeText(task.title)} — source date label ${task.sourceDateLabel ?? "not stated"}.`);
+      taskDateReviewsByEntry.set(entryId, reviews);
+      continue;
+    }
     const titles = tasksByEntry.get(entryId) ?? [];
     titles.push(safeText(task.title)); tasksByEntry.set(entryId, titles);
   }
@@ -308,11 +316,12 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     const date = sourceDate(meeting.date);
     const notes = meetingNotes.get(meeting.id) ?? [];
     const tasks = tasksByEntry.get(meeting.id) ?? [];
+    const dateReviews = taskDateReviewsByEntry.get(meeting.id) ?? [];
     const sourceLine = `${meeting.source}; source date label: ${meeting.dateLabel}`;
     return {
       id: meeting.id, title: meeting.date ? `MECO team meeting — ${meeting.date}` : `MECO meeting date needs review — ${meeting.dateLabel}`,
       meetingType: "general" as const, seasonId: season.id, projectIds: [], date, dateLabel: meeting.dateLabel, startAt: null, endAt: null,
-      location: "", description: [sourceLine, notes.length ? `Meeting notes:\n${notes.map((line) => `• ${line}`).join("\n")}` : "", tasks.length ? `Planned work (${tasks.length} items) is linked as tasks.` : ""].filter(Boolean).join("\n\n"),
+      location: "", description: [sourceLine, notes.length ? `Meeting notes:\n${notes.map((line) => `• ${line}`).join("\n")}` : "", tasks.length ? `Planned work (${tasks.length} items) is linked as tasks.` : "", dateReviews.length ? `Work items needing date review:\n${dateReviews.map((line) => `• ${line}`).join("\n")}` : ""].filter(Boolean).join("\n\n"),
       rsvpsYes: 0, rsvpsMaybe: 0, openSignIns: 0,
     };
   }).sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.dateLabel.localeCompare(b.dateLabel));
@@ -324,7 +333,7 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     rsvpsYes: 0, rsvpsMaybe: 0, openSignIns: 0,
   }));
   const meetingIds = new Set(meetings.map((meeting) => meeting.id));
-  const taskCandidates = [...source.taskCandidates].filter((candidate) => isActionableSeedTask(candidate.title)).sort((left, right) =>
+  const taskCandidates = [...source.taskCandidates].filter((candidate) => isActionableSeedTask(candidate.title) && sourceDate(candidate.sourceDate) !== null).sort((left, right) =>
     (left.sourceDate ?? "9999-99-99").localeCompare(right.sourceDate ?? "9999-99-99"),
   );
   for (const { taskId, prerequisiteTaskId } of source.sequenceDependencies) {
@@ -507,6 +516,24 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
   const reports = sourceSupplement.reports.map(({ id, ...report }) => ({ ...reportSchema.parse(report), id }));
   const qaReports = reports.filter((report) => report.reportType === "qa");
   const teamReports = reports.filter((report) => report.reportType !== "qa");
+  const memberIds = new Set(members.map((member) => member.id));
+  const groupById = new Map(groups.map((group) => [group.id, group]));
+  const workLogs = sourceSupplement.workLogs.map(({ id, createdById, ...entry }) => {
+    const task = tasks.find((candidate) => candidate.id === entry.taskId);
+    if (!task || !task.startDate || !task.dueDate || entry.date < task.startDate || entry.date > task.dueDate) {
+      throw new Error(`Seed work log ${id} must reference a task and a date inside its schedule.`);
+    }
+    if (entry.participantIds.some((memberId) => !memberIds.has(memberId) || !groupById.get(task.responsibleGroupId)?.memberIds.includes(memberId))) {
+      throw new Error(`Seed work log ${id} participants must belong to the task's responsible group.`);
+    }
+    if (createdById && !entry.participantIds.includes(createdById)) {
+      throw new Error(`Seed work log ${id} creator must be a listed participant.`);
+    }
+    return { ...workLogSchema.parse(entry), id, createdById: createdById ?? null };
+  });
+  const loggedHoursByTask = new Map<string, number>();
+  for (const workLog of workLogs) loggedHoursByTask.set(workLog.taskId, (loggedHoursByTask.get(workLog.taskId) ?? 0) + workLog.hours);
+  const tasksWithLoggedHours = tasks.map((task) => ({ ...task, actualHours: loggedHoursByTask.get(task.id) ?? task.actualHours }));
   const purchaseIdSet = new Set(purchaseItems.map((item) => item.id));
   const receiptIdByOperation = new Map(purchaseItems.flatMap((item) => (item.receipts ?? []).map((receipt) => [receipt.operationId, receipt.id] as const)));
   const transactionRows = [
@@ -537,8 +564,8 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
     snapshotSchemaVersion: 3,
     seasons, projects: [...projects, ...historicalProjects, ...historicalRobotProjects, ...nextSeasonProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
     subsystems: [...robotSubsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
-    artifacts, partDefinitions: [...partDefinitions, ...cadPartDefinitions], partInstances: cadPartInstances, tasks, milestones, milestoneRequirements: [], taskDependencies,
-    qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks, workLogs: [],
+    artifacts, partDefinitions: [...partDefinitions, ...cadPartDefinitions], partInstances: cadPartInstances, tasks: tasksWithLoggedHours, milestones, milestoneRequirements: [], taskDependencies,
+    qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks, workLogs,
     meetings: [...meetings, ...historicalMeetings].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.title.localeCompare(b.title)), events, attendanceRecords: [], purchaseItems, escalations: [], actions: [],
   } satisfies Partial<PlatformSnapshot>);
 }
