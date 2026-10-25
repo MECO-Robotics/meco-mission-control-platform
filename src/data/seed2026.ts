@@ -5,6 +5,7 @@ import sourceSupplement from "./sourceSeedSupplement.json";
 import { INITIAL_WORK_TYPES } from "../domain/taskDisciplines";
 import { artifactSchema, reportSchema } from "../routes/routeSchemas";
 import type { MilestoneType, PlatformSnapshot, ProjectType, ResponsibleGroupIcon, ScheduleEvent, SeasonType, TaskStatus } from "../domain/types";
+import { buildCadSeed } from "./seedCadModel";
 import { buildSeedRisks, buildSeedTaskDependencies, contextualTaskProjectAreas, hasExplicitOpenProgressEvidence, inferTaskProjectArea, isActionableSeedTask, taskScheduleWindow } from "./taskScheduleSeed";
 
 const seedRecordedAt = "2026-10-23T00:00:00.000Z";
@@ -526,53 +527,17 @@ export function apply2026SeasonSeed(snapshot: PlatformSnapshot) {
       ...(purchaseIdSet.has(row.purchaseId) ? { purchaseItemId: row.purchaseId } : {}),
     })),
   ];
-  const targetSubsystemForSourceMap: Record<string, "Shooter" | "Conveyer" | "Intake" | "Chassis"> = {
-    shooter: "Shooter", conveyor: "Conveyer", hopper: "Conveyer", intake: "Intake",
-    drivetrain: "Chassis", bumpers: "Chassis", electrical: "Chassis", vision: "Chassis",
-  };
-  const componentsBySubsystem = new Map<string, typeof source.stepComponents>();
-  for (const component of source.stepComponents) {
-    const sourceMap = String(component.mappedSubsystemName).replace(/ hardware$/i, "");
-    const name = targetSubsystemForSourceMap[sourceMap];
-    if (!name) continue;
-    const rows = componentsBySubsystem.get(name) ?? [];
-    rows.push(component); componentsBySubsystem.set(name, rows);
-  }
-  const subsystemMappingNotes: Record<string, string> = {
-    Shooter: "Shooter-labeled CAD components are grouped here.",
-    Conveyer: "Conveyer and hopper labels are grouped as the robot's game-piece transfer path; the source assembly spells Conveyer with one o.",
-    Intake: "Intake-labeled CAD components are grouped here.",
-    Chassis: "Drivetrain, bumper, electrical, and vision labels are grouped here for the four-subsystem robot view; the STEP names do not establish individual physical mounting relationships.",
-  };
-  const subsystems = (["Shooter", "Conveyer", "Intake", "Chassis"] as const).filter((name) => componentsBySubsystem.has(name)).map((name) => {
-    const components = componentsBySubsystem.get(name)!;
-    return {
-    id: `step-subsystem-${slug(name)}`, projectId: "project-robot-2026", name,
-    description: `Mapped from MAIN ASSEMBLY.step. ${subsystemMappingNotes[name]} Clearly labeled CAD components: ${components.map((component) => safeText(component.name)).join(", ")}. Installed CAD components do not represent stock quantity.`,
-    isCore: false, parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [], iteration: 1, isArchived: false,
-    };
-  });
   const taskGroupingSubsystems = areas.filter((area) => area !== "robot").map((area) => ({
     id: `season-work-${area}-2026`, projectId: projectId(area), name: "Season work (not a CAD component)",
     description: "Organizational target for sourced 2026 tasks that do not identify a specific robot component.",
     isCore: false, parentSubsystemId: null, responsibleEngineerId: null, mentorIds: [], iteration: 1, isArchived: false,
   }));
-  const subsystemIdByMap = new Map([...componentsBySubsystem.keys()].map((name) => [name, `step-subsystem-${slug(name)}`]));
-  const mechanisms = source.stepComponents.map((component) => {
-    const sourceMap = String(component.mappedSubsystemName).replace(/ hardware$/i, "");
-    const mapped = targetSubsystemForSourceMap[sourceMap];
-    return {
-      id: component.id, subsystemId: subsystemIdByMap.get(mapped)!, name: safeText(component.name),
-      description: `Named ${component.componentKind} from MAIN ASSEMBLY.step. ${safeText(component.sourceConfidence)}. ${safeText(component.quantityMeaning)}.`,
-      iteration: 1, isArchived: false, cadSource: "step" as const, cadImportSource: "STEP_UPLOAD" as const,
-      cadEditedAfterImport: false, cadSourceLabel: "MAIN ASSEMBLY.step",
-    };
-  });
+  const { subsystems: robotSubsystems, mechanisms, partDefinitions: cadPartDefinitions, partInstances: cadPartInstances } = buildCadSeed();
   Object.assign(snapshot, {
     snapshotSchemaVersion: 3,
     seasons, projects: [...projects, ...historicalProjects, ...historicalRobotProjects, ...nextSeasonProjects], workTypes: INITIAL_WORK_TYPES, responsibleGroups: groups, workstreams: [], vendors, members,
-    subsystems: [...subsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
-    artifacts, partDefinitions, partInstances: [], tasks, milestones, milestoneRequirements: [], taskDependencies,
+    subsystems: [...robotSubsystems, ...taskGroupingSubsystems], mechanisms, materials, materialTransactions: transactionRows,
+    artifacts, partDefinitions: [...partDefinitions, ...cadPartDefinitions], partInstances: cadPartInstances, tasks, milestones, milestoneRequirements: [], taskDependencies,
     qaReports, teamReports, qaRequests: [], testResults: [], qaFindings: [], testFindings: [], designIterations: [], risks, workLogs: [],
     meetings: [...meetings, ...historicalMeetings].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.title.localeCompare(b.title)), events, attendanceRecords: [], purchaseItems, escalations: [], actions: [],
   } satisfies Partial<PlatformSnapshot>);

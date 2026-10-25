@@ -51,7 +51,17 @@ test("2026 seed preserves sourced activity and derives stock from receipt transa
   for (const material of snapshot.materials) {
     assert.equal(material.onHandQuantity, unknown.has(material.id) ? null : quantities.get(material.id) ?? 0);
   }
-  assert.equal(snapshot.partInstances.length, 0, "installed STEP assembly components are not stock quantities");
+  const cadMechanisms = snapshot.mechanisms.filter((item) => item.cadSource === "step");
+  const cadParts = snapshot.partDefinitions.filter((item) => item.cadSource === "step");
+  const cadInstances = snapshot.partInstances.filter((item) => item.cadSource === "step");
+  const robotSubsystemIds = new Set(snapshot.subsystems.filter((item) => item.projectId === "project-robot-2026").map((item) => item.id));
+  const cadMechanismIds = new Set(cadMechanisms.map((item) => item.id));
+  const cadPartIds = new Set(cadParts.map((item) => item.id));
+  assert.deepEqual([cadMechanisms.length, cadParts.length, cadInstances.length], [26, 192, 655]);
+  assert.ok(cadParts.every((item) => item.defaultAcquisitionMethod === "manufacture" && item.materialId === null));
+  assert.ok(cadInstances.every((item) => item.location.kind === "installed" && cadPartIds.has(item.partDefinitionId)));
+  assert.ok(cadInstances.every((item) => item.intendedSubsystemId && robotSubsystemIds.has(item.intendedSubsystemId)));
+  assert.ok(cadInstances.every((item) => item.intendedMechanismId && cadMechanismIds.has(item.intendedMechanismId)));
   assert.ok(snapshot.mechanisms.every((mechanism) => mechanism.cadSource === "step"));
   assert.ok(snapshot.materials.some((material) => material.photoUrl));
   assert.ok(snapshot.materials.some((material) => material.onHandQuantity === null));
