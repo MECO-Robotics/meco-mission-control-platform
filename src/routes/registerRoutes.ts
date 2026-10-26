@@ -89,6 +89,8 @@ import {
   resetTutorialBaseline,
   updateArtifact,
   updateMaterial,
+  createMaterialTransaction,
+  getMaterialTransactions,
   updateMember,
   updateResponsibleGroup,
   updateMechanism,
@@ -164,6 +166,8 @@ import {
   milestonePatchSchema,
   milestoneSchema,
   materialPatchSchema,
+  materialCreateSchema,
+  materialTransactionSchema,
   materialSchema,
   mediaUploadRequestSchema,
   memberPatchSchema,
@@ -488,7 +492,6 @@ export async function registerRoutes(
     if (!isAuthEnabled()) {
       return (
         members.find((member) => member.role === "student" || member.role === "lead") ??
-        members[0] ??
         null
       );
     }
@@ -1759,7 +1762,7 @@ export async function registerRoutes(
       return;
     }
 
-    const parsed = parseRouteInput(materialSchema, request.body, reply, "Material payload is invalid.");
+    const parsed = parseRouteInput(materialCreateSchema, request.body, reply, "Material payload is invalid.");
     if (!parsed) {
       return reply;
     }
@@ -1799,6 +1802,24 @@ export async function registerRoutes(
       };
     },
   );
+
+  app.get<{ Params: { materialId: string } }>("/api/materials/:materialId/transactions", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    if (!findMaterial(request.params.materialId)) return reply.code(404).send({ message: "Material not found." });
+    return { items: getMaterialTransactions(request.params.materialId) };
+  });
+
+  app.post<{ Body: unknown; Params: { materialId: string } }>("/api/materials/:materialId/transactions", { config: { snapshotMutation: true } }, async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) return;
+    const parsed = parseRouteInput(materialTransactionSchema, request.body, reply, "Material transaction payload is invalid.");
+    if (!parsed) return reply;
+    const result = createMaterialTransaction(request.params.materialId, parsed.data, buildTaskAuditContext(request));
+    if ("error" in result) {
+      const statusCode = result.error === "not-found" ? 404 : result.error === "insufficient-stock" || result.error === "unknown-stock" || result.error === "operation-conflict" ? 409 : result.error === "invalid-reference" ? 400 : 400;
+      return reply.code(statusCode).send({ message: result.error });
+    }
+    return reply.code(result.replayed ? 200 : 201).send({ item: result.material, transaction: result.transaction, replayed: result.replayed });
+  });
 
   app.delete<{ Params: { materialId: string } }>(
     "/api/materials/:materialId", { config: { snapshotMutation: true } }, async (request, reply) => {
@@ -3333,7 +3354,7 @@ export async function registerRoutes(
           (parsed.data.kind !== undefined && parsed.data.kind !== currentItem.kind) ||
           (parsed.data.partDefinitionId !== undefined && parsed.data.partDefinitionId !== currentItem.partDefinitionId)) &&
           nextItemShape.kind !== "manufacturing-service" && nextItemShape.partDefinitionId !== null &&
-          (!Number.isSafeInteger(nextItemShape.quantity) || nextItemShape.quantity <= 0)) {
+          (nextItemShape.quantity === null || !Number.isSafeInteger(nextItemShape.quantity) || nextItemShape.quantity <= 0)) {
         return reply.code(400).send({ message: "Discrete part purchase quantity must be a positive whole number." });
       }
 
@@ -3507,6 +3528,7 @@ export async function registerRoutes(
         if (result.error === "not-ordered") return reply.code(409).send({ message: "Only ordered purchases can be received." });
         if (result.error === "location-conflict") return reply.code(409).send({ message: "Material stock already exists at a different location; receive it at the existing stock location." });
         if (result.error === "missing-part-definition") return reply.code(409).send({ message: "The purchased part definition no longer exists." });
+        if (result.error === "unknown-purchase-quantity") return reply.code(409).send({ message: "This source purchase has no recorded quantity, so it cannot be received until its quantity is verified." });
         return reply.code(400).send({ message: "Receipt quantity must be positive and finite; part-instance receipts require a whole number." });
       }
       return { item: result.item, receipt: result.receipt };

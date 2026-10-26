@@ -48,7 +48,8 @@ function buildReports(args: {
   ].filter((report): report is ReadonlyData<Report> => report !== null);
 }
 
-function parseDateMs(value: string) {
+function parseDateMs(value: string | null) {
+  if (value === null) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -210,9 +211,11 @@ export function buildBootstrapResponse(
       (selection.personId === null || workLog.participantIds.includes(selection.personId)),
   );
   const scopedPurchaseItems = snapshot.purchaseItems.filter(
-    (item) =>
-      scopedTasksById.has(item.taskId) &&
-      (selection.personId === null || [scopedTasksById.get(item.taskId)?.requestedById, scopedTasksById.get(item.taskId)?.ownerId, ...(scopedTasksById.get(item.taskId)?.assigneeIds ?? [])].includes(selection.personId)),
+    (item) => {
+      const task = item.taskId ? scopedTasksById.get(item.taskId) : undefined;
+      const itemInProjectScope = task ? scopedTasksById.has(task.id) : Boolean(item.projectId && activeProjectIds.has(item.projectId));
+      return itemInProjectScope && (selection.personId === null || [task?.requestedById, task?.ownerId, ...(task?.assigneeIds ?? [])].includes(selection.personId));
+    },
   );
   const scopedQaReports = snapshot.qaReports.filter((report) => {
     return activeProjectIds.has(report.projectId);
@@ -321,9 +324,7 @@ export function buildBootstrapResponse(
       ...scopedTasks.flatMap((task) => task.manufacturingDetails?.material.kind === "inventory-material" ? [task.manufacturingDetails.material.materialId] : []),
     ].filter((materialId): materialId is string => Boolean(materialId)),
   );
-  const scopedMaterials = selectedSeasonId
-    ? snapshot.materials.filter((material) => scopedMaterialIds.has(material.id))
-    : snapshot.materials;
+  const scopedMaterials = snapshot.materials;
   return {
     seasons: scopedSeasons,
     projects: seasonScopedProjects,
@@ -335,6 +336,7 @@ export function buildBootstrapResponse(
     subsystems: scopedSubsystems,
     mechanisms: scopedMechanisms,
     materials: scopedMaterials,
+    materialTransactions: snapshot.materialTransactions,
     artifacts: scopedArtifacts,
     partDefinitions: scopedPartDefinitions,
     partInstances: scopedPartInstances,

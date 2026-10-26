@@ -5,7 +5,7 @@ export type RosterAvailabilityStatus = "available" | "at-risk" | "overloaded" | 
 export interface RosterInsightsTaskPreview {
   id: string;
   title: string;
-  dueDate: string;
+  dueDate: string | null;
   priority: TaskPriority;
   projectId: string;
   projectName: string;
@@ -100,7 +100,7 @@ export interface RosterInsightsSource {
     title: string;
     ownerId: string | null;
     assigneeIds: readonly string[];
-    dueDate: string;
+    dueDate: string | null;
     priority: TaskPriority;
     status: TaskStatus;
     estimatedHours: number;

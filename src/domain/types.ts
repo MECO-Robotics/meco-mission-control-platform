@@ -1,6 +1,6 @@
 import type { TaskTargets } from "./taskTargets";
 
-export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
+export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external" | "unknown";
 export type MilestoneType =
   | "practice"
   | "competition"
@@ -37,11 +37,12 @@ export type DisciplineCode =
   | "writing"
   | "web"
   | "social_media";
-export type TaskStatus =
+export type TaskWorkflowStatus =
   | "not-started"
   | "in-progress"
   | "waiting-for-qa"
   | "complete";
+export type TaskStatus = TaskWorkflowStatus | "unrecorded";
 export type ReadinessStatus = "not-ready" | "blocked" | "qa" | "ready";
 
 export type ScheduleReference =
@@ -77,6 +78,7 @@ export type MaterialCategory =
   | "electronics"
   | "hardware"
   | "consumable"
+  | "tool"
   | "other";
 export type ArtifactKind = "document" | "evidence" | "media" | "other";
 export type ArtifactStatus = "draft" | "in-review" | "published" | "archived";
@@ -240,6 +242,7 @@ export interface PartDefinition extends PmCadProvenance {
   activeSeasonIds?: string[];
   name: string;
   partNumber: string;
+  vendorPartNumbers: Record<string, string>;
   isHardware?: boolean;
   revision: string;
   iteration: number;
@@ -275,11 +278,31 @@ export interface Material {
   name: string;
   category: MaterialCategory;
   unit: string;
-  onHandQuantity: number;
-  reorderPoint: number;
+  onHandQuantity: number | null;
+  reorderPoint: number | null;
   location: string;
   preferredVendorId: string | null;
   notes: string;
+  photoUrl?: string;
+}
+
+export type MaterialMovementType = "opening-balance" | "receipt" | "consumption" | "adjustment";
+
+export interface MaterialTransaction {
+  id: string;
+  operationId: string;
+  materialId: string;
+  movementType: MaterialMovementType;
+  quantityDelta: number | null;
+  reason: string;
+  recordedAt: string;
+  actorMemberId: string | null;
+  taskId?: string;
+  projectId?: string;
+  purchaseItemId?: string;
+  purchaseReceiptId?: string;
+  occurredAt?: string | null;
+  sourceReference?: string;
 }
 
 export interface Artifact {
@@ -312,8 +335,8 @@ export interface Task extends TaskTargets {
   ownerId: string | null;
   assigneeIds: string[];
   mentorId: string | null;
-  startDate: string;
-  dueDate: string;
+  startDate: string | null;
+  dueDate: string | null;
   priority: TaskPriority;
   status: TaskStatus;
   checklistItems: string[];
@@ -341,7 +364,9 @@ export interface Meeting {
   meetingType?: MeetingType;
   seasonId?: string;
   projectIds?: string[];
-  startAt: string;
+  date?: string | null;
+  dateLabel?: string;
+  startAt: string | null;
   endAt: string | null;
   location?: string;
   description?: string;
@@ -356,7 +381,8 @@ export interface ScheduleEvent {
   projectIds: string[];
   title: string;
   description: string;
-  startAt: string;
+  date?: string | null;
+  startAt: string | null;
   endAt: string | null;
   location: string;
   eventType: "competition" | "practice" | "outreach" | "other";
@@ -368,7 +394,9 @@ export interface Milestone {
   seasonId?: string;
   title: string;
   type: MilestoneType;
-  startAt: string;
+  date?: string | null;
+  dateLabel?: string;
+  startAt: string | null;
   endAt: string | null;
   isExternal: boolean;
   description: string;
@@ -467,7 +495,7 @@ export type TaskDependency =
   taskId: string;
   kind: "task";
   refId: string;
-  requiredState: TaskStatus;
+  requiredState: TaskWorkflowStatus;
   dependencyType: TaskDependencyType;
   createdAt: string;
 }
@@ -511,17 +539,21 @@ export interface PurchaseReceipt {
   operationId?: string;
   quantity: number;
   location: string;
-  receivedAt: string;
+  receivedAt: string | null;
   partInstanceIds: string[];
 }
 export interface PurchaseItem {
   id: string;
-  taskId: string;
+  taskId: string | null;
+  seasonId?: string;
+  projectId?: string | null;
+  sourceStatus?: string | null;
+  sourceReference?: string;
   kind: PurchaseKind;
   partDefinitionId: string | null;
   materialId: string | null;
   title: string;
-  quantity: number;
+  quantity: number | null;
   quotes: PurchaseQuote[];
   selectedQuoteId: string | null;
   approvalStatus: PurchaseApprovalStatus;
@@ -542,8 +574,9 @@ export interface Season {
   id: string;
   name: string;
   type: SeasonType;
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
+  description?: string;
 }
 
 export interface Project {
@@ -755,7 +788,7 @@ export interface SlackHomeResponse {
 }
 
 export interface PlatformSnapshot {
-  snapshotSchemaVersion: 2;
+  snapshotSchemaVersion: 3;
   /** Optional migration-free, server-owned monotonic QA review counter. */
   qaReviewSequence?: number;
   seasons: Season[];
@@ -768,6 +801,7 @@ export interface PlatformSnapshot {
   subsystems: Subsystem[];
   mechanisms: Mechanism[];
   materials: Material[];
+  materialTransactions: MaterialTransaction[];
   artifacts: Artifact[];
   partDefinitions: PartDefinition[];
   partInstances: PartInstance[];

@@ -55,6 +55,34 @@ export interface CadImportRun {
   updatedAt: string;
 }
 
+export interface CadUploadedFile {
+  id: string;
+  originalFilename: string;
+  originalContentType: string;
+  originalSizeBytes: number;
+  originalSha256: string;
+  originalContents: Uint8Array;
+  optimizedFilename: string;
+  optimizedContentType: string;
+  optimizedSizeBytes: number;
+  optimizedSha256: string;
+  optimizedContents: Uint8Array;
+  projectId: string | null;
+  seasonId: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export type CadUploadedFileCreateInput = Omit<CadUploadedFile, "id" | "createdAt">;
+
+export interface CadOptimizedPreview {
+  originalFilename: string;
+  optimizedFilename: string;
+  optimizedContentType: string;
+  optimizedSizeBytes: number;
+  optimizedContents: Uint8Array;
+}
+
 export interface CadSnapshot {
   id: string;
   projectId: string | null;

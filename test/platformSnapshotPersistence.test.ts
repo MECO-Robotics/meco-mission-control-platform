@@ -141,7 +141,7 @@ test("snapshot loading rejects missing or invalid team identities without changi
       else Reflect.set(invalid.responsibleGroups[0]!, field, value);
       const contents = JSON.stringify(invalid);
       writeFileSync(snapshotPath, contents, "utf8");
-      assert.throws(() => loadPlatformSnapshotFile(snapshotPath), /does not match schema 2/);
+      assert.throws(() => loadPlatformSnapshotFile(snapshotPath), /does not match schema 3/);
       assert.equal(readFileSync(snapshotPath, "utf8"), contents);
     }
   } finally {
@@ -196,7 +196,7 @@ test("current schema snapshots load without rewriting and reset archives the con
   writeFileSync(snapshotPath, contents, "utf8");
 
   try {
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 2);
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.snapshotSchemaVersion, 3);
     assert.equal(readFileSync(snapshotPath, "utf8"), contents);
     const { archivePlatformSnapshotFile } = await import("../src/data/platformSnapshotFile");
     const archive = archivePlatformSnapshotFile(snapshotPath);
@@ -204,21 +204,10 @@ test("current schema snapshots load without rewriting and reset archives the con
     assert.equal(readFileSync(archive, "utf8"), contents);
     assert.equal(existsSync(snapshotPath), false);
 
-    const legacySnapshot = structuredClone(snapshot);
-    legacySnapshot.purchaseItems[0]!.quantity = 1001.5;
-    writeFileSync(snapshotPath, JSON.stringify(legacySnapshot), "utf8");
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.purchaseItems[0]?.quantity, 1001.5);
-
-    const receivedSnapshot = structuredClone(snapshot);
-    receivedSnapshot.purchaseItems[0]!.receipts = [{
-      id: "persisted-receipt",
-      quantity: 1,
-      location: "Durable rack",
-      receivedAt: "2026-10-15T00:00:00.000Z",
-      partInstanceIds: ["persisted-part-instance"],
-    }];
-    writeFileSync(snapshotPath, JSON.stringify(receivedSnapshot), "utf8");
-    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.purchaseItems[0]?.receipts?.[0]?.location, "Durable rack");
+    const ledgerSnapshot = structuredClone(snapshot);
+    ledgerSnapshot.materialTransactions[0]!.reason = "Persisted source receipt edit";
+    writeFileSync(snapshotPath, JSON.stringify(ledgerSnapshot), "utf8");
+    assert.equal(loadPlatformSnapshotFile(snapshotPath)?.materialTransactions[0]?.reason, "Persisted source receipt edit");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -251,6 +240,35 @@ test("durable store construction loads a valid snapshot without rewriting it", (
       if (current.projects.length !== ${snapshot.projects.length}) throw new Error("Existing snapshot was not loaded");
     `);
     assert.equal(readFileSync(snapshotPath, "utf8"), contents);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("material ledger movements and derived balances survive a durable restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "meco-material-ledger-durable-"));
+  const snapshotPath = join(directory, "platform-snapshot.json");
+  try {
+    const firstRun = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const material = store.getSnapshot().materials.find(item => item.onHandQuantity !== null && item.onHandQuantity > 1);
+      if (!material) throw new Error("No known stock balance in canonical seed");
+      const initial = material.onHandQuantity;
+      const transactionOwner = await store.acquireSnapshotMutation(); transactionOwner.enter();
+      const result = store.createMaterialTransaction(material.id, { operationId: "durable-consumption", movementType: "consumption", quantity: 1, reason: "Durability check" });
+      if (result.error) throw new Error(result.error);
+      await transactionOwner.commit(); transactionOwner.release();
+      process.stdout.write(JSON.stringify({ materialId: material.id, initial, transactionId: result.transaction.id }));
+    `));
+    const restored = JSON.parse(runProductionStoreScript(snapshotPath, `
+      const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
+      const material = store.findMaterial(${JSON.stringify(firstRun.materialId)});
+      const transaction = store.getSnapshot().materialTransactions.find(item => item.id === ${JSON.stringify(firstRun.transactionId)});
+      process.stdout.write(JSON.stringify({ quantity: material.onHandQuantity, transaction }));
+    `));
+    assert.equal(restored.quantity, firstRun.initial - 1);
+    assert.equal(restored.transaction.operationId, "durable-consumption");
+    assert.equal(restored.transaction.quantityDelta, -1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

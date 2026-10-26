@@ -66,10 +66,10 @@ export type ProjectInput = OptionalFields<
   "teamId" | "description" | "status"
 >;
 
-export type PurchaseItemInput = Omit<PurchaseItem, "id" | "receipts">;
+export type PurchaseItemInput = Omit<PurchaseItem, "id" | "receipts" | "taskId" | "quantity"> & { taskId: string; quantity: number };
 
 
-export type MaterialInput = Omit<Material, "id">;
+export type MaterialInput = Omit<Material, "id" | "onHandQuantity">;
 
 export type ArtifactInput = Omit<Artifact, "id" | "targetRefs"> & { targetRefs?: Artifact["targetRefs"] };
 
@@ -96,6 +96,8 @@ export type MilestoneInput = Pick<
   Milestone,
   | "title"
   | "type"
+  | "date"
+  | "dateLabel"
   | "startAt"
   | "endAt"
   | "isExternal"

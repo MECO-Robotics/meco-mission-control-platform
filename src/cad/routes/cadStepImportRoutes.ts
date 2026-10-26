@@ -21,7 +21,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
     windowMs: 60_000,
   });
   const stepUploadRouteOptions = {
-    bodyLimit: cadStepUploadConfig.maxBytes,
+    bodyLimit: cadStepUploadConfig.maxBytes * 2,
     onRequest(request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) {
       if (!requireApiSession(request, reply)) {
         return;
@@ -73,6 +73,15 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
   app.post("/api/cad/step-imports", stepUploadRouteOptions, async (request, reply) => {
     try {
       const payload = await readStepImportPayload(request);
+      if (!payload.optimizedModel) {
+        throw new CadImportError("Upload a binary glTF preview with the STEP source file.");
+      }
+      if (!payload.optimizedModel.filename.toLowerCase().endsWith(".glb")
+        || payload.optimizedModel.contentType !== "model/gltf-binary"
+        || payload.optimizedModel.bytes.byteLength < 20
+        || payload.optimizedModel.bytes.toString("ascii", 0, 4) !== "glTF") {
+        throw new CadImportError("The optimized CAD preview must be a valid binary glTF (.glb) file.");
+      }
       const project = payload.projectId ? findProject(payload.projectId) : undefined;
       if (payload.projectId && !project) throw new CadImportError("The selected CAD project does not exist.", 400);
       if (payload.seasonId && !getSeasons().some((season) => season.id === payload.seasonId)) throw new CadImportError("The selected CAD season does not exist.", 400);
@@ -92,6 +101,12 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
         allowPlaceholder: process.env.NODE_ENV === "test" && payload.allowPlaceholder === true,
         input: {
           fileText: payload.fileText,
+          originalFileBytes: payload.originalFileBytes,
+          optimizedModel: {
+            filename: payload.optimizedModel.filename,
+            contentType: payload.optimizedModel.contentType,
+            bytes: payload.optimizedModel.bytes,
+          },
           originalFilename: payload.fileName,
           label: payload.label,
           projectId: payload.projectId,

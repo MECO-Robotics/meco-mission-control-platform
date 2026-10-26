@@ -3,7 +3,7 @@ import { hexColorSchema, responsibleGroupIconSchema, responsibleGroupSchema as r
 import { subsystemLayoutSchema, taskDependencySchema, taskSchema, taskPatchSchema, subsystemSchema, subsystemPatchSchema, reportSchema, qaReportSchema, qaSubmitSchema, riskSchema, purchaseItemRecordSchema, purchaseReceiptRecordSchema, purchaseItemSchema, artifactSchema, qaRequestSchema, testResultSchema, domainReferenceSchema, manufacturingProcessCreateSchema, manufacturingProcessArchiveSchema } from "../routes/routeSchemas";
 
 export const BOOTSTRAP_CONTRACT_NAME = "meco-mission-control-platform-bootstrap";
-export const BOOTSTRAP_CONTRACT_VERSION = 2;
+export const BOOTSTRAP_CONTRACT_VERSION = 3;
 
 const [taskDependencyOption, milestoneDependencyOption, partDependencyOption] = taskDependencySchema.options;
 const dependencyRecordFields = { id: z.string(), createdAt: z.string() };
@@ -54,11 +54,12 @@ const partInstanceBootstrapSchema = z.object({
   photoUrl: z.string().optional(), ...pmCadProvenanceRecordSchema.shape,
 }).strict();
 const materialBootstrapSchema = z.object({
-  id: z.string(), name: z.string(), category: z.enum(["metal", "plastic", "filament", "electronics", "hardware", "consumable", "other"]),
-  unit: z.string(), onHandQuantity: z.number(), reorderPoint: z.number(), location: z.string(), preferredVendorId: z.string().nullable(), notes: z.string(), photoUrl: z.string().optional(),
+  id: z.string(), name: z.string(), category: z.enum(["metal", "plastic", "filament", "electronics", "hardware", "consumable", "tool", "other"]),
+  unit: z.string(), onHandQuantity: z.number().nullable(), reorderPoint: z.number().nullable(), location: z.string(), preferredVendorId: z.string().nullable(), notes: z.string(), photoUrl: z.string().optional(),
 }).strict();
+const materialTransactionSchema = z.object({ id: z.string(), operationId: z.string(), materialId: z.string(), movementType: z.enum(["opening-balance", "receipt", "consumption", "adjustment"]), quantityDelta: z.number().finite().refine((value) => value !== 0).nullable(), reason: z.string(), recordedAt: z.string(), actorMemberId: z.string().nullable(), taskId: z.string().optional(), projectId: z.string().optional(), purchaseItemId: z.string().optional(), purchaseReceiptId: z.string().optional(), occurredAt: z.string().date().nullable().optional(), sourceReference: z.string().optional() }).strict();
 const partDefinitionBootstrapSchema = z.object({
-  id: z.string(), seasonId: z.string(), activeSeasonIds: z.array(z.string()), name: z.string(), partNumber: z.string(), revision: z.string(), iteration: z.number(), isArchived: z.boolean(), isHardware: z.boolean().optional(), type: z.string(), defaultAcquisitionMethod: z.enum(["stock", "purchase-cots", "manufacture"]), materialId: z.string().nullable(), description: z.string(), photoUrl: z.string().optional(), ...pmCadProvenanceRecordSchema.shape,
+  id: z.string(), seasonId: z.string(), activeSeasonIds: z.array(z.string()), name: z.string(), partNumber: z.string(), vendorPartNumbers: z.record(z.string(), z.string()).default({}), revision: z.string(), iteration: z.number(), isArchived: z.boolean(), isHardware: z.boolean().optional(), type: z.string(), defaultAcquisitionMethod: z.enum(["stock", "purchase-cots", "manufacture"]), materialId: z.string().nullable(), description: z.string(), photoUrl: z.string().optional(), ...pmCadProvenanceRecordSchema.shape,
 }).strict();
 const scheduleReferenceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("meeting"), id: z.string() }).strict(),
@@ -88,7 +89,7 @@ const taskBootstrapSchema = z.object({
   title: z.string(), summary: z.string(), photoUrl: z.string().optional(), subsystemIds: z.array(z.string()),
   mechanismIds: z.array(z.string()), partInstanceIds: z.array(z.string()), scheduleRefs: z.array(scheduleReferenceSchema),
   requestedById: z.string().nullable(), ownerId: z.string().nullable(), assigneeIds: z.array(z.string()), mentorId: z.string().nullable(),
-  startDate: z.string(), dueDate: z.string(), priority: z.enum(["critical", "high", "medium", "low"]),
+  startDate: z.string().date().nullable(), dueDate: z.string().date().nullable(), priority: z.enum(["critical", "high", "medium", "low"]),
   status: taskSchema.shape.status, checklistItems: z.array(z.string()), estimatedHours: z.number(), actualHours: z.number(),
   requiresDocumentation: z.boolean(), manufacturingDetails: manufacturingDetailsSchema.nullable(),
   isBlocked: z.boolean(), isWaitingOnDependency: z.boolean(),
@@ -98,7 +99,7 @@ const qaRequestBootstrapSchema = qaRequestSchema.extend({ id: z.string(), projec
 const testResultBootstrapSchema = testResultSchema.extend({ id: z.string(), projectId: z.string(), targetRefs: z.array(domainReferenceSchema), verificationOrder: z.number().int().positive().optional(), needsReverification: z.boolean().optional() }).strict();
 const retestBootstrapSchema = z.object({ operationId: z.string().optional(), sourceType: z.enum(["qa", "test"]).optional(), result: z.enum(["pass", "fail"]), notes: z.string(), evidenceNotes: z.string().optional(), observedAt: z.string().optional(), reviewedAt: z.string(), reviewedById: z.string(), order: z.number().int().positive(), verificationOrder: z.number().int().positive().optional(), targetRevisions: z.record(z.string(), z.string()).optional(), inspectedPartInstanceIds: z.array(z.string()).optional(), supersedesId: z.string().optional() }).strict();
 const findingBootstrapSchema = z.object({ id: z.string(), reportId: z.string().nullable(), targetRefs: z.array(domainReferenceSchema), projectId: z.string(), title: z.string(), detail: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), status: z.enum(["open", "in-progress", "resolved"]), createdAt: z.string(), updatedAt: z.string(), correctiveTaskId: z.string().nullable().optional(), riskId: z.string().nullable().optional(), retests: z.array(retestBootstrapSchema).optional() }).strict();
-const scheduleIdentitySchema = z.object({ id: z.string(), title: z.string(), startAt: z.string(), endAt: z.string().nullable() });
+const scheduleIdentitySchema = z.object({ id: z.string(), title: z.string(), date: z.string().date().nullable().optional(), dateLabel: z.string().optional(), startAt: z.string().nullable(), endAt: z.string().nullable() });
 const meetingBootstrapSchema = scheduleIdentitySchema.extend({ meetingType: z.string().optional(), seasonId: z.string().optional(), projectIds: z.array(z.string()).optional(), location: z.string().optional(), description: z.string().optional(), rsvpsYes: z.number(), rsvpsMaybe: z.number(), openSignIns: z.number() }).passthrough();
 const eventBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string(), projectIds: z.array(z.string()), eventType: z.string(), location: z.string().optional(), description: z.string().optional() }).passthrough();
 const milestoneBootstrapSchema = scheduleIdentitySchema.extend({ seasonId: z.string().optional(), type: z.string(), status: z.enum(["planned", "active", "complete"]), readinessStatus: z.enum(["not-ready", "blocked", "qa", "ready"]), isExternal: z.boolean(), description: z.string(), projectIds: z.array(z.string()), photoUrl: z.string().optional() }).passthrough();
@@ -125,6 +126,7 @@ export const bootstrapPayloadSchema = z
     subsystems: z.array(pmCadProvenanceRecordSchema.extend({ id: z.string(), ...subsystemLayoutSchema.shape })),
     mechanisms: pmCadProvenanceCollectionSchema,
     materials: z.array(materialBootstrapSchema),
+    materialTransactions: z.array(materialTransactionSchema),
     artifacts: z.array(artifactBootstrapSchema),
     partDefinitions: z.array(partDefinitionBootstrapSchema),
     partInstances: z.array(partInstanceBootstrapSchema),

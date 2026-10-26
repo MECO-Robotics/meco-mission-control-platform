@@ -24,6 +24,8 @@ export interface StepImportInput {
   seasonId?: string | null;
   requestedBy?: string | null;
   uploadedFileId?: string | null;
+  originalFileBytes?: Uint8Array;
+  optimizedModel?: { filename: string; contentType: string; bytes: Uint8Array };
 }
 
 async function appendWarnings(args: {
@@ -101,7 +103,7 @@ export async function runStepImport(args: {
 }) {
   const filename = args.input.originalFilename.trim();
   assertStepFilename(filename);
-  const uploadedFileHash = hashText(args.input.fileText);
+  const uploadedFileHash = hashText(args.input.originalFileBytes ? Buffer.from(args.input.originalFileBytes) : args.input.fileText);
   const label = args.input.label?.trim() || filename.replace(/\.(step|stp)$/i, "");
 
   const importRun = await args.store.createImportRun({
@@ -158,98 +160,126 @@ export async function runStepImport(args: {
 
     const diagnostics = buildStepParserDiagnostics({ parsed, configuredParserMode, placeholderUsed });
     const parseCompletedAt = new Date().toISOString();
-    const snapshot = await args.store.createSnapshot({
-      projectId: args.input.projectId ?? null,
-      seasonId: args.input.seasonId ?? null,
-      importRunId: importRun.id,
-      source: "STEP_UPLOAD",
-      label,
-      uploadedFileId: args.input.uploadedFileId ?? null,
-      uploadedFileHash,
-      status: "parsed",
-      createdBy: args.input.requestedBy ?? null,
-      finalizedBy: null,
-      finalizedAt: null,
-      notes: null,
-    });
+    const persistParsedImport = async (store: CadStore) => {
+      let uploadedFileId = args.input.uploadedFileId ?? null;
+      if (args.input.originalFileBytes && args.input.optimizedModel) {
+        if (!store.createUploadedFile) throw new Error("CAD file storage is not available.");
+        const originalBytes = Buffer.from(args.input.originalFileBytes);
+        const optimizedBytes = Buffer.from(args.input.optimizedModel.bytes);
+        const uploadedFile = await store.createUploadedFile({
+          originalFilename: filename,
+          originalContentType: "application/step",
+          originalSizeBytes: originalBytes.byteLength,
+          originalSha256: uploadedFileHash,
+          originalContents: originalBytes,
+          optimizedFilename: args.input.optimizedModel.filename,
+          optimizedContentType: args.input.optimizedModel.contentType,
+          optimizedSizeBytes: optimizedBytes.byteLength,
+          optimizedSha256: hashText(optimizedBytes),
+          optimizedContents: optimizedBytes,
+          projectId: args.input.projectId ?? null,
+          seasonId: args.input.seasonId ?? null,
+          createdBy: args.input.requestedBy ?? null,
+        });
+        uploadedFileId = uploadedFile.id;
+      }
+      const snapshot = await store.createSnapshot({
+        projectId: args.input.projectId ?? null,
+        seasonId: args.input.seasonId ?? null,
+        importRunId: importRun.id,
+        source: "STEP_UPLOAD",
+        label,
+        uploadedFileId,
+        uploadedFileHash,
+        status: "parsed",
+        createdBy: args.input.requestedBy ?? null,
+        finalizedBy: null,
+        finalizedAt: null,
+        notes: null,
+      });
 
-    const assemblyNodesBySourceId = await args.store.createAssemblyNodes(snapshot.id, assemblyNodeInputs);
+      const assemblyNodesBySourceId = await store.createAssemblyNodes(snapshot.id, assemblyNodeInputs);
 
-    const partDefinitionsBySourceId = await args.store.createPartDefinitions(
-      snapshot.id,
-      parsed.partDefinitions.map((part): Omit<CadPartDefinition, "id" | "snapshotId" | "createdAt" | "normalizedName"> => ({
-        sourceId: part.sourceId,
-        name: part.name,
-        partNumber: part.partNumber ?? null,
-        material: part.material ?? null,
-        stableSignature: part.stableSignature ?? `part:source:${part.sourceId}`,
-        metadataJson: part.metadata ?? {},
-      })),
-    );
+      const partDefinitionsBySourceId = await store.createPartDefinitions(
+        snapshot.id,
+        parsed.partDefinitions.map((part): Omit<CadPartDefinition, "id" | "snapshotId" | "createdAt" | "normalizedName"> => ({
+          sourceId: part.sourceId,
+          name: part.name,
+          partNumber: part.partNumber ?? null,
+          material: part.material ?? null,
+          stableSignature: part.stableSignature ?? `part:source:${part.sourceId}`,
+          metadataJson: part.metadata ?? {},
+        })),
+      );
 
-    const partInstances = await args.store.createPartInstances(
-      snapshot.id,
-      parsed.partInstances.map((instance): Omit<CadPartInstance, "id" | "snapshotId" | "createdAt"> => ({
-        sourceId: instance.sourceId,
-        partDefinitionId: instance.partDefinitionSourceId
-          ? partDefinitionsBySourceId.get(instance.partDefinitionSourceId)?.id ?? null
-          : null,
-        parentAssemblyNodeId: instance.parentAssemblySourceId
-          ? assemblyNodesBySourceId.get(instance.parentAssemblySourceId)?.id ?? null
-          : null,
-        instancePath: instance.instancePath,
-        quantity: instance.quantity ?? 1,
-        stableSignature: instance.stableSignature ?? `inst:source:${instance.sourceId}`,
-        metadataJson: instance.metadata ?? {},
-      })),
-    );
+      const partInstances = await store.createPartInstances(
+        snapshot.id,
+        parsed.partInstances.map((instance): Omit<CadPartInstance, "id" | "snapshotId" | "createdAt"> => ({
+          sourceId: instance.sourceId,
+          partDefinitionId: instance.partDefinitionSourceId
+            ? partDefinitionsBySourceId.get(instance.partDefinitionSourceId)?.id ?? null
+            : null,
+          parentAssemblyNodeId: instance.parentAssemblySourceId
+            ? assemblyNodesBySourceId.get(instance.parentAssemblySourceId)?.id ?? null
+            : null,
+          instancePath: instance.instancePath,
+          quantity: instance.quantity ?? 1,
+          stableSignature: instance.stableSignature ?? `inst:source:${instance.sourceId}`,
+          metadataJson: instance.metadata ?? {},
+        })),
+      );
 
-    await appendWarnings({
-      store: args.store,
-      importRunId: importRun.id,
-      snapshotId: snapshot.id,
-      warnings: parsed.warnings,
-    });
+      await appendWarnings({
+        store,
+        importRunId: importRun.id,
+        snapshotId: snapshot.id,
+        warnings: parsed.warnings,
+      });
 
-    const assemblyNodes = await args.store.listAssemblyNodes(snapshot.id);
-    const partDefinitions = await args.store.listPartDefinitions(snapshot.id);
-    const mappings = await applyMappingRules({
-      store: args.store,
-      snapshot,
-      importRunId: importRun.id,
-      assemblyNodes,
-      partDefinitions,
-      partInstances,
-    });
-    const unresolved = mappings.some((mapping) => mapping.status === "NEEDS_REVIEW");
-    const nextStatus = unresolved ? "MAPPING_REVIEW" : "MAPPED";
-    const snapshotStatus = unresolved ? "mapping_review" : "mapped";
-    const updatedSnapshot = (await args.store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? missingCadTransition("snapshot");
-    const updatedRun = (await args.store.updateImportRun(importRun.id, {
-      status: nextStatus,
-      parserVersion: parsed.parserVersion,
-      parseCompletedAt,
-      rawSummaryJson: diagnostics,
-    })) ?? missingCadTransition("import run");
-
-    return {
-      importRun: updatedRun,
-      snapshot: updatedSnapshot,
-      summary: {
-        ...diagnostics,
-        assemblyCount: assemblyNodes.length,
-        partDefinitionCount: partDefinitions.length,
-        partInstanceCount: partInstances.length,
-        maxDepth: parsed.rawStats.maxDepth,
+      const assemblyNodes = await store.listAssemblyNodes(snapshot.id);
+      const partDefinitions = await store.listPartDefinitions(snapshot.id);
+      const mappings = await applyMappingRules({
+        store,
+        snapshot,
+        importRunId: importRun.id,
+        assemblyNodes,
+        partDefinitions,
+        partInstances,
+      });
+      const unresolved = mappings.some((mapping) => mapping.status === "NEEDS_REVIEW");
+      const nextStatus = unresolved ? "MAPPING_REVIEW" : "MAPPED";
+      const snapshotStatus = unresolved ? "mapping_review" : "mapped";
+      const updatedSnapshot = (await store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? missingCadTransition("snapshot");
+      const updatedRun = (await store.updateImportRun(importRun.id, {
+        status: nextStatus,
         parserVersion: parsed.parserVersion,
-        configuredParserMode,
-        actualParserVersion: parsed.parserVersion,
-        parserUsedPlaceholder: placeholderUsed,
-        rawStats: diagnostics,
-        warningCount: (await args.store.listWarnings({ importRunId: importRun.id })).length,
-        mappingCount: mappings.length,
-      },
+        parseCompletedAt,
+        uploadedFileId,
+        rawSummaryJson: diagnostics,
+      })) ?? missingCadTransition("import run");
+
+      return {
+        importRun: updatedRun,
+        snapshot: updatedSnapshot,
+        summary: {
+          ...diagnostics,
+          assemblyCount: assemblyNodes.length,
+          partDefinitionCount: partDefinitions.length,
+          partInstanceCount: partInstances.length,
+          maxDepth: parsed.rawStats.maxDepth,
+          parserVersion: parsed.parserVersion,
+          configuredParserMode,
+          actualParserVersion: parsed.parserVersion,
+          parserUsedPlaceholder: placeholderUsed,
+          rawStats: diagnostics,
+          warningCount: (await store.listWarnings({ importRunId: importRun.id })).length,
+          mappingCount: mappings.length,
+        },
+      };
     };
+    return args.store.transaction
+      ? await args.store.transaction(persistParsedImport)
+      : await persistParsedImport(args.store);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const statusCode = error instanceof CadImportError ? error.statusCode : 422;

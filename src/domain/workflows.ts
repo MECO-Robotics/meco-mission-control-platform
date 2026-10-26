@@ -105,7 +105,7 @@ export function buildMetrics(snapshot: SnapshotView) {
     (purchase) => purchase.orderStatus === "delivered",
   ).length;
   const lowStockMaterials = snapshot.materials.filter(
-    (material) => material.onHandQuantity <= material.reorderPoint,
+    (material) => material.onHandQuantity === null || (material.reorderPoint !== null && material.onHandQuantity <= material.reorderPoint),
   ).length;
   const subsystemMetrics = buildSubsystemMetrics(snapshot, workHoursByTaskId);
   const mechanismMetrics = buildMechanismMetrics(snapshot, workHoursByTaskId);
@@ -145,7 +145,11 @@ export function formatTaskStatus(status: TaskStatus) {
     return "QA";
   }
 
-  return "Complete";
+  if (status === "complete") {
+    return "Complete";
+  }
+
+  return "Unrecorded";
 }
 
 function hasMentorPass(qaReports: SnapshotView["qaReports"], task: ReadonlyData<Task>, snapshot: SnapshotView) {
