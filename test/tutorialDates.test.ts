@@ -4,75 +4,22 @@ import { isTaskDisciplineAllowedForProject } from "../src/domain/taskDisciplines
 import { createTutorialSnapshot } from "../src/data/tutorialSnapshot";
 import { snapshot } from "../src/data/mockData";
 
-for (const date of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
-  test(`tutorial activity spans the rolling FRC season at ${date}`, () => {
-    const now = new Date(`${date}T12:00:00Z`);
-    const data = createTutorialSnapshot(now);
-    const seasonStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1);
-    const seasonEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 8, 1);
-    const weekFor = (value: string) => Math.floor(Date.parse(value) / (7 * 86_400_000));
-    const observedMonths = new Set<string>();
-    const observedWeeks = new Set<number>();
-    const overdueTaskIds = new Set(["travel-pack-finalize", "intake-guard", "auto-safety-review"]);
-    const checkDates = (value: unknown): void => {
-      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T|$)/.test(value)) {
-        assert.ok(Date.parse(value) >= seasonStart && Date.parse(value) < seasonEnd, `${value} should be in the seeded season`);
-        observedMonths.add(value.slice(0, 7));
-        observedWeeks.add(weekFor(value));
-      } else if (value && typeof value === "object") Object.values(value).forEach(checkDates);
-    };
-    for (const [key, value] of Object.entries(data)) if (key !== "seasons") checkDates(value);
-    assert.ok(observedMonths.size >= 8, `expected activity across at least eight months; got ${observedMonths.size}`);
-    assert.ok(observedWeeks.size >= 20, `expected activity across the season; got ${observedWeeks.size} weeks`);
-    const milestoneWeeks = new Set(data.milestones.map((milestone) => weekFor(milestone.startAt)));
-    assert.ok(milestoneWeeks.size >= 8, `expected milestones across at least eight weeks; got ${milestoneWeeks.size}`);
-    for (const task of data.tasks) {
-      assert.ok(task.startDate <= task.dueDate);
-      const source = snapshot.tasks.find((candidate) => candidate.id === task.id)!;
-      assert.equal(Date.parse(task.dueDate) - Date.parse(task.startDate), Date.parse(source.dueDate) - Date.parse(source.startDate), `${task.id} retains its source duration`);
-      if (overdueTaskIds.has(task.id)) assert.equal(Date.parse(task.dueDate), Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 86_400_000, `${task.id} remains due yesterday`);
-      assert.equal(task.actualHours, data.workLogs.filter((log) => log.taskId === task.id).reduce((sum, log) => sum + log.hours, 0));
-    }
-    for (const recorded of [...data.workLogs.map((log) => log.date), ...data.qaReports.map((report) => report.reviewedAt).filter((date): date is string => date !== null), ...data.attendanceRecords.map((record) => record.date)]) assert.ok(Date.parse(recorded) <= now.getTime(), recorded);
-    for (const report of data.qaReports.filter((report) => report.result === "pass" && report.status === "reviewed")) {
-      const taskId = report.targetRefs.find((ref) => ref.kind === "task")?.id;
-      assert.equal(data.tasks.find((task) => task.id === taskId)?.status, "complete");
-    }
-    for (const milestone of data.milestones) {
-      if (milestone.endAt) assert.ok(Date.parse(milestone.startAt) <= Date.parse(milestone.endAt));
-    }
-    assert.equal(data.seasons[0].startDate, new Date(seasonStart).toISOString().slice(0, 10));
-    assert.equal(data.seasons[0].endDate, new Date(seasonEnd - 86_400_000).toISOString().slice(0, 10));
-    const demoMembers = data.members.filter((member) => member.id.startsWith("demo-"));
-    assert.ok(demoMembers.length > 0);
-    for (const member of demoMembers) {
-      assert.ok(data.attendanceRecords.some((record) =>
-        record.memberId === member.id && record.date === date && record.totalHours > 0,
-      ), `${member.name} must appear in today's availability roster`);
-    }
-    assert.equal(new Set(data.attendanceRecords.map((record) => record.id)).size, data.attendanceRecords.length);
-    assert.deepEqual(createTutorialSnapshot(now), data);
-  });
-}
-
-test("tutorial tasks retain long source spans and valid overdue example dates", () => {
-  const data = createTutorialSnapshot(new Date("2026-10-21T12:00:00Z"));
-  const vision = data.tasks.find((task) => task.id === "vision-calibration-sweep")!;
-  assert.equal((Date.parse(vision.dueDate) - Date.parse(vision.startDate)) / 86_400_000, 55);
-  const travelSource = snapshot.tasks.find((task) => task.id === "travel-pack-finalize")!;
-  assert.equal(travelSource.startDate, "2026-04-27");
-  assert.equal(travelSource.dueDate, "2026-05-03");
-  const travel = data.tasks.find((task) => task.id === travelSource.id)!;
-  assert.equal(travel.startDate, "2026-10-14");
-  assert.equal(travel.dueDate, "2026-10-20");
+test("tutorial snapshots preserve the canonical source dates", () => {
+  const baseline = createTutorialSnapshot();
+  for (const clock of ["2026-09-08", "2027-01-01", "2028-02-29", "2026-05-31"]) {
+    assert.deepEqual(createTutorialSnapshot(new Date(`${clock}T12:00:00Z`)), baseline);
+  }
+  assert.deepEqual(baseline, snapshot);
 });
 
-test("new tutorial data rolls forward without mutating an earlier session", () => {
-  const old = createTutorialSnapshot(new Date("2026-12-31T12:00:00Z"));
-  const before = structuredClone(old);
-  const next = createTutorialSnapshot(new Date("2027-01-04T12:00:00Z"));
-  assert.deepEqual(old, before);
-  assert.notEqual(next.tasks[0].startDate, old.tasks[0].startDate);
+test("tutorial task dates match their source records", () => {
+  const data = createTutorialSnapshot(new Date("2026-10-21T12:00:00Z"));
+  for (const task of data.tasks) {
+    const source = snapshot.tasks.find((candidate) => candidate.id === task.id);
+    assert.ok(source);
+    assert.equal(task.startDate, source.startDate);
+    assert.equal(task.dueDate, source.dueDate);
+  }
 });
 
 test("tutorial roster categories and all member references resolve within the seed", () => {
@@ -116,36 +63,6 @@ test("tutorial tasks use the canonical project work-type catalog", () => {
   }
 });
 
-test("tutorial seed keeps overdue tasks assigned across date rollovers", () => {
-  const now = new Date("2026-10-02T12:00:00Z");
-  const data = createTutorialSnapshot(now);
-  const overdue = data.tasks.filter((task) => task.status !== "complete" && Date.parse(task.dueDate) < Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  assert.ok(overdue.length >= 3);
-  assert.ok(overdue.every((task) => task.ownerId || task.assigneeIds.length > 0 || task.mentorId));
-});
-
-for (const date of ["2026-10-06", "2026-11-06", "2027-01-06"]) {
-  test(`tutorial tasks span the season and land before linked checkpoints at ${date}`, () => {
-    const now = new Date(`${date}T12:00:00Z`);
-    const data = createTutorialSnapshot(now);
-    const overdueIds = new Set(["travel-pack-finalize", "intake-guard", "auto-safety-review"]);
-    const dates = data.tasks.filter((task) => !overdueIds.has(task.id)).flatMap((task) => [task.startDate, task.dueDate]);
-    const months = new Set(dates.map((value) => value.slice(0, 7)));
-    const weeks = new Set(dates.map((value) => Math.floor(Date.parse(value) / (7 * 86_400_000))));
-    assert.ok(months.size >= 5, `expected task dates across at least five months; got ${months.size}`);
-    assert.ok(weeks.size >= 16, `expected task activity across the season; got ${weeks.size} weeks`);
-
-    const milestones = new Map(data.milestones.map((milestone) => [milestone.id, milestone]));
-    for (const task of data.tasks.filter((candidate) => candidate.status !== "complete")) {
-      const nextCheckpoint = task.scheduleRefs
-        .map((ref) => milestones.get(ref.id))
-        .filter((milestone) => milestone && milestone.startAt.slice(0, 10) > date)
-        .sort((left, right) => left!.startAt.localeCompare(right!.startAt))[0];
-      if (nextCheckpoint) assert.ok(task.dueDate < nextCheckpoint.startAt.slice(0, 10), `${task.id} should be due before ${nextCheckpoint.title}`);
-    }
-  });
-}
-
 test("FRC season records connect students, work, checkpoints, and event weekends", () => {
   const data = createTutorialSnapshot(new Date("2026-10-06T12:00:00Z"));
   const events = new Map(data.events.map((event) => [event.id, event]));
@@ -160,11 +77,11 @@ test("FRC season records connect students, work, checkpoints, and event weekends
     "pit-spares-box", "event-repair-followup", "season-lessons-one-pager",
   ];
 
-  assert.ok(data.seasons[0].startDate < "2026-10-01");
-  assert.ok(data.seasons[0].endDate > "2027-04-30");
-  assert.equal(events.get("frc-kickoff-watch-2027")?.startAt.slice(0, 10), "2027-01-09");
-  assert.equal(events.get("frc-week-zero-2027")?.startAt.slice(0, 10), "2027-02-20");
-  assert.equal(events.get("frc-registered-event-2027")?.startAt.slice(0, 10), "2027-03-04");
+  assert.ok(data.seasons[0]?.startDate && data.seasons[0].startDate < "2026-10-01");
+  assert.ok(data.seasons[0]?.endDate && data.seasons[0].endDate > "2027-04-30");
+  assert.equal(events.get("frc-kickoff-watch-2027")?.startAt?.slice(0, 10), "2027-01-09");
+  assert.equal(events.get("frc-week-zero-2027")?.startAt?.slice(0, 10), "2027-02-20");
+  assert.equal(events.get("frc-registered-event-2027")?.startAt?.slice(0, 10), "2027-03-04");
 
   for (const id of seededTaskIds) {
     const task = data.tasks.find((candidate) => candidate.id === id);

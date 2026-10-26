@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMaterial, createPartInstance, createPurchaseItem, createSubsystem, getSnapshot, getTasks, receivePurchaseItem, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
+import { createMaterial, createMaterialTransaction, createPartInstance, createPurchaseItem, createSubsystem, getSnapshot, getTasks, receivePurchaseItem, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
 import { purchaseItemSchema, purchaseReceiptRecordSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
 import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
+
+function reduceMaterialStockToZero(materialId: string) {
+  const quantity = getSnapshot().materials.find((material) => material.id === materialId)?.onHandQuantity;
+  if (quantity && quantity > 0) {
+    const result = createMaterialTransaction(materialId, {
+      operationId: `clear-stock-${materialId}`,
+      movementType: "adjustment",
+      adjustmentDirection: "decrease",
+      quantity,
+      reason: "Reset test stock through the inventory ledger",
+    });
+    assert.ok("transaction" in result);
+  }
+}
 
 test("purchase approval and transitions are mentor/admin-only adjacent operations", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
@@ -254,7 +268,7 @@ test("unreceived COTS purchases retain part identity until their receipts create
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
     const materialId = "mat-onyx-filament";
-    updateMaterial(materialId, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(materialId);
     updatePurchaseItem("ferrule-kit", {
       kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId,
       quantity: 1, orderStatus: "ordered",
@@ -300,7 +314,7 @@ test("material purchases block material deletion and still receive stock", async
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
     const materialId = "mat-onyx-filament";
-    updateMaterial(materialId, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(materialId);
     updatePurchaseItem("ferrule-kit", {
       kind: "cots-goods", partDefinitionId: null, materialId,
       quantity: 1, orderStatus: "ordered",
@@ -452,7 +466,7 @@ test("fractional material receipts use decimal-safe cumulative bounds and old re
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
     const materialId = "mat-onyx-filament";
-    updateMaterial(materialId, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(materialId);
     updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId, quantity: 1.3, approvalStatus: "approved", orderStatus: "ordered" });
     const beforeSubPrecision = getSnapshot();
     assert.deepEqual(receivePurchaseItem("ferrule-kit", { operationId: "decimal-below-precision", quantity: 4e-13, location: "Onyx shelf" }), { error: "invalid-quantity" });
@@ -491,7 +505,7 @@ test("postreceipt quantity floor is decimal-safe and allows unchanged quantity m
     assert.equal(metadataEdit.json().item.title, "Ferrule kit received");
     assert.equal(metadataEdit.json().item.quantity, 1.2);
     resetLimits();
-    updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
+    reduceMaterialStockToZero("mat-onyx-filament");
     updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", approvalStatus: "approved", orderStatus: "ordered" });
     const first = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "floor-1.1", quantity: 1.1, location: "Onyx shelf" } });
     assert.equal(first.statusCode, 200, first.body);
@@ -514,7 +528,7 @@ test("postreceipt quantity floor is decimal-safe and allows unchanged quantity m
 
 test("direct purchase edits cannot rewrite received identity or lower received quantity", async () => {
   await withWorkflowAuthApp(async () => {
-    updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
+    reduceMaterialStockToZero("mat-onyx-filament");
     updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", quantity: 1.2, orderStatus: "ordered" });
     const received = receivePurchaseItem("ferrule-kit", { operationId: "domain-decimal-receipt", quantity: 0.1, location: "Onyx shelf" });
     assert.ok("receipt" in received);
@@ -535,7 +549,7 @@ test("direct purchase edits cannot rewrite received identity or lower received q
       assert.deepEqual(getSnapshot(), beforeRejectedEdits, "rejected direct edit leaves inventory, receipts, and audit unchanged");
     }
 
-    updatePurchaseItem("ferrule-kit", { taskId: beforeRejectedEdits.purchaseItems.find((item) => item.id === "ferrule-kit")!.taskId, partDefinitionId: null, materialId: "mat-onyx-filament" });
+    updatePurchaseItem("ferrule-kit", { partDefinitionId: null, materialId: "mat-onyx-filament" });
     updatePurchaseItem("ferrule-kit", { title: "Valid commercial edit", quantity: 0.3 });
     assert.equal(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.title, "Valid commercial edit");
     assert.equal(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.quantity, 0.3);
@@ -578,18 +592,19 @@ test("received purchase edits honor receiver floating-point tolerance without al
   });
 });
 
-test("receipt-bearing purchases and referenced materials resist deletion while student stock edits stay allowed", async () => {
+test("receipt-bearing purchases and referenced materials resist deletion while stock edits use the ledger", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const student = await createWorkflowAuthHeaders("student");
     const mentor = await createWorkflowAuthHeaders("mentor");
+    const beforeStockEdit = getSnapshot();
     const stockEdit = await app.inject({ method: "PATCH", url: "/api/materials/mat-onyx-filament", headers: student, payload: { onHandQuantity: 77 } });
-    assert.equal(stockEdit.statusCode, 200);
-    assert.equal(stockEdit.json().item.onHandQuantity, 77);
+    assert.equal(stockEdit.statusCode, 400);
+    assert.deepEqual(getSnapshot(), beforeStockEdit);
     resetLimits();
     const materialDelete = await app.inject({ method: "DELETE", url: "/api/materials/mat-onyx-filament", headers: student });
     assert.equal(materialDelete.statusCode, 409);
 
-    const referencedMaterial = createMaterial({ name: "Referenced manufacturing stock", category: "other", unit: "kg", onHandQuantity: 0, reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
+    const referencedMaterial = createMaterial({ name: "Referenced manufacturing stock", category: "other", unit: "kg", reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
     const manufacturingTask = getTasks().find((task) => task.manufacturingDetails !== null);
     assert.ok(manufacturingTask?.manufacturingDetails);
     updateTask(manufacturingTask.id, {
@@ -604,7 +619,7 @@ test("receipt-bearing purchases and referenced materials resist deletion while s
     resetLimits();
     const manufacturingMaterialDelete = await app.inject({ method: "DELETE", url: `/api/materials/${referencedMaterial.id}`, headers: student });
     assert.equal(manufacturingMaterialDelete.statusCode, 409);
-    const unusedMaterial = createMaterial({ name: "Unused removable stock", category: "other", unit: "kg", onHandQuantity: 0, reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
+    const unusedMaterial = createMaterial({ name: "Unused removable stock", category: "other", unit: "kg", reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
     resetLimits();
     const unusedDelete = await app.inject({ method: "DELETE", url: `/api/materials/${unusedMaterial.id}`, headers: student });
     assert.equal(unusedDelete.statusCode, 200);
@@ -890,7 +905,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
     assert.equal(stocked.location, material.location);
     assert.equal(afterMaterialOnly.partInstances.length, before.partInstances.length + 1);
 
-    updateMaterial(material.id, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(material.id);
     resetLimits();
     const emptyStockReceipt = await inject({ method: "POST", url: `/api/purchases/${materialPurchaseId}/receipts`, headers: mentor, payload: { operationId: "empty-stock-material", quantity: 1, location: "New material shelf" } });
     assert.equal(emptyStockReceipt.statusCode, 200, emptyStockReceipt.body);

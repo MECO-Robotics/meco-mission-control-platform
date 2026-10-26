@@ -37,8 +37,8 @@ test("2026 seed preserves sourced activity and derives stock from receipt transa
     assert.ok(taskIndex.get(dependency.refId)! < taskIndex.get(dependency.taskId)!);
   }
   assert.equal(snapshot.taskDependencies.length, 12);
-  assert.equal(snapshot.taskDependencies.filter((dependency) => dependency.dependencyType === "hard" && dependency.requiredState === "complete").length, 3);
-  assert.equal(snapshot.taskDependencies.filter((dependency) => dependency.dependencyType === "soft" && dependency.requiredState === "complete").length, 9);
+  assert.equal(snapshot.taskDependencies.filter((dependency) => dependency.kind !== "part-instance" && dependency.dependencyType === "hard" && dependency.requiredState === "complete").length, 3);
+  assert.equal(snapshot.taskDependencies.filter((dependency) => dependency.kind !== "part-instance" && dependency.dependencyType === "soft" && dependency.requiredState === "complete").length, 9);
   assert.ok(snapshot.tasks.find((task) => task.id === "task-src-4ecd2c87f9718c")?.summary.includes("after programming it"));
   const criticalPathTask = snapshot.tasks.find((task) => task.id === "task-slack-orlando-counter-roller-endcaps");
   assert.equal(criticalPathTask?.priority, "high");

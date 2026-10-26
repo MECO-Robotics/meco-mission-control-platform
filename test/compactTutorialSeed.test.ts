@@ -36,7 +36,7 @@ function assertSeedReferences(seed: PlatformSnapshot) {
   assert.ok(seed.workLogs.every((log) => taskIds.has(log.taskId) && log.participantIds.every((id) => memberIds.has(id))));
   assert.ok(seed.attendanceRecords.every((record) => memberIds.has(record.memberId)));
   assert.ok(seed.tasks.every((task) => !task.manufacturingDetails || task.workTypeId === "robot:manufacturing"));
-  assert.ok(seed.purchaseItems.every((item) => taskIds.has(item.taskId) && (!item.partDefinitionId || partDefinitionIds.has(item.partDefinitionId))));
+  assert.ok(seed.purchaseItems.every((item) => (!item.taskId || taskIds.has(item.taskId)) && (!item.partDefinitionId || partDefinitionIds.has(item.partDefinitionId))));
 
   assert.ok(seed.tasks.length >= 35);
   assert.ok(seed.workstreams.length >= 10);
