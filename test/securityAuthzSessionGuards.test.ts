@@ -18,7 +18,7 @@ test("CAD finalize audit actor ignores a client-supplied identity", async () => 
       name: "Authenticated CAD Mentor",
       email: "cad.actor@mecorobotics.org",
       role: "mentor",
-      seasonId: "default-season",
+      seasonId: "season-2026-meco",
     });
     const request = {
       headers: {},
@@ -225,11 +225,13 @@ test("generic QA reports cannot bypass mentor approval authorization", async () 
 
 test("QA workflow submission requires task mutation authority independently of approval", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const { getSnapshot, updateTask } = require("../src/data/store") as typeof import("../src/data/store");
+    const { getSnapshot, updateTask, createWorkLog } = require("../src/data/store") as typeof import("../src/data/store");
     const task = getSnapshot().tasks.find((item) => !getSnapshot().risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !getSnapshot().taskDependencies.some((edge) => edge.taskId === item.id))!;
-    updateTask(task.id, { status: "in-progress" });
+    const student = getSnapshot().members.find((member) => member.role === "student")!;
+    const mentor = getSnapshot().members.find((member) => member.email === "mentor@mecorobotics.org")!;
+    updateTask(task.id, { status: "in-progress", ownerId: student.id, assigneeIds: [student.id], mentorId: mentor.id });
     updateTask(task.id, { status: "waiting-for-qa", requiresDocumentation: true });
-    const payload = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: "ava", participantIds: ["ava"], mentorId: null, requestedById: null, result: "pass", summary: "Authorization check", notes: "Authorization check", createdAt: new Date().toISOString(), status: "submitted", reviewedById: null, reviewedAt: new Date().toISOString() };
+    const payload = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: student.id, participantIds: [student.id], mentorId: mentor.id, requestedById: null, result: "pass", summary: "Authorization check", notes: "Authorization check", createdAt: new Date().toISOString(), status: "submitted", reviewedById: null, reviewedAt: new Date().toISOString() };
     const url = "/api/qa-reports/submit";
     assert.equal((await app.inject({ method: "POST", url, payload })).statusCode, 401);
     resetLimits();
@@ -249,18 +251,21 @@ test("QA workflow submission requires task mutation authority independently of a
     assert.equal(allowed.statusCode, 201, allowed.body);
     assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "waiting-for-qa", "a lead's submitted report is not an approval and cannot complete a task");
     resetLimits();
-    const mentorToken = await signTestToken({ email: "jordan.lee@mecorobotics.org", role: "mentor" });
-    const missingEvidenceApproval = await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: "marco" }, headers: { authorization: `Bearer ${mentorToken}` } });
+    const mentorToken = await signTestToken({ email: "mentor@mecorobotics.org", role: "mentor", accountId: mentor.id });
+    const missingEvidenceApproval = await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: mentor.id }, headers: { authorization: `Bearer ${mentorToken}` } });
     assert.equal(missingEvidenceApproval.statusCode, 201, missingEvidenceApproval.body);
     assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "waiting-for-qa", "reviewed pass remains waiting when required work evidence is missing");
     resetLimits();
-    const { createArtifact, createWorkLog } = require("../src/data/store") as typeof import("../src/data/store");
-    createWorkLog({ taskId: task.id, date: "2026-10-15", hours: 1, participantIds: ["ava"], notes: "Required QA work" });
+    const { createArtifact } = require("../src/data/store") as typeof import("../src/data/store");
+    createWorkLog({ taskId: task.id, date: "2026-10-15", hours: 1, participantIds: [student.id], notes: "Required QA work" });
     createArtifact({ projectId: task.projectId, kind: "document", title: "QA evidence", summary: "Synthetic required documentation.", status: "published", uri: "https://example.invalid/qa-evidence", updatedAt: new Date().toISOString(), targetRefs: [{ kind: "task", id: task.id }] });
-    const approved = await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: "marco" }, headers: { authorization: `Bearer ${mentorToken}` } });
+    const approved = await app.inject({ method: "POST", url, payload: { ...payload, status: "reviewed", reviewedById: mentor.id }, headers: { authorization: `Bearer ${mentorToken}` } });
     assert.equal(approved.statusCode, 201, approved.body);
     assert.equal(getSnapshot().tasks.find((item) => item.id === task.id)?.status, "complete");
-  }, { env: authEnv, members: [{ name: "QA Lead", email: "lead@mecorobotics.org", role: "lead" }] });
+  }, { env: authEnv, members: [
+    { name: "QA Lead", email: "lead@mecorobotics.org", role: "lead" },
+    { name: "QA Mentor", email: "mentor@mecorobotics.org", role: "mentor" },
+  ] });
 });
 
 test("student sessions cannot reset global tutorial state", async () => {
@@ -332,7 +337,7 @@ test("auth-off public demo bootstrap is sanitized while the local workspace rema
     assert.equal(localMember.email, member.email);
     assert.equal(localMember.plannedAttendanceNotes, member.plannedAttendanceNotes);
 
-    for (const seasonId of ["default-season", "%20default-season%20"]) {
+    for (const seasonId of ["season-2026-meco", "%20season-2026-meco%20"]) {
       resetLimits();
       const demoResponse = await app.inject({
         method: "GET",
@@ -389,7 +394,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       const demoResponse = await app.inject({
         method: "GET",
-        url: "/api/bootstrap?seasonId=default-season",
+        url: "/api/bootstrap?seasonId=season-2026-meco",
       });
 
       assert.equal(demoResponse.statusCode, 200);
@@ -411,10 +416,10 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         tasks: Array<{ assigneeIds: string[]; mentorId: string | null; ownerId: string | null }>;
         workLogs: Array<{ participantIds: string[]; createdById: string | null }>;
       };
-      assert.equal(demoBody.seasons.every((season) => season.id === "default-season"), true);
+      assert.equal(demoBody.seasons.every((season) => season.id === "season-2026-meco"), true);
       assert.ok(demoBody.projects.length > 0);
       assert.equal(
-        demoBody.projects.every((project) => project.seasonId === "default-season"),
+        demoBody.projects.every((project) => project.seasonId === "season-2026-meco"),
         true,
       );
       assert.equal(new Set(demoBody.members.map((member) => member.name)).size, demoBody.members.length);
@@ -450,8 +455,8 @@ test("unsigned users can read only the demo season bootstrap", async () => {
         true,
       );
       for (const member of demoBody.members) {
-        assert.equal(member.seasonId, "default-season");
-        if (Array.isArray(member.activeSeasonIds)) assert.ok(member.activeSeasonIds.every((id) => id === "default-season"));
+        assert.equal(member.seasonId, "season-2026-meco");
+        if (Array.isArray(member.activeSeasonIds)) assert.ok(member.activeSeasonIds.every((id) => id === "season-2026-meco"));
       }
       assert.ok(demoBody.members.length > 0);
       assert.ok(demoBody.members.some((member) => member.role === "student"));
@@ -471,7 +476,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       assert.equal(
         demoBody.milestones.every(
           (milestone) =>
-            milestone.seasonId === "default-season" ||
+            milestone.seasonId === "season-2026-meco" ||
             milestone.projectIds.some((projectId) => demoProjectIds.has(projectId)),
         ),
         true,
@@ -479,7 +484,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
       assert.equal(
         demoBody.meetings.every(
           (meeting) =>
-            meeting.seasonId === "default-season" ||
+            meeting.seasonId === "season-2026-meco" ||
             (meeting.projectIds ?? []).some((projectId) => demoProjectIds.has(projectId)),
         ),
         true,
@@ -513,7 +518,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       const personScopedDemoResponse = await app.inject({
         method: "GET",
-        url: "/api/bootstrap?seasonId=default-season&personId=marco",
+        url: "/api/bootstrap?seasonId=season-2026-meco&personId=marco",
       });
 
       assert.equal(personScopedDemoResponse.statusCode, 401);
@@ -522,7 +527,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       const invalidTokenDemoResponse = await app.inject({
         method: "GET",
-        url: "/api/bootstrap?seasonId=default-season",
+        url: "/api/bootstrap?seasonId=season-2026-meco",
         headers: {
           authorization: "Bearer invalid",
         },
@@ -538,7 +543,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       const invalidTokenPersonScopedDemoResponse = await app.inject({
         method: "GET",
-        url: "/api/bootstrap?seasonId=default-season&personId=marco",
+        url: "/api/bootstrap?seasonId=season-2026-meco&personId=marco",
         headers: {
           authorization: "Bearer invalid",
         },
@@ -568,7 +573,7 @@ test("unsigned users can read only the demo season bootstrap", async () => {
 
       const duplicateSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/bootstrap?seasonId=default-season&seasonId=season-2030",
+        url: "/api/bootstrap?seasonId=season-2026-meco&seasonId=season-2030",
       });
 
       assert.equal(duplicateSeasonResponse.statusCode, 401);
@@ -595,7 +600,7 @@ test("authenticated season bootstrap omits escalations", async () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/api/bootstrap?seasonId=default-season",
+        url: "/api/bootstrap?seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${mentorToken}`,
         },
@@ -606,7 +611,7 @@ test("authenticated season bootstrap omits escalations", async () => {
         members: Array<Record<string, unknown>>;
         seasons: Array<{ id: string }>;
       };
-      assert.equal(body.seasons.every((season) => season.id === "default-season"), true);
+      assert.equal(body.seasons.every((season) => season.id === "season-2026-meco"), true);
       assert.equal("escalations" in body, false);
       const authenticatedProbeRecord = body.members.find(
         (member) => member.id === authenticatedProbeMember.id,

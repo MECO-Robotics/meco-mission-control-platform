@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { getSnapshot } from "../src/data/store";
 
 test("material routes record idempotent stock movements and reject direct balance edits", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
@@ -18,7 +19,7 @@ test("material routes record idempotent stock movements and reject direct balanc
     });
     assert.equal(receipt.statusCode, 201, receipt.body);
     assert.equal(receipt.json().item.onHandQuantity, initialQuantity + 5);
-    assert.equal(receipt.json().transaction.actorMemberId, null);
+    assert.equal(receipt.json().transaction.actorMemberId, getSnapshot().members.find((member) => member.role === "student" || member.role === "lead")?.id ?? null);
 
     resetLimits();
     const forgedActor = await app.inject({

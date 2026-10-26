@@ -6,11 +6,18 @@ import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 import { createQaRequest, getSnapshot, updateTask, createTaskDependency, removeTaskDependency } from "../src/data/store";
 
 const env = { API_RATE_LIMIT_MAX_REQUESTS: "100" };
+
+function assignedTask(snapshot: ReturnType<typeof getSnapshot>) {
+  const task = snapshot.tasks.find((item) => !snapshot.risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)))!;
+  const project = snapshot.projects.find((item) => item.id === task.projectId)!;
+  const member = snapshot.members.find((item) => item.role === "student" && (item.activeSeasonIds ?? [item.seasonId]).includes(project.seasonId))!;
+  updateTask(task.id, { status: "in-progress", ownerId: member.id, assigneeIds: [member.id] });
+  return { task: getSnapshot().tasks.find((item) => item.id === task.id)!, member };
+}
 test("unreviewed QA submission persists evidence without completing its task", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((item) => !snapshot.risks.some((risk) => risk.blocksWork && risk.relatedTargets.some((target) => target.kind === "task" && target.id === item.id)) && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
-    updateTask(task.id, { status: "in-progress" });
+    const { task } = assignedTask(snapshot);
     const request = createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: snapshot.members.find((member) => member.role === "mentor")!.id, requestedById: task.ownerId });
     const payload = { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: request.id }], createdByMemberId: snapshot.members[0].id, participantIds: [snapshot.members[0].id], mentorId: request.mentorId, requestedById: request.requestedById, result: "pass", summary: "Checked", notes: "Checked", evidenceNotes: "Measured 12V", createdAt: new Date().toISOString(), status: "submitted", reviewedById: null, reviewedAt: null };
     const draft = await app.inject({ method: "POST", url: "/api/qa-reports/submit", payload: { ...payload, status: "draft" } });
@@ -83,11 +90,11 @@ test("unreviewed pass evidence cannot complete tasks regardless of task readines
 test("task QA requests persist their transition and retry without duplicate requests or audits", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((record) => record.status === "in-progress" && !record.isBlocked && !isTaskWaitingOnDependencies(record, snapshot))!;
+    const { task } = assignedTask(snapshot);
     assert.ok(task);
     const actor = snapshot.members.find((member) => member.id === task.ownerId)!;
     const mentor = snapshot.members.find((member) => member.role === "mentor")!;
-    const token = await issueTestMobileToken({ accountId: actor.id, authProvider: "email", email: actor.email, name: actor.name, picture: null, hostedDomain: "mecorobotics.org", role: actor.role, taskSubteamIds: [] });
+    const token = await issueTestMobileToken({ accountId: actor.id, authProvider: "email", email: "qa.student@mecorobotics.org", name: actor.name, picture: null, hostedDomain: "mecorobotics.org", role: actor.role, taskSubteamIds: [] });
     const headers = { authorization: `Bearer ${token}` };
     const payload = { projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: "Atomic task QA", mentorId: mentor.id, requestedById: mentor.id };
     const first = await app.inject({ method: "POST", url: "/api/qa-requests", headers, payload });
@@ -110,11 +117,12 @@ test("task QA requests persist their transition and retry without duplicate requ
 test("task QA rejects invalid mentors, unrelated actors, and unfinished work without publishing", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((record) => record.status === "in-progress" && record.ownerId && !record.isBlocked && !isTaskWaitingOnDependencies(record, snapshot))!;
+    const { task: preparedTask } = assignedTask(snapshot);
+    const task = preparedTask;
     const owner = snapshot.members.find((member) => member.id === task.ownerId)!;
     const outsider = snapshot.members.find((member) => member.role === "student" && member.id !== task.ownerId && !task.assigneeIds.includes(member.id))!;
     const mentor = snapshot.members.find((member) => member.role === "mentor")!;
-    const tokenFor = (member: typeof owner) => issueTestMobileToken({ accountId: member.id, authProvider: "email", email: member.email, name: member.name, picture: null, hostedDomain: "mecorobotics.org", role: member.role, taskSubteamIds: [] });
+    const tokenFor = (member: typeof owner) => issueTestMobileToken({ accountId: member.id, authProvider: "email", email: `qa.${member.role}@mecorobotics.org`, name: member.name, picture: null, hostedDomain: "mecorobotics.org", role: member.role, taskSubteamIds: [] });
     const ownerToken = await tokenFor(owner);
     const outsiderToken = await tokenFor(outsider);
     const payload = { targetRefs: [{ kind: "task", id: task.id }], subject: "Rejected task QA", mentorId: mentor.id };

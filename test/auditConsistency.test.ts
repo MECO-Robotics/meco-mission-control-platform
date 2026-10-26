@@ -42,8 +42,9 @@ test("canonical dependency required state round-trips without a contradictory co
 test("dependency commands reject impossible states and validate the full merged patch", async () => {
   await withIntegrationApp(async ({ app }) => {
     const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((candidate) => candidate.id === "wire-swerve-module")!;
-    const upstream = snapshot.tasks.find((candidate) => candidate.id === "intake-guard")!;
+    const candidates = snapshot.tasks.filter((candidate) => candidate.status !== "complete");
+    const task = candidates[0]!;
+    const upstream = candidates.find((candidate) => candidate.id !== task.id)!;
     assert.notEqual(task.status, "complete");
     assert.notEqual(upstream.status, "complete");
     const milestone = snapshot.milestones[0];
@@ -170,11 +171,24 @@ test("proxy quotas use only the configured immediate ingress and reject spoofed 
 test("a failed required CAD terminal transition cannot return the earlier snapshot as success", async () => {
   await withIntegrationApp(async ({ app }) => {
     const { runStepImport } = await import("../src/cad/cadImportService");
+    const { setCadRuntimeStoreFinalizeFailureForTest } = await import("../src/cad/cadStore");
     const { createPlaceholderStepParserClient } = await import("../src/cad/stepParserClient");
-    const store = { ...app.cadStore, updateSnapshot: async () => null };
-    await assert.rejects(runStepImport({ store, parserClient: createPlaceholderStepParserClient(), parserMode: "placeholder", allowPlaceholder: true, input: { fileText: "fixture", originalFilename: "fixture.step", label: "terminal-failure" } }), /disappeared during a required state transition/);
-    const runs = await store.listImportRuns();
-    assert.equal(runs[0]?.status, "FAILED");
+    const { createWorkflowAuthHeaders } = await import("./helpers/workflowAuth");
+    const imported = await runStepImport({ store: app.cadStore, parserClient: createPlaceholderStepParserClient(), parserMode: "placeholder", allowPlaceholder: true, input: { fileText: "fixture", originalFilename: "fixture.step", label: "terminal-failure" } });
+    setCadRuntimeStoreFinalizeFailureForTest(new Error("Injected required CAD terminal transition failure"));
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/cad/snapshots/${imported.snapshot.id}/finalize`,
+        headers: await createWorkflowAuthHeaders("admin"),
+        payload: { allowUnresolved: true },
+      });
+      assert.equal(response.statusCode, 500, response.body);
+    } finally {
+      setCadRuntimeStoreFinalizeFailureForTest(null);
+    }
+    assert.equal((await app.cadStore.findSnapshot(imported.snapshot.id))?.status, imported.snapshot.status);
+    assert.equal((await app.cadStore.findImportRun(imported.importRun.id))?.status, imported.importRun.status);
   }, { env: { NODE_ENV: "test" } });
 });
 

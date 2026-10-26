@@ -87,7 +87,7 @@ export type MechanismInput = OptionalFields<
 
 export type PartDefinitionInput = OptionalFields<
   Omit<PartDefinition, "id">,
-  "seasonId" | "iteration" | "isArchived"
+  "seasonId" | "iteration" | "isArchived" | "vendorPartNumbers"
 >;
 
 export type PartInstanceInput = Omit<PartInstance, "id">;

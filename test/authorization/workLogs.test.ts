@@ -7,10 +7,10 @@ import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workf
 test("authenticated work-log edits retain the last completion record", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const initial = getSnapshot();
-    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const task = initial.tasks.find((item) => item.status !== "complete")!;
     const destination = initial.tasks.find((item) => item.id !== task.id && item.status !== "complete")!;
     const mentor = await createWorkflowAuthHeaders("mentor");
-    const memberId = task.ownerId ?? initial.members[0]!.id;
+    const memberId = task.ownerId ?? initial.members.find((member) => member.role === "student")!.id;
     resetStore({ ...initial, workLogs: initial.workLogs.filter((log) => log.taskId !== task.id) });
     updateTask(task.id, { status: "waiting-for-qa", requiresDocumentation: false });
     const createdLog = await app.inject({ method: "POST", url: "/api/work-logs", headers: mentor, payload: {
@@ -59,6 +59,8 @@ test("authenticated work-log edits retain the last completion record", async () 
 
 test("work-log mutation requires mentor or admin and records the authenticated actor", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
+    const student = getSnapshot().members.find((member) => member.email === "ava.chen@mecorobotics.org")!;
+    const task = getSnapshot().tasks.find((candidate) => candidate.status !== "complete")!;
     const studentHeaders = await createWorkflowAuthHeaders("student");
     const leadHeaders = await createWorkflowAuthHeaders("lead");
     const mentorHeaders = await createWorkflowAuthHeaders("mentor");
@@ -69,15 +71,15 @@ test("work-log mutation requires mentor or admin and records the authenticated a
       url: "/api/work-logs",
       headers: studentHeaders,
       payload: {
-        taskId: "swerve-sensor-bundle",
+        taskId: task.id,
         date: "2026-08-10",
         hours: 1,
-        participantIds: ["ava"],
+        participantIds: [student.id],
         notes: "Student-created authorization fixture",
       },
     });
     assert.equal(created.statusCode, 201);
-    assert.equal(created.json().item.createdById, "ava");
+    assert.equal(created.json().item.createdById, student.id);
     const workLogId = created.json().item.id as string;
 
     resetLimits();
@@ -115,7 +117,6 @@ test("work-log mutation requires mentor or admin and records the authenticated a
     assert.equal(allowedMentorUpdate.statusCode, 200);
     assert.equal(allowedMentorUpdate.json().item.hours, 2);
 
-    const { getSnapshot } = require("../../src/data/store") as typeof import("../../src/data/store");
     const action = [...(getSnapshot().actions ?? [])]
       .reverse()
       .find((candidate) => candidate.entityId === workLogId && candidate.operation === "update");
@@ -138,5 +139,5 @@ test("work-log mutation requires mentor or admin and records the authenticated a
       headers: adminHeaders,
     });
     assert.equal(allowedAdminDelete.statusCode, 200);
-  });
+  }, { env: { API_RATE_LIMIT_MAX_REQUESTS: "100" }, members: [{ name: "Ava Chen", email: "ava.chen@mecorobotics.org", role: "student", seasonId: "season-2026-meco" }] });
 });

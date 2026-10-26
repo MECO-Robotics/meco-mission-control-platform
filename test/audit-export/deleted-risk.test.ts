@@ -9,6 +9,7 @@ test("audit export preserves workstream risk scope after deletion", async () => 
     async ({ app, resetLimits }) => {
       const {
         createRisk,
+        createWorkstream,
         getSnapshot,
         removeRisk,
         updateRisk,
@@ -18,10 +19,8 @@ test("audit export preserves workstream risk scope after deletion", async () => 
         role: "admin",
       });
 
-      const robotWorkstream = getSnapshot().workstreams.find(
-        (workstream) => workstream.projectId === "project-robot-2026",
-      );
-      assert.ok(robotWorkstream);
+      const robotProject = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!;
+      const robotWorkstream = createWorkstream({ projectId: robotProject.id, name: "Audit Export Workstream", description: "Test workstream for retained audit scope." });
       const workstreamRisk = createRisk({
         projectId: robotWorkstream.projectId,
         title: "Audit Export Deleted Workstream Risk",
@@ -57,7 +56,7 @@ test("audit export preserves workstream risk scope after deletion", async () => 
 
       const seasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=risk&seasonId=default-season",
+        url: `/api/audit/export?entityType=risk&seasonId=${robotProject.seasonId}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },

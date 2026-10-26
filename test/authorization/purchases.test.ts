@@ -1,9 +1,108 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createMaterial, createPartInstance, createPurchaseItem, createSubsystem, getSnapshot, getTasks, receivePurchaseItem, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
+import { snapshot } from "../../src/data/mockData";
+import { createMaterial, createMaterialTransaction, createPartInstance, createPurchaseItem, createSubsystem, getSnapshot, getTasks, receivePurchaseItem, resetStore, updateMaterial, updatePartInstance, updatePurchaseItem, updateTask } from "../../src/data/store";
 import { purchaseItemSchema, purchaseReceiptRecordSchema, purchaseReceiptSchema } from "../../src/routes/routeSchemas";
-import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "../helpers/workflowAuth";
+import { createWorkflowAuthHeaders, withWorkflowAuthApp as withBaseWorkflowAuthApp } from "../helpers/workflowAuth";
+
+function withWorkflowAuthApp(
+  run: Parameters<typeof withBaseWorkflowAuthApp>[0],
+  options: Parameters<typeof withBaseWorkflowAuthApp>[1] = {},
+) {
+  const fixture = structuredClone(snapshot);
+  const taskTemplate = fixture.tasks.find((task) => task.projectId === "project-robot-2026")!;
+  const nextSerial = Math.max(0, ...fixture.tasks.map((task) => task.serialNumber ?? 0)) + 1;
+  const taskAliases = ["intake-guard", "procure-ferrule-kit"];
+  fixture.tasks.push(...taskAliases.map((id, index) => ({
+    ...structuredClone(taskTemplate),
+    id,
+    serialNumber: nextSerial + index,
+    title: id,
+    summary: "Purchase workflow test task.",
+    status: "in-progress" as const,
+  })));
+
+  const materialTemplate = fixture.materials[0]!;
+  fixture.materials.push({
+    ...structuredClone(materialTemplate), id: "mat-onyx-filament", name: "Onyx test filament",
+    onHandQuantity: 1, reorderPoint: 0, location: "Onyx shelf",
+  });
+  fixture.materialTransactions.push({
+    id: "transaction-test-onyx-opening", operationId: "test-onyx-opening", materialId: "mat-onyx-filament",
+    movementType: "receipt", quantityDelta: 1, reason: "Purchase workflow test opening stock",
+    recordedAt: "2026-01-01T00:00:00.000Z", actorMemberId: null,
+  });
+  const partTemplate = fixture.partDefinitions[0]!;
+  fixture.partDefinitions.push({
+    ...structuredClone(partTemplate), id: "pd-polycarbonate-sheet", name: "Polycarbonate test sheet",
+    partNumber: "TEST-PC-SHEET", vendorPartNumbers: {}, materialId: null,
+  });
+
+  const outsourcedTask = {
+    ...structuredClone(taskTemplate),
+    id: "outsourced-manufacturing-test-task",
+    serialNumber: nextSerial + taskAliases.length,
+    title: "Outsourced manufacturing test task",
+    workTypeId: "robot:manufacturing",
+    manufacturingDetails: {
+      part: { kind: "provisional" as const, partNumber: "OUTSOURCED-TEST", revision: "A" },
+      quantity: 1,
+      processId: "fabrication",
+      fulfillmentSource: "outsourced" as const,
+      material: { kind: "specified-material" as const, name: "test material" },
+      fileArtifactIds: [],
+      tolerances: [],
+      qaRequirements: [],
+    },
+  };
+  fixture.tasks.push(outsourcedTask);
+  const purchaseTemplate = fixture.purchaseItems[0]!;
+  const purchase = (id: string, taskId: string, fields: Partial<typeof purchaseTemplate> = {}) => ({
+    ...structuredClone(purchaseTemplate),
+    id, taskId, title: id, quantity: 1, kind: "cots-goods" as const,
+    partDefinitionId: "pd-polycarbonate-sheet", materialId: null,
+    approvalStatus: "pending" as const, orderStatus: "not-ordered" as const,
+    approvedById: null, approvedAt: null, purchaseOrderNumber: null,
+    finalCost: null, expectedDeliveryDate: null, trackingNumber: null,
+    trackingUrl: null, orderedAt: null, deliveredAt: null, receipts: [],
+    ...fields,
+  });
+  fixture.purchaseItems.push(
+    purchase("ferrule-kit", "procure-ferrule-kit"),
+    purchase("polycarb-sheet", "intake-guard", { quantity: 2, approvalStatus: "approved", orderStatus: "ordered" }),
+    purchase("outsourced-swerve-bracket", outsourcedTask.id, {
+      kind: "manufacturing-service", partDefinitionId: null, materialId: null,
+    }),
+    purchase("material-stock-test", "intake-guard", {
+      title: "Material stock test purchase", partDefinitionId: null, materialId: "mat-onyx-filament",
+    }),
+  );
+  return withBaseWorkflowAuthApp(run, { ...options, snapshot: fixture });
+}
+
+function reduceMaterialStockToZero(materialId: string) {
+  const quantity = getSnapshot().materials.find((material) => material.id === materialId)?.onHandQuantity;
+  if (quantity && quantity > 0) {
+    const result = createMaterialTransaction(materialId, {
+      operationId: `clear-stock-${materialId}`,
+      movementType: "adjustment",
+      adjustmentDirection: "decrease",
+      quantity,
+      reason: "Reset test stock through the inventory ledger",
+    });
+    assert.ok("transaction" in result);
+  }
+}
+
+function robotSubsystemId() {
+  return getSnapshot().subsystems.find((subsystem) => subsystem.projectId === "project-robot-2026")!.id;
+}
+
+function robotMechanismId() {
+  const subsystemId = robotSubsystemId();
+  return getSnapshot().mechanisms.find((mechanism) => mechanism.subsystemId === subsystemId)!.id;
+}
 
 test("purchase approval and transitions are mentor/admin-only adjacent operations", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
@@ -254,7 +353,7 @@ test("unreceived COTS purchases retain part identity until their receipts create
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
     const materialId = "mat-onyx-filament";
-    updateMaterial(materialId, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(materialId);
     updatePurchaseItem("ferrule-kit", {
       kind: "cots-goods", partDefinitionId: "pd-polycarbonate-sheet", materialId,
       quantity: 1, orderStatus: "ordered",
@@ -300,7 +399,7 @@ test("material purchases block material deletion and still receive stock", async
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
     const materialId = "mat-onyx-filament";
-    updateMaterial(materialId, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(materialId);
     updatePurchaseItem("ferrule-kit", {
       kind: "cots-goods", partDefinitionId: null, materialId,
       quantity: 1, orderStatus: "ordered",
@@ -452,7 +551,7 @@ test("fractional material receipts use decimal-safe cumulative bounds and old re
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const mentor = await createWorkflowAuthHeaders("mentor");
     const materialId = "mat-onyx-filament";
-    updateMaterial(materialId, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(materialId);
     updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId, quantity: 1.3, approvalStatus: "approved", orderStatus: "ordered" });
     const beforeSubPrecision = getSnapshot();
     assert.deepEqual(receivePurchaseItem("ferrule-kit", { operationId: "decimal-below-precision", quantity: 4e-13, location: "Onyx shelf" }), { error: "invalid-quantity" });
@@ -491,7 +590,7 @@ test("postreceipt quantity floor is decimal-safe and allows unchanged quantity m
     assert.equal(metadataEdit.json().item.title, "Ferrule kit received");
     assert.equal(metadataEdit.json().item.quantity, 1.2);
     resetLimits();
-    updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
+    reduceMaterialStockToZero("mat-onyx-filament");
     updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", approvalStatus: "approved", orderStatus: "ordered" });
     const first = await app.inject({ method: "POST", url: "/api/purchases/ferrule-kit/receipts", headers: mentor, payload: { operationId: "floor-1.1", quantity: 1.1, location: "Onyx shelf" } });
     assert.equal(first.statusCode, 200, first.body);
@@ -514,7 +613,7 @@ test("postreceipt quantity floor is decimal-safe and allows unchanged quantity m
 
 test("direct purchase edits cannot rewrite received identity or lower received quantity", async () => {
   await withWorkflowAuthApp(async () => {
-    updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
+    reduceMaterialStockToZero("mat-onyx-filament");
     updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", quantity: 1.2, orderStatus: "ordered" });
     const received = receivePurchaseItem("ferrule-kit", { operationId: "domain-decimal-receipt", quantity: 0.1, location: "Onyx shelf" });
     assert.ok("receipt" in received);
@@ -535,7 +634,7 @@ test("direct purchase edits cannot rewrite received identity or lower received q
       assert.deepEqual(getSnapshot(), beforeRejectedEdits, "rejected direct edit leaves inventory, receipts, and audit unchanged");
     }
 
-    updatePurchaseItem("ferrule-kit", { taskId: beforeRejectedEdits.purchaseItems.find((item) => item.id === "ferrule-kit")!.taskId, partDefinitionId: null, materialId: "mat-onyx-filament" });
+    updatePurchaseItem("ferrule-kit", { partDefinitionId: null, materialId: "mat-onyx-filament" });
     updatePurchaseItem("ferrule-kit", { title: "Valid commercial edit", quantity: 0.3 });
     assert.equal(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.title, "Valid commercial edit");
     assert.equal(getSnapshot().purchaseItems.find((item) => item.id === "ferrule-kit")!.quantity, 0.3);
@@ -578,18 +677,19 @@ test("received purchase edits honor receiver floating-point tolerance without al
   });
 });
 
-test("receipt-bearing purchases and referenced materials resist deletion while student stock edits stay allowed", async () => {
+test("receipt-bearing purchases and referenced materials resist deletion while stock edits use the ledger", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
     const student = await createWorkflowAuthHeaders("student");
     const mentor = await createWorkflowAuthHeaders("mentor");
+    const beforeStockEdit = getSnapshot();
     const stockEdit = await app.inject({ method: "PATCH", url: "/api/materials/mat-onyx-filament", headers: student, payload: { onHandQuantity: 77 } });
-    assert.equal(stockEdit.statusCode, 200);
-    assert.equal(stockEdit.json().item.onHandQuantity, 77);
+    assert.equal(stockEdit.statusCode, 400);
+    assert.deepEqual(getSnapshot(), beforeStockEdit);
     resetLimits();
     const materialDelete = await app.inject({ method: "DELETE", url: "/api/materials/mat-onyx-filament", headers: student });
     assert.equal(materialDelete.statusCode, 409);
 
-    const referencedMaterial = createMaterial({ name: "Referenced manufacturing stock", category: "other", unit: "kg", onHandQuantity: 0, reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
+    const referencedMaterial = createMaterial({ name: "Referenced manufacturing stock", category: "other", unit: "kg", reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
     const manufacturingTask = getTasks().find((task) => task.manufacturingDetails !== null);
     assert.ok(manufacturingTask?.manufacturingDetails);
     updateTask(manufacturingTask.id, {
@@ -604,7 +704,7 @@ test("receipt-bearing purchases and referenced materials resist deletion while s
     resetLimits();
     const manufacturingMaterialDelete = await app.inject({ method: "DELETE", url: `/api/materials/${referencedMaterial.id}`, headers: student });
     assert.equal(manufacturingMaterialDelete.statusCode, 409);
-    const unusedMaterial = createMaterial({ name: "Unused removable stock", category: "other", unit: "kg", onHandQuantity: 0, reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
+    const unusedMaterial = createMaterial({ name: "Unused removable stock", category: "other", unit: "kg", reorderPoint: 0, location: "Shelf", preferredVendorId: null, notes: "" });
     resetLimits();
     const unusedDelete = await app.inject({ method: "DELETE", url: `/api/materials/${unusedMaterial.id}`, headers: student });
     assert.equal(unusedDelete.statusCode, 200);
@@ -684,9 +784,9 @@ test("purchase receipts accumulate stock instances without completing the linked
       url: `/api/part-instances/${receivedInstanceId}`,
       headers: mentor,
       payload: {
-        intendedSubsystemId: "drive",
-        intendedMechanismId: "swerve-module",
-        location: { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" },
+        intendedSubsystemId: robotSubsystemId(),
+        intendedMechanismId: robotMechanismId(),
+        location: { kind: "installed", subsystemId: robotSubsystemId(), mechanismId: robotMechanismId() },
       },
     });
     assert.equal(placed.statusCode, 200, placed.body);
@@ -890,7 +990,7 @@ test("material receipt conflicts are atomic; same-location and empty-stock recei
     assert.equal(stocked.location, material.location);
     assert.equal(afterMaterialOnly.partInstances.length, before.partInstances.length + 1);
 
-    updateMaterial(material.id, { onHandQuantity: 0 });
+    reduceMaterialStockToZero(material.id);
     resetLimits();
     const emptyStockReceipt = await inject({ method: "POST", url: `/api/purchases/${materialPurchaseId}/receipts`, headers: mentor, payload: { operationId: "empty-stock-material", quantity: 1, location: "New material shelf" } });
     assert.equal(emptyStockReceipt.statusCode, 200, emptyStockReceipt.body);

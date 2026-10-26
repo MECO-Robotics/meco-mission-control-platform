@@ -82,8 +82,8 @@ test("Onshape import success records a scoped audit action in bootstrap activity
           url: versionUrl,
           label: "Robot version",
           projectId: "project-robot-2026",
-          seasonId: "default-season",
-          subsystemId: "drive",
+          seasonId: "season-2026-meco",
+          subsystemId: getSnapshot().subsystems.find((subsystem) => subsystem.projectId === "project-robot-2026")!.id,
           createdBy: "ava",
         },
       });
@@ -107,7 +107,7 @@ test("Onshape import success records a scoped audit action in bootstrap activity
       assert.equal(auditAction.operation, "update");
       assert.equal(auditAction.actorMemberId, "ava");
       assert.equal(auditAction.projectId, "project-robot-2026");
-      assert.equal(auditAction.subsystemId, "drive");
+      assert.equal(auditAction.subsystemId, getSnapshot().subsystems.find((subsystem) => subsystem.projectId === "project-robot-2026")!.id);
       assert.deepEqual(
         ["actor", "createdObjectCount", "deprecatedObjectCount", "sourceReference", "status", "updatedObjectCount", "warningCount"],
         auditAction.changedFields,

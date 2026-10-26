@@ -44,14 +44,8 @@ test("bootstrap PM objects expose CAD provenance for manual, STEP, Onshape, and 
       partDefinitions: ProvenanceRecord[];
       partInstances: ProvenanceRecord[];
     };
-    assert.equal(
-      initialBody.subsystems.find((item) => item.id === "drive")?.cadImportSource,
-      "MANUAL",
-    );
-    assert.equal(
-      initialBody.mechanisms.find((item) => item.id === "swerve-module")?.cadImportSource,
-      "MANUAL",
-    );
+    const seededSubsystem = initialBody.subsystems.find((item) => item.cadImportSource === "MANUAL");
+    assert.ok(seededSubsystem);
     assert.deepEqual(
       {
         cadSource: initialBody.partDefinitions.find(

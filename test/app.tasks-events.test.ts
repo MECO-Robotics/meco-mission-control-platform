@@ -1,16 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("task and milestone endpoints support mobile and multi-target payloads", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const snapshot = getSnapshot();
+    const robotProject = snapshot.projects.find((project) => project.projectType === "robot" && project.seasonId === "season-2026-meco")!;
+    const mediaProject = snapshot.projects.find((project) => project.projectType === "media" && project.seasonId === robotProject.seasonId)!;
+    const operationsProject = snapshot.projects.find((project) => project.projectType === "operations" && project.seasonId === robotProject.seasonId)!;
+    const parentSubsystem = snapshot.subsystems.find((subsystem) => subsystem.projectId === robotProject.id)!;
+    const student = snapshot.members.find((member) => member.role === "student" && member.seasonId === robotProject.seasonId)!;
+    const secondStudent = snapshot.members.find((member) => member.role === "student" && member.seasonId === robotProject.seasonId && member.id !== student.id)!;
+    const mentor = snapshot.members.find((member) => member.role === "mentor" && member.seasonId === robotProject.seasonId)!;
+    const robotMechanism = snapshot.mechanisms.find((mechanism) => mechanism.subsystemId === parentSubsystem.id)!;
+    const robotPartInstance = snapshot.partInstances.find((part) => part.location.kind === "installed" && part.location.subsystemId === parentSubsystem.id)!;
     const mobileMemberCreateResponse = await app.inject({
       method: "POST",
       url: "/api/members",
       payload: {
         name: "Mobile Test Student",
         role: "student",
+        seasonId: robotProject.seasonId,
       },
     });
 
@@ -25,7 +37,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     };
     assert.equal(mobileMemberCreatedBody.item.email, "");
     assert.equal(mobileMemberCreatedBody.item.elevated, false);
-    assert.equal(mobileMemberCreatedBody.item.seasonId, "default-season");
+    assert.equal(mobileMemberCreatedBody.item.seasonId, robotProject.seasonId);
 
     resetLimits();
 
@@ -35,9 +47,10 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       payload: {
         name: "Mobile Test Intake",
         description: "Subsystem created with the mobile app payload shape.",
-        parentSubsystemId: "drive",
+        projectId: robotProject.id,
+        parentSubsystemId: parentSubsystem.id,
         responsibleEngineerId: mobileMemberCreatedBody.item.id,
-        mentorIds: ["marco"],
+        mentorIds: [mentor.id],
       },
     });
 
@@ -48,7 +61,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         projectId: string;
       };
     };
-    assert.equal(mobileSubsystemCreatedBody.item.projectId, "project-robot-2026");
+    assert.equal(mobileSubsystemCreatedBody.item.projectId, robotProject.id);
 
     resetLimits();
 
@@ -64,8 +77,8 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         partInstanceIds: [],
         scheduleRefs: [],
         ownerId: mobileMemberCreatedBody.item.id,
-        assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
-        mentorId: "marco",
+        assigneeIds: [mobileMemberCreatedBody.item.id, student.id],
+        mentorId: mentor.id,
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
@@ -85,10 +98,10 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         photoUrl: string;
       };
     };
-    assert.equal(mobileTaskCreatedBody.item.projectId, "project-robot-2026");
+    assert.equal(mobileTaskCreatedBody.item.projectId, robotProject.id);
     assert.deepEqual(mobileTaskCreatedBody.item.assigneeIds, [
       mobileMemberCreatedBody.item.id,
-      "ava",
+      student.id,
     ]);
     assert.equal(mobileTaskCreatedBody.item.startDate, "2026-05-06");
     assert.deepEqual(mobileTaskCreatedBody.item.workstreamIds, []);
@@ -102,7 +115,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       method: "POST",
       url: "/api/subsystems",
       payload: {
-        projectId: "project-media-2026",
+        projectId: mediaProject.id,
         name: "Media validation subsystem",
         description: "Provides a valid target for project-discipline validation.",
         parentSubsystemId: null,
@@ -118,7 +131,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       method: "POST",
       url: "/api/tasks",
       payload: {
-        projectId: "project-media-2026",
+        projectId: mediaProject.id,
         workstreamIds: [],
         title: "Invalid work type",
         summary: "Attempts to use a robot-only discipline on a business task.",
@@ -127,8 +140,8 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         mechanismIds: [],
         partInstanceIds: [],
         scheduleRefs: [],
-        ownerId: "ava",
-        mentorId: "marco",
+        ownerId: student.id,
+        mentorId: mentor.id,
         dueDate: "2026-05-01",
         priority: "medium",
         status: "not-started",
@@ -147,7 +160,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       method: "POST",
       url: "/api/subsystems",
       payload: {
-        projectId: "project-robot-2026",
+        projectId: robotProject.id,
         name: "Controls",
         description: "Test-local multi-target subsystem.",
         parentSubsystemId: null,
@@ -161,10 +174,14 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     const controlsWorkstreamResponse = await app.inject({
       method: "POST",
       url: "/api/workstreams",
-      payload: { projectId: "project-robot-2026", name: "Controls", description: "Test-local multi-target workstream." },
+      payload: { projectId: robotProject.id, name: "Controls", description: "Test-local multi-target workstream." },
     });
     assert.equal(controlsWorkstreamResponse.statusCode, 201);
     const controlsWorkstream = controlsWorkstreamResponse.json().item;
+    resetLimits();
+    const robotWorkstreamResponse = await app.inject({ method: "POST", url: "/api/workstreams", payload: { projectId: robotProject.id, name: "Drive Test", description: "Second workstream for multi-target coverage." } });
+    assert.equal(robotWorkstreamResponse.statusCode, 201, robotWorkstreamResponse.body);
+    const robotWorkstream = robotWorkstreamResponse.json().item;
     resetLimits();
     const controlsMechanismResponse = await app.inject({
       method: "POST",
@@ -179,17 +196,17 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       method: "POST",
       url: "/api/tasks",
       payload: {
-        projectId: "project-robot-2026",
-        workstreamIds: ["workstream-drive", controlsWorkstream.id],
+        projectId: robotProject.id,
+        workstreamIds: [robotWorkstream.id, controlsWorkstream.id],
         title: "Multi-target task payload",
         summary: "Created with multiple linked workstreams, subsystems, mechanisms, and parts.",
-        subsystemIds: ["drive", controlsSubsystem.id],
+        subsystemIds: [parentSubsystem.id, controlsSubsystem.id],
         workTypeId: "robot:design",
-        mechanismIds: ["swerve-module", controlsMechanism.id],
-        partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
+        mechanismIds: [robotMechanism.id, controlsMechanism.id],
+        partInstanceIds: [robotPartInstance.id],
         scheduleRefs: [],
         ownerId: mobileMemberCreatedBody.item.id,
-        mentorId: "marco",
+        mentorId: mentor.id,
         dueDate: "2026-05-08",
         priority: "high",
         status: "not-started",
@@ -201,6 +218,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     assert.equal(multiTargetTaskCreateResponse.statusCode, 201);
     const multiTargetTaskCreatedBody = multiTargetTaskCreateResponse.json() as {
       item: {
+        id: string;
         workstreamIds: string[];
         subsystemIds: string[];
         mechanismIds: string[];
@@ -209,16 +227,16 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       };
     };
     assert.deepEqual(multiTargetTaskCreatedBody.item.workstreamIds, [
-      "workstream-drive",
+      robotWorkstream.id,
       controlsWorkstream.id,
     ]);
-    assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, ["drive", controlsSubsystem.id]);
+    assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, [parentSubsystem.id, controlsSubsystem.id]);
     assert.deepEqual(multiTargetTaskCreatedBody.item.mechanismIds, [
-      "swerve-module",
+      robotMechanism.id,
       controlsMechanism.id,
     ]);
     assert.deepEqual(multiTargetTaskCreatedBody.item.partInstanceIds, [
-      "pi-swerve-encoder-bracket-front-left",
+      robotPartInstance.id,
     ]);
     assert.equal(
       multiTargetTaskCreatedBody.item.photoUrl,
@@ -237,7 +255,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         endAt: null,
         isExternal: true,
         description: "Milestone shared across robot and operations work.",
-        projectIds: ["project-robot-2026", "project-operations-2026"],
+        projectIds: [robotProject.id, operationsProject.id],
         photoUrl: "https://cdn.example.test/forms/milestone-demo.png",
       },
     });
@@ -250,9 +268,16 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         photoUrl: string;
       };
     };
+    resetLimits();
+    const scheduleMilestoneResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${multiTargetTaskCreatedBody.item.id}`,
+      payload: { scheduleRefs: [{ kind: "milestone", id: createdMilestoneBody.item.id }] },
+    });
+    assert.equal(scheduleMilestoneResponse.statusCode, 200, scheduleMilestoneResponse.body);
     assert.deepEqual(createdMilestoneBody.item.projectIds, [
-      "project-robot-2026",
-      "project-operations-2026",
+      robotProject.id,
+      operationsProject.id,
     ]);
     assert.equal(
       createdMilestoneBody.item.photoUrl,
@@ -263,7 +288,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
 
     const robotScopedBootstrapAfterMilestoneCreateResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?projectId=project-robot-2026",
+      url: `/api/bootstrap?projectId=${robotProject.id}`,
     });
     assert.equal(robotScopedBootstrapAfterMilestoneCreateResponse.statusCode, 200);
     const robotScopedBootstrapAfterMilestoneCreateBody =
@@ -287,7 +312,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
 
     const operationsScopedBootstrapAfterMilestoneCreateResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?projectId=project-operations-2026",
+      url: `/api/bootstrap?projectId=${operationsProject.id}`,
     });
     assert.equal(operationsScopedBootstrapAfterMilestoneCreateResponse.statusCode, 200);
     const operationsScopedBootstrapAfterMilestoneCreateBody =
@@ -313,7 +338,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       method: "PATCH",
       url: `/api/milestones/${createdMilestoneBody.item.id}`,
       payload: {
-        projectIds: ["project-robot-2026"],
+        projectIds: [robotProject.id],
         photoUrl: "https://cdn.example.test/forms/milestone-demo-v2.png",
       },
     });
@@ -325,7 +350,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         photoUrl: string;
       };
     };
-    assert.deepEqual(updatedMilestoneBody.item.projectIds, ["project-robot-2026"]);
+    assert.deepEqual(updatedMilestoneBody.item.projectIds, [robotProject.id]);
     assert.equal(
       updatedMilestoneBody.item.photoUrl,
       "https://cdn.example.test/forms/milestone-demo-v2.png",
@@ -363,7 +388,7 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
 
     const scopedBootstrapAfterTaskDeleteResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?projectId=project-robot-2026",
+      url: `/api/bootstrap?projectId=${robotProject.id}`,
     });
 
     assert.equal(scopedBootstrapAfterTaskDeleteResponse.statusCode, 200);
@@ -412,46 +437,46 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       }>;
     };
     assert.equal(inferredTasksBody.milestoneId, createdMilestoneBody.item.id);
-    assert.ok(
-      inferredTasksBody.items.some((item) => item.taskId === "swerve-sensor-bundle"),
-    );
+    assert.ok(inferredTasksBody.items.some((item) => item.taskId === multiTargetTaskCreatedBody.item.id && item.isExplicitScheduleRef));
 
     resetLimits();
 
     const taskMilestonesResponse = await app.inject({
       method: "GET",
-      url: "/api/tasks/swerve-sensor-bundle/milestones",
+      url: `/api/tasks/${multiTargetTaskCreatedBody.item.id}/milestones`,
     });
     assert.equal(taskMilestonesResponse.statusCode, 200);
     const taskMilestonesBody = taskMilestonesResponse.json() as {
       taskId: string;
       items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isExplicitScheduleRef: boolean }>;
     };
-    assert.equal(taskMilestonesBody.taskId, "swerve-sensor-bundle");
-    assert.ok(
-      taskMilestonesBody.items.some((item) =>
-        ["tutorial-robot-checkpoint-feb-21", createdMilestoneBody.item.id].includes(item.milestoneId),
-      ),
-    );
+    assert.equal(taskMilestonesBody.taskId, multiTargetTaskCreatedBody.item.id);
+    assert.ok(taskMilestonesBody.items.some((item) => item.milestoneId === createdMilestoneBody.item.id && item.isExplicitScheduleRef));
   });
 });
 
 test("task reassign preserves collaborators and removes stale owner assignees", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const snapshot = getSnapshot();
+    const robotProject = snapshot.projects.find((project) => project.projectType === "robot" && project.seasonId === "season-2026-meco")!;
+    const subsystem = snapshot.subsystems.find((item) => item.projectId === robotProject.id)!;
+    const students = snapshot.members.filter((member) => member.role === "student" && member.seasonId === robotProject.seasonId);
+    const [student, collaborator] = students;
+    const mentor = snapshot.members.find((member) => member.role === "mentor" && member.seasonId === robotProject.seasonId)!;
     const taskCreateResponse = await app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
         title: "Assignment semantics task",
         summary: "Validates owner assignment list behavior.",
-        subsystemIds: ["drive"],
+        subsystemIds: [subsystem.id],
         workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
         scheduleRefs: [],
-        ownerId: "ava",
-        assigneeIds: ["ava", "demo-alex-morgan"],
-        mentorId: "marco",
+        ownerId: student.id,
+        assigneeIds: [student.id, collaborator.id],
+        mentorId: mentor.id,
         dueDate: "2026-05-06",
         priority: "medium",
         status: "not-started",
@@ -463,8 +488,8 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
     const taskCreateBody = taskCreateResponse.json() as {
       item: { id: string; assigneeIds: string[]; ownerId: string | null };
     };
-    assert.equal(taskCreateBody.item.ownerId, "ava");
-    assert.deepEqual(taskCreateBody.item.assigneeIds, ["ava", "demo-alex-morgan"]);
+    assert.equal(taskCreateBody.item.ownerId, student.id);
+    assert.deepEqual(taskCreateBody.item.assigneeIds, [student.id, collaborator.id]);
 
     resetLimits();
 
@@ -472,7 +497,7 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
       method: "POST",
       url: `/api/tasks/${taskCreateBody.item.id}/reassign`,
       payload: {
-        ownerId: "demo-alex-morgan",
+        ownerId: collaborator.id,
       },
     });
 
@@ -480,8 +505,8 @@ test("task reassign preserves collaborators and removes stale owner assignees", 
     const reassignBody = reassignResponse.json() as {
       item: { assigneeIds: string[]; ownerId: string | null };
     };
-    assert.equal(reassignBody.item.ownerId, "demo-alex-morgan");
-    assert.deepEqual(reassignBody.item.assigneeIds, ["demo-alex-morgan"]);
+    assert.equal(reassignBody.item.ownerId, collaborator.id);
+    assert.deepEqual(reassignBody.item.assigneeIds, [collaborator.id]);
 
     resetLimits();
 

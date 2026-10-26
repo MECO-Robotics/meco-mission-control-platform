@@ -5,7 +5,7 @@ import { saveEnv, restoreEnv } from "./helpers/environment";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createPlatformStore, createMember, resetStore } from "../src/data/store";
+import { createPlatformStore, createMember, getSnapshot, resetStore } from "../src/data/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -415,17 +415,22 @@ test("buildApp exposes a development-only sign-in bypass", () => platformStore.r
         taskSubteamIds: [],
       });
 
+      const current = getSnapshot();
+      const robotProject = current.projects.find((project) => project.id === "project-robot-2026")!;
+      const subsystem = current.subsystems.find((item) => item.projectId === robotProject.id)!;
+      const mentor = current.members.find((member) => member.role === "mentor")!;
       const claimableTaskPayload = {
         title: "Claimable student task",
         summary: "Students can claim this task from mobile.",
-        subsystemIds: ["drive"],
+        projectId: robotProject.id,
+        subsystemIds: [subsystem.id],
         workTypeId: "robot:design",
         mechanismIds: [],
         partInstanceIds: [],
         scheduleRefs: [],
         ownerId: null,
-        mentorId: "marco",
-        dueDate: "2026-05-06",
+        mentorId: mentor.id,
+        dueDate: "2026-12-06",
         priority: "medium",
         status: "not-started",
         estimatedHours: 0,

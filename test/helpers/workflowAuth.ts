@@ -23,14 +23,14 @@ export function withWorkflowAuthApp(
   });
 }
 
-const identities: Record<Exclude<MemberRole, "external">, { accountId: string; email: string }> = {
+const identities: Record<Exclude<MemberRole, "external" | "unknown">, { accountId: string; email: string }> = {
   student: { accountId: "ava", email: "ava.chen@mecorobotics.org" },
   lead: { accountId: "priya", email: "priya.patel@mecorobotics.org" },
   mentor: { accountId: "jordan", email: "jordan.lee@mecorobotics.org" },
   admin: { accountId: "maya", email: "maya.ortiz@mecorobotics.org" },
 };
 
-export async function createWorkflowAuthHeaders(role: Exclude<MemberRole, "external">) {
+export async function createWorkflowAuthHeaders(role: Exclude<MemberRole, "external" | "unknown">) {
 
   const identity = identities[role];
   const token = await issueTestMobileToken({

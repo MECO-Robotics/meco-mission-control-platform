@@ -7,15 +7,25 @@ import { createMember, createWorkLog, getSnapshot } from "../src/data/store";
 test("planning entity endpoints round-trip hierarchy and archive defaults", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const snapshot = getSnapshot();
+    const seasonId = snapshot.seasons.find((season) => season.name.includes("2026"))!.id;
+    const robotProject = snapshot.projects.find((project) => project.projectType === "robot" && project.seasonId === seasonId)!;
+    const robotSubsystem = snapshot.subsystems.find((subsystem) => subsystem.projectId === robotProject.id)!;
+    const robotMechanism = snapshot.mechanisms.find((mechanism) => mechanism.subsystemId === robotSubsystem.id)!;
+    const otherRobotSubsystem = snapshot.subsystems.find((subsystem) => subsystem.projectId === robotProject.id && subsystem.id !== robotSubsystem.id)!;
+    const robotPartInstance = snapshot.partInstances.find((part) => part.location.kind === "installed" && part.location.subsystemId === robotSubsystem.id && part.location.mechanismId === robotMechanism.id)!;
+    const robotPartDefinition = snapshot.partDefinitions.find((part) => part.id === robotPartInstance.partDefinitionId)!;
+    const materialId = snapshot.materials[0]!.id;
+    const student = snapshot.members.find((member) => member.role === "student" && member.seasonId === seasonId)!;
+    const mentor = snapshot.members.find((member) => member.role === "mentor" && member.seasonId === seasonId)!;
     const participant = createMember({
       name: "Planning Filter Member",
       email: "planning-filter@mecorobotics.org",
       role: "student",
-      seasonId: "default-season",
+      seasonId,
     });
     const participantId = participant.id;
     const workLog = createWorkLog({
-      taskId: snapshot.tasks[0].id,
+      taskId: snapshot.tasks.find((task) => task.projectId === robotProject.id)!.id,
       date: "2026-09-27",
       hours: 1,
       participantIds: [participantId],
@@ -42,7 +52,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
 
     const ownershipBootstrapResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?projectId=project-robot-2026",
+      url: `/api/bootstrap?projectId=${robotProject.id}`,
     });
     assert.equal(ownershipBootstrapResponse.statusCode, 200);
     const ownershipBootstrapBody = ownershipBootstrapResponse.json() as {
@@ -63,13 +73,13 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       }>;
     };
     const bootstrapMechanism = ownershipBootstrapBody.mechanisms.find(
-      (mechanism) => mechanism.id === "swerve-module",
+      (mechanism) => mechanism.id === robotMechanism.id,
     );
     const bootstrapPartDefinition = ownershipBootstrapBody.partDefinitions.find(
-      (partDefinition) => partDefinition.id === "pd-swerve-encoder-bracket",
+      (partDefinition) => partDefinition.id === robotPartDefinition.id,
     );
     const bootstrapPartInstance = ownershipBootstrapBody.partInstances.find(
-      (partInstance) => partInstance.id === "pi-swerve-encoder-bracket-front-left",
+      (partInstance) => partInstance.id === robotPartInstance.id,
     );
 
     assert.deepEqual(
@@ -78,8 +88,8 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         subsystemId: bootstrapMechanism?.subsystemId,
       },
       {
-        id: "swerve-module",
-        subsystemId: "drive",
+        id: robotMechanism.id,
+        subsystemId: robotSubsystem.id,
       },
     );
     assert.deepEqual(
@@ -91,11 +101,11 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         type: bootstrapPartDefinition?.type,
       },
       {
-        id: "pd-swerve-encoder-bracket",
-        partNumber: "DRV-101",
-        revision: "B",
-        defaultAcquisitionMethod: "manufacture",
-        type: "custom",
+        id: robotPartDefinition.id,
+        partNumber: robotPartDefinition.partNumber,
+        revision: robotPartDefinition.revision,
+        defaultAcquisitionMethod: robotPartDefinition.defaultAcquisitionMethod,
+        type: robotPartDefinition.type,
       },
     );
     assert.deepEqual(
@@ -105,9 +115,9 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         location: bootstrapPartInstance?.location,
       },
       {
-        id: "pi-swerve-encoder-bracket-front-left",
-        partDefinitionId: "pd-swerve-encoder-bracket",
-        location: { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" },
+        id: robotPartInstance.id,
+        partDefinitionId: robotPartDefinition.id,
+        location: robotPartInstance.location,
       },
     );
 
@@ -123,13 +133,13 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         iteration: 4,
         type: "custom",
         defaultAcquisitionMethod: "stock",
-        materialId: "mat-onyx-filament",
+        materialId: snapshot.materials[0]?.id ?? null,
         description: "Created from the app test suite.",
         photoUrl: "https://cdn.example.test/parts/route-test-part.png",
       },
     });
 
-    assert.equal(partDefinitionResponse.statusCode, 201);
+    assert.equal(partDefinitionResponse.statusCode, 201, partDefinitionResponse.body);
     const partDefinitionBody = partDefinitionResponse.json() as {
       item: {
         description: string;
@@ -142,7 +152,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     };
     assert.equal(partDefinitionBody.item.isArchived, false);
     assert.equal(partDefinitionBody.item.iteration, 4);
-    assert.equal(partDefinitionBody.item.materialId, "mat-onyx-filament");
+    assert.equal(partDefinitionBody.item.materialId, materialId);
     assert.equal(partDefinitionBody.item.description, "Created from the app test suite.");
     assert.equal(
       partDefinitionBody.item.photoUrl,
@@ -161,7 +171,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         iteration: 1,
         type: "custom",
         defaultAcquisitionMethod: "stock",
-        materialId: "mat-onyx-filament",
+        materialId,
         description: "Created without part number to validate auto serialization.",
         photoUrl: "",
       },
@@ -196,10 +206,10 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        intendedSubsystemId: "drive",
-        intendedMechanismId: "swerve-module",
+        intendedSubsystemId: robotSubsystem.id,
+        intendedMechanismId: robotMechanism.id,
         partDefinitionId: partDefinitionBody.item.id,
-        location: { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" },
+        location: { kind: "installed", subsystemId: robotSubsystem.id, mechanismId: robotMechanism.id },
         photoUrl: "https://cdn.example.test/parts/route-test-instance.png",
       },
     });
@@ -211,7 +221,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         photoUrl: string;
       };
     };
-    assert.deepEqual(partInstanceBody.item.location, { kind: "installed", subsystemId: "drive", mechanismId: "swerve-module" });
+    assert.deepEqual(partInstanceBody.item.location, { kind: "installed", subsystemId: robotSubsystem.id, mechanismId: robotMechanism.id });
     assert.equal(
       partInstanceBody.item.photoUrl,
       "https://cdn.example.test/parts/route-test-instance.png",
@@ -223,8 +233,8 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/part-instances",
       payload: {
-        intendedSubsystemId: "outreach",
-        intendedMechanismId: "swerve-module",
+        intendedSubsystemId: otherRobotSubsystem.id,
+        intendedMechanismId: robotMechanism.id,
         partDefinitionId: partDefinitionBody.item.id,
         location: { kind: "unlocated" },
         photoUrl: "https://cdn.example.test/parts/invalid.png",
@@ -243,14 +253,14 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/subsystems",
       payload: {
-        projectId: "project-robot-2026",
+        projectId: robotProject.id,
         name: "Route Test Intake",
         color: "#4F86C6",
         description: "Temporary child subsystem for route edge-case coverage.",
         iteration: 2,
-        parentSubsystemId: "drive",
-        responsibleEngineerId: "ava",
-        mentorIds: ["marco"],
+        parentSubsystemId: robotSubsystem.id,
+        responsibleEngineerId: student.id,
+        mentorIds: [mentor.id],
         photoUrl: "https://cdn.example.test/subsystems/route-test-intake.png",
       },
     });
@@ -301,11 +311,11 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/subsystems",
       payload: {
-        projectId: "project-robot-2026",
+        projectId: robotProject.id,
         name: "Route Test Nested Intake",
         description: "Nested subsystem for cycle validation.",
         parentSubsystemId: childSubsystemBody.item.id,
-        responsibleEngineerId: "ava",
+        responsibleEngineerId: student.id,
       },
     });
     assert.equal(grandchildSubsystemResponse.statusCode, 201, grandchildSubsystemResponse.body);
@@ -371,8 +381,8 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         email: "route.test.member@mecorobotics.org",
         role: "student",
         elevated: false,
-        seasonId: "default-season",
-        activeSeasonIds: ["default-season"],
+        seasonId,
+        activeSeasonIds: [seasonId],
         photoUrl: "https://cdn.example.test/people/route-test-member.png",
         plannedWeeklyAttendanceHours: 6,
         plannedAttendanceDays: ["monday", "wednesday"],
@@ -455,22 +465,22 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "POST",
       url: "/api/projects",
       payload: {
-        seasonId: "default-season",
+        seasonId,
         name: "Robot",
         projectType: "robot",
       },
     });
 
     assert.equal(createRobotProjectResponse.statusCode, 409);
-    assert.equal(getSnapshot().projects.filter((project) => project.seasonId === "default-season" && project.projectType === "robot").length, 1);
+    assert.equal(getSnapshot().projects.filter((project) => project.seasonId === seasonId && project.projectType === "robot").length, 1);
 
     resetLimits();
-    const robotProject = getSnapshot().projects.find((project) => project.projectType === "robot" && project.seasonId === "default-season");
-    assert.ok(robotProject);
+    const currentRobotProject = getSnapshot().projects.find((project) => project.projectType === "robot" && project.seasonId === seasonId);
+    assert.ok(currentRobotProject);
 
     const updateRobotProjectResponse = await app.inject({
       method: "PATCH",
-      url: `/api/projects/${robotProject.id}`,
+      url: `/api/projects/${currentRobotProject.id}`,
       payload: {
         description: "Updated Robot project details.",
       },

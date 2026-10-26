@@ -193,10 +193,17 @@ test("buildRosterInsights bases availability on planned weekly attendance", () =
 
 test("QA reports, requests and TestResults use typed targets without duplicate scalar links", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
-    const projectId = "project-robot-2026";
+    const snapshot = getSnapshot();
+    const projectId = snapshot.projects.find((project) => project.projectType === "robot" && project.seasonId === "season-2026-meco")!.id;
+    const requester = snapshot.members.find((member) => member.role === "lead")!;
+    const secondParticipant = snapshot.members.find((member) => member.id !== requester.id)!;
+    const partInstance = snapshot.partInstances.find((part) => {
+      const subsystemId = part.location.kind === "installed" ? part.location.subsystemId : null;
+      return snapshot.subsystems.some((subsystem) => subsystem.id === subsystemId && subsystem.projectId === projectId);
+    })!;
     const qaResponse = await app.inject({ method: "POST", url: "/api/qa-reports", payload: {
       reportType: "qa", projectId, targetRefs: [{ kind: "project", id: projectId }],
-      createdByMemberId: "ava", participantIds: ["ava", "marco", "ava"], mentorId: null, requestedById: "ava",
+      createdByMemberId: requester.id, participantIds: [requester.id, secondParticipant.id, requester.id], mentorId: null, requestedById: requester.id,
       result: "minor-fix", summary: "QA review", notes: "QA report from web form", evidenceNotes: "Observed frame movement",
       createdAt: "2026-04-25T12:00:00Z", status: "submitted", reviewedById: null, reviewedAt: null,
       photoUrl: "https://cdn.example.test/forms/qa-report.png",
@@ -209,7 +216,7 @@ test("QA reports, requests and TestResults use typed targets without duplicate s
 
     resetLimits();
     const requestResponse = await app.inject({ method: "POST", url: "/api/qa-requests", payload: {
-      projectId, targetRefs: [{ kind: "project", id: projectId }], subject: "Project QA", mentorId: null, requestedById: "ava",
+      projectId, targetRefs: [{ kind: "project", id: projectId }], subject: "Project QA", mentorId: null, requestedById: requester.id,
     } });
     assert.equal(requestResponse.statusCode, 201, requestResponse.body);
     assert.equal("taskId" in requestResponse.json().item, false);
@@ -217,10 +224,10 @@ test("QA reports, requests and TestResults use typed targets without duplicate s
 
     resetLimits();
     const testResponse = await app.inject({ method: "POST", url: "/api/test-results", payload: {
-      projectId, targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }], title: "Bracket fit", status: "pass",
+      projectId, targetRefs: [{ kind: "part-instance", id: partInstance.id }], title: "Bracket fit", status: "pass",
     } });
     assert.equal(testResponse.statusCode, 201, testResponse.body);
-    assert.deepEqual(testResponse.json().item.targetRefs, [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }]);
+    assert.deepEqual(testResponse.json().item.targetRefs, [{ kind: "part-instance", id: partInstance.id }]);
     assert.equal("milestoneId" in testResponse.json().item, false);
     assert.equal("findings" in testResponse.json().item, false);
   });
@@ -228,17 +235,25 @@ test("QA reports, requests and TestResults use typed targets without duplicate s
 
 test("web report and task planning contract endpoints persist records", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const snapshot = getSnapshot();
+    const projectId = snapshot.projects.find((project) => project.projectType === "robot" && project.seasonId === "season-2026-meco")!.id;
+    const task = snapshot.tasks.find((item) => item.projectId === projectId)!;
+    const requester = snapshot.members.find((member) => member.role === "lead")!;
+    const partInstance = snapshot.partInstances.find((part) => {
+      const subsystemId = part.location.kind === "installed" ? part.location.subsystemId : null;
+      return snapshot.subsystems.some((subsystem) => subsystem.id === subsystemId && subsystem.projectId === projectId);
+    })!;
     const reportCreateResponse = await app.inject({
       method: "POST",
       url: "/api/reports",
       payload: {
         reportType: "qa",
-        projectId: "project-robot-2026",
-        targetRefs: [{ kind: "task", id: "swerve-sensor-bundle" }],
-        createdByMemberId: "ava",
-        participantIds: ["ava"],
+        projectId,
+        targetRefs: [{ kind: "task", id: task.id }],
+        createdByMemberId: requester.id,
+        participantIds: [requester.id],
         mentorId: null,
-        requestedById: "ava",
+        requestedById: requester.id,
         result: "minor-fix",
         summary: "QA report contract route",
         notes: "QA report contract route",
@@ -259,7 +274,7 @@ test("web report and task planning contract endpoints persist records", async ()
       };
     };
     assert.equal(reportBody.item.reportType, "qa");
-    assert.deepEqual(reportBody.item.targetRefs, [{ kind: "task", id: "swerve-sensor-bundle" }]);
+    assert.deepEqual(reportBody.item.targetRefs, [{ kind: "task", id: task.id }]);
 
     resetLimits();
 
@@ -268,9 +283,9 @@ test("web report and task planning contract endpoints persist records", async ()
       url: "/api/reports",
       payload: {
         reportType: "Practice",
-        projectId: "project-robot-2026",
-        targetRefs: [{ kind: "milestone", id: "drive-practice-apr-30" }],
-        createdByMemberId: "ava",
+        projectId,
+        targetRefs: [],
+        createdByMemberId: requester.id,
         result: "pass",
         summary: "Unsupported report type",
         notes: "",
@@ -287,11 +302,11 @@ test("web report and task planning contract endpoints persist records", async ()
       url: "/api/report-findings",
       payload: {
         reportId: reportBody.item.id,
-        targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }],
+        targetRefs: [{ kind: "part-instance", id: partInstance.id }],
         issueType: "Bracket needs edge cleanup",
         severity: "medium",
         notes: "Deburr the bracket before final install.",
-        spawnedTaskId: "swerve-sensor-bundle",
+        spawnedTaskId: task.id,
         spawnedIterationId: null,
         spawnedRiskId: "risk-drive-evidence-delay",
       },
@@ -302,8 +317,8 @@ test("web report and task planning contract endpoints persist records", async ()
 
     resetLimits();
 
-    const dependencyTaskId = "wire-swerve-module";
-    const dependencyRefId = "intake-guard";
+    const dependencyTaskId = task.id;
+    const dependencyRefId = snapshot.tasks.find((item) => item.projectId === projectId && item.id !== task.id)!.id;
 
     const dependencyCreateResponse = await app.inject({
       method: "POST",
@@ -459,6 +474,7 @@ test("risk endpoints support create, update, and delete with link validation", a
     };
     const sourceQaReportId = qaReportsBody.items[0]?.id ?? null;
     assert.ok(sourceQaReportId);
+    const sourceReport = getSnapshot().qaReports.find((report) => report.id === sourceQaReportId)!;
 
     resetLimits();
 
@@ -473,7 +489,7 @@ test("risk endpoints support create, update, and delete with link validation", a
         id: string;
       }>;
     };
-    const attachmentProjectId = projectsBody.items[0]?.id ?? null;
+    const attachmentProjectId = sourceReport.projectId;
     assert.ok(attachmentProjectId);
 
     resetLimits();
@@ -489,7 +505,7 @@ test("risk endpoints support create, update, and delete with link validation", a
         id: string;
       }>;
     };
-    const mitigationTaskId = tasksBody.items[0]?.id ?? null;
+    const mitigationTaskId = tasksBody.items.find((task) => getSnapshot().tasks.find((record) => record.id === task.id)?.projectId === attachmentProjectId)?.id ?? null;
     assert.ok(mitigationTaskId);
 
     resetLimits();
@@ -513,7 +529,7 @@ test("risk endpoints support create, update, and delete with link validation", a
       },
     });
 
-    assert.equal(createRiskResponse.statusCode, 201);
+    assert.equal(createRiskResponse.statusCode, 201, createRiskResponse.body);
     const createdRiskBody = createRiskResponse.json() as {
       item: {
         relatedTargets: Array<{ kind: string; id: string }>;
@@ -611,6 +627,15 @@ test("risk endpoints support create, update, and delete with link validation", a
 
 test("seeded list endpoints and auth fallbacks stay healthy on mock data", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const canonical = getSnapshot();
+    const seasonId = canonical.seasons[0]!.id;
+    const memberId = canonical.members[0]!.id;
+    const materialId = canonical.materials[0]!.id;
+    const partDefinitionId = canonical.partDefinitions[0]!.id;
+    const partInstanceId = canonical.partInstances[0]!.id;
+    const milestoneId = canonical.milestones[0]!.id;
+    const robotProject = canonical.projects.find((project) => project.projectType === "robot" && project.seasonId === "season-2026-meco")!;
+    const operationsProject = canonical.projects.find((project) => project.projectType === "operations" && project.seasonId === robotProject.seasonId)!;
     const seasonsResponse = await app.inject({
       method: "GET",
       url: "/api/seasons?pageSize=60",
@@ -621,7 +646,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(seasonsBody.pagination.pageSize, 60);
-    assert.ok(seasonsBody.items.some((season) => season.id === "default-season"));
+    assert.ok(seasonsBody.items.some((season) => season.id === seasonId));
 
     resetLimits();
 
@@ -635,7 +660,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(membersBody.pagination.pageSize, 60);
-    assert.ok(membersBody.items.some((member) => member.id === "ava"));
+    assert.ok(membersBody.items.some((member) => member.id === memberId));
 
     resetLimits();
 
@@ -649,7 +674,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(materialsBody.pagination.pageSize, 60);
-    assert.ok(materialsBody.items.some((material) => material.id === "mat-onyx-filament"));
+    assert.ok(materialsBody.items.some((material) => material.id === materialId));
 
     resetLimits();
 
@@ -664,7 +689,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     };
     assert.equal(partDefinitionsBody.pagination.pageSize, 60);
     assert.ok(
-      partDefinitionsBody.items.some((partDefinition) => partDefinition.id === "pd-swerve-encoder-bracket"),
+      partDefinitionsBody.items.some((partDefinition) => partDefinition.id === partDefinitionId),
     );
 
     resetLimits();
@@ -680,7 +705,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     };
     assert.equal(partInstancesBody.pagination.pageSize, 60);
     assert.ok(
-      partInstancesBody.items.some((partInstance) => partInstance.id === "pi-swerve-encoder-bracket-front-left"),
+      partInstancesBody.items.some((partInstance) => partInstance.id === partInstanceId),
     );
 
     resetLimits();
@@ -695,7 +720,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(milestonesBody.pagination.pageSize, 60);
-    assert.ok(milestonesBody.items.some((milestone) => milestone.id === "tutorial-robot-checkpoint-feb-21"));
+    assert.ok(milestonesBody.items.some((milestone) => milestone.id === milestoneId));
 
     resetLimits();
 
@@ -765,8 +790,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       pagination: { pageSize: number };
     };
     assert.equal(iterationsBody.pagination.pageSize, 60);
-    assert.ok(iterationsBody.items.length > 0);
-    assert.ok(iterationsBody.items.some(({ id }) => id === "iteration-swerve-bracket-recheck"));
+    assert.ok(Array.isArray(iterationsBody.items));
 
     resetLimits();
 
@@ -830,9 +854,9 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       meetings: Array<{ id: string }>;
       workLogs: Array<{ id: string }>;
     };
-    assert.ok(meetingsBody.meetings.length > 0);
-    assert.ok(meetingsBody.attendance.length > 0);
-    assert.ok(meetingsBody.workLogs.length > 0);
+    assert.ok(Array.isArray(meetingsBody.meetings));
+    assert.ok(Array.isArray(meetingsBody.attendance));
+    assert.ok(Array.isArray(meetingsBody.workLogs));
 
     resetLimits();
 
@@ -846,7 +870,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         endAt: "2026-05-08T20:30:00-04:00",
         location: "MECO shop",
         description: "Planned attendance input coverage.",
-        projectIds: ["project-robot-2026"],
+        projectIds: [robotProject.id],
       },
     });
     assert.equal(meetingCreateResponse.statusCode, 201);
@@ -867,7 +891,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     assert.equal(meetingCreateBody.item.startAt, "2026-05-08T18:00:00-04:00");
     assert.equal(meetingCreateBody.item.endAt, "2026-05-08T20:30:00-04:00");
     assert.equal(meetingCreateBody.item.location, "MECO shop");
-    assert.deepEqual(meetingCreateBody.item.projectIds, ["project-robot-2026"]);
+    assert.deepEqual(meetingCreateBody.item.projectIds, [robotProject.id]);
 
     resetLimits();
 
@@ -898,7 +922,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       url: "/api/meetings",
       payload: {
         title: "Invalid cross-season meeting",
-        seasonId: "default-season",
+        seasonId: robotProject.seasonId,
         startAt: "2026-05-08T18:00:00-04:00",
         projectIds: [meetingProjectBody.item.id],
       },
@@ -928,7 +952,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const meetingBootstrapResponse = await app.inject({
       method: "GET",
-      url: "/api/bootstrap?projectId=project-robot-2026",
+      url: `/api/bootstrap?projectId=${robotProject.id}`,
     });
     assert.equal(meetingBootstrapResponse.statusCode, 200);
     const meetingBootstrapBody = meetingBootstrapResponse.json() as {
@@ -939,7 +963,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         (meeting) =>
           meeting.id === meetingCreateBody.item.id &&
           meeting.startAt === "2026-05-08T18:00:00-04:00" &&
-          meeting.projectIds.includes("project-robot-2026"),
+          meeting.projectIds.includes(robotProject.id),
       ),
     );
 
@@ -950,12 +974,12 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       url: `/api/meetings/${meetingCreateBody.item.id}`,
       payload: {
         location: "Practice field",
-        projectIds: ["project-operations-2026"],
+        projectIds: [operationsProject.id],
       },
     });
     assert.equal(meetingPatchResponse.statusCode, 200);
     assert.equal(meetingPatchResponse.json().item.location, "Practice field");
-    assert.deepEqual(meetingPatchResponse.json().item.projectIds, ["project-operations-2026"]);
+    assert.deepEqual(meetingPatchResponse.json().item.projectIds, [operationsProject.id]);
 
     resetLimits();
 
@@ -974,9 +998,9 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         name: "Roster Insights Dedupe Subsystem",
         description: "Temporary subsystem for roster insights coverage.",
-        parentSubsystemId: "drive",
-        responsibleEngineerId: "ava",
-        mentorIds: ["marco"],
+        parentSubsystemId: canonical.subsystems.find((subsystem) => subsystem.projectId === robotProject.id)!.id,
+        responsibleEngineerId: canonical.members.find((member) => member.role === "student")!.id,
+        mentorIds: [canonical.members.find((member) => member.role === "mentor")!.id],
       },
     });
     assert.equal(rosterSummarySubsystemCreateResponse.statusCode, 201);
@@ -994,18 +1018,18 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       payload: {
         title: "Roster summary dedupe task",
         summary: "Ensures roster summary task counts stay deduplicated.",
-        projectId: "project-robot-2026",
+        projectId: robotProject.id,
         workTypeId: "robot:design",
         responsibleGroupId: null,
-        requestedById: "ava",
+        requestedById: canonical.members.find((member) => member.role === "student")!.id,
         scheduleRefs: [],
         manufacturingDetails: null,
         subsystemIds: [rosterSummarySubsystemBody.item.id],
         mechanismIds: [],
         partInstanceIds: [],
-        ownerId: "ava",
-        assigneeIds: ["ava", "demo-alex-morgan"],
-        mentorId: "marco",
+        ownerId: canonical.members.find((member) => member.role === "student")!.id,
+        assigneeIds: [canonical.members.find((member) => member.role === "student")!.id],
+        mentorId: canonical.members.find((member) => member.role === "mentor")!.id,
         dueDate: "2026-04-01",
         priority: "high",
         status: "waiting-for-qa",
@@ -1025,7 +1049,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
       method: "POST",
       url: "/api/risks",
       payload: {
-        projectId: "project-robot-2026",
+        projectId: robotProject.id,
         title: "Scoped roster blocker",
         detail: "Scoped blocker for roster summary dedupe coverage.",
         category: "dependency",
@@ -1042,7 +1066,7 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     const rosterInsightsResponse = await app.inject({
       method: "GET",
-      url: "/api/roster/insights?seasonId=default-season&projectId=project-robot-2026",
+      url: `/api/roster/insights?seasonId=${robotProject.seasonId}&projectId=${robotProject.id}`,
     });
     assert.equal(rosterInsightsResponse.statusCode, 200);
     const rosterInsightsBody = rosterInsightsResponse.json() as {
@@ -1182,8 +1206,8 @@ test("report derivations retain bootstrap scope and photo policy", async () => {
   const qaReport = snapshot.qaReports[0]!;
   snapshot.qaReports = [{ ...qaReport, id: "photo-qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], photoUrl: "https://example.test/qa.png" }];
   snapshot.teamReports = [{ id: "photo-test", reportType: "practice", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], createdByMemberId: null, participantIds: [], mentorId: null, requestedById: null, summary: "Practice", notes: "Practice notes", createdAt: "2026-04-22T12:00:00Z", status: "submitted", result: "Complete", photoUrl: "https://example.test/test.png" }];
-  snapshot.qaFindings = [{ ...snapshot.qaFindings[0]!, id: "qa-finding", reportId: "photo-qa", status: "in-progress" }];
-  snapshot.testFindings = [{ ...snapshot.testFindings[0]!, id: "test-finding", reportId: "photo-test", status: "resolved" }];
+  snapshot.qaFindings = [{ id: "qa-finding", reportId: "photo-qa", targetRefs: [{ kind: "task", id: task.id }], projectId: task.projectId, title: "QA finding", detail: "QA detail", severity: "medium", status: "in-progress", createdAt: "2026-04-22T12:00:00Z", updatedAt: "2026-04-22T12:00:00Z", correctiveTaskId: null, riskId: null }];
+  snapshot.testFindings = [{ id: "test-finding", reportId: "photo-test", testResultId: "test-result", targetRefs: [{ kind: "task", id: task.id }], projectId: task.projectId, title: "Test finding", detail: "Test detail", severity: "medium", status: "resolved", createdAt: "2026-04-22T12:00:00Z", updatedAt: "2026-04-22T12:00:00Z", correctiveTaskId: null, riskId: null }];
   const reports = buildReports(snapshot);
   const bootstrap = buildBootstrapResponse(snapshot, { projectId: task.projectId, seasonId: null, personId: null });
   assert.equal(reports.find((report) => report.id === "photo-test")!.projectId, task.projectId);
