@@ -429,23 +429,15 @@
             "type": "string"
           },
           "onHandQuantity": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "number",
+              "null"
             ]
           },
           "reorderPoint": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "number",
+              "null"
             ]
           },
           "location": {
@@ -502,13 +494,9 @@
             ]
           },
           "quantityDelta": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "number",
+              "null"
             ]
           },
           "reason": {
@@ -518,13 +506,9 @@
             "type": "string"
           },
           "actorMemberId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "taskId": {
@@ -1009,13 +993,9 @@
             "type": "string"
           },
           "startAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "endAt": {
@@ -3016,13 +2996,9 @@
             "type": "string"
           },
           "startAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "endAt": {
@@ -3098,13 +3074,9 @@
             "type": "string"
           },
           "startAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "endAt": {
@@ -3438,13 +3410,9 @@
             ]
           },
           "sourceStatus": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "sourceReference": {
@@ -3475,13 +3443,9 @@
                   "type": "string"
                 },
                 "receivedAt": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "partInstanceIds": {
