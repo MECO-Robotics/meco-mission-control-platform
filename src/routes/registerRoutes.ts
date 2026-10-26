@@ -253,7 +253,7 @@ const allowMediaPresignRequest = createRequestLimitGuard({
   maxRequests: 30,
   windowMs: 60 * 60 * 1000,
 });
-const PUBLIC_DEMO_SEASON_ID = "default-season";
+const PUBLIC_DEMO_SEASON_ID = "season-2026-meco";
 
 function rewriteDemoMemberId(
   memberId: string | null | undefined,

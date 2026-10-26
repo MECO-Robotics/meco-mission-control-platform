@@ -50,8 +50,8 @@ test("tutorial baseline reset restores canonical season/projects and is idempote
     assert.equal(firstResetBody.ok, true);
     assert.equal(firstResetBody.mode, "baseline");
     assert.equal(firstResetBody.restored, true);
-    assert.equal(firstResetBody.tutorial.seasonId, "default-season");
-    assert.equal(firstResetBody.tutorial.seasonName, "FRC build and competition season");
+    assert.equal(firstResetBody.tutorial.seasonId, "season-2026-meco");
+    assert.equal(firstResetBody.tutorial.seasonName, "MECO Robotics 2026 season and documented offseason");
     assert.deepEqual(firstResetBody.tutorial.expectedProjectNames, [
       "Robot",
       "Media",
@@ -117,7 +117,7 @@ test("tutorial session reset keeps snapshot restore semantics", async () => {
     };
     assert.equal(startBody.ok, true);
     assert.equal(startBody.mode, "session");
-    assert.equal(startBody.tutorial.seasonId, "default-season");
+    assert.equal(startBody.tutorial.seasonId, "season-2026-meco");
 
     resetLimits();
 

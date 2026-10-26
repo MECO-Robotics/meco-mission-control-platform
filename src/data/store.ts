@@ -6,6 +6,7 @@ import { uniqueIds } from "../domain/ids";
 import { getTaskWaitingOnDependencyRecords, isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import { derivePartInstanceReadiness } from "../domain/readiness";
 import { partInstanceSubsystemId, partInstanceMechanismId } from "../domain/partInstanceLocation";
+import { evaluateTaskCompletion } from "../domain/workflows";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 
@@ -48,7 +49,13 @@ import type {
   Workstream,
   WorkLog,
 } from "../domain/types";
-import { evaluateTaskCompletion } from "../domain/workflows";
+
+const TUTORIAL_SEASON_ID = "season-2026-meco";
+const TUTORIAL_SEASON_NAME = "MECO Robotics 2026 season and documented offseason";
+
+function defaultSeasonId(seasons: readonly Season[]) {
+  return seasons.find((season) => season.id === TUTORIAL_SEASON_ID)?.id ?? seasons.at(-1)?.id ?? "default-season";
+}
 import {
   isManualPmCadImportSource,
   markPmCadEditedAfterImport,
@@ -497,7 +504,7 @@ function deriveTaskSummaries(snapshot: PlatformSnapshot): PlatformSnapshot {
 function canonicalizeSnapshot(snapshot: SnapshotView): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot) as PlatformSnapshot;
   assertSnapshotTaskTargets(clonedSnapshot);
-  const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(clonedSnapshot.seasons);
   const normalizedProjects = clonedSnapshot.projects.map((project) => ({
     ...project,
     teamId: normalizeProjectTeamId(project.teamId),
@@ -1002,8 +1009,6 @@ const DEFAULT_SEASON_PROJECTS: Array<{
   { key: "training", name: "Training", projectType: "training" },
 ];
 
-const TUTORIAL_SEASON_ID = "default-season";
-const TUTORIAL_SEASON_NAME = "Tutorial Season";
 const EXPECTED_TUTORIAL_PROJECT_NAMES = [
   "Robot",
   "Media",
@@ -2761,7 +2766,7 @@ function assertPartInstanceDefinitionHasNoReceiptHistory(partInstanceId: string)
 }
 
 export function createPartDefinition(input: PartDefinitionInput, auditContext: AuditMutationContext = {}) {
-  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(currentSnapshot.seasons);
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
   const partDefinitionIds = new Set(
@@ -3398,7 +3403,7 @@ function buildScopeRequirementsForMilestone(input: {
 export function createMilestone(input: MilestoneInput) {
   assertCalendarInterval(input.startAt, input.endAt);
   const milestoneIds = new Set(currentSnapshot.milestones.map((milestone) => milestone.id));
-  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(currentSnapshot.seasons);
   const seasonId =
     input.projectIds
       .map((projectId) => findProject(projectId)?.seasonId ?? null)
@@ -4061,7 +4066,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
   let updatedMilestone: Milestone | null = null;
   const desiredProjectIds = input.projectIds === undefined ? undefined : uniqueIds(input.projectIds);
   const nextProjectIds = desiredProjectIds ?? (currentMilestone.projectIds ?? []);
-  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(currentSnapshot.seasons);
   const nextSeasonId =
     nextProjectIds
       .map((projectId) => findProject(projectId)?.seasonId ?? null)
@@ -4170,7 +4175,7 @@ export function createMeeting(input: MeetingInput) {
   assertCalendarInterval(input.startAt, input.endAt);
   const meetingIds = new Set(currentSnapshot.meetings.map((meeting) => meeting.id));
   const projectIds = uniqueIds(input.projectIds ?? []);
-  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(currentSnapshot.seasons);
   const seasonId =
     input.seasonId ??
     projectIds
@@ -4221,7 +4226,7 @@ export function updateMeeting(meetingId: string, input: Partial<MeetingInput>) {
   }
 
   const projectIds = input.projectIds === undefined ? currentMeeting.projectIds ?? [] : uniqueIds(input.projectIds);
-  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(currentSnapshot.seasons);
   const seasonId =
     input.seasonId ??
     projectIds
@@ -4786,7 +4791,7 @@ export function removePurchaseItem(
 
 export function createMember(input: MemberInput) {
   const memberIds = new Set(currentSnapshot.members.map((member) => member.id));
-  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const fallbackSeasonId = defaultSeasonId(currentSnapshot.seasons);
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
   const member: Member = {

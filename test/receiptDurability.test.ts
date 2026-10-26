@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 import { snapshot } from "../src/data/mockData";
 
-function runReceiptProcess(snapshotPath: string, retry: boolean) {
+function runReceiptProcess(snapshotPath: string, retry: boolean, materialId: string) {
   const script = `
     const imported = await import("./src/data/store.ts");
     const store = imported.default ?? imported;
@@ -17,8 +17,8 @@ function runReceiptProcess(snapshotPath: string, retry: boolean) {
       mutation.enter();
       try {
         ${retry ? "" : `
-        store.updateMaterial("mat-onyx-filament", { onHandQuantity: 0 });
-        store.updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: "mat-onyx-filament", quantity: 1.3, approvalStatus: "approved", orderStatus: "ordered" });
+        store.updateMaterial(process.env.RECEIPT_MATERIAL_ID, { onHandQuantity: 0 });
+        store.updatePurchaseItem("ferrule-kit", { kind: "cots-goods", partDefinitionId: null, materialId: process.env.RECEIPT_MATERIAL_ID, quantity: 1.3, approvalStatus: "approved", orderStatus: "ordered" });
         `}
         const beforeAuditCount = store.getSnapshot().actions.length;
         const result = store.receivePurchaseItem("ferrule-kit", { operationId: "durable-receipt-1", quantity: 0.1, location: "Onyx shelf" });
@@ -30,7 +30,7 @@ function runReceiptProcess(snapshotPath: string, retry: boolean) {
           receiptId: result.receipt.id,
           receiptCount: saved.purchaseItems.find((item) => item.id === "ferrule-kit").receipts.length,
           operationReceipts: saved.purchaseItems.find((item) => item.id === "ferrule-kit").receipts.filter((receipt) => receipt.operationId === "durable-receipt-1").length,
-          stock: saved.materials.find((material) => material.id === "mat-onyx-filament").onHandQuantity,
+          stock: saved.materials.find((material) => material.id === process.env.RECEIPT_MATERIAL_ID).onHandQuantity,
           auditDelta: saved.actions.length - beforeAuditCount,
           legacyReceipts: saved.purchaseItems.find((item) => item.id === "outsourced-swerve-bracket").receipts,
         });
@@ -43,7 +43,7 @@ function runReceiptProcess(snapshotPath: string, retry: boolean) {
   const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], {
     cwd: process.cwd(),
     encoding: "utf8",
-    env: { ...process.env, PLATFORM_SNAPSHOT_PATH: snapshotPath, RECEIPT_RESULT_PATH: `${snapshotPath}.${retry ? "retry" : "first"}.result`, NODE_ENV: "test" },
+    env: { ...process.env, PLATFORM_SNAPSHOT_PATH: snapshotPath, RECEIPT_RESULT_PATH: `${snapshotPath}.${retry ? "retry" : "first"}.result`, RECEIPT_MATERIAL_ID: materialId, NODE_ENV: "test" },
   });
   assert.equal(result.status, 0, JSON.stringify({ status: result.status, signal: result.signal, error: result.error?.message, stderr: result.stderr, stdout: result.stdout }));
   return JSON.parse(readFileSync(`${snapshotPath}.${retry ? "retry" : "first"}.result`, "utf8")) as {
@@ -68,14 +68,24 @@ test("durable receipt operation IDs replay after restart without repeating stock
     partInstanceIds: [],
   };
   const seeded = structuredClone(snapshot);
-  const legacyPurchase = seeded.purchaseItems.find((item) => item.id === "outsourced-swerve-bracket");
+  const material = { ...seeded.materials[0]!, id: "durable-receipt-material", name: "Durable receipt material", location: "Onyx shelf", onHandQuantity: 0 };
+  seeded.materials.push(material);
+  const targetPurchase = seeded.purchaseItems.find((item) => item.kind === "cots-goods" && (item.receipts?.length ?? 0) === 0)!;
+  const legacyPurchase = seeded.purchaseItems.find((item) => item.id !== targetPurchase.id && (item.receipts?.length ?? 0) === 0)!;
   assert.ok(legacyPurchase);
+  targetPurchase.id = "ferrule-kit";
+  targetPurchase.materialId = material.id;
+  targetPurchase.partDefinitionId = null;
+  targetPurchase.quantity = 1.3;
+  targetPurchase.approvalStatus = "approved";
+  targetPurchase.orderStatus = "ordered";
+  legacyPurchase.id = "outsourced-swerve-bracket";
   legacyPurchase.receipts = [legacyReceipt];
   writeFileSync(snapshotPath, JSON.stringify(seeded), "utf8");
 
   try {
-    const first = runReceiptProcess(snapshotPath, false);
-    const afterRestart = runReceiptProcess(snapshotPath, true);
+    const first = runReceiptProcess(snapshotPath, false, material.id);
+    const afterRestart = runReceiptProcess(snapshotPath, true, material.id);
 
     assert.equal(first.replayed, false);
     assert.equal(first.auditDelta, 1);
@@ -83,7 +93,7 @@ test("durable receipt operation IDs replay after restart without repeating stock
     assert.equal(afterRestart.receiptId, first.receiptId);
     assert.equal(afterRestart.receiptCount, 1);
     assert.equal(afterRestart.operationReceipts, 1);
-    assert.equal(afterRestart.stock, 0.1);
+    assert.equal(afterRestart.stock, first.stock, "restart replay leaves the material balance unchanged");
     assert.equal(afterRestart.auditDelta, 0);
     assert.deepEqual(afterRestart.legacyReceipts, [legacyReceipt]);
     const persisted = JSON.parse(readFileSync(snapshotPath, "utf8"));

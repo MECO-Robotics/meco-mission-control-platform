@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 
 import { getCadRuntimeStore, resetCadRuntimeStore, setCadRuntimeStoreFinalizeFailureForTest } from "../src/cad/cadStore";
 import { runStepImport } from "../src/cad/cadImportService";
+import { cadStepMultipartPayload } from "./helpers/cadStepMultipartPayload";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { assertValidStepUpload } from "../src/cad/validation/stepUploadValidation";
 import { getSnapshot } from "../src/data/store";
@@ -365,16 +366,14 @@ function repeatedPartCadFixture(options?: {
 }
 
 async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").buildApp>>, label: string, fileText: string) {
+  const seasonId = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId;
   const response = await app.inject({
     method: "POST",
     url: "/api/cad/step-imports",
-    payload: {
-      fileName: `${label}.step`,
-      fileText,
-      label,
-      projectId: "project-robot-2026",
-      seasonId: "default-season",
-    },
+    ...cadStepMultipartPayload({
+      fileName: `${label}.step`, fileText, label,
+      projectId: "project-robot-2026", seasonId,
+    }),
   });
   assert.equal(response.statusCode, 201, response.body);
   return response.json() as {
@@ -439,6 +438,7 @@ function multipartStepPayload(input: {
 }) {
   const chunks: Buffer[] = [];
   const append = (value: string) => chunks.push(Buffer.from(value, "utf8"));
+  const robotSeasonId = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId;
 
   const appendFields = () => {
     append(`--${input.boundary}\r\n`);
@@ -449,7 +449,7 @@ function multipartStepPayload(input: {
     append(`${input.projectId ?? "project-robot-2026"}\r\n`);
     append(`--${input.boundary}\r\n`);
     append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
-    append(`${input.seasonId ?? "default-season"}\r\n`);
+    append(`${input.seasonId ?? robotSeasonId}\r\n`);
     if (input.requestedBy !== undefined) {
       append(`--${input.boundary}\r\n`);
       append(`Content-Disposition: form-data; name="requestedBy"\r\n\r\n`);
@@ -463,6 +463,15 @@ function multipartStepPayload(input: {
     chunks.push(input.fileBuffer);
     append("\r\n");
   };
+  const appendPreview = () => {
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="optimizedModel"; filename="preview.glb"\r\n`);
+    append("Content-Type: model/gltf-binary\r\n\r\n");
+    const preview = Buffer.alloc(20);
+    preview.write("glTF", 0, "ascii");
+    chunks.push(preview);
+    append("\r\n");
+  };
 
   if (input.fileFirst) {
     appendFile();
@@ -471,6 +480,7 @@ function multipartStepPayload(input: {
     appendFields();
     appendFile();
   }
+  appendPreview();
   append(`--${input.boundary}--\r\n`);
 
   return Buffer.concat(chunks);
@@ -1356,12 +1366,7 @@ test("CAD import run and snapshot list filters use their own status enums", asyn
     const failedImportResponse = await app.inject({
       method: "POST",
       url: "/api/cad/step-imports",
-      payload: {
-        fileName: "placeholder.step",
-        fileText: uploadedClassStepFixture(),
-        label: "placeholder-mode",
-        source: "STEP_UPLOAD",
-      },
+      ...cadStepMultipartPayload({ fileName: "placeholder.step", fileText: uploadedClassStepFixture(), label: "placeholder-mode", projectId: "project-robot-2026", seasonId: getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId }),
     });
     assert.equal(failedImportResponse.statusCode, 422);
     resetLimits();
@@ -1402,11 +1407,7 @@ test("normal STEP upload rejects placeholder parser mode instead of creating a p
     const response = await app.inject({
       method: "POST",
       url: "/api/cad/step-imports",
-      payload: {
-        fileName: "placeholder.step",
-        fileText: uploadedClassStepFixture(),
-        label: "placeholder-mode",
-      },
+      ...cadStepMultipartPayload({ fileName: "placeholder.step", fileText: uploadedClassStepFixture(), label: "placeholder-mode", projectId: "project-robot-2026", seasonId: getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId }),
     });
     assert.equal(response.statusCode, 422);
     assert.match(response.body, /Placeholder STEP parser output is disabled/);
@@ -1469,11 +1470,7 @@ test("STEP import rejects cyclic assembly parent relationships from JSON fixture
     const response = await app.inject({
       method: "POST",
       url: "/api/cad/step-imports",
-      payload: {
-        fileName: "cyclic.step",
-        fileText: cyclicAssemblyCadFixture(),
-        label: "cyclic-assembly",
-      },
+      ...cadStepMultipartPayload({ fileName: "cyclic.step", fileText: cyclicAssemblyCadFixture(), label: "cyclic-assembly", projectId: "project-robot-2026", seasonId: getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId }),
     });
 
     assert.equal(response.statusCode, 422, response.body);
@@ -1493,11 +1490,7 @@ test("STEP import rejects duplicate assembly source IDs from JSON fixtures", asy
     const response = await app.inject({
       method: "POST",
       url: "/api/cad/step-imports",
-      payload: {
-        fileName: "duplicate-assembly.step",
-        fileText: duplicateAssemblySourceCadFixture(),
-        label: "duplicate-assembly",
-      },
+      ...cadStepMultipartPayload({ fileName: "duplicate-assembly.step", fileText: duplicateAssemblySourceCadFixture(), label: "duplicate-assembly", projectId: "project-robot-2026", seasonId: getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId }),
     });
 
     assert.equal(response.statusCode, 422, response.body);
@@ -1551,7 +1544,7 @@ test("unauthenticated STEP JSON uploads are rejected before large body parsing",
   assert.equal(result.stderr, "");
 });
 
-test("authenticated STEP uploads still accept JSON payloads", async (t) => {
+test("authenticated STEP JSON uploads still require a GLB preview", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "meco-preferences-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const script = `
@@ -1586,7 +1579,8 @@ test("authenticated STEP uploads still accept JSON payloads", async (t) => {
         },
       });
 
-      assert.equal(response.statusCode, 201, response.body);
+      assert.equal(response.statusCode, 400, response.body);
+      assert.match(response.body, /binary glTF preview/i);
     } finally {
       await app.close();
     }
@@ -1622,18 +1616,19 @@ test("STEP uploads accept a resolved web session", async () => {
     const { csrfToken } = signIn.json() as { csrfToken: string };
 
     resetLimits();
+    const multipart = cadStepMultipartPayload({
+      fileName: "web-session.step", fileText: cadFixture(), label: "web-session-upload",
+      projectId: "project-robot-2026", seasonId: getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId,
+    });
     const response = await app.inject({
       method: "POST",
       url: "/api/cad/step-imports",
+      ...multipart,
       headers: {
+        ...multipart.headers,
         cookie,
         origin: "http://localhost:5173",
         "x-csrf-token": csrfToken,
-      },
-      payload: {
-        fileName: "web-session.step",
-        fileText: cadFixture(),
-        label: "web-session-upload",
       },
     });
 
@@ -1824,10 +1819,11 @@ test("multipart STEP uploads preserve project context when metadata follows the 
       snapshot: { projectId: string | null; seasonId: string | null };
       summary: { parserUsedPlaceholder?: boolean; rootNames?: string[] };
     };
+    const robotSeasonId = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId;
     assert.equal(parsed.importRun.projectId, "project-robot-2026");
-    assert.equal(parsed.importRun.seasonId, "default-season");
+    assert.equal(parsed.importRun.seasonId, robotSeasonId);
     assert.equal(parsed.snapshot.projectId, "project-robot-2026");
-    assert.equal(parsed.snapshot.seasonId, "default-season");
+    assert.equal(parsed.snapshot.seasonId, robotSeasonId);
     assert.equal(parsed.summary.parserUsedPlaceholder, false);
     assert.deepEqual(parsed.summary.rootNames, ["MAIN ASSEMBLY"]);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
@@ -2114,7 +2110,7 @@ test("CAD confirmations cannot bind project-owned targets from another project",
 
 test("STEP uploads reject nonexistent project metadata before creating import state", async () => {
   await withIntegrationApp(async ({ app }) => {
-    const response = await app.inject({ method: "POST", url: "/api/cad/step-imports", payload: { fileName: "scope.step", fileText: repeatedPartCadFixture({ spacerCount: 1 }), projectId: "missing-project" } });
+    const response = await app.inject({ method: "POST", url: "/api/cad/step-imports", ...cadStepMultipartPayload({ fileName: "scope.step", fileText: repeatedPartCadFixture({ spacerCount: 1 }), label: "invalid-project", projectId: "missing-project", seasonId: getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId }) });
     assert.equal(response.statusCode, 400, response.body);
     assert.match(response.body, /project does not exist/);
     assert.equal((await app.cadStore.listImportRuns({})).length, 0);

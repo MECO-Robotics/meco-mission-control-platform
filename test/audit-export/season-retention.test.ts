@@ -36,7 +36,7 @@ test("audit export retains deleted entities for active season filters", async ()
       const admin = getSnapshot().members.find((member) => member.email === auditAdminMember.email);
       assert.ok(admin);
       const updatedAdmin = updateMember(admin.id, {
-        activeSeasonIds: ["default-season", futureSeason.id],
+        activeSeasonIds: ["season-2026-meco", futureSeason.id],
       });
       assert.ok(updatedAdmin);
       recordAuditAction({
@@ -45,7 +45,7 @@ test("audit export retains deleted entities for active season filters", async ()
         entityId: admin.id,
         entityLabel: admin.name,
         changedFields: ["activeSeasonIds"],
-        afterJson: { activeSeasonIds: ["default-season", futureSeason.id] },
+        afterJson: { activeSeasonIds: ["season-2026-meco", futureSeason.id] },
         actorMemberId: admin.id,
         memberIds: [admin.id],
         requestId: "req-audit-export-future-member",
@@ -59,10 +59,10 @@ test("audit export retains deleted entities for active season filters", async ()
         defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Shared across audit export seasons.",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
       });
       const updatedPartDefinition = updatePartDefinition(sharedPartDefinition.id, {
-        activeSeasonIds: ["default-season", futureSeason.id],
+        activeSeasonIds: ["season-2026-meco", futureSeason.id],
       });
       assert.ok(updatedPartDefinition);
       recordAuditAction({
@@ -71,7 +71,7 @@ test("audit export retains deleted entities for active season filters", async ()
         entityId: sharedPartDefinition.id,
         entityLabel: sharedPartDefinition.name,
         changedFields: ["activeSeasonIds"],
-        afterJson: { activeSeasonIds: ["default-season", futureSeason.id] },
+        afterJson: { activeSeasonIds: ["season-2026-meco", futureSeason.id] },
         actorMemberId: admin.id,
         requestId: "req-audit-export-future-part-definition",
       });
@@ -79,10 +79,10 @@ test("audit export retains deleted entities for active season filters", async ()
       const deletedMember = createMember({
         name: "Audit Export Delete Member",
         role: "student",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
       });
       const updatedDeletedMember = updateMember(deletedMember.id, {
-        activeSeasonIds: ["default-season", futureSeason.id],
+        activeSeasonIds: ["season-2026-meco", futureSeason.id],
       });
       assert.ok(updatedDeletedMember);
       assert.ok(removeMember(deletedMember.id));
@@ -95,10 +95,10 @@ test("audit export retains deleted entities for active season filters", async ()
         defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Deleted after being active in another season.",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
       });
       const updatedDeletedPartDefinition = updatePartDefinition(deletedPartDefinition.id, {
-        activeSeasonIds: ["default-season", futureSeason.id],
+        activeSeasonIds: ["season-2026-meco", futureSeason.id],
       });
       assert.ok(updatedDeletedPartDefinition);
       assert.ok(removePartDefinition(deletedPartDefinition.id));
@@ -112,20 +112,20 @@ test("audit export retains deleted entities for active season filters", async ()
         description: "Projectless milestone retained by season scope.",
         projectIds: [],
       });
-      assert.equal(deletedMilestone.seasonId, "default-season");
+      assert.equal(deletedMilestone.seasonId, "season-2026-meco");
       assert.ok(removeMilestone(deletedMilestone.id));
 
       const deletedMeeting = createMeeting({
         title: "Audit Export Season-Only Meeting",
         meetingType: "general",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
         projectIds: [],
         startAt: "2030-02-02T18:00:00-05:00",
         endAt: null,
         location: "Shop",
         description: "Projectless meeting retained by season scope.",
       });
-      assert.equal(deletedMeeting.seasonId, "default-season");
+      assert.equal(deletedMeeting.seasonId, "season-2026-meco");
       assert.ok(removeMeeting(deletedMeeting.id));
 
       const futureProject = getSnapshot().projects.find(
@@ -148,7 +148,7 @@ test("audit export retains deleted entities for active season filters", async ()
 
       const defaultSeasonCadResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=cad&seasonId=default-season",
+        url: "/api/audit/export?entityType=cad&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -251,7 +251,7 @@ test("audit export retains deleted entities for active season filters", async ()
 
       const defaultSeasonMilestoneResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=milestone&seasonId=default-season",
+        url: "/api/audit/export?entityType=milestone&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -271,7 +271,7 @@ test("audit export retains deleted entities for active season filters", async ()
 
       const defaultSeasonMeetingResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=meeting&seasonId=default-season",
+        url: "/api/audit/export?entityType=meeting&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },

@@ -7,7 +7,8 @@ import { auditAdminMember, authEnv, signTestToken } from "./helpers";
 test("audit export filters by entity type project season and date range", async () => {
   await withIntegrationApp(
     async ({ app, resetLimits }) => {
-      const { createRisk, getSnapshot, recordAuditAction } = require("../../src/data/store") as typeof import("../../src/data/store");
+      const { createRisk, createWorkstream, getSnapshot, recordAuditAction } = require("../../src/data/store") as typeof import("../../src/data/store");
+      const robotProject = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!;
       const adminToken = await signTestToken({
         email: "maya.ortiz@mecorobotics.org",
         role: "admin",
@@ -66,10 +67,7 @@ test("audit export filters by entity type project season and date range", async 
         requestId: "req-audit-export-mechanism",
       });
 
-      const robotWorkstream = getSnapshot().workstreams.find(
-        (workstream) => workstream.projectId === "project-robot-2026",
-      );
-      assert.ok(robotWorkstream);
+      const robotWorkstream = createWorkstream({ projectId: robotProject.id, name: "Audit Export Filter Workstream", description: "Test workstream for filters." });
       const workstreamRisk = createRisk({
         projectId: robotWorkstream.projectId,
         title: "Audit Export Workstream Risk",
@@ -96,7 +94,7 @@ test("audit export filters by entity type project season and date range", async 
 
       const response = await app.inject({
         method: "GET",
-        url: `/api/audit/export?entityType=task&projectId=project-robot-2026&seasonId=default-season&from=${encodeURIComponent(targetAction.timestamp)}&to=${encodeURIComponent(targetAction.timestamp)}`,
+        url: `/api/audit/export?entityType=task&projectId=${robotProject.id}&seasonId=${robotProject.seasonId}&from=${encodeURIComponent(targetAction.timestamp)}&to=${encodeURIComponent(targetAction.timestamp)}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -132,7 +130,7 @@ test("audit export filters by entity type project season and date range", async 
 
       const memberSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=member&seasonId=default-season",
+        url: `/api/audit/export?entityType=member&seasonId=${robotProject.seasonId}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -165,7 +163,7 @@ test("audit export filters by entity type project season and date range", async 
 
       const subsystemSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=mechanism&seasonId=default-season",
+        url: `/api/audit/export?entityType=mechanism&seasonId=${robotProject.seasonId}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -201,7 +199,7 @@ test("audit export filters by entity type project season and date range", async 
 
       const workstreamRiskSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=risk&seasonId=default-season",
+        url: `/api/audit/export?entityType=risk&seasonId=${robotProject.seasonId}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },

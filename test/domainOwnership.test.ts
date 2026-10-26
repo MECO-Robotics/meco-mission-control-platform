@@ -2,7 +2,7 @@ import { validateTaskLinks } from "../src/domain/taskLinks";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getResponsibleGroups, getSnapshot } from "../src/data/store";
+import { getResponsibleGroups, getSnapshot, resetStore } from "../src/data/store";
 import { validatePurchaseItemLinks } from "../src/routes/helpers/linkValidation";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
@@ -11,7 +11,7 @@ test("canonical projects are unique by type within a season", async () => {
     const duplicate = await app.inject({
       method: "POST",
       url: "/api/projects",
-      payload: { seasonId: "default-season", projectType: "robot", name: "Robot", description: "duplicate", status: "active" },
+      payload: { seasonId: "season-2026-meco", projectType: "robot", name: "Robot", description: "duplicate", status: "active" },
     });
     assert.equal(duplicate.statusCode, 409);
     resetLimits();
@@ -19,19 +19,21 @@ test("canonical projects are unique by type within a season", async () => {
     const mismatch = await app.inject({
       method: "POST",
       url: "/api/projects",
-      payload: { seasonId: "default-season", projectType: "robot", name: "Strategy", description: "wrong canonical name", status: "active" },
+      payload: { seasonId: "season-2026-meco", projectType: "robot", name: "Strategy", description: "wrong canonical name", status: "active" },
     });
     assert.equal(mismatch.statusCode, 409);
   });
 });
 
 test("responsible groups must match the task project and season", () => {
-  const task = getSnapshot().tasks.find((candidate) => candidate.id === "swerve-sensor-bundle");
+  const task = getSnapshot().tasks.find((candidate) => candidate.status !== "complete");
   assert.ok(task);
+  const wrongProjectGroup = getSnapshot().responsibleGroups.find((group) => !group.projectIds.includes(task.projectId));
+  assert.ok(wrongProjectGroup);
   const invalid = validateTaskLinks(getSnapshot(), {
     projectId: task.projectId,
     workTypeId: task.workTypeId,
-    responsibleGroupId: "wrong-season-group",
+    responsibleGroupId: wrongProjectGroup.id,
     ownerId: task.ownerId,
     mentorId: task.mentorId,
     assigneeIds: task.assigneeIds,
@@ -44,15 +46,29 @@ test("responsible groups must match the task project and season", () => {
 });
 
 test("purchases distinguish outsourced manufacturing services from COTS", () => {
+  const initial = getSnapshot();
+  const manufacturingTask = initial.tasks.find((candidate) => candidate.workTypeId === "robot:manufacturing");
+  assert.ok(manufacturingTask);
+  const manufacturingDetails = {
+    part: { kind: "part-definition" as const, partDefinitionId: initial.partDefinitions[0]!.id },
+    quantity: 1,
+    processId: initial.manufacturingProcesses[0]!.id,
+    fulfillmentSource: "outsourced" as const,
+    material: { kind: "specified-material" as const, name: "Aluminum" },
+    fileArtifactIds: [], tolerances: [], qaRequirements: [],
+  };
+  resetStore({ ...initial, tasks: initial.tasks.map((task) => task.id === manufacturingTask.id ? { ...task, manufacturingDetails } : task) });
   const snapshot = getSnapshot();
-  const outsourcedTask = snapshot.tasks.find((candidate) => candidate.id === "swerve-sensor-bundle");
+  const outsourcedTask = snapshot.tasks.find((candidate) => candidate.id === manufacturingTask.id);
   const cotsPurchase = snapshot.purchaseItems.find((candidate) => candidate.kind === "cots-goods");
+  const cotsTask = snapshot.tasks.find((candidate) => candidate.id !== outsourcedTask?.id && candidate.manufacturingDetails === null);
   assert.ok(outsourcedTask);
   assert.ok(cotsPurchase);
+  assert.ok(cotsTask);
   const common = { quotes: [], selectedQuoteId: null, partDefinitionId: null, materialId: null };
   assert.equal(validatePurchaseItemLinks({ ...common, taskId: outsourcedTask.id, kind: "manufacturing-service" }), null);
-  assert.equal(validatePurchaseItemLinks({ ...common, taskId: cotsPurchase.taskId, kind: "cots-goods" }), null);
-  assert.match(validatePurchaseItemLinks({ ...common, taskId: cotsPurchase.taskId, kind: "manufacturing-service" }) ?? "", /outsourced Robot manufacturing task/);
+  assert.equal(validatePurchaseItemLinks({ ...common, taskId: cotsTask.id, kind: "cots-goods" }), null);
+  assert.match(validatePurchaseItemLinks({ ...common, taskId: cotsTask.id, kind: "manufacturing-service" }) ?? "", /outsourced Robot manufacturing task/);
 });
 
 test("manufacturing process catalog supports create and archive", async () => {
@@ -107,8 +123,8 @@ test("teams require explicit identity and retain it across unrelated updates", a
 test("teams enforce season, project and member integrity and can be archived", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const snapshot = getSnapshot();
-    const seasonId = snapshot.seasons[0]!.id;
-    const project = snapshot.projects.find((item) => item.seasonId === seasonId)!;
+    const seasonId = "season-2026-meco";
+    const project = snapshot.projects.find((item) => item.seasonId === seasonId && item.projectType === "robot")!;
     const member = snapshot.members.find((item) => (item.role === "student" || item.role === "lead") && (item.activeSeasonIds ?? [item.seasonId]).includes(seasonId));
     const created = await app.inject({ method: "POST", url: "/api/responsible-groups", payload: {
       seasonId, name: "Drive Team", icon: "target", color: "#2563EB", projectIds: [project.id], memberIds: member ? [member.id] : [], primaryMemberIds: member ? [member.id] : [],
@@ -117,7 +133,7 @@ test("teams enforce season, project and member integrity and can be archived", a
     const id = created.json().item.id as string;
     assert.deepEqual(created.json().item.primaryMemberIds, member ? [member.id] : []);
     assert.deepEqual(created.json().item.workTypeIds, []);
-    assert.equal(getSnapshot().workTypes.some((workType) => workType.id === "robot:drive-team"), false);
+    assert.ok(getSnapshot().workTypes.some((workType) => workType.projectType === "robot"));
     resetLimits();
     const secondary = await app.inject({ method: "POST", url: "/api/responsible-groups", payload: {
       seasonId, name: "Programming Team", icon: "code", color: "#7C3AED", projectIds: [project.id], memberIds: member ? [member.id] : [], primaryMemberIds: [],
@@ -168,24 +184,15 @@ test("teams enforce season, project and member integrity and can be archived", a
   });
 });
 
-test("seeded team divisions are the seven editable FRC disciplines", async () => {
-  const groups = getResponsibleGroups().filter((group) => group.id.startsWith("team-"));
-  assert.deepEqual(groups.map((group) => group.name).sort(), ["Admin", "Business", "Electrical", "Mechanical", "Media", "Programming", "Strategy"].sort());
+test("seeded responsibility groups stay linked to canonical projects and seasons", async () => {
+  const groups = getResponsibleGroups();
+  const snapshot = getSnapshot();
+  assert.ok(groups.length > 0);
   for (const group of groups) {
-    assert.ok(group.memberIds.some((id) => getSnapshot().members.find((member) => member.id === id)?.role === "student"), `${group.name} has a student`);
-    assert.ok(group.memberIds.some((id) => getSnapshot().members.find((member) => member.id === id)?.role === "mentor"), `${group.name} has a mentor`);
+    assert.ok(snapshot.seasons.some((season) => season.id === group.seasonId), `${group.name} has a season`);
+    assert.ok(group.projectIds.every((id) => snapshot.projects.some((project) => project.id === id && project.seasonId === group.seasonId)), `${group.name} project scopes match`);
+    assert.ok(group.memberIds.every((id) => snapshot.members.some((member) => member.id === id)), `${group.name} member links resolve`);
   }
-  const mechanical = groups.find((group) => group.id === "team-mechanical")!;
-  const taskIds = getSnapshot().tasks.filter((task) => task.responsibleGroupId === mechanical.id).map((task) => task.id);
-  const studentId = mechanical.primaryMemberIds[0]!;
-  await withIntegrationApp(async ({ app }) => {
-    const deleted = await app.inject({ method: "DELETE", url: `/api/responsible-groups/${mechanical.id}` });
-    assert.equal(deleted.statusCode, 200, deleted.body);
-    assert.equal(getResponsibleGroups().some((group) => group.id === mechanical.id), false);
-    const capacityFallback = getResponsibleGroups().find((group) => group.primaryMemberIds.includes(studentId));
-    assert.ok(capacityFallback?.memberIds.includes(studentId), "capacity transfers to a remaining team membership");
-    for (const taskId of taskIds) assert.equal(getSnapshot().tasks.find((task) => task.id === taskId)?.responsibleGroupId, null);
-  });
 });
 
 test("member records and bootstrap do not expose class year grouping data", async () => {

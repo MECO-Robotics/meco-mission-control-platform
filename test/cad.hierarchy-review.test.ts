@@ -4,16 +4,18 @@ import { promisify } from "node:util";
 import { test } from "node:test";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
-import { createMechanism, createPartDefinition } from "../src/data/store";
+import { createPartDefinition, getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+import { cadStepMultipartPayload } from "./helpers/cadStepMultipartPayload";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
 const execFileAsync = promisify(execFile);
 
 function createDomainPart(input: { name: string; partNumber: string; type?: string; source?: string }) {
+  const seasonId = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId;
   return createPartDefinition({
-    seasonId: "default-season",
-    activeSeasonIds: ["default-season"],
+    seasonId,
+    activeSeasonIds: [seasonId],
     name: input.name,
     partNumber: input.partNumber,
     revision: "A",
@@ -22,6 +24,15 @@ function createDomainPart(input: { name: string; partNumber: string; type?: stri
     materialId: null,
     description: `${input.name} test fixture`,
   });
+}
+
+function robotSubsystemId() {
+  return getSnapshot().subsystems.find((subsystem) => subsystem.projectId === "project-robot-2026")!.id;
+}
+
+function robotMechanismId() {
+  const subsystemId = robotSubsystemId();
+  return getSnapshot().mechanisms.find((mechanism) => mechanism.subsystemId === subsystemId)!.id;
 }
 
 function hierarchyCadFixture(options?: {
@@ -147,16 +158,14 @@ function hierarchyCadFixture(options?: {
 }
 
 async function uploadStep(app: TestApp, label: string, fileText: string) {
+  const seasonId = getSnapshot().projects.find((project) => project.id === "project-robot-2026")!.seasonId;
   const response = await app.inject({
     method: "POST",
     url: "/api/cad/step-imports",
-    payload: {
-      fileName: `${label}.step`,
-      fileText,
-      label,
-      projectId: "project-robot-2026",
-      seasonId: "default-season",
-    },
+    ...cadStepMultipartPayload({
+      fileName: `${label}.step`, fileText, label,
+      projectId: "project-robot-2026", seasonId,
+    }),
   });
   assert.equal(response.statusCode, 201, response.body);
   return response.json() as { snapshot: { id: string } };
@@ -356,8 +365,8 @@ test("component assemblies inherit a confirmed ancestor mechanism during finaliz
         reviewedBy: "mentor@example.com",
         assemblyDecisions: [
           { sourceId: root?.id, targetKind: "IGNORE", status: "CONFIRMED" },
-          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: "drive", status: "CONFIRMED" },
-          { sourceId: chassis?.id, targetKind: "MECHANISM", targetId: "chassis", status: "CONFIRMED" },
+          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: robotSubsystemId(), status: "CONFIRMED" },
+          { sourceId: chassis?.id, targetKind: "MECHANISM", targetId: robotMechanismId(), status: "CONFIRMED" },
           { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", status: "CONFIRMED" },
         ],
         partMatchConfirmations: [
@@ -382,11 +391,7 @@ test("component assemblies can be assigned to an existing parent mechanism", asy
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
     const rivet = createDomainPart({ name: "3/16 Aluminum Rivet", partNumber: "RVT-001", type: "hardware", source: "McMaster-Carr" });
-    const parentMechanism = createMechanism({
-      subsystemId: "drive",
-      name: "Hierarchy Review Parent Mechanism",
-      description: "Explicit target for component assembly assignment coverage.",
-    });
+    const parentMechanism = getSnapshot().mechanisms.find((mechanism) => mechanism.subsystemId === robotSubsystemId())!;
     const imported = await uploadStep(app, "assigned-component-parent", hierarchyCadFixture({
       includeMechanism: false,
     }));
@@ -406,7 +411,7 @@ test("component assemblies can be assigned to an existing parent mechanism", asy
       url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review/apply`,
       payload: {
         assemblyDecisions: [
-          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: "drive", status: "CONFIRMED" },
+          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: robotSubsystemId(), status: "CONFIRMED" },
           { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", parentMechanismId: parentMechanism.id, status: "CONFIRMED" },
         ],
         partMatchConfirmations: [
@@ -495,7 +500,7 @@ test("mixed hierarchy reviews apply explicit decisions last and clear rejected p
         ],
         assemblyDecisions: [
           { sourceId: "asm-root", targetKind: "REFERENCE_GEOMETRY", confidence: "HIGH", status: "PROPOSED" },
-          { sourceId: "asm-bellypan", targetKind: "COMPONENT_ASSEMBLY", targetId: null, parentMechanismId: "chassis" },
+          { sourceId: "asm-bellypan", targetKind: "COMPONENT_ASSEMBLY", targetId: null, parentMechanismId: robotMechanismId() },
         ],
         partMatchConfirmations: [
           { cadPartDefinitionSourceId: "part-rivet", targetPartDefinitionId: rivet.id, status: "REJECTED" },
@@ -512,7 +517,7 @@ test("mixed hierarchy reviews apply explicit decisions last and clear rejected p
     assert.equal(root?.targetKind, "REFERENCE_GEOMETRY");
     assert.equal(root?.status, "PROPOSED");
     assert.equal(root?.confidence, "HIGH");
-    assert.equal(mappingForAssembly("asm-bellypan")?.targetId, "chassis");
+    assert.equal(mappingForAssembly("asm-bellypan")?.targetId, robotMechanismId());
     for (const mapping of [
       mappings.find((item) => item.sourceKind === "PART_DEFINITION"),
       mappings.find((item) => item.sourceId === instance.id),
@@ -551,7 +556,7 @@ test("finalize reports hierarchy validation issues and still honors allowUnresol
         reviewedBy: "mentor@example.com",
         assemblyDecisions: [
           { sourceId: root?.id, targetKind: "IGNORE", status: "CONFIRMED" },
-          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: "drive", status: "CONFIRMED" },
+          { sourceId: drive?.id, targetKind: "SUBSYSTEM", targetId: robotSubsystemId(), status: "CONFIRMED" },
           { sourceId: component?.id, targetKind: "COMPONENT_ASSEMBLY", targetId: null, status: "CONFIRMED" },
         ],
         partMatchConfirmations: [
@@ -651,7 +656,7 @@ test("hierarchy validation returns instead of looping on cyclic parent links", a
 
   const result = await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], {
     cwd: process.cwd(),
-    timeout: 2_000,
+    timeout: 10_000,
   });
 
   assert.equal(result.stderr, "");

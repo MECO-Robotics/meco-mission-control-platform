@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as schemas from "../src/routes/routeSchemas";
-import { getSnapshot, resetStore } from "../src/data/store";
+import { createWorkstream, getSnapshot, resetStore } from "../src/data/store";
 import type { PlatformSnapshot } from "../src/domain/types";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
@@ -19,9 +19,10 @@ test("PATCH schemas preserve omission and supplied values without create default
   assert.deepEqual(schemas.meetingPatchSchema.parse({ projectIds: [], endAt: null }), {
     projectIds: [], endAt: null,
   });
-  assert.deepEqual(schemas.materialPatchSchema.parse({ onHandQuantity: "4" }), { onHandQuantity: 4 });
+  assert.deepEqual(schemas.materialPatchSchema.parse({ notes: "Restock note" }), { notes: "Restock note" });
+  assert.equal(schemas.materialPatchSchema.safeParse({ onHandQuantity: 4 }).success, false);
   assert.equal(schemas.taskPatchSchema.safeParse({ unexpected: true }).success, false);
-  assert.deepEqual(schemas.materialPatchSchema.parse({ unexpected: true }), {});
+  assert.equal(schemas.materialPatchSchema.safeParse({ unexpected: true }).success, false);
   assert.equal(schemas.partDefinitionPatchSchema.safeParse({ partNumber: " " }).success, false);
   assert.equal(schemas.partDefinitionPatchSchema.safeParse({ iteration: 0 }).success, false);
   assert.deepEqual(schemas.projectPatchSchema.parse({ projectType: "robot", seasonId: "another-season" }), {});
@@ -47,6 +48,9 @@ test("create schemas still supply defaults and preserve create-only commands", (
 
 test("unrelated HTTP patches retain saved fields; explicit clears apply and invalid input publishes nothing", async () => {
   await withIntegrationApp(async ({ app }) => {
+    if (getSnapshot().workstreams.length === 0) {
+      createWorkstream({ projectId: getSnapshot().projects[0]!.id, name: "Patch retention fixture", description: "A scoped workstream for patch retention." });
+    }
     const fixture = structuredClone(getSnapshot()) as PlatformSnapshot;
     Object.assign(fixture.tasks[0], { checklistItems: ["Keep checklist"], requiresDocumentation: true });
     fixture.tasks[0].status = "in-progress";
@@ -68,7 +72,7 @@ test("unrelated HTTP patches retain saved fields; explicit clears apply and inva
       ["workstreams", "workstreams", { name: "Renamed workstream" }, ["isArchived"]],
       ["meetings", "meetings", { title: "Renamed meeting" }, ["meetingType", "projectIds", "location", "description"]],
       ["artifacts", "artifacts", { title: "Renamed artifact" }, ["summary", "status", "uri"]],
-      ["materials", "materials", { onHandQuantity: 4 }, ["notes"]],
+      ["materials", "materials", { notes: "Restock note" }, ["location"]],
       ["workLogs", "work-logs", { hours: 4 }, ["notes", "photoUrl", "participantIds"]],
       ["risks", "risks", { severity: "low" }, ["title", "detail", "source", "relatedTargets", "mitigationTaskId"]],
     ] as const;

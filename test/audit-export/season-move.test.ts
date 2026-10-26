@@ -37,7 +37,7 @@ test("audit export retains old season scope after member and part moves", async 
       const movedMember = createMember({
         name: "Audit Export Moved Member",
         role: "student",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
       });
       assert.ok(
         updateMember(movedMember.id, {
@@ -62,7 +62,7 @@ test("audit export retains old season scope after member and part moves", async 
       const movedMeeting = createMeeting({
         title: "Audit Export Moved Meeting",
         meetingType: "general",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
         projectIds: [],
         startAt: "2031-02-02T18:00:00-05:00",
         endAt: null,
@@ -84,7 +84,7 @@ test("audit export retains old season scope after member and part moves", async 
         defaultAcquisitionMethod: "stock",
         materialId: "mat-onyx-filament",
         description: "Part definition moved between audit export seasons.",
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
       });
       assert.ok(
         updatePartDefinition(movedPartDefinition.id, {
@@ -97,7 +97,7 @@ test("audit export retains old season scope after member and part moves", async 
 
       const oldMemberSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=member&seasonId=default-season",
+        url: "/api/audit/export?entityType=member&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -117,7 +117,7 @@ test("audit export retains old season scope after member and part moves", async 
 
       const oldPartSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=part-definition&seasonId=default-season",
+        url: "/api/audit/export?entityType=part-definition&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -137,7 +137,7 @@ test("audit export retains old season scope after member and part moves", async 
 
       const oldMilestoneSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=milestone&seasonId=default-season",
+        url: "/api/audit/export?entityType=milestone&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -157,7 +157,7 @@ test("audit export retains old season scope after member and part moves", async 
 
       const oldMeetingSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=meeting&seasonId=default-season",
+        url: "/api/audit/export?entityType=meeting&seasonId=season-2026-meco",
         headers: {
           authorization: `Bearer ${adminToken}`,
         },

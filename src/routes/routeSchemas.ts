@@ -476,9 +476,10 @@ const partDefinitionFieldsSchema = z.object({
   name: z.string().trim().min(2),
   // When omitted/blank, the platform assigns the next available part number.
   partNumber: z.string().trim(),
-  vendorPartNumbers: z.record(z.string(), z.string().trim()).default({}),
+  vendorPartNumbers: z.record(z.string(), z.string().trim()),
   isHardware: z.boolean(),
-  revision: z.string().trim().min(1),
+  // Source catalogs may not provide a revision; empty records remain honest instead of inventing one.
+  revision: z.string().trim(),
   iteration: iterationSchema,
   isArchived: z.boolean(),
   type: z.string().trim().min(1),
@@ -490,6 +491,7 @@ const partDefinitionFieldsSchema = z.object({
 
 export const partDefinitionSchema = partDefinitionFieldsSchema.extend({
   partNumber: partDefinitionFieldsSchema.shape.partNumber.default(""),
+  vendorPartNumbers: partDefinitionFieldsSchema.shape.vendorPartNumbers.default({}),
   isHardware: partDefinitionFieldsSchema.shape.isHardware.default(false),
   isArchived: partDefinitionFieldsSchema.shape.isArchived.default(false),
   description: partDefinitionFieldsSchema.shape.description.default(""),

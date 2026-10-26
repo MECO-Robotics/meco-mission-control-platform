@@ -44,7 +44,13 @@ test("external roster role whitelists non-team email for email sign-in", async (
       name: "Sponsor Mentor",
       email: "mentor@sponsor.example",
       role: "mentor",
-      seasonId: "default-season",
+      seasonId: "season-2026-meco",
+    });
+    createMember({
+      name: "Workspace Admin",
+      email: "maya.ortiz@mecorobotics.org",
+      role: "admin",
+      seasonId: "season-2026-meco",
     });
 
     try {

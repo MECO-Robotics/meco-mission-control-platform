@@ -321,7 +321,9 @@ test("production platform state survives a fresh process", () => {
       const imported = await import("./src/data/store.ts");
       const store = imported.default ?? imported;
       const initial = store.getSnapshot();
-      if (initial.projects.length !== 6 || initial.tasks.length < 35) throw new Error("Fresh process did not bootstrap the restored demo scenario");
+      const mockModule = await import("./src/data/mockData.ts");
+      const { snapshot: canonical } = mockModule.default ?? mockModule;
+      if (initial.projects.length !== canonical.projects.length || initial.tasks.length !== canonical.tasks.length) throw new Error("Fresh process did not bootstrap the canonical demo scenario");
       const transaction = await store.acquireSnapshotMutation();
       transaction.enter();
       const operationsProject = initial.projects.find(project => project.projectType === "operations");
@@ -436,11 +438,13 @@ test("QA workflow effects survive restart and roll back together when persistenc
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
     const before = JSON.stringify(store.getSnapshot());
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
-    const source = store.getSnapshot(); const task = source.tasks[0];
+    const source = store.getSnapshot(); const task = source.tasks.find(item => item.status === "in-progress" && !item.isBlocked);
+    const lead = source.members.find(member => member.role === "lead");
+    const mentor = source.members.find(member => member.role === "mentor");
+    if (!task || !lead || !mentor) throw new Error("Canonical QA actors and task are missing");
     store.updateTask(task.id, { status: "in-progress" });
-    const qaRequest = store.createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: source.members.find(member => member.role === "mentor").id });
-    const reviewer = source.members.find(member => member.role === "mentor");
-    const result = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: qaRequest.id }], createdByMemberId: source.members[0].id, participantIds: [source.members[0].id], mentorId: source.members[0].id, requestedById: null, result: "iteration-worthy", status: "reviewed", reviewedById: null, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair" }, { reviewerId: reviewer.id, reviewedAt: new Date().toISOString() });
+    const qaRequest = store.createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: task.title, mentorId: mentor.id, requestedById: lead.id });
+    const result = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: qaRequest.id }], createdByMemberId: lead.id, participantIds: [lead.id], mentorId: mentor.id, requestedById: lead.id, result: "iteration-worthy", status: "reviewed", reviewedById: null, notes: "Durable QA", evidenceNotes: "Broken lead", followUpTaskTitle: "Durable repair" }, { reviewerId: mentor.id, reviewedAt: new Date().toISOString() });
     if (result.error) throw new Error(result.error);
     if (!store.getSnapshot().qaReports.some(item => item.notes === "Durable QA")) throw new Error("QA report was not staged");
     let failed = false;
@@ -540,14 +544,17 @@ test("atomic acquisition persists all linked records or rolls back the entire du
     const helper = await import("./src/routes/helpers/partAcquisition.ts");
     const schemas = await import("./src/routes/routeSchemas.ts");
     const before = store.getSnapshot();
-    const subsystem = before.subsystems.find(item => before.projects.some(project => project.id === item.projectId && project.projectType === "robot"));
+    const subsystem = before.subsystems.find(item => before.projects.some(project => project.id === item.projectId && project.projectType === "robot" && project.seasonId === "season-2026-meco"));
+    const owner = before.members.find(item => item.role === "lead" || item.role === "student");
+    const mentor = before.members.find(item => item.role === "mentor");
+    if (!subsystem || !owner || !mentor) throw new Error("Canonical acquisition fixture is incomplete");
     const prepared = (helper.default ?? helper).preparePartAcquisition((schemas.default ?? schemas).partDefinitionSchema.parse({
       name: "Durable acquisition", revision: "A", type: "custom", defaultAcquisitionMethod: "purchase-cots",
-      acquisition: { method: "purchase-cots", subsystemId: subsystem.id, workTypeId: "robot:planning", ownerId: "ava", mentorId: "marco", dueDate: "2026-10-01" },
+      acquisition: { method: "purchase-cots", subsystemId: subsystem.id, workTypeId: "robot:planning", ownerId: owner.id, mentorId: mentor.id, dueDate: "2026-10-01" },
     }), "priya");
     assert.ok(!prepared.error);
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
-    const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: "marco", requestId: "atomic-proof" });
+    const result = store.createPartDefinitionWithAcquisition(prepared.definition, prepared.plan, { actorMemberId: mentor.id, requestId: "atomic-proof" });
     assert.equal(transaction.hasChanges(), true);
     try {
       await transaction.commit(); transaction.release();
@@ -588,26 +595,31 @@ test("QA and test findings preserve separate IDs, audits and durable transaction
     const before = store.getSnapshot();
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
     const outputs = [];
-    const report = store.getReports().find(item => item.reportType === "qa");
-    assert.ok(report);
-    for (const spawnedTaskId of [null, before.tasks[0].id]) {
-      const result = store.createReportFinding({
-        reportId: report.id, targetRefs: [{ kind: "part-instance", id: "pi-swerve-encoder-bracket-front-left" }, ...(spawnedTaskId ? [{ kind: "task", id: spawnedTaskId }] : [])], issueType: "Durable finding", severity: "medium",
+      const task = before.tasks[0];
+      const reviewer = before.members.find(item => item.role === "mentor");
+      assert.ok(task && reviewer);
+      const submitted = store.submitQaReport({ reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], participantIds: [reviewer.id], result: "minor-fix", status: "reviewed", notes: "Durable source report" }, { reviewerId: reviewer.id, reviewedAt: new Date().toISOString() });
+      assert.ok(!submitted.error);
+      const report = submitted.item;
+      const findingsActionOffset = store.getSnapshot().actions.length;
+      for (const spawnedTaskId of [null, null]) {
+        const result = store.createReportFinding({
+        reportId: report.id, targetRefs: [{ kind: "task", id: task.id }], issueType: "Durable finding", severity: "medium",
         notes: "Preserved finding", spawnedTaskId, spawnedIterationId: null, spawnedRiskId: null,
       });
-      assert.ok(result.targetRefs.some(ref => ref.kind === "part-instance"));
-      assert.equal(result.spawnedTaskId, spawnedTaskId);
+      assert.ok(result.targetRefs.some(ref => ref.kind === "task"));
+      assert.equal(result.correctiveTaskId ?? null, spawnedTaskId);
       outputs.push(result);
     }
     assert.notEqual(outputs[0].id, outputs[1].id);
     const draft = store.getSnapshot();
     assert.equal(store.createReportFinding({ reportId: "missing" }), null);
     assert.equal(store.getSnapshot(), draft);
-    assert.equal(draft.actions.length - before.actions.length, 2);
-    assert.ok(draft.actions.slice(before.actions.length).every(item => item.entityType === "report-finding" && item.operation === "create"));
+    assert.equal(draft.actions.length - findingsActionOffset, 2);
+    assert.ok(draft.actions.slice(findingsActionOffset).every(item => item.entityType === "report-finding" && item.operation === "create"));
     try {
       await transaction.commit(); transaction.release();
-      process.stdout.write(JSON.stringify({ qa: draft.qaFindings.slice(before.qaFindings.length) }));
+      process.stdout.write(JSON.stringify({ qa: draft.qaFindings.filter(item => item.title === "Durable finding") }));
     } catch {
       transaction.release();
       assert.equal(store.getSnapshot(), before);
@@ -704,6 +716,7 @@ test("development apps sharing a durable snapshot coordinate sequential and conc
   try {
     runProductionStoreScript(path, `
       process.env.API_RATE_LIMIT_MAX_REQUESTS = "1000";
+      process.env.AUTH_MENTOR_EMAILS = "mentor@mecorobotics.org";
       const appModule = await import("./src/app.ts"); const { buildApp } = appModule.default ?? appModule;
       const mobileModule = await import("./test/helpers/mobileSessionMemoryStore.ts"); const { MobileSessionMemoryStore } = mobileModule.default ?? mobileModule;
       const webModule = await import("./test/helpers/webSessionMemoryStore.ts"); const { MemoryWebSessionStore } = webModule.default ?? webModule;
@@ -717,7 +730,7 @@ test("development apps sharing a durable snapshot coordinate sequential and conc
       try {
         const snapshot = store.getSnapshot();
         const mentor = snapshot.members.find(member => member.role === "mentor");
-        const session = await new MobileSessionService(mobileSessionStore).create({ accountId: mentor.id, authProvider: "email", email: mentor.email, name: mentor.name, picture: null, hostedDomain: "mecorobotics.org", role: "mentor", taskSubteamIds: [] }, "shared-owner-test", "Tests");
+        const session = await new MobileSessionService(mobileSessionStore).create({ accountId: mentor.id, authProvider: "email", email: "mentor@mecorobotics.org", name: mentor.name, picture: null, hostedDomain: "mecorobotics.org", role: "mentor", taskSubteamIds: [] }, "shared-owner-test", "Tests");
         const headers = { authorization: "Bearer " + session.token };
         const [a,b] = snapshot.tasks.slice(0, 2);
         const patch = async (app, id, payload) => {
@@ -758,9 +771,12 @@ test("task QA requests and their task transition survive restart or roll back as
     const imported = await import("./src/data/store.ts"); const store = imported.default ?? imported;
     const before = JSON.stringify(store.getSnapshot());
     const transaction = await store.acquireSnapshotMutation(); transaction.enter();
-    const source = store.getSnapshot(); const task = source.tasks[0];
+    const source = store.getSnapshot(); const task = source.tasks.find(item => item.status === "in-progress" && !item.isBlocked);
+    const lead = source.members.find(member => member.role === "lead");
+    const mentor = source.members.find(member => member.role === "mentor");
+    if (!task || !lead || !mentor) throw new Error("Canonical QA actors and task are missing");
     store.updateTask(task.id, { status: "in-progress" });
-    const input = { projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: "Durable task QA request", mentorId: source.members.find(member => member.role === "mentor").id };
+    const input = { projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: "Durable task QA request", mentorId: mentor.id, requestedById: lead.id };
     const created = store.createQaRequest(input);
     const staged = store.getSnapshot();
     if (staged.tasks.find(record => record.id === task.id).status !== "waiting-for-qa") throw new Error("Task transition was not staged with request");

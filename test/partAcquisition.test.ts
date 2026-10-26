@@ -13,16 +13,24 @@ import { createWorkflowAuthHeaders, withWorkflowAuthApp } from "./helpers/workfl
 function payload(method: "stock" | "manufacture" | "purchase-cots" = "manufacture") {
   const snapshot = getSnapshot();
   const subsystem = snapshot.subsystems.find((item) => !item.isArchived && snapshot.projects.some((project) => project.id === item.projectId && project.projectType === "robot"))!;
-  const mentorId = snapshot.members.find((member) => member.id === "jordan")?.id ??
-    snapshot.members.find((member) => member.role === "mentor")!.id;
+  const mentorId = acquisitionMentorId();
+  const ownerId = acquisitionOwnerId();
   return {
     name: "Acquisition Plate", revision: "A", defaultAcquisitionMethod: method, type: "custom",
     materialId: snapshot.materials[0].id,
     acquisition: method === "stock" ? { method } : {
       method, subsystemId: subsystem.id, workTypeId: method === "manufacture" ? "robot:manufacturing" : "robot:planning",
-      ownerId: "ava", mentorId, dueDate: "2026-10-01",
+      ownerId, mentorId, dueDate: "2026-10-01",
     },
   };
+}
+
+function acquisitionOwnerId() {
+  return getSnapshot().members.find((member) => member.role === "student")!.id;
+}
+
+function acquisitionMentorId() {
+  return getSnapshot().members.find((member) => member.role === "mentor")!.id;
 }
 
 test("part acquisition creates linked records with trusted workflow defaults and distinct actor/owner", async () => {
@@ -30,7 +38,8 @@ test("part acquisition creates linked records with trusted workflow defaults and
     const headers = await createWorkflowAuthHeaders("lead");
     for (const method of ["stock", "manufacture", "purchase-cots"] as const) {
       const before = getSnapshot();
-      const response = await app.inject({ method: "POST", url: "/api/part-definitions", headers, payload: payload(method) });
+      const requestPayload = payload(method);
+      const response = await app.inject({ method: "POST", url: "/api/part-definitions", headers, payload: requestPayload });
       assert.equal(response.statusCode, 201, response.body);
       const { item, purchaseItem, task } = response.json();
       assert.equal(getSnapshot().partDefinitions.length, before.partDefinitions.length + 1);
@@ -39,8 +48,8 @@ test("part acquisition creates linked records with trusted workflow defaults and
         assert.equal(task, null);
         assert.equal(getSnapshot().tasks.length, before.tasks.length);
       } else {
-        assert.equal(task.ownerId, "ava");
-        assert.equal(task.mentorId, "jordan");
+        assert.equal(task.ownerId, acquisitionOwnerId());
+        assert.equal(task.mentorId, acquisitionMentorId());
         assert.equal(task.requestedById, "priya");
         assert.equal(task.manufacturingDetails !== null, method === "manufacture");
         if (method === "manufacture") {
@@ -86,7 +95,8 @@ test("part acquisition rejects forbidden or inconsistent input without publishin
       assert.equal(response.statusCode, 400, response.body);
       assert.equal(getSnapshot(), before);
     }
-    resetStore({ ...before, members: before.members.map((member) => member.id === "ava" ? { ...member, seasonId: "another-season", activeSeasonIds: ["another-season"] } : member) });
+    const ownerId = acquisitionOwnerId();
+    resetStore({ ...before, members: before.members.map((member) => member.id === ownerId ? { ...member, seasonId: "another-season", activeSeasonIds: ["another-season"] } : member) });
     const scopedBefore = getSnapshot();
     resetLimits();
     const wrongSeason = await app.inject({ method: "POST", url: "/api/part-definitions", headers, payload: valid });
@@ -101,7 +111,7 @@ test("acquisition draft failures discard earlier commands globally and inside is
   const exercise = () => {
     const before = getSnapshot();
     const tutorialPayload = payload();
-    tutorialPayload.acquisition.mentorId = "marco";
+    tutorialPayload.acquisition.mentorId = acquisitionMentorId();
     const prepared = preparePartAcquisition(partDefinitionSchema.parse(tutorialPayload), null);
     assert.ok(!("error" in prepared));
     assert.ok(prepared.plan);
@@ -135,7 +145,7 @@ test("auth-off and unmatched authenticated acquisition requesters remain unattri
       const response = await app.inject({ method: "POST", url: "/api/part-definitions", headers, payload: payload("purchase-cots") });
       assert.equal(response.statusCode, 201, response.body);
       assert.equal(response.json().task.requestedById, null);
-      assert.equal(response.json().task.ownerId, "ava");
+      assert.equal(response.json().task.ownerId, acquisitionOwnerId());
       const audits = (getSnapshot().actions ?? []).slice((before.actions ?? []).length);
       assert.equal(audits.length, 3);
       assert.ok(audits.every((audit) => audit.actorMemberId === null));

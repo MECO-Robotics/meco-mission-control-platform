@@ -8,7 +8,7 @@ import { getMembers } from "../data/store";
 import type { UserPreferencesStore } from "../data/userPreferencesStore";
 import type { MemberRole } from "../domain/types";
 
-const PUBLIC_DEMO_SEASON_ID = "default-season";
+const PUBLIC_DEMO_SEASON_ID = "season-2026-meco";
 const EMAIL_DELIVERY_TIMEOUT_MS = 12_000;
 
 export async function awaitEmailDelivery(

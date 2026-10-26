@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { getSnapshot } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("members and part definitions activate per season in matching bootstrap scopes", async () => {
@@ -25,14 +26,14 @@ test("members and part definitions activate per season in matching bootstrap sco
       method: "POST",
       url: "/api/part-definitions",
       payload: {
-        seasonId: "default-season",
+        seasonId: "season-2026-meco",
         name: "Seasoned Plate",
         partNumber: "SEA-900",
         revision: "A",
         iteration: 1,
         type: "custom",
         defaultAcquisitionMethod: "stock",
-        materialId: "mat-onyx-filament",
+        materialId: getSnapshot().materials[0]!.id,
         description: "Scoped by active seasons.",
       },
     });
@@ -42,7 +43,7 @@ test("members and part definitions activate per season in matching bootstrap sco
       activeSeasonIds: string[];
       id: string;
     };
-    assert.deepEqual(partDefinition.activeSeasonIds, ["default-season"]);
+    assert.deepEqual(partDefinition.activeSeasonIds, ["season-2026-meco"]);
 
     resetLimits();
 
@@ -59,14 +60,7 @@ test("members and part definitions activate per season in matching bootstrap sco
       false,
     );
     resetLimits();
-    const membersResponse = await app.inject({
-      method: "GET",
-      url: "/api/members?pageSize=60",
-    });
-    assert.equal(membersResponse.statusCode, 200);
-    const member = membersResponse.json().items.find(
-      (candidate: { id: string }) => candidate.id === "demo-alex-morgan",
-    ) as { activeSeasonIds?: string[]; id: string } | undefined;
+    const member = getSnapshot().members.find((candidate) => candidate.role === "student");
     assert.ok(member);
 
     resetLimits();
@@ -85,14 +79,14 @@ test("members and part definitions activate per season in matching bootstrap sco
       method: "PATCH",
       url: `/api/part-definitions/${partDefinition.id}`,
       payload: {
-        activeSeasonIds: ["default-season", seasonId],
+        activeSeasonIds: ["season-2026-meco", seasonId],
       },
     });
 
     assert.equal(reactivateResponse.statusCode, 200);
     assert.deepEqual(
       reactivateResponse.json().item.activeSeasonIds.sort(),
-      ["default-season", seasonId].sort(),
+      ["season-2026-meco", seasonId].sort(),
     );
 
     resetLimits();

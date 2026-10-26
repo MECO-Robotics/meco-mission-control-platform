@@ -55,6 +55,11 @@ function makeWorkflowSnapshot() {
   const snapshot = structuredClone(initialSnapshot) as PlatformSnapshot;
   const partDefinitionId = snapshot.partDefinitions[0]?.id ?? "part-def-a";
   snapshot.subsystems.push({
+    id: "drive", projectId: "project-robot-2026", name: "Drivetrain",
+    description: "Workflow test subsystem.", isCore: true, parentSubsystemId: null,
+    responsibleEngineerId: "ava", mentorIds: ["marco"], iteration: 1, isArchived: false,
+  });
+  snapshot.subsystems.push({
     id: "controls",
     projectId: "project-robot-2026",
     name: "Controls",

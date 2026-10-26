@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withWorkflowAuthApp, createWorkflowAuthHeaders } from "./helpers/workflowAuth";
-import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createSubsystem, createTask, createTaskDependency, createTestResult, createWorkLog, getSnapshot, resetStore, updateRisk, updateTask, updateTaskDependency } from "../src/data/store";
+import { createPartInstance, createQaReport, createQaRequest, createReportFinding, createRisk, createSubsystem, createTask, createTaskDependency, createTestResult, createWorkLog, createWorkstream, getSnapshot, resetStore, updateRisk, updateTask, updateTaskDependency } from "../src/data/store";
 import { derivePartInstanceReadiness } from "../src/domain/readiness";
 import { evaluateTaskCompletion } from "../src/domain/workflows";
 import { getTaskWaitingOnDependencyRecords } from "../src/domain/taskDependencyState";
@@ -9,6 +9,27 @@ import { reportFromQaReport } from "../src/data/store/reportDerivations";
 import type { SnapshotView } from "../src/domain/types";
 
 const env = { API_RATE_LIMIT_MAX_REQUESTS: "100" };
+
+function robotTaskWithPart(status: "in-progress" | "complete") {
+  const initial = getSnapshot();
+  const part = initial.partInstances.find((item) => item.intendedSubsystemId && item.intendedMechanismId)!;
+  const subsystem = initial.subsystems.find((item) => item.id === part.intendedSubsystemId)!;
+  const project = initial.projects.find((item) => item.id === subsystem.projectId)!;
+  const student = initial.members.find((item) => item.role === "student" && (item.activeSeasonIds ?? [item.seasonId]).includes(project.seasonId))!;
+  const candidate = initial.tasks.find((item) => item.projectId === project.id && item.status === status)!;
+  const task = {
+    ...candidate,
+    status,
+    ownerId: student.id,
+    assigneeIds: [student.id],
+    subsystemIds: [subsystem.id],
+    mechanismIds: [part.intendedMechanismId!],
+    partInstanceIds: [part.id],
+    requiresDocumentation: false,
+  };
+  resetStore({ ...initial, tasks: initial.tasks.map((item) => item.id === task.id ? task : item) });
+  return { initial: getSnapshot(), task: getSnapshot().tasks.find((item) => item.id === task.id)! };
+}
 
 test("task create and resulting-target completion cannot bypass frozen QA coverage", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
@@ -22,15 +43,15 @@ test("task create and resulting-target completion cannot bypass frozen QA covera
     assert.equal(getSnapshot().tasks.length, beforeCount, "complete creation has no published task");
     assert.throws(() => createTask({ ...task, status: "complete" } as unknown as Parameters<typeof createTask>[0]), /cannot be created complete/);
 
-    const current = getSnapshot();
-    const qaTask = current.tasks.find((item) => item.partInstanceIds.length > 0 && !item.isBlocked && !current.taskDependencies.some((edge) => edge.taskId === item.id))!;
+    const { initial: current, task: qaTask } = robotTaskWithPart("in-progress");
+    assert.ok(!current.taskDependencies.some((edge) => edge.taskId === qaTask.id));
     const inspectedIds = [...qaTask.partInstanceIds];
     const originalPart = current.partInstances.find((item) => item.id === inspectedIds[0])!;
     const addedPartId = `${originalPart.id}-added-after-qa`;
     resetStore({ ...current, partInstances: [...current.partInstances, { ...originalPart, id: addedPartId }] });
     updateTask(qaTask.id, { status: "waiting-for-qa", requiresDocumentation: false });
-    createWorkLog({ taskId: qaTask.id, date: "2026-10-15", hours: 1, participantIds: [current.members[0]!.id], notes: "Synthetic completion evidence" });
-    const reviewed = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: { reportType: "qa", projectId: qaTask.projectId, targetRefs: [{ kind: "task", id: qaTask.id }], createdByMemberId: current.members[0]!.id, participantIds: [current.members[0]!.id], mentorId: null, requestedById: null, result: "pass", summary: "Frozen target gate", notes: "Checked preexisting targets", status: "reviewed", createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null } });
+    createWorkLog({ taskId: qaTask.id, date: "2026-10-15", hours: 1, participantIds: [qaTask.ownerId!], notes: "Synthetic completion evidence" });
+    const reviewed = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: { reportType: "qa", projectId: qaTask.projectId, targetRefs: [{ kind: "task", id: qaTask.id }], createdByMemberId: qaTask.ownerId, participantIds: [qaTask.ownerId!], mentorId: null, requestedById: null, result: "pass", summary: "Frozen target gate", notes: "Checked preexisting targets", status: "reviewed", createdAt: new Date().toISOString(), reviewedById: null, reviewedAt: null } });
     assert.equal(reviewed.statusCode, 201, reviewed.body);
     assert.equal(getSnapshot().tasks.find((item) => item.id === qaTask.id)?.status, "complete");
     const retarget = await app.inject({ method: "PATCH", url: `/api/tasks/${qaTask.id}`, headers: mentor, payload: { status: "complete", partInstanceIds: [...inspectedIds, addedPartId] } });
@@ -48,8 +69,7 @@ test("task create and resulting-target completion cannot bypass frozen QA covera
 
 test("completed tasks allow unrelated edits while reapproval changes stay gated", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
-    const initial = getSnapshot();
-    const candidate = initial.tasks.find((item) => item.partInstanceIds.length > 0)!;
+    const { initial, task: candidate } = robotTaskWithPart("complete");
     const addedPartId = `${candidate.partInstanceIds[0]}-completion-scope-change`;
     const baseTask = { ...candidate, status: "complete" as const, requiresDocumentation: false };
     const withoutTaskEvidence = {
@@ -91,9 +111,8 @@ test("completed tasks allow unrelated edits while reapproval changes stay gated"
 
 test("reviewed nonpass closes only its request and creates genuinely linked corrective records", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
-    const snapshot = getSnapshot();
-    const task = snapshot.tasks.find((item) => item.status === "in-progress" && !item.isBlocked && !snapshot.taskDependencies.some((edge) => edge.taskId === item.id))!;
-    const mentorMember = snapshot.members.find((item) => item.role === "mentor")!;
+    const { task } = robotTaskWithPart("in-progress");
+    const mentorMember = getSnapshot().members.find((item) => item.role === "mentor")!;
     const request = createQaRequest({ projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }], subject: "Reviewed request closure", mentorId: mentorMember.id, requestedById: task.ownerId });
     const mentor = await createWorkflowAuthHeaders("mentor");
     const response = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: { reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }, { kind: "qa-request", id: request.id }], createdByMemberId: task.ownerId, participantIds: [task.ownerId], mentorId: mentorMember.id, requestedById: task.ownerId, result: "iteration-worthy", summary: "Reviewed failure", notes: "Synthetic reviewed failure", status: "reviewed", createdAt: "2099-01-01T00:00:00.000Z", reviewedById: "spoof", reviewedAt: "2099-01-01T00:00:00.000Z" } });
@@ -117,7 +136,8 @@ test("QA and test corrective links block task, hierarchy, and risk deletion with
     const subsystem = createSubsystem({
       projectId: "project-robot-2026", name: "Corrective deletion fixture",
       description: "Corrective QA links must survive deletion attempts.",
-      parentSubsystemId: null, responsibleEngineerId: "ava", mentorIds: ["marco"],
+      parentSubsystemId: null, responsibleEngineerId: getSnapshot().members.find((item) => item.role === "student")!.id,
+      mentorIds: [getSnapshot().members.find((item) => item.role === "mentor")!.id],
     });
     const childSubsystem = createSubsystem({
       projectId: "project-robot-2026", name: "Corrective deletion fixture child",
@@ -383,8 +403,7 @@ test("only roster-linked mentor review applies QA approval and completion gate",
 
 test("part deletion invalidates task completion scope atomically until reviewed again", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
-    const initial = getSnapshot();
-    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const { initial, task } = robotTaskWithPart("complete");
     const partInstanceId = task.partInstanceIds[0]!;
     const mentor = await createWorkflowAuthHeaders("mentor");
 
@@ -421,7 +440,8 @@ test("part deletion invalidates task completion scope atomically until reviewed 
     assert.deepEqual(getSnapshot(), beforeOldApprovalCompletion, "old approval cannot complete the task with no remaining part targets");
 
     updateTask(task.id, { status: "waiting-for-qa" });
-    const reviewer = afterDelete.members.find((item) => item.email === "jordan.lee@mecorobotics.org")!;
+    const reviewer = afterDelete.members.find((item) => item.role === "student")!;
+    createWorkLog({ taskId: task.id, date: "2026-10-16", hours: 1, participantIds: [task.ownerId ?? reviewer.id], notes: "Fresh part deletion review" });
     const freshPass = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
       reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
       createdByMemberId: task.ownerId ?? reviewer.id, participantIds: [task.ownerId ?? reviewer.id],
@@ -436,8 +456,7 @@ test("part deletion invalidates task completion scope atomically until reviewed 
 
 test("authenticated completion rejects unresolved hard dependencies on the candidate task", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
-    const initial = getSnapshot();
-    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const { initial, task } = robotTaskWithPart("complete");
     const prerequisite = initial.tasks.find((item) => item.id !== task.id && item.status === "complete")!;
     const memberId = task.ownerId ?? initial.members[0]!.id;
     const mentor = await createWorkflowAuthHeaders("mentor");
@@ -445,6 +464,7 @@ test("authenticated completion rejects unresolved hard dependencies on the candi
     const reopened = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: { status: "in-progress", requiresDocumentation: false } });
     assert.equal(reopened.statusCode, 200, reopened.body);
     updateTask(task.id, { status: "waiting-for-qa" });
+    createWorkLog({ taskId: task.id, date: "2026-10-16", hours: 1, participantIds: [memberId], notes: "Fresh dependency review" });
     const freshPass = await app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
       reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
       createdByMemberId: memberId, participantIds: [memberId], mentorId: null, requestedById: null,
@@ -471,8 +491,7 @@ test("authenticated completion rejects unresolved hard dependencies on the candi
 
 test("authenticated dependency mutations cannot invalidate completed task requirements", async () => {
   await withWorkflowAuthApp(async ({ app, resetLimits }) => {
-    const initial = getSnapshot();
-    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const { initial, task } = robotTaskWithPart("complete");
     const unfinished = initial.tasks.find((item) => item.projectId === task.projectId && item.id !== task.id && item.status !== "complete")!;
     const completedPrerequisite = initial.tasks.find((item) => item.projectId === task.projectId && item.id !== task.id && item.status === "complete")!;
     const source = initial.tasks.find((item) => item.projectId === task.projectId && item.id !== task.id && item.id !== unfinished.id && item.status !== "complete" &&
@@ -530,9 +549,8 @@ test("authenticated dependency mutations cannot invalidate completed task requir
 
 test("completed dependent tasks reject prerequisite changes that make satisfied dependencies unresolved", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
-    const initial = getSnapshot();
-    const dependent = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
-    const prerequisite = initial.tasks.find((item) => item.id === "pdh-labels")!;
+    const { initial, task: dependent } = robotTaskWithPart("complete");
+    const prerequisite = initial.tasks.find((item) => item.id !== dependent.id && item.status === "complete")!;
     assert.equal(dependent.status, "complete");
     assert.equal(prerequisite.status, "complete");
     const mentor = await createWorkflowAuthHeaders("mentor");
@@ -564,8 +582,7 @@ test("completed dependent tasks reject prerequisite changes that make satisfied 
 
 test("part revision and definition reassignment require fresh QA on completed task targets", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
-    const initial = getSnapshot();
-    const task = initial.tasks.find((item) => item.id === "swerve-sensor-bundle")!;
+    const { initial, task } = robotTaskWithPart("complete");
     const partInstance = initial.partInstances.find((item) => item.id === task.partInstanceIds[0])!;
     const originalDefinition = initial.partDefinitions.find((item) => item.id === partInstance.partDefinitionId)!;
     const replacementDefinition = initial.partDefinitions.find((item) => item.id !== originalDefinition.id && !initial.partInstances.some((part) => part.partDefinitionId === item.id))!;
@@ -596,6 +613,7 @@ test("part revision and definition reassignment require fresh QA on completed ta
 
     const submitPass = async () => {
       updateTask(task.id, { status: "waiting-for-qa" });
+      createWorkLog({ taskId: task.id, date: "2026-10-16", hours: 1, participantIds: task.ownerId ? [task.ownerId] : [initial.members[0]!.id], notes: "Fresh revision review" });
       return app.inject({ method: "POST", url: "/api/qa-reports/submit", headers: mentor, payload: {
         reportType: "qa", projectId: task.projectId, targetRefs: [{ kind: "task", id: task.id }],
         createdByMemberId: task.ownerId, participantIds: task.ownerId ? [task.ownerId] : [initial.members[0]!.id],
@@ -637,11 +655,12 @@ test("part revision and definition reassignment require fresh QA on completed ta
 
 test("completion approval is invalidated by every normalized task and artifact scope change", async () => {
   await withWorkflowAuthApp(async ({ app }) => {
+    const { task: candidate } = robotTaskWithPart("complete");
     const initial = getSnapshot();
-    const task = initial.tasks.find((item) => item.partInstanceIds.length > 0 && !item.isBlocked &&
-      initial.workstreams.some((workstream) => workstream.projectId === item.projectId && !item.workstreamIds.includes(workstream.id)))!;
+    const task = initial.tasks.find((item) => item.id === candidate.id)!;
     const originalWorkstreams = [...task.workstreamIds];
-    const addedWorkstream = initial.workstreams.find((workstream) => workstream.projectId === task.projectId && !originalWorkstreams.includes(workstream.id))!;
+    const addedWorkstream = initial.workstreams.find((workstream) => workstream.projectId === task.projectId && !originalWorkstreams.includes(workstream.id)) ?? createWorkstream({ projectId: task.projectId, name: "QA scope workstream", description: "Scope mutation fixture." });
+    const secondWorkstream = initial.workstreams.find((workstream) => workstream.projectId === task.projectId && !originalWorkstreams.includes(workstream.id) && workstream.id !== addedWorkstream.id) ?? createWorkstream({ projectId: task.projectId, name: "QA second scope workstream", description: "Second scope mutation fixture." });
     const addedSubsystem = initial.subsystems.find((subsystem) => subsystem.projectId === task.projectId && !task.subsystemIds.includes(subsystem.id))!;
     const addedMechanism = initial.mechanisms.find((mechanism) => initial.subsystems.some((subsystem) => subsystem.id === mechanism.subsystemId && subsystem.projectId === task.projectId) && !task.mechanismIds.includes(mechanism.id))!;
     const addedPart = initial.partInstances.find((part) => part.intendedSubsystemId === task.subsystemIds[0] && part.intendedMechanismId === task.mechanismIds[0] && !task.partInstanceIds.includes(part.id));
@@ -681,8 +700,8 @@ test("completion approval is invalidated by every normalized task and artifact s
       workstreamIds: [], subsystemIds: [otherSubsystem.id], mechanismIds: [], partInstanceIds: [], manufacturingDetails: null,
     };
     const scopeChanges: Array<Record<string, unknown>> = [
-      { workstreamIds: [addedWorkstream.id] },
-      { workstreamIds: [...completeTask.workstreamIds, initial.workstreams.find((item) => item.projectId === task.projectId && !completeTask.workstreamIds.includes(item.id) && item.id !== addedWorkstream.id)!.id] },
+      { workstreamIds: [] },
+      { workstreamIds: [...completeTask.workstreamIds, secondWorkstream.id] },
       { subsystemIds: [...completeTask.subsystemIds, addedSubsystem.id] },
       { mechanismIds: [...completeTask.mechanismIds, addedMechanism.id], subsystemIds: [...completeTask.subsystemIds, addedMechanism.subsystemId] },
       ...(addedPart ? [{ partInstanceIds: [...completeTask.partInstanceIds, addedPart.id] }] : []),
@@ -704,12 +723,12 @@ test("completion approval is invalidated by every normalized task and artifact s
 
     const beforeCompleteScopeChange = getSnapshot();
     const reopenedAndChanged = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: mentor, payload: {
-      status: "in-progress", workstreamIds: [addedWorkstream.id],
+      status: "in-progress", workstreamIds: [secondWorkstream.id],
     } });
     assert.equal(reopenedAndChanged.statusCode, 200, reopenedAndChanged.body);
     const changedScope = getSnapshot().tasks.find((item) => item.id === task.id)!;
     assert.equal(typeof changedScope.completionScopeReviewOrder, "number");
-    assert.ok(changedScope.completionScopeReviewOrder! >= (beforeCompleteScopeChange.qaReviewSequence ?? 0));
+    assert.ok(changedScope.completionScopeReviewOrder! > (completeTask.completionScopeReviewOrder ?? 0));
     assert.deepEqual(changedScope.partInstanceIds, task.partInstanceIds, "non-part scope change retains the reviewed part instances");
     const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap", headers: mentor });
     assert.equal(bootstrap.json().tasks.find((item: { id: string }) => item.id === task.id)?.completionScopeReviewOrder, changedScope.completionScopeReviewOrder);

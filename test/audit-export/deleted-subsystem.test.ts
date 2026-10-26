@@ -24,8 +24,13 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
       });
       const admin = getSnapshot().members.find((member) => member.email === auditAdminMember.email);
       assert.ok(admin);
-      const robotProject = createProject({ name: "Robot Audit Test", seasonId: "default-season", projectType: "robot" });
-      const operationsProject = createProject({ name: "Operations Audit Test", seasonId: "default-season", projectType: "operations" });
+      const seed = getSnapshot();
+      const seasonId = "season-2026-meco";
+      const student = seed.members.find((member) => member.role === "student" && member.seasonId === seasonId)!;
+      const mentor = seed.members.find((member) => member.role === "mentor" && member.seasonId === seasonId)!;
+      const materialId = seed.materials[0]!.id;
+      const robotProject = createProject({ name: "Robot Audit Test", seasonId, projectType: "robot" });
+      const operationsProject = createProject({ name: "Operations Audit Test", seasonId, projectType: "operations" });
 
       const subsystem = createSubsystem({
         projectId: robotProject.id,
@@ -33,8 +38,8 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         color: "#4F86C6",
         description: "Temporary subsystem for audit export retention coverage.",
         parentSubsystemId: null,
-        responsibleEngineerId: "ava",
-        mentorIds: [],
+        responsibleEngineerId: student.id,
+        mentorIds: [mentor.id],
       }, { actorMemberId: admin.id });
       const operationsSubsystem = createSubsystem({
         projectId: operationsProject.id,
@@ -42,8 +47,8 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         color: "#4F86C6",
         description: "Destination for audit export move coverage.",
         parentSubsystemId: null,
-        responsibleEngineerId: "ava",
-        mentorIds: [],
+        responsibleEngineerId: student.id,
+        mentorIds: [mentor.id],
       }, { actorMemberId: admin.id });
       const sourceSubsystem = createSubsystem({
         projectId: robotProject.id,
@@ -51,8 +56,8 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         color: "#4F86C6",
         description: "Source for audit export move coverage.",
         parentSubsystemId: null,
-        responsibleEngineerId: "ava",
-        mentorIds: [],
+        responsibleEngineerId: student.id,
+        mentorIds: [mentor.id],
       }, { actorMemberId: admin.id });
       const mechanism = createMechanism({
         subsystemId: subsystem.id,
@@ -65,9 +70,9 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         revision: "A",
         type: "custom",
         defaultAcquisitionMethod: "stock",
-        materialId: "mat-onyx-filament",
+        materialId,
         description: "Part fixture for deleted subsystem audit coverage.",
-        seasonId: "default-season",
+        seasonId,
       });
       const partInstance = createPartInstance({
         intendedSubsystemId: subsystem.id,
@@ -99,7 +104,7 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
 
       const partInstanceSeasonResponse = await app.inject({
         method: "GET",
-        url: "/api/audit/export?entityType=part-instance&seasonId=default-season",
+        url: `/api/audit/export?entityType=part-instance&seasonId=${seasonId}`,
         headers: {
           authorization: `Bearer ${adminToken}`,
         },
@@ -167,9 +172,9 @@ test("audit export preserves subsystem-owned rows after subsystem deletion", asy
         revision: "A",
         type: "custom",
         defaultAcquisitionMethod: "stock",
-        materialId: "mat-onyx-filament",
+        materialId,
         description: "Part definition for moved part instance audit coverage.",
-        seasonId: "default-season",
+        seasonId,
       });
       const movedPartInstance = createPartInstance({
         intendedSubsystemId: sourceSubsystem.id,

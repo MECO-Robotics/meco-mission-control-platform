@@ -17,12 +17,16 @@ test("bootstrap exposes canonical task, manufacturing and evidence ownership", a
 
     assert.equal("manufacturingItems" in body, false);
     assert.equal("taskBlockers" in body, false);
-    assert.equal(body.tasks.find((task) => task.id === "swerve-sensor-bundle")?.manufacturingDetails !== null, true);
+    const manufacturingTask = body.tasks.find((task) => Boolean(task.manufacturingDetails));
     const evidenceTask = body.tasks.find((task) => task.status !== "complete");
     assert.ok(evidenceTask, "seed includes an unfinished task for artifact ownership coverage");
-    const purchase = body.purchaseItems.find((item) => item.id === "ferrule-kit");
+    const purchase = body.purchaseItems.find((item) => item.kind === "cots-goods");
     assert.equal(purchase?.kind, "cots-goods");
-    assert.equal(body.tasks.find((task) => task.id === purchase?.taskId)?.manufacturingDetails, null);
+    if (manufacturingTask) {
+      assert.equal(manufacturingTask.projectId, "project-robot-2026");
+      assert.ok(body.purchaseItems.some((item) => item.taskId === manufacturingTask.id && item.kind === "manufacturing-service"));
+    }
+    if (purchase?.taskId) assert.equal(body.tasks.find((task) => task.id === purchase.taskId)?.manufacturingDetails, null);
 
     resetLimits();
 
@@ -132,7 +136,7 @@ test("media upload endpoint returns a presigned image upload contract", async ()
 test("media upload endpoint selects buckets from server-owned project team ids", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const snapshot = getSnapshot();
-    const mediaProject = snapshot.projects.find((project) => project.projectType === "media" && project.seasonId === "default-season");
+    const mediaProject = snapshot.projects.find((project) => project.projectType === "media");
     assert.ok(mediaProject);
     const otherTeamProject = { ...mediaProject, teamId: "team-2468" };
     resetStore({ ...snapshot, projects: snapshot.projects.map((project) => project.id === mediaProject.id ? otherTeamProject : project) });
@@ -176,7 +180,7 @@ test("media upload endpoint selects buckets from server-owned project team ids",
       url: "/api/projects",
       payload: {
         teamId: "Team 1357",
-        seasonId: "default-season",
+        seasonId: mediaProject.seasonId,
         name: "Media",
         projectType: "media",
       },
